@@ -1,0 +1,62 @@
+[package]
+name = "cortex-plugins"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Complete WASM-based plugin system for Cortex CLI"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Internal
+cortex-common = { path = "../cortex-common" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Async traits
+async-trait = { workspace = true }
+
+# Utilities
+dirs = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+semver = "1.0"
+
+# WASM Runtime
+wasmtime = { version = "48", features = ["async", "component-model"] }
+
+# HTTP client for plugin network access
+reqwest = { workspace = true }
+
+# URL parsing
+url = { workspace = true }
+
+# Cryptographic signing
+ed25519-dalek = "2.1"
+
+# Checksums
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }

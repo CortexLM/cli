@@ -1,0 +1,9 @@
+# Docs
+
+- README must stay enough to build, log in to `api.cortex.foundation`, run the TUI, and run tests.
+- User-facing docs live in `docs/`. Do not invent a second docs site in-tree.
+- Product name is **Cortex CLI** / **Cortex Code**. Never Grok / Grok Bot / Grok-core.
+- Document CI secret *names* in `docs/CI_SECRETS.md`. Never commit values.
+- Changelog is `CHANGELOG.md`. Version-bump on `main` is the release note trigger.
+- Comments explain why, not what. Do not paste policy text into source files.
+- If a public URL already exists (`cortex.foundation`, `api.cortex.foundation`, `software.cortex.foundation`, `auth.cortex.foundation`), reuse it. Do not invent new product domains.

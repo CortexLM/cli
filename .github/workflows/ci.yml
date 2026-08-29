@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+  CARGO_INCREMENTAL: 0
+  # Clippy job uses -D warnings. Do not also deny rustc edition-migration
+  # warnings here — those are allowed in [workspace.lints.rust] where needed.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-check:
+    name: CLI Version Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify CLI version consistency
+        run: ./scripts/check-cli-version.sh
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rust-clippy
+      - name: Run clippy
+        run: ./scripts/clippy.sh
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rust-test
+      - name: Run tests
+        run: cargo test --workspace
+
+  tui:
+    name: TUI checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rust-tui
+      - name: Headless TUI / snapshot tests
+        run: |
+          cargo test -p cortex-tui -p cortex-tui-capture -p cortex-tui-components \
+            -p cortex-tui-framework -p cortex-tui-core -p cortex-tui-buffer \
+            -p cortex-tui-widgets -p cortex-tui-layout -p cortex-tui-text \
+            -p cortex-tui-input -p cortex-tui-terminal -p cortex-tui-syntax
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Audit Rust dependencies
+        run: cargo audit
+
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [version-check, fmt, clippy, test, tui, audit]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.version-check.result }}" != "success" || \
+                "${{ needs.fmt.result }}" != "success" || \
+                "${{ needs.clippy.result }}" != "success" || \
+                "${{ needs.test.result }}" != "success" || \
+                "${{ needs.tui.result }}" != "success" || \
+                "${{ needs.audit.result }}" != "success" ]]; then
+            echo "One or more required CI jobs failed"
+            exit 1
+          fi
+          echo "All CI checks passed"

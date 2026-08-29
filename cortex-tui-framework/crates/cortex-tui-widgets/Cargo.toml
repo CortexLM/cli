@@ -1,0 +1,20 @@
+[package]
+name = "cortex-tui-widgets"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Widget library for Cortex TUI"
+
+[lints]
+workspace = true
+
+[dependencies]
+cortex-tui-core = { path = "../cortex-tui-core" }
+cortex-tui-buffer = { path = "../cortex-tui-buffer" }
+unicode-segmentation = { workspace = true }
+unicode-width = { workspace = true }
+smallvec = { workspace = true }
+
+[dev-dependencies]
+# For testing

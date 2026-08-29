@@ -1,0 +1,19 @@
+[package]
+name = "cortex-process-hardening"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Process hardening for Cortex CLI"
+
+[lints]
+workspace = true
+
+[dependencies]
+libc = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+
+[dev-dependencies]

@@ -929,6 +929,10 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("test backend");
         terminal.draw(|f| screen.render(f)).expect("draw");
         let text = buffer_text(&terminal);
+        if let Ok(dir) = std::env::var("CORTEX_DUMP_SNAPSHOTS") {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(std::path::Path::new(&dir).join("auth.txt"), &text);
+        }
         assert!(text.contains("Welcome to Cortex CLI"), "{text}");
         assert!(text.contains("Cortex Foundation account"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));
@@ -943,6 +947,13 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("test backend");
         terminal.draw(|f| screen.render(f)).expect("draw");
         let waiting = buffer_text(&terminal);
+        if let Ok(dir) = std::env::var("CORTEX_DUMP_SNAPSHOTS") {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(
+                std::path::Path::new(&dir).join("auth_waiting.txt"),
+                &waiting,
+            );
+        }
         assert!(
             waiting.contains("ABCD-1234")
                 || waiting.contains("device")

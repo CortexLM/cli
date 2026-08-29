@@ -252,9 +252,17 @@ impl EventLoop {
                             }
                             Ok(Some(Ok(ResponseEvent::ToolCall(tool_call)))) => {
                                 // Parse arguments from JSON string
-                                let arguments = serde_json::from_str(&tool_call.arguments)
-                                    .unwrap_or_else(|_| serde_json::json!({"raw": tool_call.arguments, "remote": tool_call.remote}));
+                                let mut arguments = serde_json::from_str(&tool_call.arguments)
+                                    .unwrap_or_else(|_| {
+                                        serde_json::json!({"raw": tool_call.arguments})
+                                    });
+                                if tool_call.remote
+                                    && let Some(obj) = arguments.as_object_mut()
+                                {
+                                    obj.insert("remote".into(), serde_json::json!(true));
+                                }
                                 if tool_call.remote {
+                                    // Cloud-executed tools: first-class row only, no local re-exec.
                                     if tx
                                         .send(StreamEvent::ToolCallStart {
                                             id: tool_call.id.clone(),
@@ -265,8 +273,7 @@ impl EventLoop {
                                     {
                                         break;
                                     }
-                                }
-                                if tx
+                                } else if tx
                                     .send(StreamEvent::ToolCall {
                                         id: tool_call.id.clone(),
                                         name: tool_call.name.clone(),
@@ -280,13 +287,16 @@ impl EventLoop {
                             }
                             Ok(Some(Ok(ResponseEvent::ToolResult { id, success, output }))) => {
                                 if tx
-                                    .send(StreamEvent::ToolCallComplete { id: id.clone() })
+                                    .send(StreamEvent::ToolCallComplete {
+                                        id: id.clone(),
+                                        success,
+                                        output,
+                                    })
                                     .await
                                     .is_err()
                                 {
                                     break;
                                 }
-                                let _ = (success, output);
                             }
                             Ok(Some(Err(e))) => {
                                 let _ = tx.send(StreamEvent::Error(e.to_string())).await;
@@ -362,9 +372,23 @@ impl EventLoop {
                 self.app_state
                     .update_tool_status(&id, crate::views::tool_call::ToolStatus::Running);
             }
-            StreamEvent::ToolCallComplete { id } => {
-                self.app_state
-                    .update_tool_status(&id, crate::views::tool_call::ToolStatus::Completed);
+            StreamEvent::ToolCallComplete {
+                id,
+                success,
+                output,
+            } => {
+                let summary = if success {
+                    "↳ done".to_string()
+                } else {
+                    "↳ error".to_string()
+                };
+                if !output.is_empty() || !success {
+                    self.app_state
+                        .update_tool_result(&id, output, success, summary);
+                } else {
+                    self.app_state
+                        .update_tool_status(&id, crate::views::tool_call::ToolStatus::Completed);
+                }
             }
             _ => {
                 // Other variants not specifically handled
@@ -867,23 +891,38 @@ impl EventLoop {
                                 break;
                             }
                             Ok(Some(Ok(ResponseEvent::ToolCall(tool_call)))) => {
-                                let arguments = serde_json::from_str(&tool_call.arguments)
-                                    .unwrap_or_else(|_| serde_json::json!({"raw": tool_call.arguments, "remote": tool_call.remote}));
-                                if tx
-                                    .send(StreamEvent::ToolCall {
+                                let mut arguments = serde_json::from_str(&tool_call.arguments)
+                                    .unwrap_or_else(|_| {
+                                        serde_json::json!({"raw": tool_call.arguments})
+                                    });
+                                if tool_call.remote
+                                    && let Some(obj) = arguments.as_object_mut()
+                                {
+                                    obj.insert("remote".into(), serde_json::json!(true));
+                                }
+                                let event = if tool_call.remote {
+                                    StreamEvent::ToolCallStart {
+                                        id: tool_call.id.clone(),
+                                        name: tool_call.name.clone(),
+                                    }
+                                } else {
+                                    StreamEvent::ToolCall {
                                         id: tool_call.id.clone(),
                                         name: tool_call.name.clone(),
                                         arguments,
-                                    })
-                                    .await
-                                    .is_err()
-                                {
+                                    }
+                                };
+                                if tx.send(event).await.is_err() {
                                     break;
                                 }
                             }
-                            Ok(Some(Ok(ResponseEvent::ToolResult { id, .. }))) => {
+                            Ok(Some(Ok(ResponseEvent::ToolResult { id, success, output }))) => {
                                 if tx
-                                    .send(StreamEvent::ToolCallComplete { id })
+                                    .send(StreamEvent::ToolCallComplete {
+                                        id,
+                                        success,
+                                        output,
+                                    })
                                     .await
                                     .is_err()
                                 {

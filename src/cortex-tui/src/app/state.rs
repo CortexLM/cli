@@ -245,7 +245,7 @@ impl AppState {
             focus: FocusTarget::default(),
             session_id: None,
             messages: Vec::new(),
-            model: String::from("gpt-4"),
+            model: String::from("cortex-1-mini"),
             provider: String::from("cortex"),
             system_prompt: None,
             sidebar_visible: true,

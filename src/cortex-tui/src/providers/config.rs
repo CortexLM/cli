@@ -19,7 +19,7 @@ pub const DEFAULT_API_URL: &str = "https://api.cortex.foundation";
 pub const DEFAULT_PROVIDER: &str = "cortex";
 
 /// Default model
-pub const DEFAULT_MODEL: &str = "anthropic/claude-opus-4.5";
+pub const DEFAULT_MODEL: &str = "cortex-1-mini";
 
 /// Configuration file name
 pub const CONFIG_FILE: &str = "config.json";
@@ -357,7 +357,7 @@ mod tests {
         let config = CortexConfig::default();
         assert_eq!(config.api_url, DEFAULT_API_URL);
         assert_eq!(config.default_provider, "cortex");
-        assert_eq!(config.default_model, "anthropic/claude-opus-4.5");
+        assert_eq!(config.default_model, "cortex-1-mini");
     }
 
     #[test]

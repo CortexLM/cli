@@ -53,7 +53,13 @@ pub enum StreamEvent {
     /// Tool call delta.
     ToolCallDelta { id: String, arguments: String },
     /// Tool call complete.
-    ToolCallComplete { id: String },
+    ToolCallComplete {
+        id: String,
+        #[serde(default)]
+        success: bool,
+        #[serde(default)]
+        output: String,
+    },
     /// Tool call with full info.
     ToolCall {
         id: String,
@@ -279,7 +285,7 @@ impl StreamProcessor {
             StreamEvent::ToolCallDelta { id, arguments } => {
                 self.content.append_tool_call(id, arguments);
             }
-            StreamEvent::ToolCallComplete { id } => {
+            StreamEvent::ToolCallComplete { id, .. } => {
                 self.content.complete_tool_call(id);
             }
             StreamEvent::TokenUsage { prompt, completion } => {
@@ -811,6 +817,8 @@ mod tests {
         });
         processor.process(StreamEvent::ToolCallComplete {
             id: "tc1".to_string(),
+            success: true,
+            output: String::new(),
         });
 
         let content = processor.content();

@@ -244,6 +244,8 @@ pub fn format_result_summary(name: &str, output: &str, success: bool) -> String 
         "write" => "↳ File written".to_string(),
         "todowrite" => "↳ Todos updated".to_string(),
         "task" => "↳ Task completed".to_string(),
+        "plan" => "↳ Plan (mermaid)".to_string(),
+        "exitspecmode" => "↳ ExitSpecMode".to_string(),
         _ => {
             let line_count = output.lines().count();
             if line_count == 0 {

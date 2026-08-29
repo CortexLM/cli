@@ -65,48 +65,20 @@ impl TaskHandler {
 
     /// Get detailed description.
     fn description() -> &'static str {
-        r#"Delegate a task to a custom agent. The agent executes autonomously and returns the result. Use this to offload specialized subtasks to purpose-built agents. Custom agents are defined in .cortex/agents/ (project-level) or ~/.cortex/agents/ (personal).
+        r#"Delegate work to a child task. Roles: explore (read-only), plan (mermaid, no mutate), worker (implement). The parent receives task_started, progress, completed, or failed events. Optional artifact_id is attached when the result is large.
 
-## When to Use
-- Offloading specialized subtasks to custom agents
-- Tasks requiring specific agent expertise
-- Parallel work on independent subtasks
-- Fire-and-forget background tasks
+Children cannot spawn nested Task tools and cannot use AskUser, Questions, or send_to_user.
 
 ## Examples
-
-### Basic Delegation
 ```json
-{
-  "agent": "code-reviewer",
-  "task": "Review the authentication module for security vulnerabilities and suggest improvements"
-}
+{ "mode": "explore", "prompt": "Find where sessions are created" }
 ```
-
-### With Context
 ```json
-{
-  "agent": "documentation-writer",
-  "task": "Generate API documentation for all endpoints",
-  "context": "The API uses OpenAPI 3.0 spec. Focus on request/response examples."
-}
+{ "mode": "plan", "prompt": "Plan adding device login" }
 ```
-
-### Fire-and-Forget
 ```json
-{
-  "agent": "background-optimizer",
-  "task": "Optimize database indexes",
-  "await_result": false
-}
-```
-
-## Best Practices
-1. Ensure the agent exists before delegating
-2. Be specific about expected inputs and outputs
-3. Provide relevant context for better results
-4. Use await_result=false for long-running background tasks
-5. Check agent capabilities before delegation"#
+{ "mode": "worker", "prompt": "Implement the keep-set compaction filter" }
+```"#
     }
 
     /// Get parameter schema.
@@ -114,41 +86,67 @@ impl TaskHandler {
         json!({
             "type": "object",
             "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["explore", "plan", "worker"],
+                    "description": "Child role. explore=read-only, plan=mermaid only, worker=implement."
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "Instructions for the child task."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Short parent-visible description."
+                },
                 "agent": {
                     "type": "string",
-                    "description": "Name of the custom agent to invoke. Must exist in .cortex/agents/ or ~/.cortex/agents/"
+                    "description": "Legacy: custom agent name. Mapped to worker unless mode is set."
                 },
                 "task": {
                     "type": "string",
-                    "description": "Detailed description of the task to delegate. Be specific about expected inputs and outputs."
+                    "description": "Legacy alias for prompt."
                 },
                 "context": {
                     "type": "string",
-                    "description": "Additional context for the agent: relevant file paths, constraints, preferences, or background information"
+                    "description": "Additional context for the child."
                 },
                 "await_result": {
                     "type": "boolean",
-                    "description": "Wait for agent to complete and return result (true) or fire-and-forget (false)",
+                    "description": "Wait for the child (true) or return after task_started (false).",
                     "default": true
                 }
             },
-            "required": ["agent", "task"],
+            "required": [],
             "additionalProperties": false
         })
     }
 
     /// Parse task parameters from arguments.
     fn parse_params(&self, arguments: Value) -> Result<TaskParams> {
+        let mode = arguments
+            .get("mode")
+            .and_then(|m| m.as_str())
+            .map(crate::harness::TaskRole::parse)
+            .unwrap_or(crate::harness::TaskRole::Worker);
+
+        let task = arguments
+            .get("prompt")
+            .or_else(|| arguments.get("task"))
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| CortexError::InvalidInput("prompt (or task) is required".into()))?
+            .to_string();
+
         let agent = arguments
             .get("agent")
             .and_then(|a| a.as_str())
-            .ok_or_else(|| CortexError::InvalidInput("agent is required".into()))?
+            .unwrap_or(mode.as_str())
             .to_string();
 
-        let task = arguments
-            .get("task")
-            .and_then(|t| t.as_str())
-            .ok_or_else(|| CortexError::InvalidInput("task is required".into()))?
+        let description = arguments
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or(&task)
             .to_string();
 
         let context = arguments
@@ -166,6 +164,8 @@ impl TaskHandler {
             task,
             context,
             await_result,
+            mode,
+            description,
         })
     }
 
@@ -182,6 +182,11 @@ impl TaskHandler {
             config = config.with_context(context);
         }
 
+        config.env.insert("CORTEX_CHILD_TASK".into(), "1".into());
+        if params.mode == crate::harness::TaskRole::Plan {
+            config.env.insert("CORTEX_SPEC_MODE".into(), "1".into());
+        }
+        config.prompt = format!("{}\n\n{}", params.mode.system_prompt(), config.prompt);
         config
     }
 }
@@ -218,18 +223,29 @@ impl ToolHandler for TaskHandler {
             events
         });
 
+        let task_id = format!("task_{}_{}", params.mode.as_str(), uuid::Uuid::new_v4());
+        let started = crate::harness::TaskParentEvent::Started {
+            task_id: task_id.clone(),
+            role: params.mode.as_str().to_string(),
+            description: params.description.clone(),
+        };
+
         // If await_result is false, return immediately with task queued message
         if !params.await_result {
             let output = format!(
-                r#"## Task Delegated (Fire-and-Forget)
+                r#"## task_started
 
+**task_id:** `{task_id}`
+**mode:** `{}`
 **Agent:** `{}`
 **Task:** {}
 
-The task has been queued for execution by the agent.
-No result will be returned (await_result=false)."#,
-                params.agent, params.task
+The child task has been queued. Nested Task, AskUser, and send_to_user are disabled for the child."#,
+                params.mode.as_str(),
+                params.agent,
+                params.task
             );
+            let _ = started.kind();
             return Ok(ToolResult::success(output));
         }
 
@@ -259,6 +275,32 @@ No result will be returned (await_result=false)."#,
                     }
                 }
 
+                let artifact_id = if full_output.len() >= crate::harness::ARTIFACT_THRESHOLD_BYTES {
+                    Some(format!("art_{task_id}"))
+                } else {
+                    None
+                };
+                let header = if subagent_result.success {
+                    crate::harness::TaskParentEvent::Completed {
+                        task_id: task_id.clone(),
+                        summary: params.description.clone(),
+                        artifact_id: artifact_id.clone(),
+                    }
+                } else {
+                    crate::harness::TaskParentEvent::Failed {
+                        task_id: task_id.clone(),
+                        error: "Child task failed".into(),
+                        artifact_id: artifact_id.clone(),
+                    }
+                };
+                full_output = format!(
+                    "## {}\n**task_id:** `{task_id}`\n**mode:** `{}`\n{}\n\n{full_output}",
+                    header.kind(),
+                    params.mode.as_str(),
+                    artifact_id
+                        .map(|id| format!("**artifact_id:** `{id}`"))
+                        .unwrap_or_default()
+                );
                 if subagent_result.success {
                     Ok(ToolResult::success(full_output))
                 } else {
@@ -277,6 +319,8 @@ struct TaskParams {
     task: String,
     context: Option<String>,
     await_result: bool,
+    mode: crate::harness::TaskRole,
+    description: String,
 }
 
 /// Create a standalone task handler with minimal dependencies (for registry integration).
@@ -308,15 +352,19 @@ impl ToolHandler for SimpleTaskHandler {
     }
 
     async fn execute(&self, arguments: Value, _context: &ToolContext) -> Result<ToolResult> {
+        let mode = arguments
+            .get("mode")
+            .and_then(|m| m.as_str())
+            .unwrap_or("worker");
         let agent = arguments
             .get("agent")
             .and_then(|a| a.as_str())
-            .ok_or_else(|| CortexError::InvalidInput("agent is required".into()))?;
-
+            .unwrap_or(mode);
         let task = arguments
-            .get("task")
+            .get("prompt")
+            .or_else(|| arguments.get("task"))
             .and_then(|t| t.as_str())
-            .ok_or_else(|| CortexError::InvalidInput("task is required".into()))?;
+            .ok_or_else(|| CortexError::InvalidInput("prompt (or task) is required".into()))?;
 
         let context = arguments.get("context").and_then(|c| c.as_str());
 
@@ -325,15 +373,17 @@ impl ToolHandler for SimpleTaskHandler {
             .and_then(|a| a.as_bool())
             .unwrap_or(true);
 
+        let task_id = format!("task_{}_{}", mode, uuid::Uuid::new_v4());
         let mut output = format!(
-            r#"## Task Delegated
+            r#"## task_started
 
-**Agent:** `{}`
-**Task:** {}
-**Await Result:** {}
+**task_id:** `{task_id}`
+**mode:** `{mode}`
+**Agent:** `{agent}`
+**Task:** {task}
+**Await Result:** {await_result}
 
-"#,
-            agent, task, await_result
+"#
         );
 
         if let Some(ctx) = context {
@@ -341,8 +391,7 @@ impl ToolHandler for SimpleTaskHandler {
         }
 
         output.push_str(
-            "The task has been queued for execution by the agent.\n\
-            The orchestrator will handle agent spawning and execution.",
+            "The child task has been queued. Nested Task, AskUser, and send_to_user are disabled for the child.",
         );
 
         Ok(ToolResult::success(output))

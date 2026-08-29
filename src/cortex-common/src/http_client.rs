@@ -19,8 +19,8 @@ pub const USER_AGENT: &str = concat!("cortex-cli/", env!("CARGO_PKG_VERSION"));
 /// Default timeout for standard API requests (30 seconds)
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Extended timeout for LLM streaming requests (5 minutes)
-pub const STREAMING_TIMEOUT: Duration = Duration::from_secs(300);
+/// Extended timeout for LLM streaming / tool turns (15 minutes, harness spec)
+pub const STREAMING_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// Short timeout for health checks (5 seconds)
 pub const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn test_timeout_constants_are_correct() {
         assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(30));
-        assert_eq!(STREAMING_TIMEOUT, Duration::from_secs(300));
+        assert_eq!(STREAMING_TIMEOUT, Duration::from_secs(900));
         assert_eq!(HEALTH_CHECK_TIMEOUT, Duration::from_secs(5));
     }
 }

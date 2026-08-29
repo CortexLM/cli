@@ -4,7 +4,7 @@
 //! rendering across all terminal emulators.
 
 use std::io::stdout;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -553,8 +553,9 @@ impl LoginScreen {
         self.verification_uri = None;
 
         let tx = self.create_async_channel();
+        let cortex_home = self.cortex_home.clone();
         tokio::spawn(async move {
-            request_device_code_async(tx).await;
+            request_device_code_async(cortex_home, tx).await;
         });
     }
 
@@ -634,7 +635,7 @@ impl LoginScreen {
 // Async Functions
 // ============================================================================
 
-async fn request_device_code_async(tx: mpsc::Sender<AsyncMessage>) {
+async fn request_device_code_async(cortex_home: PathBuf, tx: mpsc::Sender<AsyncMessage>) {
     let client = match cortex_engine::create_default_client() {
         Ok(c) => c,
         Err(e) => {
@@ -643,44 +644,69 @@ async fn request_device_code_async(tx: mpsc::Sender<AsyncMessage>) {
         }
     };
 
-    let response = match client
-        .post(format!("{}/auth/device/code", API_BASE_URL))
-        .json(&serde_json::json!({
-            "device_name": hostname::get()
-                .map(|h| h.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "Cortex CLI".to_string()),
-            "scopes": ["chat", "models"]
-        }))
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = tx
-                .send(AsyncMessage::DeviceCodeError(format!(
-                    "Network error: {}",
-                    e
-                )))
-                .await;
-            return;
+    let device_name = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "Cortex CLI".to_string());
+    let payload = serde_json::json!({
+        "device_name": device_name,
+        "scopes": ["chat", "models"]
+    });
+
+    // Live API: /auth/device/code is 404. Try /v1 first, then legacy, then guest.
+    let mut last_status = reqwest::StatusCode::NOT_FOUND;
+    let mut last_body = String::new();
+    let mut response = None;
+    for path in ["/v1/auth/device/code", "/auth/device/code"] {
+        match client
+            .post(format!("{API_BASE_URL}{path}"))
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => {
+                response = Some(r);
+                break;
+            }
+            Ok(r) => {
+                last_status = r.status();
+                last_body = r.text().await.unwrap_or_default();
+            }
+            Err(e) => {
+                let _ = tx
+                    .send(AsyncMessage::DeviceCodeError(format!("Network error: {e}")))
+                    .await;
+                return;
+            }
         }
-    };
+    }
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-
-        let error = if status.as_u16() == 403 {
+    let Some(response) = response else {
+        if last_status.as_u16() == 404 {
+            match begin_guest_session(&client, &cortex_home).await {
+                Ok(()) => {
+                    let _ = tx.send(AsyncMessage::TokenReceived).await;
+                    return;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(AsyncMessage::DeviceCodeError(format!(
+                            "Device login is not available. Guest session failed: {e}"
+                        )))
+                        .await;
+                    return;
+                }
+            }
+        }
+        let error = if last_status.as_u16() == 403 {
             "Cannot connect to Cortex API. Service may be unavailable.".to_string()
-        } else if status.as_u16() == 429 {
+        } else if last_status.as_u16() == 429 {
             "Too many login attempts. Please wait.".to_string()
         } else {
-            format!("API error ({}): {}", status, body)
+            format!("API error ({}): {}", last_status, last_body)
         };
-
         let _ = tx.send(AsyncMessage::DeviceCodeError(error)).await;
         return;
-    }
+    };
 
     #[derive(serde::Deserialize)]
     struct DeviceCodeResponse {
@@ -842,4 +868,104 @@ async fn poll_for_token_async(
             "Authentication timed out".to_string(),
         ))
         .await;
+}
+
+/// Start a guest session when device login is not on the live API.
+///
+/// TODO(backend): `POST /v1/auth/device/code` is not implemented (404).
+/// Guest uses `POST /v1/auth/guest` and stores `cortex_gt` as `gt:<cookie>`.
+async fn begin_guest_session(client: &reqwest::Client, cortex_home: &Path) -> anyhow::Result<()> {
+    let resp = client
+        .post(format!("{API_BASE_URL}/v1/auth/guest"))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({}))
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("guest session HTTP {}", resp.status());
+    }
+    let cookie = resp
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find_map(|c| {
+            c.split(';')
+                .next()
+                .and_then(|pair| pair.strip_prefix("cortex_gt="))
+                .map(str::to_string)
+        })
+        .ok_or_else(|| anyhow::anyhow!("guest session missing cortex_gt cookie"))?;
+
+    let token = format!("gt:{cookie}");
+    let auth_data = SecureAuthData::with_oauth(token, None, None);
+    save_auth_with_fallback(cortex_home, &auth_data)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
+        let buf = terminal.backend().buffer();
+        let area = buf.area();
+        let mut out = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn snapshot_auth_select_method() {
+        let screen = LoginScreen::new(PathBuf::from("/tmp"), None);
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal.draw(|f| screen.render(f)).expect("draw");
+        let text = buffer_text(&terminal);
+        if let Ok(dir) = std::env::var("CORTEX_DUMP_SNAPSHOTS") {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(std::path::Path::new(&dir).join("auth.txt"), &text);
+        }
+        assert!(text.contains("Welcome to Cortex CLI"), "{text}");
+        assert!(text.contains("Cortex Foundation account"), "{text}");
+        assert!(!text.to_lowercase().contains("grok"));
+    }
+
+    #[test]
+    fn snapshot_auth_waiting_and_error() {
+        let mut screen = LoginScreen::new(PathBuf::from("/tmp"), None);
+        screen.state = LoginState::WaitingForAuth;
+        screen.user_code = Some("ABCD-1234".into());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal.draw(|f| screen.render(f)).expect("draw");
+        let waiting = buffer_text(&terminal);
+        if let Ok(dir) = std::env::var("CORTEX_DUMP_SNAPSHOTS") {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(
+                std::path::Path::new(&dir).join("auth_waiting.txt"),
+                &waiting,
+            );
+        }
+        assert!(
+            waiting.contains("ABCD-1234")
+                || waiting.contains("device")
+                || waiting.contains("Cortex"),
+            "{waiting}"
+        );
+
+        screen.state = LoginState::SelectMethod;
+        screen.error_message = Some("The coding service is temporarily unavailable".into());
+        terminal.draw(|f| screen.render(f)).expect("draw");
+        let err = buffer_text(&terminal);
+        assert!(err.contains("temporarily unavailable"), "{err}");
+        assert!(!err.to_lowercase().contains("grok"));
+    }
 }

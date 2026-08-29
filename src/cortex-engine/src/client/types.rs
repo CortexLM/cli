@@ -279,6 +279,12 @@ pub enum ResponseEvent {
     Delta(String),
     /// Tool call.
     ToolCall(ToolCallEvent),
+    /// Remote / local tool finished (Code agent `tool_end`).
+    ToolResult {
+        id: String,
+        success: bool,
+        output: String,
+    },
     /// Reasoning/thinking content.
     Reasoning(String),
     /// Completion finished.
@@ -293,6 +299,8 @@ pub struct ToolCallEvent {
     pub id: String,
     pub name: String,
     pub arguments: String,
+    /// True when the backend already executed the tool (Code agent SSE).
+    pub remote: bool,
 }
 
 /// Full completion response.

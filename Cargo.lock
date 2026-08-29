@@ -950,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-app-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -987,7 +987,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-apply-patch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -1013,7 +1013,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -1063,7 +1063,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-collab"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "thiserror 2.0.20",
@@ -1074,7 +1074,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-commands"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -1089,7 +1089,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-common"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "cortex-protocol",
@@ -1122,7 +1122,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1146,7 +1146,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1222,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-exec"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cortex-engine",
  "cortex-protocol",
@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-execpolicy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1253,7 +1253,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-feedback"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1267,7 +1267,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-file-search"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "ignore",
@@ -1310,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-keyring-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyring",
  "thiserror 2.0.20",
@@ -1334,7 +1334,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-lmstudio"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "reqwest 0.13.4",
  "serde",
@@ -1350,7 +1350,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-login"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1399,7 +1399,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-mcp-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-mcp-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1428,7 +1428,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-mcp-types"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "schemars",
  "serde",
@@ -1445,7 +1445,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-network-proxy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "thiserror 2.0.20",
@@ -1455,7 +1455,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-otel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cortex-common",
  "opentelemetry",
@@ -1469,7 +1469,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-plugins"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1496,14 +1496,14 @@ dependencies = [
 
 [[package]]
 name = "cortex-process-hardening"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "cortex-prompt-harness"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "indexmap",
@@ -1516,7 +1516,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -1564,7 +1564,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-sandbox"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs 6.0.0",
  "landlock",
@@ -1591,7 +1591,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-shell-snapshot"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -1607,7 +1607,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-skills"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "dashmap",
@@ -1626,7 +1626,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-slack"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -1679,7 +1679,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1724,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-buffer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cortex-tui-core",
  "smallvec",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-capture"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1752,7 +1752,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-components"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cortex-core",
  "crossterm",
@@ -1764,7 +1764,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags 2.13.1",
  "smallvec",
@@ -1773,7 +1773,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-framework"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cortex-tui-buffer",
  "cortex-tui-core",
@@ -1787,7 +1787,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-input"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags 2.13.1",
  "crossterm",
@@ -1796,7 +1796,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-layout"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "slotmap",
  "taffy",
@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-syntax"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "cortex-tui-text",
@@ -1818,7 +1818,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-terminal"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cortex-tui-buffer",
  "cortex-tui-core",
@@ -1828,7 +1828,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-text"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "smallvec",
  "unicode-segmentation",
@@ -1837,7 +1837,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-tui-widgets"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cortex-tui-buffer",
  "cortex-tui-core",
@@ -1848,7 +1848,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-update"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "cortex-common",
@@ -1876,11 +1876,11 @@ dependencies = [
 
 [[package]]
 name = "cortex-utils-cache"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "cortex-utils-file-safety"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tempfile",
  "thiserror 2.0.20",
@@ -1888,11 +1888,11 @@ dependencies = [
 
 [[package]]
 name = "cortex-utils-git"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "cortex-utils-image"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-utils-pty"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "portable-pty",
@@ -1908,7 +1908,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-utils-string"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "unicode-width",
 ]

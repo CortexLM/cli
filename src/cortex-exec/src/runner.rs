@@ -26,8 +26,8 @@ use cortex_protocol::ConversationId;
 
 use crate::output::{OutputFormat, OutputWriter};
 
-/// Default timeout for the entire execution (10 minutes).
-const DEFAULT_TIMEOUT_SECS: u64 = 600;
+/// Default timeout for the entire execution (15 minutes, harness spec).
+const DEFAULT_TIMEOUT_SECS: u64 = 900;
 
 /// Default timeout for a single LLM request (2 minutes).
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 120;
@@ -589,6 +589,7 @@ impl ExecRunner {
                         tool_calls = response.tool_calls;
                     }
                 }
+                ResponseEvent::ToolResult { .. } => {}
                 ResponseEvent::Error(err) => {
                     return Err(CortexError::Provider(err));
                 }

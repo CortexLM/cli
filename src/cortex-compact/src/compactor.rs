@@ -119,6 +119,22 @@ impl Compactor {
         Ok((new_items, result))
     }
 
+    /// Compact while retaining harness keep-set items.
+    pub fn compact_with_keep_set(
+        &self,
+        items: Vec<ConversationItem>,
+        summary_text: String,
+        current_tokens: usize,
+        keep_set: &crate::CompactionKeepSet,
+    ) -> Result<(Vec<ConversationItem>, CompactionResult)> {
+        let (pinned, rest): (Vec<_>, Vec<_>) = items
+            .into_iter()
+            .partition(|item| keep_set.should_keep_text(&item_text(item)));
+        let (mut compacted, result) = self.compact(rest, summary_text, current_tokens)?;
+        compacted.extend(pinned);
+        Ok((compacted, result))
+    }
+
     /// Build the prompt to send to the model for summarization.
     pub fn build_summarization_prompt(&self, items: &[ConversationItem]) -> String {
         let to_compact = self.summarizer.select_items_to_compact(items);
@@ -164,5 +180,28 @@ mod tests {
 
         let prompt = compactor.build_summarization_prompt(&items);
         assert!(prompt.contains("User message"));
+    }
+
+    #[test]
+    fn compact_with_keep_set_retains_open_ids() {
+        let config = CompactionConfig::default();
+        let compactor = Compactor::new(config);
+        let items: Vec<ConversationItem> = (0..8)
+            .map(|i| ConversationItem::User {
+                text: format!("noise {i}"),
+            })
+            .chain(std::iter::once(ConversationItem::Assistant {
+                text: "open task_explore_1 artifact art_9".into(),
+            }))
+            .collect();
+        let mut keep = crate::CompactionKeepSet::default();
+        keep.open_task_ids.insert("task_explore_1".into());
+        keep.open_artifact_ids.insert("art_9".into());
+        let (kept, _) = compactor
+            .compact_with_keep_set(items, "summary".into(), 4000, &keep)
+            .unwrap();
+        let joined = kept.iter().map(item_text).collect::<Vec<_>>().join("\n");
+        assert!(joined.contains("task_explore_1"));
+        assert!(joined.contains("art_9"));
     }
 }

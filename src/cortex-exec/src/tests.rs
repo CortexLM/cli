@@ -11,7 +11,7 @@ use super::*;
 use std::time::Duration;
 
 /// Default timeout value in seconds for reference
-const DEFAULT_TIMEOUT_SECS: u64 = 600;
+const DEFAULT_TIMEOUT_SECS: u64 = 900;
 
 mod exec_options_tests {
     use super::*;

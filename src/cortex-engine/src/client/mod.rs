@@ -3,9 +3,14 @@
 //! Provides unified interface for the Cortex Backend API.
 //! All LLM requests go through the Cortex backend with OAuth authentication.
 
+mod code_agent;
 mod cortex;
 pub mod types;
 
+pub use code_agent::{
+    CodeAgentClient, CodeHost, CodeHostPairing, CodeSession, CodeTurnEvent, CodeTurnMode,
+    GUEST_TOKEN_PREFIX, GuestSession,
+};
 pub use cortex::{CortexClient, CortexModel, PricingInfo};
 pub use types::*;
 

@@ -1,5 +1,141 @@
 //! Tests for minimal session view.
 
+mod harness_snapshots {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::widgets::Widget;
+    use serde_json::json;
+
+    use crate::app::AppState;
+    use crate::views::minimal_session::{ChatMessage, MinimalSessionView};
+    use crate::views::tool_call::{ToolCallDisplay, ToolResultDisplay, ToolStatus};
+
+    fn buffer_text(buf: &Buffer) -> String {
+        let area = buf.area();
+        let mut out = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    fn render(state: &AppState, w: u16, h: u16) -> String {
+        let view = MinimalSessionView::new(state);
+        let mut buf = Buffer::empty(Rect::new(0, 0, w, h));
+        view.render(Rect::new(0, 0, w, h), &mut buf);
+        buffer_text(&buf)
+    }
+
+    fn dump_snapshot(name: &str, text: &str) {
+        let Ok(dir) = std::env::var("CORTEX_DUMP_SNAPSHOTS") else {
+            return;
+        };
+        let path = std::path::Path::new(&dir);
+        let _ = std::fs::create_dir_all(path);
+        let _ = std::fs::write(path.join(format!("{name}.txt")), text);
+    }
+
+    #[test]
+    fn snapshot_home_empty_session() {
+        let state = AppState::default();
+        let text = render(&state, 80, 24);
+        dump_snapshot("home", &text);
+        assert!(!text.to_lowercase().contains("grok"));
+        assert!(
+            text.contains("Cortex") || text.contains("session") || !text.trim().is_empty(),
+            "home session should render: {text}"
+        );
+    }
+
+    #[test]
+    fn snapshot_session_with_turn() {
+        let mut state = AppState::default();
+        state.add_message(cortex_core::widgets::Message::user("List the files"));
+        state.add_message(cortex_core::widgets::Message::assistant("Hi"));
+        let text = render(&state, 80, 24);
+        dump_snapshot("session", &text);
+        assert!(text.contains("List the files") || text.contains("Hi"));
+        assert!(!text.to_lowercase().contains("grok"));
+    }
+
+    #[test]
+    fn snapshot_tools_running_first_class_rows() {
+        let mut state = AppState::default();
+        state.add_message(cortex_core::widgets::Message::user("Read main.rs"));
+        let mut call = ToolCallDisplay::new(
+            "tci_1".into(),
+            "Read".into(),
+            json!({"file_path": "src/main.rs"}),
+            1,
+        );
+        call.set_status(ToolStatus::Running);
+        call.append_output("reading src/main.rs".into());
+        state.tool_calls.push(call);
+        let text = render(&state, 80, 24);
+        dump_snapshot("tools_running", &text);
+        assert!(
+            text.contains("Read") && text.contains("main.rs"),
+            "tool row missing: {text}"
+        );
+        assert!(!text.contains("dump"));
+    }
+
+    #[test]
+    fn snapshot_plan_mermaid() {
+        let mut state = AppState::default();
+        state.add_message(cortex_core::widgets::Message::user("Plan device login"));
+        let mut call = ToolCallDisplay::new(
+            "plan_1".into(),
+            "Plan".into(),
+            json!({"title": "Add device login"}),
+            2,
+        );
+        call.set_status(ToolStatus::Completed);
+        call.set_result(ToolResultDisplay {
+            output: "## Plan (mermaid)\n\n```mermaid\nflowchart TD\n  a-->b\n```".into(),
+            success: true,
+            summary: "↳ Plan (mermaid)".into(),
+        });
+        state.tool_calls.push(call);
+        let text = render(&state, 80, 24);
+        dump_snapshot("plan", &text);
+        assert!(
+            text.contains("Plan") && (text.contains("mermaid") || text.contains("device")),
+            "plan mermaid missing: {text}"
+        );
+    }
+
+    #[test]
+    fn snapshot_error_state() {
+        let mut state = AppState::default();
+        state.add_message(cortex_core::widgets::Message::assistant(
+            "The coding service is temporarily unavailable",
+        ));
+        let text = render(&state, 80, 24);
+        dump_snapshot("error", &text);
+        assert!(text.contains("temporarily unavailable") || text.contains("coding service"));
+        assert!(!text.to_lowercase().contains("reqwest"));
+        assert!(!text.to_lowercase().contains("grok"));
+    }
+
+    #[test]
+    fn snapshot_narrow_and_wide() {
+        let state = AppState::default();
+        let narrow = render(&state, 40, 12);
+        let wide = render(&state, 120, 40);
+        assert!(!narrow.trim().is_empty());
+        assert!(!wide.trim().is_empty());
+    }
+
+    #[test]
+    fn chat_message_helpers_still_work() {
+        let _ = ChatMessage::user("x");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ratatui::buffer::Buffer;

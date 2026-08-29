@@ -5,6 +5,7 @@ pub mod batch;
 mod create_agent;
 mod edit_file;
 pub mod edit_strategies;
+mod exit_spec;
 mod fetch_url;
 mod file_ops;
 mod glob;
@@ -55,6 +56,7 @@ pub use edit_strategies::{
 pub use fetch_url::FetchUrlHandler;
 pub use file_ops::{ReadFileHandler, SearchFilesHandler, TreeHandler, WriteFileHandler};
 // Backward compatibility alias
+pub use exit_spec::ExitSpecModeHandler;
 pub use file_ops::TreeHandler as ListDirHandler;
 pub use glob::GlobHandler;
 pub use grep::GrepHandler;

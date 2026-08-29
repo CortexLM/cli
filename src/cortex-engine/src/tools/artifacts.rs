@@ -89,6 +89,8 @@ pub struct ArtifactResult {
     pub output: String,
     /// Path to the full artifact file, if content was truncated.
     pub artifact_path: Option<PathBuf>,
+    /// Stable artifact id (present when truncated).
+    pub artifact_id: Option<String>,
     /// Whether the output was truncated.
     pub was_truncated: bool,
     /// Original size in bytes.
@@ -122,6 +124,7 @@ pub fn process_output(
         return Ok(ArtifactResult {
             output: output.to_string(),
             artifact_path: None,
+            artifact_id: None,
             was_truncated: false,
             original_size,
             original_lines,
@@ -129,14 +132,17 @@ pub fn process_output(
     }
 
     // Save full output to artifact file
-    let artifact_path = save_artifact(output, session_id, tool_name, &config.artifacts_dir)?;
+    let (artifact_path, artifact_id) =
+        save_artifact(output, session_id, tool_name, &config.artifacts_dir)?;
 
-    // Create truncated output
-    let truncated = create_truncated_output(&lines, config.truncate_lines, &artifact_path);
+    // Create truncated output (middle, keep head + tail)
+    let truncated =
+        create_truncated_output(&lines, config.truncate_lines, &artifact_path, &artifact_id);
 
     Ok(ArtifactResult {
         output: truncated,
         artifact_path: Some(artifact_path),
+        artifact_id: Some(artifact_id),
         was_truncated: true,
         original_size,
         original_lines,
@@ -149,13 +155,13 @@ fn save_artifact(
     session_id: &str,
     tool_name: &str,
     artifacts_dir: &Path,
-) -> Result<PathBuf> {
+) -> Result<(PathBuf, String)> {
     // Create session-specific subdirectory
     let session_dir = artifacts_dir.join(session_id);
     std::fs::create_dir_all(&session_dir)?;
 
     // Generate unique filename
-    let artifact_id = Uuid::new_v4();
+    let artifact_id = Uuid::new_v4().to_string();
     let filename = format!("{}_{}.txt", tool_name, artifact_id);
     let artifact_path = session_dir.join(&filename);
 
@@ -167,24 +173,45 @@ fn save_artifact(
         "Saved tool artifact"
     );
 
-    Ok(artifact_path)
+    Ok((artifact_path, artifact_id))
 }
 
-/// Create truncated output with reference to artifact file.
-fn create_truncated_output(lines: &[&str], max_lines: usize, artifact_path: &Path) -> String {
+/// Create truncated-middle output with reference to artifact file.
+fn create_truncated_output(
+    lines: &[&str],
+    max_lines: usize,
+    artifact_path: &Path,
+    artifact_id: &str,
+) -> String {
     let total_lines = lines.len();
-    let omitted = total_lines.saturating_sub(max_lines);
-
-    // Take first portion of lines
-    let shown_lines: Vec<&str> = lines.iter().take(max_lines).copied().collect();
-    let shown_text = shown_lines.join("\n");
+    if total_lines <= max_lines {
+        return lines.join("\n");
+    }
+    let head_n = max_lines / 2;
+    let tail_n = max_lines.saturating_sub(head_n);
+    let omitted = total_lines.saturating_sub(head_n + tail_n);
+    let head = lines
+        .iter()
+        .take(head_n)
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n");
+    let tail = lines
+        .iter()
+        .rev()
+        .take(tail_n)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n");
 
     format!(
-        "{}\n\n[... {} more lines omitted ...]\n\n\
+        "{head}\n\n[... {omitted} lines truncated from the middle ...]\n\n{tail}\n\n\
+         artifact_id: {artifact_id}\n\
          Full output saved to: {}\n\
          [TIP] Use Read tool to view the full artifact if needed.",
-        shown_text,
-        omitted,
         artifact_path.display()
     )
 }
@@ -307,8 +334,10 @@ mod tests {
         assert!(result.was_truncated);
         assert!(result.artifact_path.is_some());
         assert!(result.output.contains("line1"));
-        assert!(result.output.contains("line2"));
-        assert!(result.output.contains("more lines omitted"));
+        assert!(result.output.contains("line10"));
+        assert!(result.output.contains("truncated from the middle"));
+        assert!(result.artifact_id.is_some());
+        assert!(result.output.contains("artifact_id:"));
         assert!(result.output.contains("Full output saved to"));
 
         // Verify artifact file was created and contains full output

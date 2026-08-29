@@ -615,7 +615,10 @@ impl AppRunner {
                             } else if status.is_success() {
                                 // Parse models from the same response to avoid another request
                                 if let Ok(json) = resp.json::<serde_json::Value>().await
-                                    && let Some(data) = json.get("data").and_then(|d| d.as_array())
+                                    && let Some(data) = json
+                                        .get("items")
+                                        .or_else(|| json.get("data"))
+                                        .and_then(|d| d.as_array())
                                 {
                                     let parsed: Vec<cortex_engine::client::CortexModel> = data
                                         .iter()

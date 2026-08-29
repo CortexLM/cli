@@ -17,8 +17,9 @@ use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
 
 use super::{
-    CompletionRequest, CompletionResponse, FinishReason, Message, MessageContent, MessageRole,
-    ModelCapabilities, ModelClient, ResponseEvent, ResponseStream, TokenUsage, ToolCallEvent,
+    CodeAgentClient, CodeTurnMode, CompletionRequest, CompletionResponse, FinishReason, Message,
+    MessageContent, MessageRole, ModelCapabilities, ModelClient, ResponseEvent, ResponseStream,
+    TokenUsage, ToolCallEvent,
 };
 use crate::api_client::create_streaming_client;
 use crate::error::{CortexError, Result};
@@ -39,8 +40,12 @@ pub struct PricingInfo {
 }
 
 /// Model information from Cortex API.
+///
+/// Accepts both the live `{ slug, context_tokens, ... }` catalog and the
+/// older `{ id, context_length, credit_multiplier_* }` shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CortexModel {
+    #[serde(default, alias = "slug")]
     pub id: String,
     #[serde(default)]
     pub object: String,
@@ -48,16 +53,36 @@ pub struct CortexModel {
     pub created: i64,
     #[serde(default)]
     pub owned_by: String,
+    #[serde(default)]
     pub display_name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default, alias = "context_tokens")]
     pub context_length: i32,
+    #[serde(default)]
     pub max_output_tokens: i32,
     #[serde(default)]
     pub capabilities: serde_json::Value,
+    #[serde(default = "default_multiplier")]
     pub credit_multiplier_input: String,
+    #[serde(default = "default_multiplier")]
     pub credit_multiplier_output: String,
     #[serde(default)]
     pub credit_multiplier_cached_input: String,
+    #[serde(default)]
     pub price_version: i32,
+    #[serde(default)]
+    pub supports_reasoning: bool,
+    #[serde(default)]
+    pub supports_tools: bool,
+    #[serde(default)]
+    pub supports_vision: bool,
+    #[serde(default)]
+    pub is_preview: bool,
+}
+
+fn default_multiplier() -> String {
+    "1".to_string()
 }
 
 /// Cortex Backend client.
@@ -72,6 +97,8 @@ pub struct CortexClient {
     api_key: Option<String>,
     /// Expected price version (for price verification)
     expected_price_version: Option<i32>,
+    /// Code agent session client (PR #58 API).
+    code_agent: CodeAgentClient,
 }
 
 impl CortexClient {
@@ -88,35 +115,45 @@ impl CortexClient {
                 .unwrap_or_else(|_| Client::new())
         });
 
+        let resolved_base = base_url.unwrap_or_else(|| {
+            std::env::var("CORTEX_API_URL").unwrap_or_else(|_| DEFAULT_CORTEX_URL.to_string())
+        });
+        let code_agent = CodeAgentClient::new(Some(resolved_base.clone()), None);
         Self {
             client,
-            base_url: base_url.unwrap_or_else(|| {
-                std::env::var("CORTEX_API_URL").unwrap_or_else(|_| DEFAULT_CORTEX_URL.to_string())
-            }),
+            base_url: resolved_base,
             model,
             capabilities: ModelCapabilities {
                 vision: true,
                 tools: true,
                 reasoning: true,
-                context_window: 200_000,
-                max_output_tokens: Some(8192),
+                context_window: 262_144,
+                max_output_tokens: Some(32_768),
             },
             auth_token: None,
             api_key: None,
             expected_price_version: None,
+            code_agent,
         }
     }
 
     /// Set OAuth access token.
     pub fn with_auth_token(mut self, token: String) -> Self {
+        self.code_agent = CodeAgentClient::new(Some(self.base_url.clone()), Some(token.clone()));
         self.auth_token = Some(token);
         self
     }
 
     /// Set API key (for custom providers using Responses API).
     pub fn with_api_key(mut self, key: String) -> Self {
+        self.code_agent = CodeAgentClient::new(Some(self.base_url.clone()), Some(key.clone()));
         self.api_key = Some(key);
         self
+    }
+
+    /// Shared Code agent session client.
+    pub fn code_agent(&self) -> &CodeAgentClient {
+        &self.code_agent
     }
 
     /// Set expected price version for verification.
@@ -202,14 +239,30 @@ impl CortexClient {
 
         #[derive(Deserialize)]
         struct ModelsResponse {
+            #[serde(default)]
+            items: Vec<CortexModel>,
+            #[serde(default)]
             data: Vec<CortexModel>,
         }
 
-        let data: ModelsResponse = resp.json().await.map_err(|e| CortexError::BackendError {
+        let parsed: ModelsResponse = resp.json().await.map_err(|e| CortexError::BackendError {
             message: format!("Failed to parse models response: {}", e),
         })?;
 
-        Ok(data.data)
+        let mut models = if !parsed.items.is_empty() {
+            parsed.items
+        } else {
+            parsed.data
+        };
+        for model in &mut models {
+            if model.id.is_empty() {
+                model.id = model.display_name.to_ascii_lowercase().replace(' ', "-");
+            }
+            if model.display_name.is_empty() {
+                model.display_name = model.id.clone();
+            }
+        }
+        Ok(models)
     }
 
     /// Build the Responses API request body.
@@ -488,6 +541,25 @@ impl ModelClient for CortexClient {
     }
 
     async fn complete(&self, request: CompletionRequest) -> Result<ResponseStream> {
+        // Prefer the live Code agent session API (backend PR #58).
+        let message = CodeAgentClient::last_user_message(&request);
+        if !message.is_empty() {
+            let mode = if request.tools.is_empty() {
+                CodeTurnMode::Chat
+            } else {
+                CodeTurnMode::Code
+            };
+            match self.code_agent.stream_turn(&message, mode).await {
+                Ok(stream) => return Ok(stream),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Code agent turn failed; trying legacy /v1/responses"
+                    );
+                }
+            }
+        }
+
         let url = format!("{}/v1/responses", self.base_url);
         let body = self.build_request(&request);
 
@@ -628,6 +700,7 @@ impl ModelClient for CortexClient {
                                                     id: call_id,
                                                     name,
                                                     arguments,
+                                                    remote: false,
                                                 }))
                                             }
                                             OutputItem::Message { .. } => None,

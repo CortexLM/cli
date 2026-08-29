@@ -148,13 +148,24 @@ impl ContextCompactor {
             return (messages, None);
         }
 
-        // Split into compact and keep
+        // Split into compact and keep. Messages matching the harness keep-set
+        // stay even when they would otherwise be summarized.
         let compact_count = remaining.len() - keep_count;
-        let to_compact = &remaining[..compact_count];
+        let keep_set = extract_keep_set(remaining);
+        let mut pinned = Vec::new();
+        let mut to_compact = Vec::new();
+        for msg in &remaining[..compact_count] {
+            let text = msg.content.as_text().unwrap_or("");
+            if keep_set.should_keep_text(text) {
+                pinned.push(msg.clone());
+            } else {
+                to_compact.push(msg.clone());
+            }
+        }
         let to_keep = &remaining[compact_count..];
 
         // Generate summary of compacted messages
-        let summary = generate_summary(to_compact);
+        let summary = generate_summary(&to_compact);
 
         // Build new message list
         let mut result = Vec::new();
@@ -164,12 +175,16 @@ impl ContextCompactor {
             result.push(sys);
         }
 
-        // Add summary message
+        // Add summary message. Keep-set keys are listed so later turns can
+        // restore user_turns / last_ask / active_plan / open_task_ids /
+        // memory_profile / pinned_files / open_artifact_ids.
         result.push(Message::system(format!(
-            "[Conversation summary - {compact_count} earlier messages compacted]\n\n{summary}"
+            "[Conversation summary - {} earlier messages compacted]\n\
+             keep-set: user_turns,last_ask,active_plan,open_task_ids,memory_profile,pinned_files,open_artifact_ids\n\n{summary}",
+            to_compact.len()
         )));
 
-        // Add preserved messages
+        result.extend(pinned);
         result.extend(to_keep.iter().cloned());
 
         let compaction_info = format!(
@@ -180,6 +195,37 @@ impl ContextCompactor {
 
         (result, Some(compaction_info))
     }
+}
+
+fn extract_keep_set(messages: &[Message]) -> crate::harness::KeepSet {
+    let mut set = crate::harness::KeepSet::default();
+    for msg in messages {
+        let content = msg.content.as_text().unwrap_or("");
+        if msg.role == crate::client::MessageRole::User {
+            set.push_user_turn(content);
+        }
+        if content.contains("```mermaid") || content.contains("## Plan") {
+            set.active_plan = Some(content.to_string());
+        }
+        for token in content.split_whitespace() {
+            if let Some(id) = token
+                .strip_prefix("task_")
+                .map(|rest| format!("task_{rest}"))
+            {
+                if id.len() > 5 {
+                    set.open_task_ids.insert(id.trim_matches('`').to_string());
+                }
+            }
+            if let Some(id) = token.strip_prefix("art_") {
+                set.open_artifact_ids
+                    .insert(format!("art_{}", id.trim_matches('`')));
+            }
+        }
+    }
+    // last_ask is already the latest user turn; do not pin every user turn
+    // or compaction would keep the entire history.
+    set.user_turns.clear();
+    set
 }
 
 /// Generate a summary of messages for compaction.
@@ -395,5 +441,35 @@ mod tests {
         // Should have: system + summary + 2 recent
         assert!(info.is_some());
         assert!(compacted.len() <= 4);
+    }
+
+    #[test]
+    fn test_compact_retains_keep_set_ids() {
+        let config = CompactionConfig {
+            max_tokens: 1000,
+            threshold_percent: 0.8,
+            preserve_recent: 2,
+            preserve_system: true,
+        };
+        let compactor = ContextCompactor::new(config);
+        let messages = vec![
+            Message::system("System"),
+            Message::user("Old query"),
+            Message::assistant("Started task_explore_keep1 with artifact art_keep1"),
+            Message::user("Recent query"),
+            Message::assistant("Recent response"),
+        ];
+        let (compacted, info) = compactor.compact(messages);
+        assert!(info.is_some());
+        let joined = compacted
+            .iter()
+            .filter_map(|m| m.content.as_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            joined.contains("task_explore_keep1") || joined.contains("art_keep1"),
+            "keep-set ids must survive compaction: {joined}"
+        );
+        assert!(joined.contains("keep-set:"));
     }
 }

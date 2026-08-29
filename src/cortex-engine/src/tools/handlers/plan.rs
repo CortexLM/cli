@@ -225,6 +225,28 @@ impl ToolHandler for PlanHandler {
             }
         }
 
+        // Mermaid flow required by Plan mode (harness spec).
+        output.push_str("## Plan (mermaid)\n\n```mermaid\nflowchart TD\n");
+        for task in &tasks {
+            let node_id = task
+                .id
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                .collect::<String>();
+            let title = task.title.replace('"', "'");
+            output.push_str(&format!("    {node_id}[\"{title}\"]\n"));
+            if let Some(ref deps) = task.dependencies {
+                for dep in deps {
+                    let dep_id = dep
+                        .chars()
+                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                        .collect::<String>();
+                    output.push_str(&format!("    {dep_id} --> {node_id}\n"));
+                }
+            }
+        }
+        output.push_str("```\n\nCall ExitSpecMode before any mutate tool.\n\n");
+
         // Tasks section
         output.push_str("## Tasks\n\n");
         for task in &tasks {

@@ -264,6 +264,8 @@ impl EventLoop {
                                 .unwrap_or(serde_json::json!({}));
                             iteration_tool_calls.push((tc.id, tc.name, args));
                         }
+                        Ok(Some(Ok(ResponseEvent::Reasoning(_))))
+                        | Ok(Some(Ok(ResponseEvent::ToolResult { .. }))) => {}
                         Ok(Some(Ok(ResponseEvent::Error(e)))) => {
                             tracing::error!("Subagent {} received error from LLM: {}", id, e);
                             if let Err(send_err) = tool_tx
@@ -321,7 +323,6 @@ impl EventLoop {
                             }
                             return;
                         }
-                        _ => {}
                     }
                 }
 

@@ -411,6 +411,7 @@ impl Orchestrator {
                                 }
                             }
                         }
+                        ResponseEvent::ToolResult { .. } => {}
                         ResponseEvent::Error(e) => {
                             error!("Stream error: {}", e);
                             return Err(CortexError::Provider(e));

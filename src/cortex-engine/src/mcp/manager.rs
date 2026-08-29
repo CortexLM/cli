@@ -308,6 +308,12 @@ impl McpConnectionManager {
                     TOOL_NAME_DELIMITER,
                     tool.name
                 );
+                let plugin_name = format!(
+                    "{}__{}",
+                    crate::harness::plugin_tool_name(server_name),
+                    tool.name
+                );
+                all_tools.insert(plugin_name, tool.clone());
                 all_tools.insert(qualified_name, tool);
             }
         }
@@ -413,6 +419,14 @@ impl McpConnectionManager {
 pub fn parse_qualified_name(qualified_name: &str) -> Option<(String, String)> {
     let parts: Vec<&str> = qualified_name.split(TOOL_NAME_DELIMITER).collect();
 
+    if let Some(rest) = qualified_name.strip_prefix("plugin_") {
+        let mut split = rest.splitn(2, "__");
+        let slug = split.next().unwrap_or("");
+        let tool = split.next().unwrap_or("");
+        if !slug.is_empty() && !tool.is_empty() {
+            return Some((slug.to_string(), tool.to_string()));
+        }
+    }
     if parts.len() < 3 || parts[0] != MCP_TOOL_PREFIX {
         return None;
     }

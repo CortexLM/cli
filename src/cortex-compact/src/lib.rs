@@ -35,6 +35,7 @@
 pub mod auto_compaction;
 pub mod compactor;
 pub mod config;
+pub mod keep_set;
 pub mod summarizer;
 
 pub use auto_compaction::{
@@ -44,6 +45,7 @@ pub use auto_compaction::{
 };
 pub use compactor::{CompactionResult, Compactor};
 pub use config::CompactionConfig;
+pub use keep_set::{CompactionKeepSet, KEEP_SET_KEYS};
 pub use summarizer::{ConversationItem, Summarizer, Summary};
 
 use thiserror::Error;
@@ -66,6 +68,9 @@ pub const COMPACTION_PROMPT: &str = r#"Summarize the conversation history above.
 2. Important code changes
 3. Outstanding tasks or issues
 4. Context needed to continue the conversation
+
+Always retain the harness keep-set: user_turns, last_ask, active_plan,
+open_task_ids, memory_profile, pinned_files, open_artifact_ids.
 
 Be concise but preserve critical information."#;
 

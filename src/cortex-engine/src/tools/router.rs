@@ -158,6 +158,10 @@ impl ToolRouter {
         handlers.insert("Propose".to_string(), Box::new(ProposeHandler::new()));
         handlers.insert("Questions".to_string(), Box::new(QuestionsHandler::new()));
         handlers.insert(
+            "ExitSpecMode".to_string(),
+            Box::new(ExitSpecModeHandler::new()),
+        );
+        handlers.insert(
             "LspHover".to_string(),
             Box::new(crate::agent::tools::LspHoverTool::new()),
         );
@@ -184,6 +188,33 @@ impl ToolRouter {
         arguments: Value,
         context: &ToolContext,
     ) -> Result<ToolResult> {
+        let surface = crate::harness::AgentSurface::parse(
+            context
+                .env
+                .get("CORTEX_SURFACE")
+                .map(String::as_str)
+                .unwrap_or("code"),
+        );
+        let spec_mode = context
+            .env
+            .get("CORTEX_SPEC_MODE")
+            .is_some_and(|v| v == "1")
+            || context
+                .env
+                .get("CORTEX_OPERATION_MODE")
+                .is_some_and(|v| v.eq_ignore_ascii_case("spec") || v.eq_ignore_ascii_case("plan"));
+        let is_child = context
+            .env
+            .get("CORTEX_CHILD_TASK")
+            .is_some_and(|v| v == "1")
+            || context.conversation_id.starts_with("sub_")
+            || context.conversation_id.starts_with("task_");
+        if let Err(message) =
+            crate::harness::gate_tool_call(surface, tool_name, spec_mode, is_child)
+        {
+            return Ok(ToolResult::error(message));
+        }
+
         let handler = self
             .handlers
             .get(tool_name)
@@ -191,7 +222,13 @@ impl ToolRouter {
                 name: tool_name.to_string(),
             })?;
 
-        handler.execute(arguments, context).await
+        let result = handler.execute(arguments, context).await?;
+        Ok(ToolResult {
+            output: crate::harness::redact_secrets(&result.output),
+            success: result.success,
+            error: result.error.map(|e| crate::harness::redact_secrets(&e)),
+            metadata: result.metadata,
+        })
     }
 
     /// Get tool definitions for the model.
@@ -328,5 +365,25 @@ mod tests {
             "Expected recursion error message, got: {}",
             error_msg
         );
+    }
+
+    #[tokio::test]
+    async fn child_task_cannot_call_task_or_ask_user() {
+        let router = ToolRouter::new();
+        let mut context = ToolContext::new(PathBuf::from("."));
+        context.env.insert("CORTEX_CHILD_TASK".into(), "1".into());
+
+        let nested = router
+            .execute("Task", serde_json::json!({"prompt": "nested"}), &context)
+            .await
+            .unwrap();
+        assert!(!nested.success);
+        assert!(nested.output.contains("Child tasks cannot") || nested.output.contains("Nested"));
+
+        let ask = router
+            .execute("Questions", serde_json::json!({"questions": []}), &context)
+            .await
+            .unwrap();
+        assert!(!ask.success);
     }
 }

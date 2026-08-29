@@ -1,0 +1,22 @@
+[package]
+name = "cortex-compact"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Auto-compaction for Cortex CLI conversations"
+
+[lints]
+workspace = true
+
+[dependencies]
+cortex-common = { path = "../cortex-common" }
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1"
+thiserror = "1"
+
+# For disk space detection on Unix
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

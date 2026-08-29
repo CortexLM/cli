@@ -1,0 +1,17 @@
+[package]
+name = "cortex-tui-text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Text rendering and Unicode handling for Cortex TUI"
+
+[lints]
+workspace = true
+
+[dependencies]
+unicode-width = { workspace = true }
+unicode-segmentation = { workspace = true }
+smallvec = { workspace = true }
+
+[dev-dependencies]

@@ -1,0 +1,29 @@
+[package]
+name = "cortex-tui-framework"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "A high-performance terminal UI framework for Rust"
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cortex-tui-core = { path = "crates/cortex-tui-core" }
+cortex-tui-buffer = { path = "crates/cortex-tui-buffer" }
+cortex-tui-terminal = { path = "crates/cortex-tui-terminal" }
+cortex-tui-layout = { path = "crates/cortex-tui-layout" }
+cortex-tui-widgets = { path = "crates/cortex-tui-widgets" }
+cortex-tui-input = { path = "crates/cortex-tui-input" }
+cortex-tui-text = { path = "crates/cortex-tui-text" }
+cortex-tui-syntax = { path = "crates/cortex-tui-syntax" }
+
+# Workspace member of CortexLM/cli
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

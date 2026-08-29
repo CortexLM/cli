@@ -384,7 +384,7 @@ impl ForgeOrchestrator {
                             .map(|(id, _)| id.clone())
                             .collect();
 
-                        for (_id, tracker) in trackers_write.iter_mut() {
+                        for tracker in trackers_write.values_mut() {
                             if tracker.state == AgentState::Pending {
                                 let deps_met = tracker
                                     .config
@@ -479,7 +479,7 @@ impl ForgeOrchestrator {
         // Kahn's algorithm for topological sort
         let mut queue: VecDeque<String> = in_degree
             .iter()
-            .filter(|(_, &d)| d == 0)
+            .filter(|(_, d)| **d == 0)
             .map(|(id, _)| id.clone())
             .collect();
 

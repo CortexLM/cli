@@ -5,7 +5,7 @@
 ## Test plan
 
 - [ ] `cargo fmt --all -- --check`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
+- [ ] `./scripts/clippy.sh`
 - [ ] `cargo test --workspace` (or note the subset and why)
 - [ ] TUI / snapshot tests for every surface this PR touches
 - [ ] `cargo audit` (or note a documented `.cargo/audit.toml` exception)

@@ -53,7 +53,7 @@ The TUI is the default when stdin is a TTY. If the coding API is unreachable you
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
+./scripts/clippy.sh
 cargo test --workspace
 cargo audit
 ./scripts/check-cli-version.sh

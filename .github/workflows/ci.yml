@@ -46,7 +46,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
       - uses: dtolnay/rust-toolchain@1.98.0
         with:
           components: clippy
@@ -54,7 +54,7 @@ jobs:
         with:
           prefix-key: rust-clippy
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: ./scripts/clippy.sh
 
   test:
     name: Test
@@ -64,7 +64,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
         with:
@@ -80,7 +80,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
         with:

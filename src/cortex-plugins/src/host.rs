@@ -543,8 +543,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_linker_creation() {
-        let mut config = wasmtime::Config::new();
-        config.async_support(false);
+        let config = wasmtime::Config::new();
         let engine = Engine::new(&config).expect("Failed to create engine");
         let result = create_linker::<PluginHostState>(&engine);
         assert!(result.is_ok());

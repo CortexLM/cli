@@ -333,10 +333,10 @@ pub fn language_from_path(path: impl AsRef<Path>) -> Option<&'static str> {
     let path = path.as_ref();
 
     // Check filename first
-    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-        if let Some(&lang) = FILENAME_MAP.get(filename) {
-            return Some(lang);
-        }
+    if let Some(filename) = path.file_name().and_then(|n| n.to_str())
+        && let Some(&lang) = FILENAME_MAP.get(filename)
+    {
+        return Some(lang);
     }
 
     // Check extension
@@ -366,8 +366,8 @@ pub fn supported_languages() -> impl Iterator<Item = &'static str> {
 pub fn extensions_for_language(lang: &str) -> Vec<&'static str> {
     EXTENSION_MAP
         .iter()
-        .filter(|(_, &v)| v == lang)
-        .map(|(&k, _)| k)
+        .filter(|(_, v)| **v == lang)
+        .map(|(k, _)| *k)
         .collect()
 }
 

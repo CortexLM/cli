@@ -37,7 +37,7 @@ Working branch: **`main`**. Releases are annotated tags `v*.*.*` cut on `main` b
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
+./scripts/clippy.sh
 cargo test --workspace
 cargo test -p cortex-tui -p cortex-tui-capture -p cortex-tui-components \
   -p cortex-tui-framework -p cortex-tui-core -p cortex-tui-buffer \
@@ -62,7 +62,7 @@ Commit subjects: `type(scope): summary` (lowercase, ≤72 chars).
 Match CI (`.github/workflows/ci.yml`):
 
 - `cargo fmt --all -- --check`
-- `cargo clippy --workspace --all-targets -- -D warnings`
+- `./scripts/clippy.sh`
 - `cargo test --workspace`
 - `cargo audit` (required; exceptions only in `.cargo/audit.toml` with rationale)
 - TUI job for the framework + app surfaces

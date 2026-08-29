@@ -189,17 +189,15 @@ impl LayoutTree {
         }
 
         // Remove the node from its parent's children list
-        if let Some(node) = self.nodes.get(key) {
-            if let Some(parent_key) = node.parent {
-                if let Some(parent) = self.nodes.get_mut(parent_key) {
-                    parent.children.retain(|&k| k != key);
-                }
+        if let Some(parent_key) = self.nodes.get(key).and_then(|node| node.parent) {
+            if let Some(parent) = self.nodes.get_mut(parent_key) {
+                parent.children.retain(|&k| k != key);
+            }
 
-                // Remove from taffy parent
-                let node = self.nodes.get(key).unwrap();
-                if let Some(parent) = self.nodes.get(parent_key) {
-                    let _ = self.taffy.remove_child(parent.taffy_node, node.taffy_node);
-                }
+            // Remove from taffy parent
+            let node = self.nodes.get(key).unwrap();
+            if let Some(parent) = self.nodes.get(parent_key) {
+                let _ = self.taffy.remove_child(parent.taffy_node, node.taffy_node);
             }
         }
 

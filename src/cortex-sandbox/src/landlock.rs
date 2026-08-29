@@ -58,7 +58,7 @@ impl LandlockSandbox {
             .create()?
             .add_rules(landlock::path_beneath_rules(&["/"], access_ro))?
             .add_rules(landlock::path_beneath_rules(&["/dev/null"], access_rw))?
-            .set_no_new_privs(true);
+            .no_new_privs(true);
 
         // Add write access to writable roots (if any)
         if !writable_roots.is_empty() {

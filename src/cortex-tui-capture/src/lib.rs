@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn mock_connection_error_is_product_facing() {
-        use crate::screenshot_generator::mocks::states::StateMocks;
+        use crate::screenshot_generator::mocks::StateMocks;
         struct Harness;
         impl StateMocks for Harness {}
         let scenario = crate::screenshot_generator::ScreenshotScenario::new(

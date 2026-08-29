@@ -67,9 +67,8 @@ impl WasmRuntime {
     /// See `host.rs` for the detailed rationale.
     pub fn new() -> Result<Self> {
         let mut config = Config::new();
-        // SECURITY: Disable async support - host functions are synchronous to prevent
-        // deadlock risks when using Mutex in WASM callbacks. See host.rs documentation.
-        config.async_support(false);
+        // Host functions are synchronous (std::sync::Mutex). wasmtime 48 no
+        // longer has Config::async_support; keep callbacks non-async.
 
         // SECURITY: Enable fuel consumption for CPU limiting
         // This prevents infinite loops and excessive CPU usage
@@ -309,7 +308,7 @@ impl ResourceLimiter for PluginStoreLimits {
         current: usize,
         desired: usize,
         _maximum: Option<usize>,
-    ) -> anyhow::Result<bool> {
+    ) -> wasmtime::Result<bool> {
         // SECURITY: Check if the desired memory exceeds our limit
         if desired > MAX_MEMORY_SIZE {
             tracing::warn!(
@@ -335,7 +334,7 @@ impl ResourceLimiter for PluginStoreLimits {
         _current: usize,
         desired: usize,
         _maximum: Option<usize>,
-    ) -> anyhow::Result<bool> {
+    ) -> wasmtime::Result<bool> {
         // SECURITY: Limit table size to prevent excessive memory usage
         if desired as u64 > MAX_TABLE_ELEMENTS {
             tracing::warn!(
@@ -398,7 +397,7 @@ impl ResourceLimiter for PluginStoreState {
         current: usize,
         desired: usize,
         maximum: Option<usize>,
-    ) -> anyhow::Result<bool> {
+    ) -> wasmtime::Result<bool> {
         self.limits.memory_growing(current, desired, maximum)
     }
     fn table_growing(
@@ -406,7 +405,7 @@ impl ResourceLimiter for PluginStoreState {
         current: usize,
         desired: usize,
         maximum: Option<usize>,
-    ) -> anyhow::Result<bool> {
+    ) -> wasmtime::Result<bool> {
         self.limits.table_growing(current, desired, maximum)
     }
     fn instances(&self) -> usize {

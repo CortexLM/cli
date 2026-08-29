@@ -199,12 +199,10 @@ impl FocusManager {
         }
 
         // Remove from parent's children
-        if let Some(node) = self.nodes.get(&id) {
-            if let Some(parent_id) = node.parent {
-                if let Some(parent) = self.nodes.get_mut(&parent_id) {
-                    parent.children.retain(|child| *child != id);
-                }
-            }
+        if let Some(parent_id) = self.nodes.get(&id).and_then(|node| node.parent)
+            && let Some(parent) = self.nodes.get_mut(&parent_id)
+        {
+            parent.children.retain(|child| *child != id);
         }
 
         // Remove from roots

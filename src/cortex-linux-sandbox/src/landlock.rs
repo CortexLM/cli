@@ -32,7 +32,7 @@ pub fn apply_filesystem_rules(writable_roots: &[PathBuf]) -> Result<()> {
         .add_rules(landlock::path_beneath_rules(&["/"], access_ro))?
         // Always allow write to /dev/null
         .add_rules(landlock::path_beneath_rules(&["/dev/null"], access_rw))?
-        .set_no_new_privs(true);
+        .no_new_privs(true);
 
     // Add writable roots
     if !writable_roots.is_empty() {

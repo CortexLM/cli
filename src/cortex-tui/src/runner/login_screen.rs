@@ -924,7 +924,7 @@ mod tests {
 
     #[test]
     fn snapshot_auth_select_method() {
-        let mut screen = LoginScreen::new(PathBuf::from("/tmp"), None);
+        let screen = LoginScreen::new(PathBuf::from("/tmp"), None);
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).expect("test backend");
         terminal.draw(|f| screen.render(f)).expect("draw");

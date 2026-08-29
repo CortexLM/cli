@@ -29,10 +29,20 @@ mod harness_snapshots {
         buffer_text(&buf)
     }
 
+    fn dump_snapshot(name: &str, text: &str) {
+        let Ok(dir) = std::env::var("CORTEX_DUMP_SNAPSHOTS") else {
+            return;
+        };
+        let path = std::path::Path::new(&dir);
+        let _ = std::fs::create_dir_all(path);
+        let _ = std::fs::write(path.join(format!("{name}.txt")), text);
+    }
+
     #[test]
     fn snapshot_home_empty_session() {
         let state = AppState::default();
         let text = render(&state, 80, 24);
+        dump_snapshot("home", &text);
         assert!(!text.to_lowercase().contains("grok"));
         assert!(
             text.contains("Cortex") || text.contains("session") || !text.trim().is_empty(),
@@ -46,6 +56,7 @@ mod harness_snapshots {
         state.add_message(cortex_core::widgets::Message::user("List the files"));
         state.add_message(cortex_core::widgets::Message::assistant("Hi"));
         let text = render(&state, 80, 24);
+        dump_snapshot("session", &text);
         assert!(text.contains("List the files") || text.contains("Hi"));
         assert!(!text.to_lowercase().contains("grok"));
     }
@@ -64,6 +75,7 @@ mod harness_snapshots {
         call.append_output("reading src/main.rs".into());
         state.tool_calls.push(call);
         let text = render(&state, 80, 24);
+        dump_snapshot("tools_running", &text);
         assert!(
             text.contains("Read") && text.contains("main.rs"),
             "tool row missing: {text}"
@@ -89,6 +101,7 @@ mod harness_snapshots {
         });
         state.tool_calls.push(call);
         let text = render(&state, 80, 24);
+        dump_snapshot("plan", &text);
         assert!(
             text.contains("Plan") && (text.contains("mermaid") || text.contains("device")),
             "plan mermaid missing: {text}"
@@ -102,6 +115,7 @@ mod harness_snapshots {
             "The coding service is temporarily unavailable",
         ));
         let text = render(&state, 80, 24);
+        dump_snapshot("error", &text);
         assert!(text.contains("temporarily unavailable") || text.contains("coding service"));
         assert!(!text.to_lowercase().contains("reqwest"));
         assert!(!text.to_lowercase().contains("grok"));

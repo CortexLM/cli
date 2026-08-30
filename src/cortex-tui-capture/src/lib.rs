@@ -81,6 +81,7 @@
 
 mod capture;
 mod config;
+pub mod demo;
 mod exporter;
 pub mod integration;
 mod mock_terminal;
@@ -90,6 +91,7 @@ mod types;
 
 pub use capture::{BufferSnapshot, FrameCapture, SnapshotCell};
 pub use config::{CaptureConfig, OutputFormat, StyleRendering};
+pub use demo::{DemoConfig, DemoFrame, DemoManifest, DemoRecording};
 pub use exporter::{MarkdownExporter, ReportSection};
 pub use integration::{CaptureManager, ExportResult, QuickCapture};
 pub use mock_terminal::{MockBackend, MockTerminal};

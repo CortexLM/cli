@@ -956,6 +956,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::StreamExt;
 
     #[test]
     fn parses_tool_start_event() {
@@ -1082,5 +1083,73 @@ mod tests {
                 .as_object()
                 .is_some_and(|o| o.len() > 1 && !o.contains_key("label"));
         assert!(!has_exec_args);
+    }
+
+    fn live_api_enabled() -> bool {
+        std::env::var("CORTEX_LIVE_API").ok().as_deref() == Some("1")
+    }
+
+    #[tokio::test]
+    #[ignore = "hits api.cortex.foundation; CORTEX_LIVE_API=1 cargo test -p cortex-engine -- --ignored"]
+    async fn live_guest_code_turn_streams_tokens() {
+        if !live_api_enabled() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("CORTEX_HOME", dir.path());
+        }
+        let client = CodeAgentClient::new(None, None);
+        let guest = client
+            .begin_guest_session()
+            .await
+            .expect("guest session against the live API");
+        assert_eq!(guest.kind, "guest");
+        assert!(guest.user_id.starts_with("usr_"));
+
+        client.set_turn_context(CodeTurnContext {
+            workspace: Some("/tmp".into()),
+            computer: ComputerKind::Cloud,
+            turn_mode: Some(CodeTurnMode::Chat),
+            ssh_target: None,
+        });
+
+        let mut stream = client
+            .stream_turn(
+                "Reply with the single word pong and nothing else.",
+                CodeTurnMode::Chat,
+            )
+            .await
+            .expect("Code session turn");
+        let mut text = String::new();
+        let mut done = false;
+        while let Some(ev) = stream.next().await {
+            match ev.expect("SSE event") {
+                ResponseEvent::Delta(d) => text.push_str(&d),
+                ResponseEvent::Done(_) => {
+                    done = true;
+                    break;
+                }
+                ResponseEvent::Error(e) => panic!("turn error: {e}"),
+                _ => {}
+            }
+        }
+        assert!(done, "expected a done event from the Code turn stream");
+        assert!(
+            text.to_lowercase().contains("pong"),
+            "expected streamed pong, got {text:?}"
+        );
+
+        let sid = client
+            .current_session_id()
+            .await
+            .expect("session id after turn");
+        let messages = client.list_messages(&sid).await.expect("transcript");
+        assert!(
+            messages.iter().any(|m| m.role == "user"),
+            "server transcript should persist the user message"
+        );
+
+        client.cancel_in_flight().await;
     }
 }

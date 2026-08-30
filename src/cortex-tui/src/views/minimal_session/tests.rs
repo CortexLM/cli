@@ -45,9 +45,16 @@ mod harness_snapshots {
         dump_snapshot("home", &text);
         assert!(!text.to_lowercase().contains("grok"));
         assert!(
-            text.contains("Cortex") || text.contains("session") || !text.trim().is_empty(),
-            "home session should render: {text}"
+            text.contains("Cortex CLI"),
+            "home session should render WelcomeCard: {text}"
         );
+        for glyph in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█", "█    █"]
+        {
+            assert!(
+                text.contains(glyph),
+                "home session missing mascot line {glyph:?}: {text}"
+            );
+        }
     }
 
     #[test]

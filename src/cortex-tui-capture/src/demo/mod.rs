@@ -241,7 +241,7 @@ mod tests {
         let recording = recording();
         let first = &recording.frames[0];
         assert!(
-            first.plain.contains("Cortex Code"),
+            first.plain.contains("Cortex CLI"),
             "welcome frame missing the product name:\n{}",
             first.plain
         );
@@ -250,6 +250,36 @@ mod tests {
             "welcome frame missing the public endpoint:\n{}",
             first.plain
         );
+        for glyph in cortex_tui_components::mascot::MASCOT_MINIMAL_LINES {
+            let needle = glyph.trim();
+            assert!(
+                first.plain.contains(needle),
+                "welcome frame missing mascot line {needle:?}:\n{}",
+                first.plain
+            );
+        }
+        assert!(
+            first.plain.contains("Welcome!"),
+            "welcome frame missing the greeting:\n{}",
+            first.plain
+        );
+    }
+
+    #[test]
+    fn welcome_beats_keep_the_mascot_on_screen() {
+        let recording = recording();
+        for frame in recording
+            .frames
+            .iter()
+            .filter(|frame| frame.label == "welcome")
+        {
+            assert!(
+                frame.plain.contains("▄█▀▀▀▀█▄"),
+                "welcome beat {} lost the mascot:\n{}",
+                frame.index,
+                frame.plain
+            );
+        }
     }
 
     #[test]

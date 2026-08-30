@@ -171,4 +171,16 @@ mod tests {
         let expr = MascotExpression::default();
         assert_eq!(expr.art(), MASCOT);
     }
+
+    #[test]
+    fn minimal_mascot_is_four_block_brain_lines() {
+        assert_eq!(MASCOT_MINIMAL_LINES.len(), 4);
+        assert_eq!(MASCOT_MINIMAL_LINES[0].trim(), "▄█▀▀▀▀█▄");
+        assert_eq!(MASCOT_MINIMAL_LINES[1].trim(), "██ ▌  ▐ ██");
+        assert_eq!(MASCOT_MINIMAL_LINES[2].trim(), "█▄▄▄▄▄▄█");
+        assert_eq!(MASCOT_MINIMAL_LINES[3].trim(), "█    █");
+        assert!(MASCOT_MINIMAL.contains("▄█▀▀▀▀█▄"));
+        assert!(MASCOT_MINIMAL.contains("▌"));
+        assert!(MASCOT_MINIMAL.contains("▐"));
+    }
 }

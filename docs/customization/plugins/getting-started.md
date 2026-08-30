@@ -517,9 +517,9 @@ timeout_ms = 30000  # Longer timeout for debugging
 
 Now that you've created your first plugin:
 
-1. **Add hooks**: See [Hooks Reference](./HOOKS.md) for intercepting tool execution, chat messages, and more.
+1. **Add hooks**: See [Hooks Reference](./hooks.md) for intercepting tool execution, chat messages, and more.
 
-2. **Understand security**: Read [Security Model](./SECURITY.md) for best practices.
+2. **Understand security**: Read [Security Model](./security.md) for best practices.
 
 3. **Explore advanced features**:
    - Custom widgets

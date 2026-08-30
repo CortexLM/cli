@@ -73,6 +73,7 @@ Match CI (`.github/workflows/ci.yml`):
 
 | Need | Start here |
 |------|------------|
+| User docs index | [`docs/README.md`](docs/README.md) |
 | Security / exec / sandbox | [`.rules/security.md`](.rules/security.md) |
 | Product-facing errors | [`.rules/errors.md`](.rules/errors.md) |
 | TUI / responsive layout | [`.rules/tui.md`](.rules/tui.md) |

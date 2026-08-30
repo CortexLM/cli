@@ -29,7 +29,7 @@ impl McpCli {
         } = self;
 
         match subcommand {
-            McpSubcommand::List(args) | McpSubcommand::Ls(args) => handlers::run_list(args).await,
+            McpSubcommand::List(args) => handlers::run_list(args).await,
             McpSubcommand::Get(args) => handlers::run_get(args).await,
             McpSubcommand::Add(args) => handlers::run_add(args).await,
             McpSubcommand::Remove(args) => handlers::run_remove(args).await,

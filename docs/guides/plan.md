@@ -6,7 +6,10 @@ anything. Cortex has two read-first modes for that.
 ## Plan mode
 
 Plan mode is read-only. The agent can search, read and reason about the project,
-but it cannot write files or run commands that change anything.
+but it cannot write files or run commands that change anything. The live Code
+API accepts turn `mode` values `chat` and `code` only; Plan and Spec are
+harness locks in the CLI (mutating tools stay blocked until you return to
+Build).
 
 Reach it from the TUI by cycling the operation mode until the indicator reads
 `PLAN`. The indicator sits at the bottom right of the session view; see

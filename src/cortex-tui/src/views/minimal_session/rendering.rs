@@ -457,7 +457,10 @@ pub fn generate_welcome_lines(
 
     let right_card = InfoCard::new()
         .add("Plan", "Pro")
-        .add("", "")
+        .add(
+            "Computer",
+            cortex_engine::client::ComputerKind::detect().label(),
+        )
         .dim_color(colors.text_dim)
         .text_color(colors.text)
         .border_color(colors.accent);
@@ -767,9 +770,13 @@ pub fn _render_motd(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, app_s
         .text_color(colors.text)
         .border_color(colors.accent);
 
-    // Right card: Plan only (Model removed)
+    // Right card: Plan + where tools run
     let right_card = InfoCard::new()
         .add("Plan", "Pro")
+        .add(
+            "Computer",
+            cortex_engine::client::ComputerKind::detect().label(),
+        )
         .dim_color(colors.text_dim)
         .text_color(colors.text)
         .border_color(colors.accent);

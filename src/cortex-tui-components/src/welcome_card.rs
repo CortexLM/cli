@@ -331,7 +331,7 @@ impl Widget for WelcomeCard<'_> {
 /// let card = InfoCard::new()
 ///     .add("Directory", "~/projects")
 ///     .add("User", "user@email.com")
-///     .add("Model", "claude-3");
+///     .add("Model", "cortex-1-mini");
 /// ```
 pub struct InfoCard<'a> {
     items: Vec<(&'a str, String)>,
@@ -497,7 +497,7 @@ impl Widget for InfoCard<'_> {
 /// use cortex_tui_components::welcome_card::{InfoCardPair, InfoCard};
 ///
 /// let left = InfoCard::new().add("Dir", "~/projects").add("User", "me@email.com");
-/// let right = InfoCard::new().add("Model", "claude-3").add("Plan", "Pro");
+/// let right = InfoCard::new().add("Model", "cortex-1-mini").add("Plan", "Pro");
 ///
 /// InfoCardPair::new(left, right).render(area, buf);
 /// ```

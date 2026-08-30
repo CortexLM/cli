@@ -56,6 +56,10 @@ pub struct SessionMeta {
     /// Git branch at session creation (if in a git repo).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_branch: Option<String>,
+
+    /// Server-side Code session id (`/v1/code/sessions/{id}`), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_session_id: Option<String>,
 }
 
 impl SessionMeta {
@@ -80,6 +84,7 @@ impl SessionMeta {
             archived: false,
             forked_from: None,
             git_branch: Self::get_git_branch(),
+            code_session_id: None,
         }
     }
 
@@ -432,11 +437,12 @@ mod tests {
 
     #[test]
     fn test_session_meta_new() {
-        let meta = SessionMeta::new("cortex", "anthropic/claude-opus-4-20250514");
+        let meta = SessionMeta::new("cortex", "cortex-1-mini");
         assert!(!meta.id.is_empty());
         assert_eq!(meta.provider, "cortex");
-        assert!(meta.model.contains("claude-opus"));
+        assert_eq!(meta.model, "cortex-1-mini");
         assert!(!meta.archived);
+        assert!(meta.code_session_id.is_none());
     }
 
     #[test]

@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn test_login_modal_creation() {
         let modal = LoginModal::new(
-            "https://auth.cortex.foundation/device".to_string(),
+            "https://api.cortex.foundation/device".to_string(),
             "ABCD1234".to_string(),
             900,
         );
@@ -430,7 +430,7 @@ mod tests {
     #[test]
     fn snapshot_login_pending_shows_cortex_auth() {
         let modal = LoginModal::new(
-            "https://auth.cortex.foundation/device".to_string(),
+            "https://api.cortex.foundation/device".to_string(),
             "ABCD1234".to_string(),
             900,
         );
@@ -447,8 +447,8 @@ mod tests {
             "missing device code in snapshot:\n{text}"
         );
         assert!(
-            text.contains("auth.cortex.foundation"),
-            "missing Cortex auth host in snapshot:\n{text}"
+            text.contains("api.cortex.foundation"),
+            "missing Cortex API host in snapshot:\n{text}"
         );
         assert!(!text.to_lowercase().contains("grok"));
     }
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn snapshot_login_failed_is_product_facing() {
         let mut modal = LoginModal::new(
-            "https://auth.cortex.foundation/device".to_string(),
+            "https://api.cortex.foundation/device".to_string(),
             "ABCD1234".to_string(),
             900,
         );

@@ -42,7 +42,6 @@ impl EventLoop {
         let tx = self.tool_event_tx.clone();
         tokio::spawn(async move {
             const API_BASE_URL: &str = "https://api.cortex.foundation";
-            const AUTH_BASE_URL: &str = "https://auth.cortex.foundation";
 
             let client = match cortex_engine::create_client_builder()
                 .connect_timeout(std::time::Duration::from_secs(5))
@@ -65,87 +64,45 @@ impl EventLoop {
             let device_name = hostname::get()
                 .map(|h| h.to_string_lossy().to_string())
                 .unwrap_or_else(|_| "Cortex CLI".to_string());
+            let scopes = vec!["openid".to_string(), "profile".to_string()];
+            let api_base = cortex_login::resolve_device_api_base(API_BASE_URL);
 
-            let response = match client
-                .post(format!("{}/auth/device/code", API_BASE_URL))
-                .json(&serde_json::json!({
-                    "device_name": device_name,
-                    "scopes": ["chat", "models"]
-                }))
-                .send()
-                .await
+            match cortex_login::request_device_authorization(
+                &client,
+                &api_base,
+                Some(&device_name),
+                &scopes,
+            )
+            .await
             {
-                Ok(r) => r,
+                Ok(device_code_data) => {
+                    let verification_url = device_code_data.open_url().to_string();
+                    let _ = tx
+                        .send(crate::events::ToolEvent::Completed {
+                            id: "login_init".to_string(),
+                            name: "login".to_string(),
+                            output: serde_json::json!({
+                                "device_code": device_code_data.device_code,
+                                "user_code": device_code_data.user_code,
+                                "verification_uri": verification_url,
+                            })
+                            .to_string(),
+                            success: true,
+                            duration: std::time::Duration::from_secs(0),
+                        })
+                        .await;
+                }
                 Err(e) => {
                     let _ = tx
                         .send(crate::events::ToolEvent::Failed {
                             id: "login_init".to_string(),
                             name: "login".to_string(),
-                            error: format!("login:error:Network error: {}", e),
+                            error: format!("login:error:{}", e),
                             duration: std::time::Duration::from_secs(0),
                         })
                         .await;
-                    return;
                 }
-            };
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let error_msg = match status.as_u16() {
-                    403 => "Cannot connect to Cortex API".to_string(),
-                    429 => "Too many attempts. Please wait.".to_string(),
-                    _ => format!("API error ({})", status),
-                };
-                let _ = tx
-                    .send(crate::events::ToolEvent::Failed {
-                        id: "login_init".to_string(),
-                        name: "login".to_string(),
-                        error: format!("login:error:{}", error_msg),
-                        duration: std::time::Duration::from_secs(0),
-                    })
-                    .await;
-                return;
             }
-
-            #[derive(serde::Deserialize)]
-            struct DeviceCodeResponse {
-                user_code: String,
-                device_code: String,
-                #[allow(dead_code)]
-                verification_uri: String,
-            }
-
-            let device_code_data: DeviceCodeResponse = match response.json().await {
-                Ok(d) => d,
-                Err(e) => {
-                    let _ = tx
-                        .send(crate::events::ToolEvent::Failed {
-                            id: "login_init".to_string(),
-                            name: "login".to_string(),
-                            error: format!("login:error:Parse error: {}", e),
-                            duration: std::time::Duration::from_secs(0),
-                        })
-                        .await;
-                    return;
-                }
-            };
-
-            let verification_url = format!("{}/device", AUTH_BASE_URL);
-
-            let _ = tx
-                .send(crate::events::ToolEvent::Completed {
-                    id: "login_init".to_string(),
-                    name: "login".to_string(),
-                    output: serde_json::json!({
-                        "device_code": device_code_data.device_code,
-                        "user_code": device_code_data.user_code,
-                        "verification_uri": verification_url,
-                    })
-                    .to_string(),
-                    success: true,
-                    duration: std::time::Duration::from_secs(0),
-                })
-                .await;
         });
     }
 
@@ -179,40 +136,26 @@ impl EventLoop {
                 }
             };
 
-            let interval = std::time::Duration::from_secs(5);
+            let api_base = cortex_login::resolve_device_api_base(API_BASE_URL);
+            let mut interval = std::time::Duration::from_secs(5);
             let max_attempts = 180;
 
             for _ in 0..max_attempts {
                 tokio::time::sleep(interval).await;
-
-                let poll_response = match poll_client
-                    .post(format!("{}/auth/device/token", API_BASE_URL))
-                    .json(&serde_json::json!({ "device_code": device_code }))
-                    .send()
-                    .await
-                {
-                    Ok(r) => r,
-                    Err(_) => continue,
-                };
-
-                let status = poll_response.status();
-                let body = poll_response.text().await.unwrap_or_default();
-
-                if status.is_success() {
-                    #[derive(serde::Deserialize)]
-                    struct TokenResponse {
-                        access_token: String,
-                        refresh_token: String,
+                match cortex_login::poll_device_token(&poll_client, &api_base, &device_code).await {
+                    Ok(cortex_login::DeviceTokenStatus::Pending { interval: next }) => {
+                        interval = std::time::Duration::from_secs(next.max(1));
                     }
-
-                    if let Ok(token) = serde_json::from_str::<TokenResponse>(&body) {
-                        let expires_at = chrono::Utc::now().timestamp() + 3600;
-                        let auth_data = SecureAuthData::with_oauth(
-                            token.access_token,
-                            Some(token.refresh_token),
-                            Some(expires_at),
-                        );
-
+                    Ok(cortex_login::DeviceTokenStatus::Success(token)) => {
+                        let Some(access) = token.bearer().map(str::to_string) else {
+                            continue;
+                        };
+                        let expires_at = token
+                            .expires_in
+                            .map(|secs| chrono::Utc::now().timestamp() + secs as i64)
+                            .or(Some(chrono::Utc::now().timestamp() + 3600));
+                        let auth_data =
+                            SecureAuthData::with_oauth(access, token.refresh_token, expires_at);
                         match save_auth_with_fallback(&cortex_home, &auth_data) {
                             Ok(mode) => {
                                 tracing::info!("Auth credentials saved using {:?} storage", mode);
@@ -228,12 +171,11 @@ impl EventLoop {
                                 return;
                             }
                             Err(e) => {
-                                tracing::error!("Failed to save auth credentials: {}", e);
                                 let _ = tx
                                     .send(crate::events::ToolEvent::Failed {
                                         id: "login_poll".to_string(),
                                         name: "login".to_string(),
-                                        error: format!("Failed to save credentials: {}", e),
+                                        error: format!("Failed to save credentials: {e}"),
                                         duration: std::time::Duration::from_secs(0),
                                     })
                                     .await;
@@ -241,38 +183,29 @@ impl EventLoop {
                             }
                         }
                     }
-                    continue;
-                }
-
-                if let Ok(error) = serde_json::from_str::<serde_json::Value>(&body)
-                    && let Some(err) = error.get("error").and_then(|e| e.as_str())
-                {
-                    match err {
-                        "authorization_pending" | "slow_down" => continue,
-                        "expired_token" => {
-                            let _ = tx
-                                .send(crate::events::ToolEvent::Failed {
-                                    id: "login_poll".to_string(),
-                                    name: "login".to_string(),
-                                    error: "login:expired".to_string(),
-                                    duration: std::time::Duration::from_secs(0),
-                                })
-                                .await;
-                            return;
-                        }
-                        "access_denied" => {
-                            let _ = tx
-                                .send(crate::events::ToolEvent::Failed {
-                                    id: "login_poll".to_string(),
-                                    name: "login".to_string(),
-                                    error: "login:denied".to_string(),
-                                    duration: std::time::Duration::from_secs(0),
-                                })
-                                .await;
-                            return;
-                        }
-                        _ => {}
+                    Ok(cortex_login::DeviceTokenStatus::Expired) => {
+                        let _ = tx
+                            .send(crate::events::ToolEvent::Failed {
+                                id: "login_poll".to_string(),
+                                name: "login".to_string(),
+                                error: "login:expired".to_string(),
+                                duration: std::time::Duration::from_secs(0),
+                            })
+                            .await;
+                        return;
                     }
+                    Ok(cortex_login::DeviceTokenStatus::Denied) => {
+                        let _ = tx
+                            .send(crate::events::ToolEvent::Failed {
+                                id: "login_poll".to_string(),
+                                name: "login".to_string(),
+                                error: "login:denied".to_string(),
+                                duration: std::time::Duration::from_secs(0),
+                            })
+                            .await;
+                        return;
+                    }
+                    Ok(cortex_login::DeviceTokenStatus::Error(_)) | Err(_) => {}
                 }
             }
 

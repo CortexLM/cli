@@ -27,6 +27,7 @@ mod storage;
 mod token;
 
 // Authentication flows
+pub mod device_api;
 pub mod device_code_auth;
 pub mod pkce;
 mod server;
@@ -57,6 +58,12 @@ pub use utils::safe_format_key;
 
 // Re-exports from device_code_auth
 pub use device_code_auth::run_device_code_login;
+
+// Live device-login contract (POST /v1/auth/device)
+pub use device_api::{
+    DEVICE_AUTHORIZE_PATH, DEVICE_TOKEN_PATH, DeviceAuthorization, DeviceToken, DeviceTokenStatus,
+    poll_device_token, request_device_authorization, resolve_device_api_base,
+};
 
 // Re-exports from server
 pub use server::{LoginServer, ServerOptions, ShutdownHandle, run_login_server};

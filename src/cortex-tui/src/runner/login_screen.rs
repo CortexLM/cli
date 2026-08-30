@@ -27,7 +27,6 @@ use cortex_tui_components::spinner::SpinnerStyle;
 // ============================================================================
 
 const API_BASE_URL: &str = "https://api.cortex.foundation";
-const AUTH_BASE_URL: &str = "https://auth.cortex.foundation";
 
 // Colors matching the original design
 const PRIMARY: Color = Color::Rgb(0x00, 0xFF, 0xA3);
@@ -50,6 +49,7 @@ pub enum LoginState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoginMethod {
     CortexAccount,
+    Guest,
     ApiKey,
     Exit,
 }
@@ -58,6 +58,7 @@ impl LoginMethod {
     fn all() -> &'static [LoginMethod] {
         &[
             LoginMethod::CortexAccount,
+            LoginMethod::Guest,
             LoginMethod::ApiKey,
             LoginMethod::Exit,
         ]
@@ -66,6 +67,7 @@ impl LoginMethod {
     fn label(&self) -> &'static str {
         match self {
             LoginMethod::CortexAccount => "Cortex Foundation account",
+            LoginMethod::Guest => "Guest session",
             LoginMethod::ApiKey => "API Key",
             LoginMethod::Exit => "Exit",
         }
@@ -73,7 +75,8 @@ impl LoginMethod {
 
     fn description(&self) -> &'static str {
         match self {
-            LoginMethod::CortexAccount => "Pro, Max, Scale, or Enterprise subscription",
+            LoginMethod::CortexAccount => "Device login at api.cortex.foundation",
+            LoginMethod::Guest => "Limited session without an account",
             LoginMethod::ApiKey => "For API access without subscription",
             LoginMethod::Exit => "",
         }
@@ -263,7 +266,7 @@ impl LoginScreen {
 
         // Center the content
         let content_width = 70.min(area.width.saturating_sub(4));
-        let content_height = 14;
+        let content_height = 16;
         let content_x = (area.width.saturating_sub(content_width)) / 2;
         let content_y = (area.height.saturating_sub(content_height)) / 2;
         let content_area = Rect::new(content_x, content_y, content_width, content_height);
@@ -277,7 +280,7 @@ impl LoginScreen {
                 Constraint::Length(1), // Empty
                 Constraint::Length(1), // Select header
                 Constraint::Length(1), // Empty
-                Constraint::Length(3), // Method options
+                Constraint::Length(4), // Method options
                 Constraint::Length(1), // Empty
                 Constraint::Length(1), // Hints
                 Constraint::Length(1), // Error message (if any)
@@ -302,7 +305,7 @@ impl LoginScreen {
 
         // Line 3: Description
         let description =
-            Paragraph::new("Cortex can be used with your Cortex Foundation account or API key.")
+            Paragraph::new("Cortex signs in through api.cortex.foundation (device login).")
                 .style(Style::default().fg(DIM));
         f.render_widget(description, chunks[2]);
 
@@ -358,12 +361,10 @@ impl LoginScreen {
         let breathing = SpinnerStyle::Breathing.frames();
         let spinner = breathing[(self.frame_count % breathing.len() as u64) as usize];
 
-        // Build direct auth URL
-        let direct_url = if let Some(ref code) = self.user_code {
-            format!("{}/device?code={}", AUTH_BASE_URL, code)
-        } else {
-            format!("{}/device", AUTH_BASE_URL)
-        };
+        let direct_url = self
+            .verification_uri
+            .clone()
+            .unwrap_or_else(|| "https://api.cortex.foundation".to_string());
 
         // Center the content
         let content_width = 70.min(area.width.saturating_sub(4));
@@ -449,11 +450,9 @@ impl LoginScreen {
     }
 
     fn get_direct_url(&self) -> String {
-        if let Some(ref code) = self.user_code {
-            format!("{}/device?code={}", AUTH_BASE_URL, code)
-        } else {
-            format!("{}/device", AUTH_BASE_URL)
-        }
+        self.verification_uri
+            .clone()
+            .unwrap_or_else(|| "https://api.cortex.foundation".to_string())
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Option<LoginResult> {
@@ -500,6 +499,12 @@ impl LoginScreen {
                 self.selected_method = 2;
                 return self.select_method();
             }
+            KeyCode::Char('4') => {
+                if LoginMethod::all().len() > 3 {
+                    self.selected_method = 3;
+                    return self.select_method();
+                }
+            }
             KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
                 return Some(LoginResult::Exit);
             }
@@ -512,6 +517,10 @@ impl LoginScreen {
         match LoginMethod::all()[self.selected_method] {
             LoginMethod::CortexAccount => {
                 self.start_device_code_flow();
+                None
+            }
+            LoginMethod::Guest => {
+                self.start_guest_session();
                 None
             }
             LoginMethod::ApiKey => Some(LoginResult::ContinueWithApiKey),
@@ -562,6 +571,36 @@ impl LoginScreen {
         });
     }
 
+    fn start_guest_session(&mut self) {
+        self.state = LoginState::WaitingForAuth;
+        self.error_message = None;
+        self.user_code = None;
+        self.verification_uri = None;
+        let tx = self.create_async_channel();
+        let cortex_home = self.cortex_home.clone();
+        tokio::spawn(async move {
+            let client = match cortex_engine::create_default_client() {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = tx.send(AsyncMessage::DeviceCodeError(e.to_string())).await;
+                    return;
+                }
+            };
+            match begin_guest_session(&client, &cortex_home).await {
+                Ok(()) => {
+                    let _ = tx.send(AsyncMessage::TokenReceived).await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(AsyncMessage::DeviceCodeError(format!(
+                            "Guest session failed: {e}"
+                        )))
+                        .await;
+                }
+            }
+        });
+    }
+
     fn create_async_channel(&mut self) -> mpsc::Sender<AsyncMessage> {
         let (tx, rx) = mpsc::channel(16);
         self.async_rx = Some(rx);
@@ -573,15 +612,13 @@ impl LoginScreen {
             AsyncMessage::DeviceCodeReceived {
                 user_code,
                 device_code,
-                verification_uri: _,
+                verification_uri,
             } => {
                 tracing::info!("Device code received: {}", user_code);
-                let auth_url = format!("{}/device", AUTH_BASE_URL);
                 self.user_code = Some(user_code.clone());
-                self.verification_uri = Some(auth_url.clone());
+                self.verification_uri = Some(verification_uri.clone());
 
-                // Open browser
-                let link_url = format!("{}?code={}", auth_url, user_code);
+                let link_url = verification_uri;
                 tracing::debug!("Opening browser to: {}", link_url);
                 #[cfg(target_os = "macos")]
                 {
@@ -639,6 +676,7 @@ impl LoginScreen {
 // ============================================================================
 
 async fn request_device_code_async(cortex_home: PathBuf, tx: mpsc::Sender<AsyncMessage>) {
+    let _ = cortex_home;
     let client = match cortex_engine::create_default_client() {
         Ok(c) => c,
         Err(e) => {
@@ -647,91 +685,32 @@ async fn request_device_code_async(cortex_home: PathBuf, tx: mpsc::Sender<AsyncM
         }
     };
 
+    let api_base = cortex_login::resolve_device_api_base(API_BASE_URL);
     let device_name = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_else(|_| "Cortex CLI".to_string());
-    let payload = serde_json::json!({
-        "device_name": device_name,
-        "scopes": ["chat", "models"]
-    });
+    let scopes = vec!["openid".to_string(), "profile".to_string()];
 
-    // Live API: /auth/device/code is 404. Try /v1 first, then legacy, then guest.
-    let mut last_status = reqwest::StatusCode::NOT_FOUND;
-    let mut last_body = String::new();
-    let mut response = None;
-    for path in ["/v1/auth/device/code", "/auth/device/code"] {
-        match client
-            .post(format!("{API_BASE_URL}{path}"))
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(r) if r.status().is_success() => {
-                response = Some(r);
-                break;
-            }
-            Ok(r) => {
-                last_status = r.status();
-                last_body = r.text().await.unwrap_or_default();
-            }
-            Err(e) => {
-                let _ = tx
-                    .send(AsyncMessage::DeviceCodeError(format!("Network error: {e}")))
-                    .await;
-                return;
-            }
-        }
-    }
-
-    let Some(response) = response else {
-        if last_status.as_u16() == 404 {
-            match begin_guest_session(&client, &cortex_home).await {
-                Ok(()) => {
-                    let _ = tx.send(AsyncMessage::TokenReceived).await;
-                    return;
-                }
-                Err(e) => {
-                    let _ = tx
-                        .send(AsyncMessage::DeviceCodeError(format!(
-                            "Device login is not available. Guest session failed: {e}"
-                        )))
-                        .await;
-                    return;
-                }
-            }
-        }
-        let error = if last_status.as_u16() == 403 {
-            "Cannot connect to Cortex API. Service may be unavailable.".to_string()
-        } else if last_status.as_u16() == 429 {
-            "Too many login attempts. Please wait.".to_string()
-        } else {
-            format!("API error ({}): {}", last_status, last_body)
-        };
-        let _ = tx.send(AsyncMessage::DeviceCodeError(error)).await;
-        return;
-    };
-
-    #[derive(serde::Deserialize)]
-    struct DeviceCodeResponse {
-        user_code: String,
-        device_code: String,
-        verification_uri: String,
-    }
-
-    match response.json::<DeviceCodeResponse>().await {
+    match cortex_login::request_device_authorization(
+        &client,
+        &api_base,
+        Some(&device_name),
+        &scopes,
+    )
+    .await
+    {
         Ok(data) => {
+            let verification_uri = data.open_url().to_string();
             let _ = tx
                 .send(AsyncMessage::DeviceCodeReceived {
                     user_code: data.user_code,
                     device_code: data.device_code,
-                    verification_uri: data.verification_uri,
+                    verification_uri,
                 })
                 .await;
         }
         Err(e) => {
-            let _ = tx
-                .send(AsyncMessage::DeviceCodeError(format!("Parse error: {}", e)))
-                .await;
+            let _ = tx.send(AsyncMessage::DeviceCodeError(e.to_string())).await;
         }
     }
 }
@@ -752,115 +731,68 @@ async fn poll_for_token_async(
         }
     };
 
-    let interval = Duration::from_secs(5);
-    let max_attempts = 180; // 15 minutes total
+    let api_base = cortex_login::resolve_device_api_base(API_BASE_URL);
+    let mut interval = Duration::from_secs(5);
+    let max_attempts = 180;
 
     for attempt in 0..max_attempts {
         tokio::time::sleep(interval).await;
-
-        // Check if the receiver was dropped (user cancelled)
-        // This is a cheap check that allows us to exit early
         if tx.is_closed() {
             tracing::debug!("Token polling cancelled (receiver dropped)");
             return;
         }
-
         tracing::trace!(
             "Polling for token (attempt {}/{})",
             attempt + 1,
             max_attempts
         );
 
-        let response = match client
-            .post(format!("{}/auth/device/token", API_BASE_URL))
-            .json(&serde_json::json!({ "device_code": device_code }))
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::debug!("Token poll request failed: {}", e);
-                continue;
+        match cortex_login::poll_device_token(&client, &api_base, &device_code).await {
+            Ok(cortex_login::DeviceTokenStatus::Pending { interval: next }) => {
+                interval = Duration::from_secs(next.max(1));
             }
-        };
-
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-
-        if status.is_success() {
-            tracing::debug!("Token response received (success)");
-
-            #[derive(serde::Deserialize)]
-            struct TokenResponse {
-                access_token: String,
-                refresh_token: String,
-            }
-
-            if let Ok(token) = serde_json::from_str::<TokenResponse>(&body) {
-                let expires_at = chrono::Utc::now().timestamp() + 3600;
-                let auth_data = SecureAuthData::with_oauth(
-                    token.access_token,
-                    Some(token.refresh_token),
-                    Some(expires_at),
-                );
-
+            Ok(cortex_login::DeviceTokenStatus::Success(token)) => {
+                let Some(access) = token.bearer().map(str::to_string) else {
+                    continue;
+                };
+                let expires_at = token
+                    .expires_in
+                    .map(|secs| chrono::Utc::now().timestamp() + secs as i64)
+                    .or(Some(chrono::Utc::now().timestamp() + 3600));
+                let auth_data = SecureAuthData::with_oauth(access, token.refresh_token, expires_at);
                 match save_auth_with_fallback(&cortex_home, &auth_data) {
                     Ok(mode) => {
                         tracing::info!("Auth credentials saved using {:?} storage", mode);
-                        // Send the success message - this is the critical moment
-                        if let Err(e) = tx.send(AsyncMessage::TokenReceived).await {
-                            tracing::error!("Failed to send TokenReceived message: {}", e);
-                        } else {
-                            tracing::debug!("TokenReceived message sent successfully");
-                        }
+                        let _ = tx.send(AsyncMessage::TokenReceived).await;
                         return;
                     }
                     Err(e) => {
-                        tracing::error!("Failed to save auth credentials: {}", e);
                         let _ = tx
                             .send(AsyncMessage::TokenError(format!(
-                                "Failed to save credentials: {}",
-                                e
+                                "Failed to save credentials: {e}"
                             )))
                             .await;
                         return;
                     }
                 }
-            } else {
-                tracing::warn!("Failed to parse token response");
             }
-            continue;
-        }
-
-        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&body)
-            && let Some(err) = error.get("error").and_then(|e| e.as_str())
-        {
-            match err {
-                "authorization_pending" => {
-                    tracing::trace!("Authorization pending...");
-                    continue;
-                }
-                "slow_down" => {
-                    tracing::debug!("Server requested slow down");
-                    continue;
-                }
-                "expired_token" => {
-                    tracing::warn!("Device code expired");
-                    let _ = tx
-                        .send(AsyncMessage::TokenError("Device code expired".to_string()))
-                        .await;
-                    return;
-                }
-                "access_denied" => {
-                    tracing::warn!("Access denied by user");
-                    let _ = tx
-                        .send(AsyncMessage::TokenError("Access denied".to_string()))
-                        .await;
-                    return;
-                }
-                _ => {
-                    tracing::debug!("Unknown error response: {}", err);
-                }
+            Ok(cortex_login::DeviceTokenStatus::Expired) => {
+                let _ = tx
+                    .send(AsyncMessage::TokenError("Device code expired".to_string()))
+                    .await;
+                return;
+            }
+            Ok(cortex_login::DeviceTokenStatus::Denied) => {
+                let _ = tx
+                    .send(AsyncMessage::TokenError("Access denied".to_string()))
+                    .await;
+                return;
+            }
+            Ok(cortex_login::DeviceTokenStatus::Error(e)) => {
+                tracing::debug!("Token poll error: {e}");
+            }
+            Err(e) => {
+                tracing::debug!("Token poll request failed: {e}");
             }
         }
     }
@@ -873,10 +805,7 @@ async fn poll_for_token_async(
         .await;
 }
 
-/// Start a guest session when device login is not on the live API.
-///
-/// TODO(backend): `POST /v1/auth/device/code` is not implemented (404).
-/// Guest uses `POST /v1/auth/guest` and stores `cortex_gt` as `gt:<cookie>`.
+/// Guest session via `POST /v1/auth/guest`. Stores `cortex_gt` as `gt:<cookie>`.
 async fn begin_guest_session(client: &reqwest::Client, cortex_home: &Path) -> anyhow::Result<()> {
     let resp = client
         .post(format!("{API_BASE_URL}/v1/auth/guest"))
@@ -938,6 +867,7 @@ mod tests {
         }
         assert!(text.contains("Welcome to Cortex CLI"), "{text}");
         assert!(text.contains("Cortex Foundation account"), "{text}");
+        assert!(text.contains("Guest session"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));
     }
 
@@ -946,6 +876,7 @@ mod tests {
         let mut screen = LoginScreen::new(PathBuf::from("/tmp"), None);
         screen.state = LoginState::WaitingForAuth;
         screen.user_code = Some("ABCD-1234".into());
+        screen.verification_uri = Some("https://example.invalid/device?user_code=ABCD-1234".into());
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).expect("test backend");
         terminal.draw(|f| screen.render(f)).expect("draw");

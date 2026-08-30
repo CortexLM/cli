@@ -1,8 +1,10 @@
 # Signing in
 
-Cortex CLI authenticates against
-[auth.cortex.foundation](https://auth.cortex.foundation) and calls the coding
-API at [api.cortex.foundation](https://api.cortex.foundation).
+Cortex CLI authenticates against the coding API at
+[api.cortex.foundation](https://api.cortex.foundation). Device login uses
+`POST /v1/auth/device` and `POST /v1/auth/device/token` on that host. The CLI
+prints the verification URL the API returns — do not paste a personal access
+token.
 
 ## Browser sign-in
 
@@ -12,8 +14,8 @@ The default. Run:
 cortex login
 ```
 
-Cortex opens the sign-in flow in your browser. When it completes, the session is
-written to your OS keyring.
+Cortex starts the device login flow and opens the verification URL in your
+browser. When it completes, the session is written to your OS keyring.
 
 ## Device code
 
@@ -25,6 +27,12 @@ cortex login --device-auth
 
 Cortex prints a code and a URL. Open the URL on a device that does have a
 browser, enter the code, and the CLI picks up the session when it is approved.
+
+## Guest session
+
+From the TUI login screen, choose **Guest session** for a limited session
+without an account. Account login is never silently replaced with a guest
+session.
 
 ## Enterprise SSO
 

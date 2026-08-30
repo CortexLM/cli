@@ -391,10 +391,10 @@ impl ToolHandler for SimpleTaskHandler {
         }
 
         output.push_str(
-            "The child task has been queued. Nested Task, AskUser, and send_to_user are disabled for the child.",
+            "The child task was not started. Task needs a live coding session with a ModelClient. Nested Task, AskUser, and send_to_user stay disabled for children.",
         );
 
-        Ok(ToolResult::success(output))
+        Ok(ToolResult::error(output))
     }
 }
 
@@ -604,9 +604,10 @@ mod tests {
         });
 
         let result = handler.execute(args, &context).await.unwrap();
-        assert!(result.success);
+        assert!(!result.success);
         assert!(result.output.contains("test-agent"));
         assert!(result.output.contains("Do something useful"));
+        assert!(result.output.contains("not started"));
     }
 
     #[tokio::test]

@@ -263,6 +263,11 @@ mod tests {
             "welcome frame missing the greeting:\n{}",
             first.plain
         );
+        assert!(
+            first.plain.contains("This PC"),
+            "welcome frame missing Computer:\n{}",
+            first.plain
+        );
     }
 
     #[test]

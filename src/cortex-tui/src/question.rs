@@ -69,9 +69,23 @@ pub struct QuestionRequest {
 }
 
 impl QuestionRequest {
-    /// Parse a QuestionRequest from tool arguments
+    /// Parse a QuestionRequest from tool arguments.
+    ///
+    /// Accepts the structured `{ title, questions: [...] }` form and the
+    /// shorter Code-API `{ prompt }` / `{ question }` form.
     pub fn from_tool_args(tool_call_id: &str, args: &Value) -> Option<Self> {
-        let title = args.get("title")?.as_str()?.to_string();
+        if let Some(request) = Self::from_structured(tool_call_id, args) {
+            return Some(request);
+        }
+        Self::from_prompt(tool_call_id, args)
+    }
+
+    fn from_structured(tool_call_id: &str, args: &Value) -> Option<Self> {
+        let title = args
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Questions")
+            .to_string();
         let description = args
             .get("description")
             .and_then(|v| v.as_str())
@@ -86,7 +100,11 @@ impl QuestionRequest {
                 .and_then(|v| v.as_str())
                 .unwrap_or("q")
                 .to_string();
-            let question_text = q.get("question").and_then(|v| v.as_str())?.to_string();
+            let question_text = q
+                .get("question")
+                .or_else(|| q.get("prompt"))
+                .and_then(|v| v.as_str())?
+                .to_string();
             let q_type = match q.get("type").and_then(|v| v.as_str()).unwrap_or("single") {
                 "multiple" => QuestionType::Multiple,
                 "text" => QuestionType::Text,
@@ -138,11 +156,45 @@ impl QuestionRequest {
             });
         }
 
+        if questions.is_empty() {
+            return None;
+        }
+
         Some(QuestionRequest {
             id: tool_call_id.to_string(),
             title,
             description,
             questions,
+        })
+    }
+
+    fn from_prompt(tool_call_id: &str, args: &Value) -> Option<Self> {
+        let prompt = args
+            .get("prompt")
+            .or_else(|| args.get("question"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())?;
+        let title = args
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Questions")
+            .to_string();
+        Some(QuestionRequest {
+            id: tool_call_id.to_string(),
+            title,
+            description: args
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            questions: vec![Question {
+                id: "q1".into(),
+                question: prompt.to_string(),
+                question_type: QuestionType::Text,
+                options: vec![],
+                placeholder: None,
+                required: true,
+                allow_custom: true,
+            }],
         })
     }
 }
@@ -499,6 +551,16 @@ mod tests {
         assert_eq!(request.title, "Test Questions");
         assert_eq!(request.questions.len(), 1);
         assert_eq!(request.questions[0].options.len(), 2);
+    }
+
+    #[test]
+    fn parses_prompt_only_question() {
+        let args = json!({"prompt": "Ship the change?"});
+        let request = QuestionRequest::from_tool_args("q1", &args).unwrap();
+        assert_eq!(request.title, "Questions");
+        assert_eq!(request.questions.len(), 1);
+        assert_eq!(request.questions[0].question, "Ship the change?");
+        assert_eq!(request.questions[0].question_type, QuestionType::Text);
     }
 
     #[test]

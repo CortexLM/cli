@@ -74,7 +74,7 @@ fn draw_welcome(frame: &mut Frame, area: Rect, scene: &Scene) {
 
     let right_card = InfoCard::new()
         .add("Mode", &scene.mode)
-        .add("Autonomy", &scene.autonomy)
+        .add("Computer", &scene.computer)
         .dim_color(TEXT_DIM)
         .text_color(TEXT)
         .border_color(CYAN_PRIMARY);

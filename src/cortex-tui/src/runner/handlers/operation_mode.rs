@@ -15,6 +15,14 @@ impl<'a> ActionHandler<'a> {
         let old_mode = self.state.get_operation_mode();
         self.state.toggle_operation_mode();
         let new_mode = self.state.get_operation_mode();
+        match new_mode {
+            crate::app::OperationMode::Plan | crate::app::OperationMode::Spec => {
+                cortex_engine::harness::enter_spec_mode();
+            }
+            crate::app::OperationMode::Build => {
+                cortex_engine::harness::exit_spec_mode();
+            }
+        }
 
         tracing::info!(
             "Operation mode changed: {} ({}) -> {} ({})",

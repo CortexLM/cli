@@ -630,4 +630,77 @@ mod tests {
         let card = WelcomeCard::new().tips(&["Tip 1", "Tip 2"]);
         assert!(card.required_height() >= 10);
     }
+
+    fn buffer_text(buf: &Buffer) -> String {
+        let area = buf.area();
+        let mut out = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    fn assert_contains_mascot(text: &str) {
+        for line in MASCOT_MINIMAL_LINES {
+            let needle = line.trim();
+            assert!(
+                text.contains(needle),
+                "missing mascot line {needle:?}:\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn welcome_card_to_lines_includes_mascot() {
+        let card = WelcomeCard::new()
+            .subtitle("Your AI-powered coding assistant.")
+            .tips(&[
+                "Send /help for available commands.",
+                "Use Tab for autocomplete. Press Esc to cancel.",
+            ]);
+        let text = card
+            .to_lines(80)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_contains_mascot(&text);
+        assert!(text.contains("Welcome!"));
+        assert!(text.contains("Cortex CLI"));
+    }
+
+    #[test]
+    fn welcome_card_widget_renders_mascot() {
+        let mut buf = Buffer::empty(Rect::new(0, 0, 80, 16));
+        WelcomeCard::new()
+            .subtitle("Your AI-powered coding assistant.")
+            .tips(&["Send /help for available commands."])
+            .render(Rect::new(0, 0, 80, 16), &mut buf);
+        let text = buffer_text(&buf);
+        assert_contains_mascot(&text);
+        assert!(text.contains("Welcome!"));
+    }
+
+    #[test]
+    fn welcome_card_narrow_and_wide_viewports_keep_the_mascot() {
+        for (width, height) in [(40, 12), (120, 40)] {
+            let card = WelcomeCard::new().tips(&["Send /help for available commands."]);
+            let text = card
+                .to_lines(width)
+                .into_iter()
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_contains_mascot(&text);
+
+            let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+            WelcomeCard::new()
+                .tips(&["Send /help for available commands."])
+                .render(Rect::new(0, 0, width, height), &mut buf);
+            assert_contains_mascot(&buffer_text(&buf));
+        }
+    }
 }

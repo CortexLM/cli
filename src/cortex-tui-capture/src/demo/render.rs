@@ -4,9 +4,9 @@
 //! real TUI palette instead of a second, drifting copy of it.
 
 use cortex_core::style::{
-    BORDER, BORDER_FOCUS, CYAN_PRIMARY, SKY_BLUE, SUCCESS, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
-    VOID,
+    BORDER, BORDER_FOCUS, CYAN_PRIMARY, SKY_BLUE, SUCCESS, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
 };
+use cortex_tui_components::welcome_card::{InfoCard, InfoCardPair, ToLines, WelcomeCard};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -47,56 +47,46 @@ pub fn draw_scene(frame: &mut Frame, scene: &Scene) {
     draw_hints(frame, hints_area, scene);
 }
 
+/// Empty-session frame: the same `WelcomeCard` + info cards the live TUI paints
+/// via `generate_welcome_lines`, including `MASCOT_MINIMAL_LINES`.
 fn draw_welcome(frame: &mut Frame, area: Rect, scene: &Scene) {
-    let card_width = area.width.min(82);
-    let card_height = 11.min(area.height);
-    let card = Rect {
-        x: area.x,
-        y: area.y + area.height.saturating_sub(card_height) / 2,
-        width: card_width,
-        height: card_height,
-    };
+    let welcome_card = WelcomeCard::new()
+        .subtitle("Your AI-powered coding assistant.")
+        .version(env!("CARGO_PKG_VERSION"))
+        .tips(&[
+            "Send /help for available commands.",
+            "Use Tab for autocomplete. Press Esc to cancel.",
+        ])
+        .accent_color(CYAN_PRIMARY)
+        .text_color(TEXT)
+        .dim_color(TEXT_DIM)
+        .border_color(CYAN_PRIMARY);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(BORDER))
-        .style(Style::default().bg(SURFACE_0))
-        .padding(Padding::new(2, 2, 1, 0))
-        .title(Span::styled(
-            " Cortex Code ",
-            Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let mut lines = welcome_card.to_lines(area.width);
+    lines.push(Line::default());
 
-    let lines = vec![
-        Line::from(Span::styled(
-            "A coding agent that reads, edits, runs and tests your project.",
-            Style::default().fg(TEXT),
-        )),
-        Line::default(),
-        field_line("workspace", &scene.workspace),
-        field_line("endpoint", &scene.endpoint),
-        field_line(
-            "mode",
-            &format!("{} · {} autonomy", scene.mode, scene.autonomy),
-        ),
-        Line::default(),
-        Line::from(Span::styled(
-            "Describe a change and Cortex Code works through it, tool call by tool call.",
-            Style::default().fg(TEXT_MUTED),
-        )),
-    ];
+    let left_card = InfoCard::new()
+        .add("Directory", &scene.workspace)
+        .add("Endpoint", &scene.endpoint)
+        .dim_color(TEXT_DIM)
+        .text_color(TEXT)
+        .border_color(CYAN_PRIMARY);
 
-    frame.render_widget(Paragraph::new(lines).block(block), card);
-}
+    let right_card = InfoCard::new()
+        .add("Mode", &scene.mode)
+        .add("Autonomy", &scene.autonomy)
+        .dim_color(TEXT_DIM)
+        .text_color(TEXT)
+        .border_color(CYAN_PRIMARY);
 
-fn field_line(label: &str, value: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(format!("{label:<11}"), Style::default().fg(TEXT_MUTED)),
-        Span::styled(value.to_string(), Style::default().fg(TEXT_DIM)),
-    ])
+    lines.extend(
+        InfoCardPair::new(left_card, right_card)
+            .gap(2)
+            .right_width(25)
+            .to_lines(area.width),
+    );
+
+    frame.render_widget(Paragraph::new(lines).style(Style::default().bg(VOID)), area);
 }
 
 fn draw_timeline(frame: &mut Frame, area: Rect, scene: &Scene) {

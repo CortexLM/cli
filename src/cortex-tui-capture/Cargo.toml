@@ -30,6 +30,9 @@ cortex-tui-core = { workspace = true }
 # Product theme, so the recorded demo tracks the real TUI palette
 cortex-core = { workspace = true }
 
+# Same welcome card / mascot the live TUI mounts, so the GIF cannot drift
+cortex-tui-components = { workspace = true }
+
 # Async runtime
 tokio = { workspace = true, features = ["full", "sync", "time", "macros", "fs"] }
 

@@ -19,6 +19,7 @@ use ratatui::widgets::{Clear, Paragraph};
 use tokio::sync::mpsc;
 
 use cortex_login::{SecureAuthData, save_auth_with_fallback};
+use cortex_tui_components::mascot::MASCOT_MINIMAL_LINES;
 use cortex_tui_components::spinner::SpinnerStyle;
 
 // ============================================================================
@@ -398,27 +399,29 @@ impl LoginScreen {
         ]));
         f.render_widget(welcome, chunks[0]);
 
-        // Line 3: Mascot top
-        let mascot_top = Paragraph::new(" ▄█▀▀▀▀█▄ ").style(Style::default().fg(PRIMARY));
-        f.render_widget(mascot_top, chunks[2]);
-
-        // Line 4: Mascot + waiting message
-        let mascot_middle = Paragraph::new(Line::from(vec![
-            Span::styled("██ ▌  ▐ ██  ", Style::default().fg(PRIMARY)),
-            Span::styled(
-                format!("Waiting for browser authentication  {}", spinner),
-                Style::default().fg(PRIMARY),
-            ),
-        ]));
-        f.render_widget(mascot_middle, chunks[3]);
-
-        // Line 5: Mascot bottom
-        let mascot_bottom = Paragraph::new(" █▄▄▄▄▄▄█ ").style(Style::default().fg(PRIMARY));
-        f.render_widget(mascot_bottom, chunks[4]);
-
-        // Line 6: Mascot legs
-        let mascot_legs = Paragraph::new("  █    █").style(Style::default().fg(PRIMARY));
-        f.render_widget(mascot_legs, chunks[5]);
+        // Lines 3-6: official welcome mascot (`MASCOT_MINIMAL_LINES`).
+        f.render_widget(
+            Paragraph::new(MASCOT_MINIMAL_LINES[0]).style(Style::default().fg(PRIMARY)),
+            chunks[2],
+        );
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(MASCOT_MINIMAL_LINES[1], Style::default().fg(PRIMARY)),
+                Span::styled(
+                    format!(" Waiting for browser authentication  {spinner}"),
+                    Style::default().fg(PRIMARY),
+                ),
+            ])),
+            chunks[3],
+        );
+        f.render_widget(
+            Paragraph::new(MASCOT_MINIMAL_LINES[2]).style(Style::default().fg(PRIMARY)),
+            chunks[4],
+        );
+        f.render_widget(
+            Paragraph::new(MASCOT_MINIMAL_LINES[3]).style(Style::default().fg(PRIMARY)),
+            chunks[5],
+        );
 
         // Line 8: Browser message
         let copy_hint = if self.copied_notification.is_some() {
@@ -960,6 +963,13 @@ mod tests {
                 || waiting.contains("Cortex"),
             "{waiting}"
         );
+        for glyph in MASCOT_MINIMAL_LINES {
+            let needle = glyph.trim();
+            assert!(
+                waiting.contains(needle),
+                "login waiting screen missing mascot line {needle:?}: {waiting}"
+            );
+        }
 
         screen.state = LoginState::SelectMethod;
         screen.error_message = Some("The coding service is temporarily unavailable".into());

@@ -48,7 +48,8 @@ mod harness_snapshots {
             text.contains("Cortex CLI"),
             "home session should render WelcomeCard: {text}"
         );
-        for glyph in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█", "█    █"] {
+        for glyph in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█", "█    █"]
+        {
             assert!(
                 text.contains(glyph),
                 "home session missing mascot line {glyph:?}: {text}"

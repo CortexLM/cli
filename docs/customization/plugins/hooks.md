@@ -175,7 +175,7 @@ Called when processing chat messages.
     "role": "user",
     "message_id": "msg789",
     "agent": "default",
-    "model": "claude-3-opus",
+    "model": "your-model-id",
     "content": "Hello, can you help me?"
 }
 ```
@@ -241,7 +241,7 @@ Modify prompts before AI processing.
 {
     "session_id": "abc123",
     "prompt": "Original prompt content...",
-    "model": "claude-3-opus",
+    "model": "your-model-id",
     "context": {}
 }
 ```
@@ -305,7 +305,7 @@ Called when a session starts.
 {
     "session_id": "abc123",
     "agent": "default",
-    "model": "claude-3-opus",
+    "model": "your-model-id",
     "cwd": "/path/to/project",
     "resumed": false
 }
@@ -536,8 +536,8 @@ Called when the AI model changes.
 **Input Structure:**
 ```json
 {
-    "old_model": "claude-3-opus",
-    "new_model": "gpt-4",
+    "old_model": "previous-model-id",
+    "new_model": "new-model-id",
     "session_id": "abc123"
 }
 ```

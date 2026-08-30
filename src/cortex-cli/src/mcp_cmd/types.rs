@@ -21,11 +21,8 @@ pub struct McpCli {
 #[derive(Debug, clap::Subcommand)]
 pub enum McpSubcommand {
     /// List configured MCP servers.
-    List(ListArgs),
-
-    /// List configured MCP servers (alias for list).
     #[command(visible_alias = "ls")]
-    Ls(ListArgs),
+    List(ListArgs),
 
     /// Show details for a configured MCP server.
     Get(GetArgs),
@@ -116,7 +113,7 @@ pub struct AddArgs {
 #[command(
     group(
         ArgGroup::new("transport")
-            .args(["command", "url", "sse"])
+            .args(["command", "url", "sse_url"])
             .required(true)
             .multiple(false)
     )
@@ -174,7 +171,7 @@ pub struct AddMcpSseArgs {
     #[arg(
         long = "sse-bearer-token-env-var",
         value_name = "ENV_VAR",
-        requires = "sse"
+        requires = "sse_url"
     )]
     pub sse_bearer_token_env_var: Option<String>,
 }
@@ -889,12 +886,17 @@ mod tests {
     }
 
     #[test]
-    fn test_subcommand_ls_variant() {
-        let subcommand = McpSubcommand::Ls(ListArgs {
-            json: false,
-            all: false,
-        });
-        assert!(matches!(subcommand, McpSubcommand::Ls(_)));
+    fn test_ls_is_an_alias_for_list() {
+        let cli = McpCli::try_parse_from(["mcp", "ls"]).expect("`mcp ls` should parse");
+        assert!(matches!(cli.subcommand, McpSubcommand::List(_)));
+    }
+
+    #[test]
+    fn test_command_tree_is_valid() {
+        // Catches duplicated subcommand names and aliases, which otherwise only
+        // surface as a panic the first time a user runs `cortex mcp --help`.
+        use clap::CommandFactory;
+        McpCli::command().debug_assert();
     }
 
     #[test]

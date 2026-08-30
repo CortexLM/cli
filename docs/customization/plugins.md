@@ -2,8 +2,14 @@
 
 Welcome to the Cortex Plugin System! This guide provides comprehensive documentation for developing plugins that extend Cortex functionality.
 
+> The plugin system is under active development. Sections describing the
+> WebAssembly runtime and the full capability model document where the system is
+> heading; `cortex plugin` already manages installation, enablement and the
+> development workflow today.
+
 ## Table of Contents
 
+- [Managing plugins](#managing-plugins)
 - [Introduction](#introduction)
 - [Plugin Architecture](#plugin-architecture)
 - [Plugin Manifest](#plugin-manifest-plugintoml)
@@ -12,6 +18,30 @@ Welcome to the Cortex Plugin System! This guide provides comprehensive documenta
 - [Host Functions](#host-functions)
 - [Development Workflow](#development-workflow)
 - [Related Documentation](#related-documentation)
+
+## Managing plugins
+
+```bash
+cortex plugin list                    # alias: ls
+cortex plugin list --enabled
+cortex plugin install <name>          # alias: add
+cortex plugin show <name>             # alias: info
+cortex plugin enable <name>
+cortex plugin disable <name>
+cortex plugin remove <name>           # aliases: rm, uninstall
+```
+
+Developing one:
+
+```bash
+cortex plugin new my-plugin           # alias: create
+cortex plugin dev --watch             # hot reload while you work
+cortex plugin build
+cortex plugin validate                # alias: check
+cortex plugin publish --dry-run
+```
+
+In the TUI, `/plugins` manages them without leaving the session.
 
 ## Introduction
 
@@ -382,9 +412,9 @@ cortex plugin list
 
 ## Related Documentation
 
-- [Getting Started](./GETTING_STARTED.md) - Step-by-step tutorial for creating your first plugin
-- [Hooks Reference](./HOOKS.md) - Complete reference for all hook types
-- [Security Model](./SECURITY.md) - Security features and best practices
+- [Getting Started](./plugins/getting-started.md) - Step-by-step tutorial for creating your first plugin
+- [Hooks Reference](./plugins/hooks.md) - Complete reference for all hook types
+- [Security Model](./plugins/security.md) - Security features and best practices
 
 ## Configuration in Cortex Config
 

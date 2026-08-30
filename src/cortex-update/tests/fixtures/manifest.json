@@ -1,0 +1,39 @@
+{
+  "stable": {
+    "version": "0.1.2",
+    "channel": "stable",
+    "released_at": "2026-08-30T00:00:00Z",
+    "changelog_url": "https://github.com/CortexLM/cli/blob/main/CHANGELOG.md",
+    "release_notes": "Fixture release used by cortex-update tests.",
+    "assets": {
+      "linux-x86_64": {
+        "url": "https://software.cortex.foundation/v1/assets/linux-x86_64/0.1.2/cortex.tar.gz",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 11111111
+      },
+      "linux-aarch64": {
+        "url": "https://software.cortex.foundation/v1/assets/linux-aarch64/0.1.2/cortex.tar.gz",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size": 11111112
+      },
+      "darwin-x86_64": {
+        "url": "https://software.cortex.foundation/v1/assets/darwin-x86_64/0.1.2/cortex.tar.gz",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "size": 12345677
+      },
+      "darwin-aarch64": {
+        "url": "https://software.cortex.foundation/v1/assets/darwin-aarch64/0.1.2/cortex.tar.gz",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "size": 12345678
+      },
+      "windows-x86_64": {
+        "url": "https://software.cortex.foundation/v1/assets/windows-x86_64/0.1.2/cortex.zip",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "size": 10101010
+      }
+    }
+  },
+  "beta": null,
+  "nightly": null,
+  "all_versions": ["0.1.2"]
+}

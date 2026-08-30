@@ -101,6 +101,12 @@ impl UpdateManager {
         self.check_update_forced().await
     }
 
+    /// Look up a specific published version (used by `cortex upgrade <version>`).
+    pub async fn check_version(&self, version: &str) -> UpdateResult<UpdateInfo> {
+        let release = self.client.get_release(version).await?;
+        self.build_update_info(&release)
+    }
+
     /// Force check for updates (bypass cache).
     pub async fn check_update_forced(&self) -> UpdateResult<Option<UpdateInfo>> {
         let latest = self.client.get_latest(self.config.channel).await?;

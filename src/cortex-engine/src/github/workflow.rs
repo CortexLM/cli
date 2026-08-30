@@ -98,7 +98,7 @@ jobs:
       - name: Setup Cortex CLI
         run: |
           curl -fsSL https://software.cortex.foundation/install.sh | sh
-          echo "$HOME/.cortex/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       
       - name: Run Cortex Agent
         env:
@@ -143,7 +143,7 @@ jobs:
       - name: Setup Cortex
         run: |
           curl -fsSL https://software.cortex.foundation/install.sh | sh
-          echo "$HOME/.cortex/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       
       - name: Review PR
         env:
@@ -193,7 +193,7 @@ jobs:
       - name: Setup Cortex
         run: |
           curl -fsSL https://software.cortex.foundation/install.sh | sh
-          echo "$HOME/.cortex/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       
       - name: Process Issue
         env:
@@ -248,6 +248,8 @@ mod tests {
 
         assert!(workflow.contains("name: pr-review"));
         assert!(workflow.contains("pull_request:"));
+        assert!(workflow.contains("$HOME/.local/bin"));
+        assert!(workflow.contains("software.cortex.foundation/install.sh"));
         assert!(!workflow.contains("issue_comment:"));
     }
 

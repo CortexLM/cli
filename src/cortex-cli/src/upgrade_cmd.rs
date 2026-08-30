@@ -216,26 +216,10 @@ impl UpgradeCli {
 
 /// Check for a specific version
 async fn check_specific_version(manager: &UpdateManager, version: &str) -> Result<UpdateInfo> {
-    let client = cortex_update::CortexSoftwareClient::new();
-    let release = client
-        .get_release(version)
+    manager
+        .check_version(version)
         .await
-        .context(format!("Version {} not found", version))?;
-
-    let release_clone = release.clone();
-    let asset = release_clone
-        .asset_for_current_platform()
-        .ok_or_else(|| anyhow::anyhow!("No download available for this platform"))?;
-
-    Ok(UpdateInfo {
-        current_version: CLI_VERSION.to_string(),
-        latest_version: release.version,
-        channel: release.channel,
-        changelog_url: release.changelog_url,
-        release_notes: release.release_notes,
-        asset: asset.clone(),
-        install_method: manager.install_method(),
-    })
+        .context(format!("Version {} not found", version))
 }
 
 /// Perform the actual upgrade

@@ -384,6 +384,29 @@ mod tests {
     }
 
     #[test]
+    fn mint_is_reserved_for_markers_everywhere() {
+        // The locked chrome allows mint on the `>` prompt, the `●` success
+        // dot, `✓` checks and `+N` diff additions — never on a command name,
+        // label or sentence. Login sub-states are locked as shipped.
+        let locked_login = ["login_waiting", "login_success", "login_error"];
+        for id in lock_scene_ids() {
+            if locked_login.contains(id) {
+                continue;
+            }
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let minted = mint_painted_chars(&frame.ansi);
+                assert!(
+                    minted
+                        .chars()
+                        .all(|c| matches!(c, '>' | '●' | '✓' | '+' | '0'..='9' | ' ')),
+                    "{id} paints mint outside the marker set at {size:?}: {minted:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn slash_palette_paints_mint_on_the_marker_only() {
         for size in [(40u16, 12u16), (120u16, 40u16)] {
             let frame = render_lock_scene("palette", size.0, size.1).expect("palette");

@@ -176,7 +176,7 @@ impl<'a> MinimalSessionView<'a> {
             );
             spans.push(Span::styled(shown, Style::default().fg(self.colors.text)));
         }
-        spans.push(Span::styled("█", Style::default().fg(self.colors.accent)));
+        spans.push(Span::styled("█", Style::default().fg(self.colors.text)));
 
         let line = Line::from(spans);
         let text_area = Rect::new(content_x, content_y, content_width, 1);

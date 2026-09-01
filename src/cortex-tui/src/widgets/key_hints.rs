@@ -215,7 +215,9 @@ impl KeyHints {
 
         let mut spans = Vec::new();
         let separator_style = Style::default().fg(self.colors.text_muted);
-        let key_style = Style::default().fg(self.colors.accent);
+        // Hint rows are uniformly dim in the locked chrome — mint stays on
+        // the prompt marker and success dots only.
+        let key_style = Style::default().fg(self.colors.text_dim);
         let desc_style = Style::default().fg(self.colors.text_dim);
 
         for (i, (key, desc)) in hints.iter().enumerate() {

@@ -148,10 +148,10 @@ impl Widget for StatusIndicator {
         // Build the header line: "⠹ Working · Analyzing code (45s • Esc to interrupt)"
         let mut spans: Vec<Span<'_>> = Vec::with_capacity(8);
 
-        // Spinner
+        // Spinner — gray, never mint: the accent is reserved for markers.
         spans.push(Span::styled(
             self.spinner_frame().to_string(),
-            ratatui::style::Style::default().fg(colors.accent),
+            ratatui::style::Style::default().fg(colors.text_dim),
         ));
         spans.push(Span::raw(" "));
 

@@ -3,7 +3,7 @@
 //! These scenes share session chrome (prompt, composer, cwd+git footer) and
 //! Cortex product copy only.
 
-use cortex_core::style::{ERROR, INFO, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM, WARNING};
+use cortex_core::style::{SELECTION_BG, SUCCESS, TEXT, TEXT_DIM};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -16,8 +16,6 @@ const USER_PROMPT: &str = "Add rate limiting to POST /v1/completions – 60 req/
 const CWD: &str = "~/cortex-api";
 const GIT: &str = "main*";
 const MODEL: &str = "cortex-1-mini";
-const PASS: Color = Color::Rgb(0x22, 0xC5, 0x5E);
-const AUTH_ORANGE: Color = Color::Rgb(0xFF, 0x8C, 0x32);
 const COMMAND_BG: Color = Color::Rgb(0x1C, 0x1C, 0x20);
 
 /// True when `id` is a dedicated lock-board painter (01–50).
@@ -255,11 +253,19 @@ fn fill_row(buf: &mut Buffer, area: Rect, y: u16, bg: Color) {
     }
 }
 
+/// Paint the `>` caret of a selection bar mint, like the locked slash rows.
+fn mint_selection_caret(buf: &mut Buffer, area: Rect, y: u16) {
+    if let Some(cell) = buf.cell_mut((area.x, y)) {
+        cell.set_style(Style::default().fg(SUCCESS).bg(SELECTION_BG));
+        cell.set_char('>');
+    }
+}
+
 fn board_shell(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = user_prompt_lines(w, area);
     lines.push(Line::from(vec![
-        Span::styled("● ", Style::default().fg(WARNING)),
+        Span::styled("● ", Style::default().fg(SUCCESS)),
         Span::styled(
             first_fitting_line("Shell npm test -- rateLimit", w.saturating_sub(2)),
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
@@ -277,7 +283,7 @@ fn board_shell(area: Rect, buf: &mut Buffer) {
             lines.push(dim(first_fitting_line(line, w)));
         }
         lines.push(Line::from(vec![
-            Span::styled("  ✓ ", Style::default().fg(PASS)),
+            Span::styled("  ✓ ", Style::default().fg(SUCCESS)),
             Span::styled(
                 first_fitting_line(
                     "test/rateLimit.test.ts rejects a 61st request in the window  412ms",
@@ -287,7 +293,7 @@ fn board_shell(area: Rect, buf: &mut Buffer) {
             ),
         ]));
         lines.push(Line::from(vec![
-            Span::styled("  ✓ ", Style::default().fg(PASS)),
+            Span::styled("  ✓ ", Style::default().fg(SUCCESS)),
             Span::styled(
                 first_fitting_line(
                     "test/rateLimit.test.ts returns 429 with Retry-After  187ms",
@@ -298,7 +304,7 @@ fn board_shell(area: Rect, buf: &mut Buffer) {
         ]));
     }
     lines.push(Line::from(vec![
-        Span::styled("  ⠇ ", Style::default().fg(WARNING)),
+        Span::styled("  ⠇ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line(
                 "test/rateLimit.test.ts allows requests again after the window slides",
@@ -353,10 +359,6 @@ fn board_permission(area: Rect, buf: &mut Buffer) {
         first_fitting_line("● Cortex wants to run", w),
         Style::default().fg(TEXT),
     );
-    if let Some(cell) = buf.cell_mut((area.x, y)) {
-        cell.set_style(Style::default().fg(WARNING));
-        cell.set_char('●');
-    }
     y += 1;
 
     fill_row(buf, area, y, COMMAND_BG);
@@ -402,6 +404,7 @@ fn board_permission(area: Rect, buf: &mut Buffer) {
                     .bg(SELECTION_BG)
                     .add_modifier(Modifier::BOLD),
             );
+            mint_selection_caret(buf, area, y);
         } else {
             buf.set_string(area.x, y, &shown, Style::default().fg(TEXT));
         }
@@ -493,6 +496,7 @@ fn board_plan(area: Rect, buf: &mut Buffer) {
             .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD),
     );
+    mint_selection_caret(buf, area, y);
     buf.set_string(
         area.x,
         y.saturating_add(1),
@@ -529,7 +533,10 @@ fn board_streaming(area: Rect, buf: &mut Buffer) {
         }
         lines.push(Line::from(vec![
             Span::styled("• ", Style::default().fg(TEXT_DIM)),
-            Span::styled(label.to_string(), Style::default().fg(SUCCESS)),
+            Span::styled(
+                label.to_string(),
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 first_fitting_line(&format!(" {detail}"), w.saturating_sub(label.len() + 2)),
                 Style::default().fg(TEXT_DIM),
@@ -645,6 +652,7 @@ fn board_resume(area: Rect, buf: &mut Buffer) {
                 &shown,
                 Style::default().fg(TEXT).bg(SELECTION_BG),
             );
+            mint_selection_caret(buf, area, y);
         } else if !compact(area) {
             let row = first_fitting_line(&format!("{when}  {title}  {branch}  {msgs}"), w);
             buf.set_string(area.x, y, format!("  {row}"), Style::default().fg(TEXT));
@@ -687,40 +695,48 @@ fn board_mcp(area: Rect, buf: &mut Buffer) {
         white(first_fitting_line("MCP servers · 2 of 4 connected", w)),
         Line::from(""),
     ];
+    // Mint marks connected servers only; every status word stays gray.
     let servers = [
         (
+            "●",
             SUCCESS,
             "github",
             "connected",
             "12 tools · repos, issues, pull requests",
         ),
         (
+            "●",
             SUCCESS,
             "postgres",
             "connected",
             "6 tools · localhost:5432/cortex",
         ),
         (
-            AUTH_ORANGE,
+            "●",
+            TEXT_DIM,
             "sentry",
             "authenticating",
             "waiting for browser sign-in...",
         ),
         (
-            ERROR,
+            "x",
+            TEXT,
             "linear",
             "failed",
             "connection refused — retrying in 30s",
         ),
     ];
-    for (color, name, status, detail) in servers {
+    for (mark, mark_color, name, status, detail) in servers {
         if compact(area) && matches!(name, "postgres" | "sentry") {
             continue;
         }
         lines.push(Line::from(vec![
-            Span::styled("● ", Style::default().fg(color)),
+            Span::styled(format!("{mark} "), Style::default().fg(mark_color)),
             Span::styled(format!("{name}  "), Style::default().fg(TEXT)),
-            Span::styled(first_fitting_line(status, 16), Style::default().fg(color)),
+            Span::styled(
+                first_fitting_line(status, 16),
+                Style::default().fg(TEXT_DIM),
+            ),
             Span::styled(
                 format!("  {}", first_fitting_line(detail, w.saturating_sub(24))),
                 Style::default().fg(TEXT_DIM),
@@ -776,12 +792,11 @@ fn board_usage(area: Rect, buf: &mut Buffer) {
             bar(412, 500),
             "412 / 500",
             "resets in 6d 4h",
-            WARNING,
         ),
-        ("Tokens this month", bar(84, 120), "8.4M / 12M", "", INFO),
-        ("Cloud agent minutes", bar(132, 400), "132 / 400", "", INFO),
+        ("Tokens this month", bar(84, 120), "8.4M / 12M", ""),
+        ("Cloud agent minutes", bar(132, 400), "132 / 400", ""),
     ];
-    for (label, blocks, nums, extra, color) in rows {
+    for (label, blocks, nums, extra) in rows {
         if compact(area) && label != "Agent requests" {
             continue;
         }
@@ -793,7 +808,7 @@ fn board_usage(area: Rect, buf: &mut Buffer) {
         }
         lines.push(Line::from(Span::styled(
             first_fitting_line(&row, w),
-            Style::default().fg(color),
+            Style::default().fg(TEXT),
         )));
     }
     lines.push(Line::from(""));
@@ -820,16 +835,16 @@ fn board_quota(area: Rect, buf: &mut Buffer) {
     ])];
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("x ", Style::default().fg(ERROR)),
+        Span::styled("x ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
         Span::styled(
             "Agent quota exhausted",
-            Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         ),
     ]));
     lines.push(white(first_fitting_line("Agent requests", w)));
     lines.push(Line::from(Span::styled(
         first_fitting_line(&format!("{}  500 / 500", bar(500, 500)), w),
-        Style::default().fg(ERROR),
+        Style::default().fg(TEXT),
     )));
     for part in wrap_or_drop(
         "Resets in 6d 4h (Sep 7, 16:02). Your work so far is saved in this session.",
@@ -881,10 +896,12 @@ fn board_sandbox(area: Rect, buf: &mut Buffer) {
             .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD),
     );
+    mint_selection_caret(buf, area, y);
     let on = "● On";
     let ox = area.right().saturating_sub(on.len() as u16 + 1);
     if ox > area.x + 4 {
-        buf.set_string(ox, y, on, Style::default().fg(TEXT).bg(SELECTION_BG));
+        buf.set_string(ox, y, "●", Style::default().fg(SUCCESS).bg(SELECTION_BG));
+        buf.set_string(ox + 2, y, "On", Style::default().fg(TEXT).bg(SELECTION_BG));
     }
 
     let details = [
@@ -940,7 +957,7 @@ fn board_sandbox(area: Rect, buf: &mut Buffer) {
 fn board_cloud(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = vec![Line::from(vec![
-        Span::styled("> ", Style::default().fg(SUCCESS)),
+        Span::styled("> ", Style::default().fg(TEXT)),
         Span::styled(
             first_fitting_line(
                 "& fix the flaky rateLimit integration test on CI",
@@ -950,7 +967,7 @@ fn board_cloud(area: Rect, buf: &mut Buffer) {
         ),
     ])];
     lines.push(Line::from(vec![
-        Span::styled("↑ ", Style::default().fg(INFO)),
+        Span::styled("↑ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             "Handed off to Cortex Cloud",
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
@@ -1046,10 +1063,6 @@ fn board_sudo(area: Rect, buf: &mut Buffer) {
         ),
         Style::default().fg(TEXT),
     );
-    if let Some(cell) = buf.cell_mut((area.x, y)) {
-        cell.set_style(Style::default().fg(TEXT_DIM));
-        cell.set_char('>');
-    }
     y += 2;
     buf.set_string(
         area.x,
@@ -1058,7 +1071,7 @@ fn board_sudo(area: Rect, buf: &mut Buffer) {
         Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
     );
     if let Some(cell) = buf.cell_mut((area.x, y)) {
-        cell.set_style(Style::default().fg(WARNING));
+        cell.set_style(Style::default().fg(SUCCESS));
         cell.set_char('●');
     }
     y += 1;
@@ -1115,7 +1128,7 @@ fn board_ask(area: Rect, buf: &mut Buffer) {
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("> ", Style::default().fg(SUCCESS)),
+        Span::styled("> ", Style::default().fg(TEXT)),
         Span::styled(
             first_fitting_line(
                 "How does token counting work for streamed completions?",
@@ -1136,7 +1149,7 @@ fn board_ask(area: Rect, buf: &mut Buffer) {
     if !compact(area) {
         lines.push(Line::from(vec![
             Span::styled("See ", Style::default().fg(TEXT_DIM)),
-            Span::styled("src/lib/tokens.ts", Style::default().fg(INFO)),
+            Span::styled("src/lib/tokens.ts", Style::default().fg(TEXT)),
             Span::styled(" for the implementation.", Style::default().fg(TEXT_DIM)),
         ]));
         for (n, ident, detail) in [
@@ -1154,7 +1167,10 @@ fn board_ask(area: Rect, buf: &mut Buffer) {
         ] {
             lines.push(Line::from(vec![
                 Span::styled(n.to_string(), Style::default().fg(TEXT_DIM)),
-                Span::styled(ident.to_string(), Style::default().fg(SUCCESS)),
+                Span::styled(
+                    ident.to_string(),
+                    Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(
                     first_fitting_line(detail, w.saturating_sub(n.len() + ident.len())),
                     Style::default().fg(TEXT_DIM),
@@ -1218,7 +1234,7 @@ fn board_files(area: Rect, buf: &mut Buffer) {
         let mut x = area.x;
         let marker = if selected { ">" } else { " " };
         let marker_style = if selected {
-            Style::default().fg(TEXT).bg(SELECTION_BG)
+            Style::default().fg(SUCCESS).bg(SELECTION_BG)
         } else {
             Style::default().fg(TEXT)
         };
@@ -1277,7 +1293,7 @@ fn board_queue(area: Rect, buf: &mut Buffer) {
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("⁝ ", Style::default().fg(SUCCESS)),
+        Span::styled("⁝ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line("Writing integration tests...", w.saturating_sub(2)),
             Style::default().fg(TEXT),
@@ -1351,45 +1367,46 @@ fn board_jobs(area: Rect, buf: &mut Buffer) {
         status_color: Color,
         meta: &'static str,
     }
+    // Spinners and status words stay gray; mint marks the finished job.
     let jobs = [
         Job {
             selected: true,
             icon: "⠇",
-            icon_color: SUCCESS,
+            icon_color: TEXT_DIM,
             kind: "cloud",
             title: "Fix flaky rateLimit test on CI",
             status: "running",
-            status_color: SUCCESS,
+            status_color: TEXT_DIM,
             meta: "4m · cortex/fix-flaky-ratelimit",
         },
         Job {
             selected: false,
             icon: "⠇",
-            icon_color: WARNING,
+            icon_color: TEXT_DIM,
             kind: "subagent",
             title: "Docs sweep — rate limits + 429 examples",
             status: "running",
-            status_color: WARNING,
+            status_color: TEXT_DIM,
             meta: "1m · docs/rate-limiting.md",
         },
         Job {
             selected: false,
             icon: "✓",
-            icon_color: PASS,
+            icon_color: SUCCESS,
             kind: "subagent",
             title: "Typecheck all packages",
             status: "done",
-            status_color: PASS,
+            status_color: TEXT_DIM,
             meta: "finished 2m ago · 0 errors",
         },
         Job {
             selected: false,
             icon: "x",
-            icon_color: ERROR,
+            icon_color: TEXT,
             kind: "cloud",
             title: "Bump ioredis 5 → 6",
             status: "failed",
-            status_color: ERROR,
+            status_color: TEXT_DIM,
             meta: "18m ago · 3 tests failing",
         },
     ];
@@ -1499,33 +1516,28 @@ fn board_help(area: Rect, buf: &mut Buffer) {
     let mut y = area.y + 2;
     let reserve = if compact_help { 5 } else { 8 };
     if two_col {
+        // Command white, description dim — same tone as the locked slash.
         let col_w = w / 2;
+        fn paint_help(buf: &mut Buffer, x: u16, y: u16, cmd: &str, desc: &str, budget: usize) {
+            buf.set_string(x, y, cmd, Style::default().fg(TEXT));
+            let fitted = ellipsis_fit(desc, budget.saturating_sub(cmd.len() + 2));
+            if !fitted.is_empty() {
+                buf.set_string(
+                    x + cmd.len() as u16 + 2,
+                    y,
+                    fitted,
+                    Style::default().fg(TEXT_DIM),
+                );
+            }
+        }
         for i in 0..10 {
             if y >= area.bottom().saturating_sub(reserve) {
                 break;
             }
             let (lcmd, ldesc) = HELP[i];
             let (rcmd, rdesc) = HELP[i + 10];
-            let left = format!(
-                "{lcmd}  {}",
-                ellipsis_fit(ldesc, col_w.saturating_sub(lcmd.len() + 2))
-            );
-            buf.set_string(
-                area.x,
-                y,
-                first_fitting_line(&left, col_w.saturating_sub(1)),
-                Style::default().fg(TEXT),
-            );
-            let right = format!(
-                "{rcmd}  {}",
-                ellipsis_fit(rdesc, col_w.saturating_sub(rcmd.len() + 2))
-            );
-            buf.set_string(
-                area.x + col_w as u16,
-                y,
-                first_fitting_line(&right, col_w),
-                Style::default().fg(TEXT),
-            );
+            paint_help(buf, area.x, y, lcmd, ldesc, col_w.saturating_sub(1));
+            paint_help(buf, area.x + col_w as u16, y, rcmd, rdesc, col_w);
             y += 1;
         }
     } else {
@@ -1650,7 +1662,7 @@ fn board_first_run(area: Rect, buf: &mut Buffer) {
             continue;
         }
         lines.push(Line::from(vec![
-            Span::styled(format!("{n} "), Style::default().fg(SUCCESS)),
+            Span::styled(format!("{n} "), Style::default().fg(TEXT_DIM)),
             Span::styled(
                 first_fitting_line(title, w.saturating_sub(3)),
                 Style::default().fg(TEXT),
@@ -1685,7 +1697,7 @@ fn board_bash(area: Rect, buf: &mut Buffer) {
         area.x,
         area.y,
         first_fitting_line("┌ Bash mode ┐", w),
-        Style::default().fg(WARNING),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
     );
     let mut hy = area.y + 1;
     for part in wrap_or_drop(
@@ -1829,7 +1841,7 @@ fn board_config(area: Rect, buf: &mut Buffer) {
             rx.saturating_add(prefix.chars().count() as u16),
             fy,
             "MAX",
-            Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         );
         buf.set_string(
             rx.saturating_add(prefix.chars().count() as u16 + 3),
@@ -1843,7 +1855,7 @@ fn board_config(area: Rect, buf: &mut Buffer) {
 fn board_footer_max(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = vec![Line::from(vec![
-        Span::styled("> ", Style::default().fg(SUCCESS)),
+        Span::styled("> ", Style::default().fg(TEXT)),
         Span::styled(
             first_fitting_line(
                 "Ship it — commit and push the rate limiter",
@@ -1854,7 +1866,10 @@ fn board_footer_max(area: Rect, buf: &mut Buffer) {
     ])];
     lines.push(Line::from(vec![
         Span::styled("● ", Style::default().fg(SUCCESS)),
-        Span::styled("Shell ", Style::default().fg(SUCCESS)),
+        Span::styled(
+            "Shell ",
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ),
         Span::styled(
             first_fitting_line(
                 "git add -A && git commit && git push -u origin rate-limit-9e4d",
@@ -1864,13 +1879,14 @@ fn board_footer_max(area: Rect, buf: &mut Buffer) {
         ),
     ]));
     lines.push(Line::from(vec![
+        Span::styled("✓ ", Style::default().fg(SUCCESS)),
         Span::styled(
-            "✓ Committed and pushed · 3 files · ",
-            Style::default().fg(SUCCESS),
+            "Committed and pushed · 3 files · ",
+            Style::default().fg(TEXT),
         ),
         Span::styled("+214", Style::default().fg(SUCCESS)),
         Span::styled(" ", Style::default().fg(TEXT_DIM)),
-        Span::styled("-9", Style::default().fg(ERROR)),
+        Span::styled("-9", Style::default().fg(TEXT_DIM)),
     ]));
     lines.push(dim(first_fitting_line(
         "a4f21c9 · Add Redis sliding-window rate limiting to /v1/completions",
@@ -1922,7 +1938,7 @@ fn board_footer_max(area: Rect, buf: &mut Buffer) {
             rx.saturating_add(prefix.chars().count() as u16),
             y,
             "MAX",
-            Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         );
         buf.set_string(
             rx.saturating_add(prefix.chars().count() as u16 + 3),
@@ -1937,7 +1953,7 @@ fn board_footer_max(area: Rect, buf: &mut Buffer) {
                 rx,
                 y,
                 "MAX",
-                Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD),
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             );
         }
     }
@@ -2008,7 +2024,7 @@ fn board_thinking(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = user_prompt_lines(w, area);
     lines.push(Line::from(vec![
-        Span::styled("⠇ ", Style::default().fg(SUCCESS)),
+        Span::styled("⠇ ", Style::default().fg(TEXT_DIM)),
         Span::styled("Thinking", Style::default().fg(TEXT)),
     ]));
     for thought in [
@@ -2047,7 +2063,7 @@ fn board_todos(area: Rect, buf: &mut Buffer) {
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("› ", Style::default().fg(SUCCESS)),
+        Span::styled("› ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
         Span::styled(
             first_fitting_line("Write ratelimit middleware", w.saturating_sub(2)),
             Style::default().fg(TEXT),
@@ -2070,7 +2086,7 @@ fn board_todos(area: Rect, buf: &mut Buffer) {
     }
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("⠋ ", Style::default().fg(SUCCESS)),
+        Span::styled("⠋ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line("Writing src/middleware/rateLimit.ts", w.saturating_sub(2)),
             Style::default().fg(TEXT),
@@ -2105,23 +2121,30 @@ fn board_question(area: Rect, buf: &mut Buffer) {
     );
     y += 2;
     let options = [
-        (false, "1  Middleware on POST /v1/completions only"),
-        (true, "2  Shared limiter for every /v1/* route"),
-        (false, "3  Per-model limits, configured in the catalog"),
+        (false, "1", "Middleware on POST /v1/completions only"),
+        (true, "2", "Shared limiter for every /v1/* route"),
+        (false, "3", "Per-model limits, configured in the catalog"),
         (
             false,
-            "4  Skip for now - I'll point you at an existing helper",
+            "4",
+            "Skip for now - I'll point you at an existing helper",
         ),
     ];
-    for (selected, label) in options {
+    for (selected, number, label) in options {
         if y >= area.bottom().saturating_sub(3) {
             break;
         }
-        let shown = first_fitting_line(label, w);
+        let shown = first_fitting_line(label, w.saturating_sub(3));
         if selected {
             fill_row(buf, area, y, SELECTION_BG);
             buf.set_string(
                 area.x,
+                y,
+                number,
+                Style::default().fg(TEXT_DIM).bg(SELECTION_BG),
+            );
+            buf.set_string(
+                area.x + 3,
                 y,
                 &shown,
                 Style::default()
@@ -2130,7 +2153,8 @@ fn board_question(area: Rect, buf: &mut Buffer) {
                     .add_modifier(Modifier::BOLD),
             );
         } else {
-            buf.set_string(area.x, y, &shown, Style::default().fg(TEXT));
+            buf.set_string(area.x, y, number, Style::default().fg(TEXT_DIM));
+            buf.set_string(area.x + 3, y, &shown, Style::default().fg(TEXT));
         }
         y += 1;
     }
@@ -2177,12 +2201,12 @@ fn board_skills(area: Rect, buf: &mut Buffer) {
             fill_row(buf, area, y, SELECTION_BG);
             buf.set_string(area.x, y, &line, Style::default().fg(TEXT).bg(SELECTION_BG));
         } else {
-            buf.set_string(area.x, y, cmd, Style::default().fg(SUCCESS));
+            buf.set_string(area.x, y, cmd, Style::default().fg(TEXT));
             buf.set_string(
                 area.x.saturating_add(cmd.len() as u16 + 2),
                 y,
                 first_fitting_line(desc, w.saturating_sub(cmd.len() + 2)),
-                Style::default().fg(TEXT),
+                Style::default().fg(TEXT_DIM),
             );
         }
         y += 1;
@@ -2203,7 +2227,7 @@ fn board_btw(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = user_prompt_lines(w, area);
     lines.push(Line::from(vec![
-        Span::styled("⠇ ", Style::default().fg(SUCCESS)),
+        Span::styled("⠇ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line(
                 "Implementing the sliding-window limiter...",
@@ -2214,18 +2238,21 @@ fn board_btw(area: Rect, buf: &mut Buffer) {
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("│ ", Style::default().fg(INFO)),
-        Span::styled("btw", Style::default().fg(INFO)),
+        Span::styled("│ ", Style::default().fg(TEXT_DIM)),
+        Span::styled(
+            "btw",
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("│ ", Style::default().fg(INFO)),
+        Span::styled("│ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line("Is ioredis already a dependency?", w.saturating_sub(2)),
             Style::default().fg(TEXT),
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("│ ", Style::default().fg(INFO)),
+        Span::styled("│ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line(
                 "Yes – ioredis@5.4.1 is in dependencies. No install needed.",
@@ -2236,7 +2263,7 @@ fn board_btw(area: Rect, buf: &mut Buffer) {
         Span::styled("█", Style::default().fg(TEXT)),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("│ ", Style::default().fg(INFO)),
+        Span::styled("│ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line("not added to the main thread", w.saturating_sub(2)),
             Style::default().fg(TEXT_DIM),
@@ -2276,10 +2303,10 @@ fn board_stopped(area: Rect, buf: &mut Buffer) {
         ]));
     }
     lines.push(Line::from(vec![
-        Span::styled("x ", Style::default().fg(ERROR)),
+        Span::styled("x ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
         Span::styled(
             "Stopped",
-            Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         ),
     ]));
     lines.push(dim(first_fitting_line("12s · 4.1k tokens · ctrl+c", w)));
@@ -2309,7 +2336,7 @@ fn board_compacted(area: Rect, buf: &mut Buffer) {
             Span::styled("  →  ", Style::default().fg(TEXT)),
             Span::styled(
                 "12%",
-                Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD),
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             ),
             Span::styled(" used", Style::default().fg(TEXT_DIM)),
         ]),
@@ -2346,26 +2373,26 @@ fn board_write(area: Rect, buf: &mut Buffer) {
         Span::styled(" +84", Style::default().fg(SUCCESS)),
     ]));
     lines.push(dim(first_fitting_line("new file", w)));
-    if !compact(area) {
-        let code = [
-            "1  import Redis from \"ioredis\";",
-            "2  import type { FastifyRequest, FastifyReply } from \"fastify\";",
-            "3",
-            "4  export function rateLimit(opts: { limit: number; windowSec: number; keyOf: (r: FastifyRequest) => string }) {",
-            "5    const redis = new Redis(process.env.REDIS_URL);",
-            "6    return async (req: FastifyRequest, reply: FastifyReply) => {",
-            "7      const key = `rl:${opts.keyOf(req)}`;",
-        ];
-        for (i, line) in code.iter().enumerate() {
-            let color = if i < 2 { INFO } else { TEXT };
-            for part in wrap_or_drop(line, w) {
-                lines.push(Line::from(Span::styled(part, Style::default().fg(color))));
-            }
-        }
-    } else {
-        for part in wrap_or_drop("1  import Redis from \"ioredis\";", w) {
-            lines.push(Line::from(Span::styled(part, Style::default().fg(INFO))));
-        }
+    let code: &[(u32, &str)] = &[
+        (1, "import Redis from \"ioredis\";"),
+        (
+            2,
+            "import type { FastifyRequest, FastifyReply } from \"fastify\";",
+        ),
+        (
+            4,
+            "export function rateLimit(opts: { limit: number; windowSec: number }) {",
+        ),
+        (5, "  const redis = new Redis(process.env.REDIS_URL);"),
+        (
+            6,
+            "  return async (req: FastifyRequest, reply: FastifyReply) => {",
+        ),
+        (7, "    const key = `rl:${opts.keyOf(req)}`;"),
+    ];
+    let take = if compact(area) { 1 } else { code.len() };
+    for (no, line) in code.iter().take(take) {
+        lines.extend(grep_hit_line(w, *no, line));
     }
     paint_lines(
         area,
@@ -2588,9 +2615,10 @@ fn board_glob(area: Rect, buf: &mut Buffer) {
     ];
     let take = if compact(area) { 3 } else { files.len() };
     for path in files.iter().take(take) {
-        for part in wrap_or_drop(&format!("  {path}"), w) {
-            lines.push(white(part));
-        }
+        let fitted = first_fitting_line(path, w.saturating_sub(2));
+        let mut spans = vec![Span::styled("  ", Style::default().fg(TEXT))];
+        spans.extend(paint_match_path(&fitted, "rate"));
+        lines.push(Line::from(spans));
     }
     paint_lines(
         area,
@@ -2605,7 +2633,7 @@ fn board_delete(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = user_prompt_lines(w, area);
     lines.push(Line::from(vec![
-        Span::styled("● ", Style::default().fg(ERROR)),
+        Span::styled("● ", Style::default().fg(SUCCESS)),
         Span::styled(
             "Delete",
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
@@ -2667,7 +2695,7 @@ fn board_list(area: Rect, buf: &mut Buffer) {
     }
     lines.push(Line::from(Span::styled(
         first_fitting_line("  internal/", w),
-        Style::default().fg(INFO),
+        Style::default().fg(TEXT),
     )));
     paint_lines(
         area,
@@ -2695,7 +2723,7 @@ fn board_fetch(area: Rect, buf: &mut Buffer) {
             } else {
                 url_fit
             },
-            Style::default().fg(INFO),
+            Style::default().fg(TEXT_DIM),
         ),
     ]));
     lines.push(dim(first_fitting_line("ZADD | Redis", w)));
@@ -2735,13 +2763,16 @@ fn board_mcp_call(area: Rect, buf: &mut Buffer) {
     ]));
     lines.push(dim(first_fitting_line("  team=API  state=started", w)));
     let rows = [
-        "  API-184  Rate limit 429 body  In Progress  you",
-        "  API-191  Sliding window spike  In Progress  you",
+        ("  API-184  Rate limit 429 body", "  In Progress  you"),
+        ("  API-191  Sliding window spike", "  In Progress  you"),
     ];
-    for row in rows {
-        for part in wrap_or_drop(row, w) {
-            lines.push(white(part));
-        }
+    for (item, status) in rows {
+        let item_fit = first_fitting_line(item, w.saturating_sub(2));
+        let status_fit = first_fitting_line(status, w.saturating_sub(item_fit.chars().count()));
+        lines.push(Line::from(vec![
+            Span::styled(item_fit, Style::default().fg(TEXT)),
+            Span::styled(status_fit, Style::default().fg(TEXT_DIM)),
+        ]));
         if compact(area) {
             break;
         }
@@ -2759,15 +2790,18 @@ fn board_task(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = user_prompt_lines(w, area);
     lines.push(Line::from(vec![
-        Span::styled("● ", Style::default().fg(WARNING)),
-        Span::styled("Task ", Style::default().fg(WARNING)),
+        Span::styled("● ", Style::default().fg(SUCCESS)),
+        Span::styled(
+            "Task ",
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ),
         Span::styled(
             first_fitting_line("Write integration tests", w.saturating_sub(8)),
             Style::default().fg(TEXT),
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  ⠇ ", Style::default().fg(WARNING)),
+        Span::styled("  ⠇ ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line("Running vitest · 18s", w.saturating_sub(4)),
             Style::default().fg(TEXT_DIM),
@@ -2791,7 +2825,7 @@ fn board_diagnostics(area: Rect, buf: &mut Buffer) {
         "src/middleware/rateLimit.ts".to_string()
     };
     lines.push(Line::from(vec![
-        Span::styled("● ", Style::default().fg(WARNING)),
+        Span::styled("● ", Style::default().fg(SUCCESS)),
         Span::styled(
             "Diagnostics ",
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
@@ -2802,7 +2836,10 @@ fn board_diagnostics(area: Rect, buf: &mut Buffer) {
     let error_msg = "Property 'apiKey' does not exist on type 'FastifyRequest'.";
     let warn_msg = "'redis' is declared but its value is never used.";
     lines.push(Line::from(vec![
-        Span::styled("  error ", Style::default().fg(ERROR)),
+        Span::styled(
+            "  error ",
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("L22  ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line(error_msg, w.saturating_sub(12)),
@@ -2810,7 +2847,7 @@ fn board_diagnostics(area: Rect, buf: &mut Buffer) {
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  warn  ", Style::default().fg(WARNING)),
+        Span::styled("  warn  ", Style::default().fg(TEXT)),
         Span::styled("L47  ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line(warn_msg, w.saturating_sub(12)),
@@ -2845,7 +2882,7 @@ fn board_edit(area: Rect, buf: &mut Buffer) {
             Style::default().fg(TEXT),
         ),
         Span::styled(" +9", Style::default().fg(SUCCESS)),
-        Span::styled(" -2", Style::default().fg(ERROR)),
+        Span::styled(" -2", Style::default().fg(TEXT_DIM)),
     ]));
     if !compact(area) {
         lines.push(dim(first_fitting_line(
@@ -2926,7 +2963,7 @@ fn board_multi_diff(area: Rect, buf: &mut Buffer) {
             plus_x + plus.chars().count() as u16 + 1,
             y,
             minus,
-            with_row_bg(Style::default().fg(if *minus == "-" { TEXT_DIM } else { ERROR })),
+            with_row_bg(Style::default().fg(TEXT_DIM)),
         );
         y += 1;
     }

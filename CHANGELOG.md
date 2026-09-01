@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- Lock boards for typing, `/model` (compact + full), `/mode`, `/permissions`, working, and Read (states 02, 04–09) with captures at 40×12 and 120×40
 - Code session turns against `POST /v1/code/sessions/{id}/turns` (streaming tokens, tool rows, Plan/Spec harness locks)
 - Device login against `POST /v1/auth/device` on `api.cortex.foundation` (no silent guest substitution)
 - This PC / Cloud / SSH computer label on the welcome card
@@ -22,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remote tool rows keep their label instead of dropping arguments
 
 ### Changed
+- Remaining TUI lock states recaptured on the locked gray/white chrome: mint stays on the `>` prompt, `●` success dots, `✓` checks and `+` diff additions; selection bars keep light text on `#1A3330`
+- Session view accent aligned to the locked mint; user text, cursors, spinners and hint rows are gray/white
 - Sign-in docs point at `api.cortex.foundation` device login
 - Stream timeouts use the product-facing coding-service error
 

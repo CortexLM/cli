@@ -74,6 +74,16 @@ pub fn lock_scene_ids() -> &'static [&'static str] {
         "session_loading",
         "session_error",
         "session_success",
+        "shell",
+        "permission",
+        "plan",
+        "streaming",
+        "resume",
+        "mcp",
+        "usage",
+        "quota",
+        "sandbox",
+        "cloud",
     ]
 }
 
@@ -166,6 +176,9 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
                 "session_loading" => draw_session(frame, loading_session_state()),
                 "session_error" => draw_session(frame, error_session_state()),
                 "session_success" => draw_session(frame, success_session_state()),
+                board if crate::lock_boards::is_lock_board(board) => {
+                    crate::lock_boards::render_lock_board(board, area, frame.buffer_mut());
+                }
                 other => {
                     let msg = format!("unknown lock scene {other}");
                     frame.render_widget(ratatui::widgets::Paragraph::new(msg), area);
@@ -560,5 +573,110 @@ mod tests {
         );
         let empty = render_lock_scene("session_empty", 80, 24).expect("empty");
         assert!(empty.plain.contains("Cortex CLI v1.0.0"), "{}", empty.plain);
+    }
+
+    #[test]
+    fn lock_boards_11_20_product_copy() {
+        let always: &[(&str, &[&str])] = &[
+            (
+                "shell",
+                &["Shell npm test", "running", "ctrl+c", "follow-up"],
+            ),
+            (
+                "permission",
+                &[
+                    "Cortex wants to run",
+                    "npm install",
+                    "Yes, run once",
+                    "Cortex",
+                ],
+            ),
+            (
+                "plan",
+                &[
+                    "Plan",
+                    "Implement this plan?",
+                    "Agent mode",
+                    "keep planning",
+                ],
+            ),
+            ("streaming", &["Done", "rateLimit()", "follow-up"]),
+            ("resume", &["/resume", "search sessions", "24 messages"]),
+            ("mcp", &["/mcp", "2 of 4 connected", "mcp.json"]),
+            ("usage", &["/usage", "Cortex Pro", "Agent requests"]),
+            (
+                "quota",
+                &["Agent quota exhausted", "500 / 500", "held until quota"],
+            ),
+            ("sandbox", &["/sandbox", "Sandbox mode"]),
+            ("cloud", &["Handed off to Cortex Cloud", "bc-4f2a", "/jobs"]),
+        ];
+
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for (id, needles) in always {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let lower = frame.plain.to_lowercase();
+                assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
+                assert!(
+                    frame.plain.contains("cortex-1-mini"),
+                    "{id} footer model at {size:?}:\n{}",
+                    frame.plain
+                );
+                assert!(
+                    frame.plain.contains("~/cortex-api") || frame.plain.contains("cortex-api"),
+                    "{id} cwd at {size:?}:\n{}",
+                    frame.plain
+                );
+                for needle in *needles {
+                    let hit = frame.plain.contains(needle)
+                        || needle
+                            .split_whitespace()
+                            .all(|word| frame.plain.contains(word));
+                    assert!(hit, "{id} missing `{needle}` at {size:?}:\n{}", frame.plain);
+                }
+            }
+        }
+
+        let wide_shell = render_lock_scene("shell", 120, 40).expect("shell wide");
+        assert!(wide_shell.plain.contains("vitest"), "{}", wide_shell.plain);
+        assert!(wide_shell.plain.contains("✓") || wide_shell.plain.contains("rateLimit.test"));
+
+        let perm = render_lock_scene("permission", 120, 40).expect("perm");
+        assert!(perm.plain.contains("always allow npm install"));
+        assert!(perm.plain.contains("Edit command"));
+        assert!(perm.plain.contains("Normal"));
+        assert!(perm.plain.contains("tell Cortex"));
+
+        let plan = render_lock_scene("plan", 120, 40).expect("plan");
+        assert!(plan.plain.contains("Redis-backed"));
+        assert!(plan.plain.contains(" · Plan · ") || plan.plain.contains("Plan ·"));
+
+        let resume = render_lock_scene("resume", 120, 40).expect("resume");
+        assert!(resume.plain.contains("Sessions sync through Cortex Cloud"));
+
+        let usage = render_lock_scene("usage", 120, 40).expect("usage");
+        assert!(usage.plain.contains("cortex.foundation/billing"));
+        assert!(usage.plain.contains("8.4M") || usage.plain.contains("12M"));
+
+        let cloud = render_lock_scene("cloud", 120, 40).expect("cloud");
+        assert!(cloud.plain.contains("cortex.foundation/agents"));
+        assert!(cloud.plain.contains("Plan, search, build anything"));
+
+        let sandbox = render_lock_scene("sandbox", 120, 40).expect("sandbox");
+        assert!(sandbox.plain.contains("Filesystem"));
+        assert!(sandbox.plain.contains("space toggle"));
+        assert!(sandbox.plain.contains("Smart"));
+
+        let stream = render_lock_scene("streaming", 120, 40).expect("stream");
+        assert!(stream.plain.contains("zadd") || stream.plain.contains("rateLimit"));
+        assert!(!stream.plain.contains("Read src/") && !stream.plain.contains("Write src/"));
+
+        let mcp = render_lock_scene("mcp", 120, 40).expect("mcp");
+        assert!(mcp.plain.contains("authenticating"));
+        assert!(mcp.plain.contains("failed"));
     }
 }

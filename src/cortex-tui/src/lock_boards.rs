@@ -3646,19 +3646,34 @@ fn board_model_compact(area: Rect, buf: &mut Buffer) {
 fn board_model_full(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     paint_command_prompt(area, buf, "/model");
+    // The full picker is the full picker at every size: a description under
+    // each model plus the Effort radios. At 40 columns the blank row under
+    // the prompt gives way so all of it fits above the hints.
+    let header_y = if compact(area) {
+        area.y + 1
+    } else {
+        area.y + 2
+    };
     buf.set_string(
         area.x,
-        area.y + 2,
+        header_y,
         first_fitting_line("Model", w),
         Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
     );
-    let mut y = area.y + 3;
+    let limit = area.bottom().saturating_sub(2);
+    let mut y = header_y + 1;
     for (selected, name, meta, detail) in MODEL_ROWS {
-        if y >= area.bottom().saturating_sub(3) {
+        if y + 1 >= limit {
             break;
         }
         y += picker_row(area, buf, y, *selected, name, meta);
-        if !compact(area) {
+        // Narrow keeps a whole sentence under the MAX model.
+        let detail = if compact(area) && *name == "Cortex Max 1" {
+            "Longest context — token billing."
+        } else {
+            detail
+        };
+        if y < limit {
             buf.set_string(
                 area.x + 2,
                 y,
@@ -3670,6 +3685,8 @@ fn board_model_full(area: Rect, buf: &mut Buffer) {
     }
     if !compact(area) {
         y += 1;
+    }
+    if y + 1 < limit {
         buf.set_string(
             area.x,
             y,
@@ -3683,7 +3700,10 @@ fn board_model_full(area: Rect, buf: &mut Buffer) {
             fit_line("○ Low   ● Medium   ○ High", w),
             Style::default().fg(TEXT),
         );
-        y += 2;
+        y += 1;
+    }
+    if !compact(area) {
+        y += 1;
         for part in wrap_or_drop(
             "MAX bills by token instead of per request — manage at cortex.foundation/billing",
             w,

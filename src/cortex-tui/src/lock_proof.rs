@@ -708,6 +708,72 @@ mod tests {
     }
 
     #[test]
+    fn model_full_is_the_full_picker_at_every_size() {
+        // State 05 is never the compact list: a description under each model
+        // plus the Effort radios, at 40×12 as well as 120×40.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let full = render_lock_scene("model_full", size.0, size.1).expect("model_full");
+            let compact = render_lock_scene("model_compact", size.0, size.1).expect("compact");
+            assert_ne!(
+                full.plain, compact.plain,
+                "model_full must differ from model_compact at {size:?}"
+            );
+            for needle in [
+                "Cortex Mini 1",
+                "Fast default for everyday coding.",
+                "Cortex 1",
+                "Deeper reasoning for hard changes.",
+                "Cortex Max 1",
+                "Longest context",
+                "Effort",
+                "○ Low   ● Medium   ○ High",
+            ] {
+                assert!(
+                    full.plain.contains(needle),
+                    "model_full missing `{needle}` at {size:?}:\n{}",
+                    full.plain
+                );
+            }
+            for needle in ["Fast default", "Effort"] {
+                assert!(
+                    !compact.plain.contains(needle),
+                    "model_compact stays the short list at {size:?}:\n{}",
+                    compact.plain
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn distinct_states_render_distinct_frames() {
+        // Only the documented aliases may capture the same board; every other
+        // state is its own frame at both sizes.
+        let aliases: [&[&str]; 5] = [
+            &["clear", "clear_confirm"],
+            &["compact", "compacted"],
+            &["grep", "tool_tiles"],
+            &["interrupt", "stopped"],
+            &["login", "login_select"],
+        ];
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let mut seen: std::collections::HashMap<String, &str> = Default::default();
+            for id in lock_scene_ids() {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                if let Some(other) = seen.insert(frame.ansi.clone(), id) {
+                    let documented = aliases
+                        .iter()
+                        .any(|pair| pair.contains(id) && pair.contains(&other));
+                    assert!(
+                        documented,
+                        "{id} and {other} render the same frame at {size:?}:\n{}",
+                        frame.plain
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn mode_chips_are_kept() {
         // `┌ Ask — read-only ┐` and `┌ Bash mode ┐` are square mode chips,
         // not session frames — they stay at both sizes.

@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Composite raw TUI lock captures into a photorealistic macOS Terminal.app.
 
-The raw captures under `docs/media/tui-lock/{40x12,120x40}/` are the source
-of truth for every TUI pixel — this script never invents terminal text. Each
-capture is placed 1:1 inside a Terminal.app window (traffic lights, centered
-`cortex-api — cortex — WxH` title, dark title bar, rounded window chrome,
-native drop shadow) on a macOS desktop wallpaper. The rounded corners belong
-to the macOS window only; the TUI content itself stays frameless.
+Rebuilds the designer chrome template — macOS Sequoia ray wallpaper, dark
+menu bar (Apple mark, Terminal menus, status icons, `Fri May 10 14:32`), and
+a Terminal.app window with traffic lights and a `cortex-api — cortex — W×H`
+proxy-icon title over an empty black content rect — then places each REAL
+capture from `docs/media/tui-lock/{40x12,120x40}/` into that rect. The TUI
+pixels are only ever scaled uniformly; no terminal text is invented. The
+rounded corners belong to the macOS window; the TUI itself stays frameless.
+
+Placement:
+- 120x40 captures scale to the content rect height (left-anchored; the
+  remaining cells stay black, like any terminal background).
+- 40x12 captures keep the same chrome and title format but occupy a smaller
+  content rect at the top-left of the window.
 
 Usage:
     python3 scripts/compose-macos-terminal.py \
@@ -18,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -30,107 +38,250 @@ except ImportError:  # pragma: no cover - dependency guard
     )
 
 # ---------------------------------------------------------------------------
-# Window metrics (1x, non-retina screenshot look)
+# Geometry — the designer template is 1024x683; everything renders at 2x
+# (2048x1366, a retina screenshot) from these 1x metrics.
 # ---------------------------------------------------------------------------
 
-TITLEBAR_HEIGHT = 28
-CORNER_RADIUS = 12
-TRAFFIC_LIGHT_RADIUS = 6
-TRAFFIC_LIGHT_GAP = 20
-TRAFFIC_LIGHT_X = 19
-SHADOW_BLUR = 34
-SHADOW_OFFSET_Y = 18
-SHADOW_ALPHA = 130
-MARGIN_X_FRACTION = 0.16
-MARGIN_TOP_FRACTION = 0.14
-MARGIN_BOTTOM_FRACTION = 0.20
+SCALE = 2
+CANVAS_W, CANVAS_H = 1024, 683
+MENUBAR_H = 24
+WIN_X0, WIN_X1 = 147, 877
+TITLEBAR_Y0 = 143
+TITLEBAR_H = 26
+CONTENT_Y0 = TITLEBAR_Y0 + TITLEBAR_H
+CONTENT_Y1 = 538
+CORNER_RADIUS = 10
+TRAFFIC_LIGHT_R = 6
+TRAFFIC_LIGHT_CX = 163
+TRAFFIC_LIGHT_GAP = 18
 
-# Terminal.app dark appearance
-TITLEBAR_TOP = (0x30, 0x30, 0x32)
-TITLEBAR_BOTTOM = (0x28, 0x28, 0x2A)
-TITLEBAR_DIVIDER = (0x00, 0x00, 0x00)
-TITLE_TEXT = (0x9E, 0x9E, 0xA3)
-CONTENT_BG = (0, 0, 0)
+TITLEBAR_TOP = (0x3A, 0x3A, 0x3C)
+TITLEBAR_BOTTOM = (0x2C, 0x2C, 0x2E)
+TITLE_TEXT = (0xB8, 0xB8, 0xBD)
+MENUBAR_TINT = (0x2E, 0x24, 0x1E)
+MENU_TEXT = (0xF2, 0xF2, 0xF2)
 
 TRAFFIC_LIGHTS = [
-    ((0xFF, 0x5F, 0x57), (0xE0, 0x44, 0x3E)),  # close
-    ((0xFE, 0xBC, 0x2E), (0xDE, 0xA1, 0x23)),  # minimise
-    ((0x28, 0xC8, 0x40), (0x1D, 0xAD, 0x33)),  # zoom
+    ((0xFF, 0x5F, 0x57), (0xE0, 0x44, 0x3E)),
+    ((0xFE, 0xBC, 0x2E), (0xDE, 0xA1, 0x23)),
+    ((0x28, 0xC8, 0x40), (0x1D, 0xAD, 0x33)),
 ]
 
-TITLE_FONT_CANDIDATES = [
+SANS_REGULAR = [
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+]
+SANS_BOLD = [
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
 
 
-def title_font(size: int = 13) -> ImageFont.FreeTypeFont:
-    for path in TITLE_FONT_CANDIDATES:
+def font(candidates: list[str], size: int) -> ImageFont.FreeTypeFont:
+    for path in candidates:
         if Path(path).is_file():
             return ImageFont.truetype(path, size)
-    raise SystemExit("No sans font found for the window title.")
+    raise SystemExit("No sans font found for the chrome text.")
+
+
+# ---------------------------------------------------------------------------
+# Wallpaper — Sequoia-style rays: a warm burst near the top centre with
+# blue/orange rays fanning out and widening towards the bottom.
+# ---------------------------------------------------------------------------
+
+# Ray stops over u = angle position (0 = right edge, 1 = left edge).
+RAY_STOPS = [
+    (0.00, (52, 70, 164)),
+    (0.10, (232, 150, 88)),
+    (0.17, (46, 62, 152)),
+    (0.25, (238, 158, 92)),
+    (0.33, (244, 182, 120)),
+    (0.41, (248, 214, 164)),
+    (0.475, (252, 238, 206)),
+    (0.545, (250, 228, 190)),
+    (0.60, (172, 182, 226)),
+    (0.68, (118, 134, 212)),
+    (0.78, (80, 100, 194)),
+    (0.88, (58, 78, 172)),
+    (1.00, (42, 58, 148)),
+]
+
+EDGE_SOFTNESS = 0.22
+
+
+def _ray_colour(u: float) -> tuple[int, int, int]:
+    """Colour for angular position `u`, with softened band edges."""
+    u = min(1.0, max(0.0, u))
+    for i in range(len(RAY_STOPS) - 1):
+        u0, c0 = RAY_STOPS[i]
+        u1, c1 = RAY_STOPS[i + 1]
+        if u0 <= u <= u1:
+            span = max(1e-6, u1 - u0)
+            t = (u - u0) / span
+            # keep the body of each ray flat; blend only near the edge
+            if t < 1.0 - EDGE_SOFTNESS:
+                return c0
+            w = (t - (1.0 - EDGE_SOFTNESS)) / EDGE_SOFTNESS
+            return (
+                round(c0[0] + (c1[0] - c0[0]) * w),
+                round(c0[1] + (c1[1] - c0[1]) * w),
+                round(c0[2] + (c1[2] - c0[2]) * w),
+            )
+    return RAY_STOPS[-1][1]
 
 
 def make_wallpaper(width: int, height: int) -> Image.Image:
-    """Deterministic macOS-style abstract gradient wallpaper (dark)."""
-    base = Image.new("RGB", (width, height))
-    draw = ImageDraw.Draw(base)
+    """Deterministic Sequoia-like ray-burst wallpaper."""
+    # Rays converge just above the visible top edge, slightly right of centre.
+    ox, oy = width * 0.53, -height * 0.08
 
-    top = (24, 16, 48)
-    bottom = (58, 32, 88)
-    for y in range(height):
-        t = y / max(1, height - 1)
-        draw.line(
-            [(0, y), (width, y)],
-            fill=(
-                round(top[0] + (bottom[0] - top[0]) * t),
-                round(top[1] + (bottom[1] - top[1]) * t),
-                round(top[2] + (bottom[2] - top[2]) * t),
-            ),
-        )
-
-    # Soft colour blobs, Sequoia-style. Fixed positions keep output stable.
-    blobs = [
-        ((-0.20, -0.25, 0.55, 0.60), (86, 48, 160)),
-        ((0.55, -0.15, 1.25, 0.45), (140, 70, 190)),
-        ((0.30, 0.55, 1.10, 1.30), (60, 40, 130)),
-        ((-0.15, 0.60, 0.40, 1.25), (170, 90, 150)),
-    ]
-    overlay = Image.new("RGB", (width, height), (0, 0, 0))
-    odraw = ImageDraw.Draw(overlay)
-    for (x0, y0, x1, y1), colour in blobs:
-        odraw.ellipse(
-            [x0 * width, y0 * height, x1 * width, y1 * height],
-            fill=colour,
-        )
-    overlay = overlay.filter(ImageFilter.GaussianBlur(radius=min(width, height) / 6))
-    return Image.blend(base, overlay, 0.5)
+    small_w, small_h = width // 4, height // 4
+    img = Image.new("RGB", (small_w, small_h))
+    px = img.load()
+    sx, sy = ox / 4, oy / 4
+    diag = math.hypot(small_w, small_h)
+    for y in range(small_h):
+        for x in range(small_w):
+            # 0 = ray pointing right, 1 = ray pointing left
+            u = math.atan2(y - sy, x - sx) / math.pi
+            r, g, b = _ray_colour(u)
+            # warm glow around the burst origin
+            dist = math.hypot(x - sx, y - sy) / diag
+            glow = max(0.0, 1.0 - dist * 2.1)
+            glow *= glow
+            r = round(r + (253 - r) * glow)
+            g = round(g + (243 - g) * glow * 0.95)
+            b = round(b + (216 - b) * glow * 0.9)
+            # slight falloff towards the bottom corners
+            fade = 1.0 - 0.16 * (y / small_h) * (abs(x - sx) / small_w + 0.35)
+            px[x, y] = (round(r * fade), round(g * fade), round(b * fade))
+    img = img.resize((width, height), Image.LANCZOS)
+    return img.filter(ImageFilter.GaussianBlur(radius=width / 400))
 
 
-SUPERSAMPLE = 4
+# ---------------------------------------------------------------------------
+# Menu bar
+# ---------------------------------------------------------------------------
 
 
-def rounded_mask(size: tuple[int, int], radius: int) -> Image.Image:
-    """Anti-aliased rounded-rectangle mask (drawn supersampled)."""
-    ss = SUPERSAMPLE
-    big = Image.new("L", (size[0] * ss, size[1] * ss), 0)
-    ImageDraw.Draw(big).rounded_rectangle(
-        [(0, 0), (size[0] * ss - 1, size[1] * ss - 1)], radius=radius * ss, fill=255
+def draw_apple_mark(draw: ImageDraw.ImageDraw, cx: int, cy: int, h: int, colour, bar_colour) -> None:
+    """Small solid Apple-ish silhouette (body, leaf, bitten right side)."""
+    body_h = round(h * 0.78)
+    body_w = round(body_h * 0.92)
+    x0, y0 = cx - body_w // 2, cy - body_h // 2 + round(h * 0.10)
+    draw.rounded_rectangle(
+        [x0, y0, x0 + body_w, y0 + body_h], radius=body_w // 2 - 1, fill=colour
     )
-    return big.resize(size, Image.LANCZOS)
+    # bite on the right, punched with the bar colour
+    bite_r = round(body_h * 0.26)
+    draw.ellipse(
+        [
+            x0 + body_w - bite_r // 2,
+            y0 + round(body_h * 0.30) - bite_r,
+            x0 + body_w + bite_r + bite_r // 2,
+            y0 + round(body_h * 0.30) + bite_r,
+        ],
+        fill=bar_colour,
+    )
+    # leaf
+    leaf_w, leaf_h = round(body_w * 0.34), round(body_h * 0.30)
+    lx, ly = cx + round(body_w * 0.02), y0 - leaf_h + 2
+    draw.ellipse([lx, ly, lx + leaf_w, ly + leaf_h], fill=colour)
 
 
-def build_window(content: Image.Image, title: str) -> Image.Image:
-    """Terminal.app window: title bar + content, rounded, on transparent."""
-    width = content.width
-    height = TITLEBAR_HEIGHT + content.height
+def draw_menu_bar(canvas: Image.Image, s: int) -> None:
+    """Dark translucent menu bar over the wallpaper."""
+    bar_h = MENUBAR_H * s
+    strip = canvas.crop((0, 0, canvas.width, bar_h)).filter(
+        ImageFilter.GaussianBlur(radius=8 * s)
+    )
+    tint = Image.new("RGB", strip.size, MENUBAR_TINT)
+    strip = Image.blend(strip, tint, 0.86)
+    canvas.paste(strip, (0, 0))
+
+    draw = ImageDraw.Draw(canvas)
+    bold = font(SANS_BOLD, 13 * s)
+    regular = font(SANS_REGULAR, 13 * s)
+    cy = bar_h // 2
+
+    bar_colour = canvas.getpixel((26 * s, cy))
+    draw_apple_mark(draw, 20 * s, cy, 15 * s, MENU_TEXT, bar_colour)
+
+    x = 38 * s
+    for i, item in enumerate(["Terminal", "File", "Edit", "View", "Shell", "Window", "Help"]):
+        f = bold if i == 0 else regular
+        bbox = draw.textbbox((0, 0), item, font=f)
+        draw.text((x, cy - (bbox[3] - bbox[1]) // 2 - bbox[1]), item, font=f, fill=MENU_TEXT)
+        x += (bbox[2] - bbox[0]) + 15 * s
+
+    # Right side: clock, then status icons right-to-left.
+    clock = "Fri May 10  14:32"
+    bbox = draw.textbbox((0, 0), clock, font=regular)
+    cx = canvas.width - 12 * s - (bbox[2] - bbox[0])
+    draw.text((cx, cy - (bbox[3] - bbox[1]) // 2 - bbox[1]), clock, font=regular, fill=MENU_TEXT)
+
+    ix = cx - 20 * s
+    # control-centre toggle
+    draw.rounded_rectangle(
+        [ix - 7 * s, cy - 4 * s, ix + 7 * s, cy + 4 * s], radius=4 * s, outline=MENU_TEXT, width=s
+    )
+    draw.ellipse([ix - 5 * s, cy - 2 * s, ix - s, cy + 2 * s], fill=MENU_TEXT)
+    ix -= 26 * s
+    # search
+    draw.ellipse([ix - 5 * s, cy - 5 * s, ix + 2 * s, cy + 2 * s], outline=MENU_TEXT, width=s)
+    draw.line([ix + 2 * s, cy + 2 * s, ix + 5 * s, cy + 5 * s], fill=MENU_TEXT, width=s)
+    ix -= 26 * s
+    # wifi arcs
+    for k, r in enumerate([7, 4]):
+        draw.arc(
+            [ix - r * s, cy - r * s + 2 * s, ix + r * s, cy + r * s + 2 * s],
+            start=215,
+            end=325,
+            fill=MENU_TEXT,
+            width=s,
+        )
+    draw.ellipse([ix - s, cy + s, ix + s, cy + 3 * s], fill=MENU_TEXT)
+    ix -= 30 * s
+    # battery
+    draw.rounded_rectangle(
+        [ix - 11 * s, cy - 5 * s, ix + 9 * s, cy + 5 * s], radius=2 * s, outline=MENU_TEXT, width=s
+    )
+    draw.rectangle([ix + 10 * s, cy - 2 * s, ix + 11 * s, cy + 2 * s], fill=MENU_TEXT)
+    draw.rectangle([ix - 9 * s, cy - 3 * s, ix + 4 * s, cy + 3 * s], fill=MENU_TEXT)
+
+
+# ---------------------------------------------------------------------------
+# Terminal window
+# ---------------------------------------------------------------------------
+
+
+def draw_folder_icon(draw: ImageDraw.ImageDraw, x: int, cy: int, s: int) -> int:
+    """Small blue folder proxy icon; returns its width."""
+    w, h = 14 * s, 11 * s
+    y0 = cy - h // 2
+    tab_w = round(w * 0.42)
+    draw.rounded_rectangle(
+        [x, y0, x + tab_w, y0 + 4 * s], radius=s, fill=(0x4C, 0x9E, 0xE8)
+    )
+    draw.rounded_rectangle(
+        [x, y0 + 2 * s, x + w, y0 + h], radius=2 * s, fill=(0x55, 0xA9, 0xF0)
+    )
+    draw.rounded_rectangle(
+        [x, y0 + 3 * s, x + w, y0 + h], radius=2 * s, outline=(0x3E, 0x86, 0xC8), width=1
+    )
+    return w
+
+
+def build_window(content_w: int, content_h: int, title: str, s: int) -> Image.Image:
+    """Terminal.app window (title bar + black content) on transparent."""
+    width = content_w
+    height = TITLEBAR_H * s + content_h
     window = Image.new("RGBA", (width, height))
     draw = ImageDraw.Draw(window)
 
-    # Title bar gradient
-    for y in range(TITLEBAR_HEIGHT):
-        t = y / max(1, TITLEBAR_HEIGHT - 1)
+    bar_h = TITLEBAR_H * s
+    for y in range(bar_h):
+        t = y / max(1, bar_h - 1)
         draw.line(
             [(0, y), (width, y)],
             fill=(
@@ -140,84 +291,126 @@ def build_window(content: Image.Image, title: str) -> Image.Image:
                 255,
             ),
         )
-    # Hairline highlight along the very top, divider above the content.
-    draw.line([(0, 0), (width, 0)], fill=(255, 255, 255, 34))
-    draw.line(
-        [(0, TITLEBAR_HEIGHT - 1), (width, TITLEBAR_HEIGHT - 1)],
-        fill=(*TITLEBAR_DIVIDER, 255),
-    )
+    draw.line([(0, 0), (width, 0)], fill=(255, 255, 255, 30))
+    draw.line([(0, bar_h - 1), (width, bar_h - 1)], fill=(12, 12, 12, 255))
 
-    # Traffic lights — supersampled circles for smooth anti-aliased rims.
-    cy = TITLEBAR_HEIGHT // 2
-    ss = SUPERSAMPLE
-    lights = Image.new("RGBA", (width * ss, TITLEBAR_HEIGHT * ss), (0, 0, 0, 0))
+    draw.rectangle([(0, bar_h), (width, height)], fill=(0, 0, 0, 255))
+
+    # Traffic lights (supersampled for round rims).
+    ss = 4
+    cy = bar_h // 2
+    lights = Image.new("RGBA", (width * ss, bar_h * ss), (0, 0, 0, 0))
     ldraw = ImageDraw.Draw(lights)
     for i, (fill, ring) in enumerate(TRAFFIC_LIGHTS):
-        cx = (TRAFFIC_LIGHT_X + i * TRAFFIC_LIGHT_GAP) * ss
-        r = TRAFFIC_LIGHT_RADIUS * ss
+        cx = ((TRAFFIC_LIGHT_CX - WIN_X0) + i * TRAFFIC_LIGHT_GAP) * s * ss
+        r = TRAFFIC_LIGHT_R * s * ss
         ldraw.ellipse(
             [cx - r, cy * ss - r, cx + r, cy * ss + r],
             fill=(*fill, 255),
             outline=(*ring, 255),
             width=ss,
         )
-    lights = lights.resize((width, TITLEBAR_HEIGHT), Image.LANCZOS)
-    window.alpha_composite(lights, (0, 0))
+    window.alpha_composite(lights.resize((width, bar_h), Image.LANCZOS), (0, 0))
 
-    # Centered window title
-    font = title_font()
-    bbox = draw.textbbox((0, 0), title, font=font)
-    tx = (width - (bbox[2] - bbox[0])) // 2
-    ty = cy - (bbox[3] - bbox[1]) // 2 - bbox[1]
-    draw.text((tx, ty), title, font=font, fill=(*TITLE_TEXT, 255))
+    # Proxy icon + centred title.
+    tfont = font(SANS_REGULAR, 12 * s)
+    bbox = draw.textbbox((0, 0), title, font=tfont)
+    text_w = bbox[2] - bbox[0]
+    icon_w = 14 * s
+    gap = 5 * s
+    tx = (width - (icon_w + gap + text_w)) // 2
+    draw_folder_icon(draw, tx, cy, s)
+    draw.text(
+        (tx + icon_w + gap, cy - (bbox[3] - bbox[1]) // 2 - bbox[1]),
+        title,
+        font=tfont,
+        fill=(*TITLE_TEXT, 255),
+    )
 
-    # Terminal content — the real capture, 1:1, on its black area.
-    window.paste(content.convert("RGBA"), (0, TITLEBAR_HEIGHT))
+    # Round the macOS window chrome only (never the TUI content).
+    mask = Image.new("L", (width * ss, height * ss), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [(0, 0), (width * ss - 1, height * ss - 1)], radius=CORNER_RADIUS * s * ss, fill=255
+    )
+    window.putalpha(mask.resize((width, height), Image.LANCZOS))
 
-    # Round the macOS window chrome only.
-    window.putalpha(rounded_mask((width, height), CORNER_RADIUS))
-
-    # Subtle 1px window outline, drawn after masking so it hugs the shape.
-    ss = SUPERSAMPLE
     outline = Image.new("RGBA", (width * ss, height * ss), (0, 0, 0, 0))
     ImageDraw.Draw(outline).rounded_rectangle(
         [(0, 0), (width * ss - 1, height * ss - 1)],
-        radius=CORNER_RADIUS * ss,
-        outline=(0, 0, 0, 140),
+        radius=CORNER_RADIUS * s * ss,
+        outline=(0, 0, 0, 150),
         width=ss,
     )
     window = Image.alpha_composite(window, outline.resize((width, height), Image.LANCZOS))
     return window
 
 
-def compose(raw_png: Path, out_png: Path, wallpaper: Image.Image, title: str) -> None:
-    content = Image.open(raw_png).convert("RGB")
+# ---------------------------------------------------------------------------
+# Composition
+# ---------------------------------------------------------------------------
 
-    window = build_window(content, title)
 
-    margin_x = round(window.width * MARGIN_X_FRACTION)
-    margin_top = round(window.height * MARGIN_TOP_FRACTION) + 8
-    margin_bottom = round(window.height * MARGIN_BOTTOM_FRACTION) + 8
-    canvas_w = window.width + margin_x * 2
-    canvas_h = window.height + margin_top + margin_bottom
+def place_capture(content: Image.Image, rect_w: int, rect_h: int, size: str, s: int) -> Image.Image:
+    """Scale the REAL capture into the black content rect.
 
-    canvas = wallpaper.resize((canvas_w, canvas_h)).convert("RGBA")
+    - 120x40: uniform scale to the rect height, anchored top-left; the rest
+      of the rect stays black (empty terminal cells). Nothing is cropped.
+    - 40x12: a smaller content rect — the capture keeps its native pixel
+      density (scaled by the canvas factor only), anchored top-left.
+    """
+    area = Image.new("RGB", (rect_w, rect_h), (0, 0, 0))
+    if size == "40x12":
+        scale = float(s) * 0.75
+    else:
+        scale = rect_h / content.height
+    new_w = round(content.width * scale)
+    new_h = round(content.height * scale)
+    if new_w > rect_w or new_h > rect_h:
+        fit = min(rect_w / content.width, rect_h / content.height)
+        new_w, new_h = round(content.width * fit), round(content.height * fit)
+    scaled = content.resize((new_w, new_h), Image.LANCZOS)
+    area.paste(scaled, (0, 0))
+    return area
 
-    # Native window shadow: blurred rounded rect behind the window.
-    shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-    sdraw = ImageDraw.Draw(shadow)
-    sdraw.rounded_rectangle(
-        [
-            (margin_x, margin_top + SHADOW_OFFSET_Y // 2),
-            (margin_x + window.width - 1, margin_top + window.height - 1 + SHADOW_OFFSET_Y),
-        ],
-        radius=CORNER_RADIUS + 4,
-        fill=(0, 0, 0, SHADOW_ALPHA),
+
+def compose(
+    raw_png: Path,
+    out_png: Path,
+    wallpaper_canvas: Image.Image,
+    title: str,
+    size: str,
+    s: int,
+) -> None:
+    canvas = wallpaper_canvas.copy()
+
+    content_w = (WIN_X1 - WIN_X0) * s
+    content_h = (CONTENT_Y1 - CONTENT_Y0) * s
+    capture = Image.open(raw_png).convert("RGB")
+    content = place_capture(capture, content_w, content_h, size, s)
+
+    window = build_window(content_w, content_h, title, s)
+    window.paste(content.convert("RGBA"), (0, TITLEBAR_H * s), mask=None)
+    # Re-apply the rounded alpha lost by the opaque paste.
+    ss = 4
+    mask = Image.new("L", (window.width * ss, window.height * ss), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [(0, 0), (window.width * ss - 1, window.height * ss - 1)],
+        radius=CORNER_RADIUS * s * ss,
+        fill=255,
     )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(SHADOW_BLUR))
-    canvas = Image.alpha_composite(canvas, shadow)
+    window.putalpha(mask.resize(window.size, Image.LANCZOS))
 
-    canvas.alpha_composite(window, (margin_x, margin_top))
+    # Native window shadow.
+    wx, wy = WIN_X0 * s, TITLEBAR_Y0 * s
+    shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle(
+        [(wx, wy + 10 * s), (wx + window.width - 1, wy + window.height - 1 + 14 * s)],
+        radius=(CORNER_RADIUS + 4) * s,
+        fill=(0, 0, 0, 120),
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(16 * s))
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), shadow)
+    canvas.alpha_composite(window, (wx, wy))
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     canvas.convert("RGB").save(out_png)
@@ -236,14 +429,13 @@ def main() -> int:
 
     cols, rows = args.size.split("x", 1)
     title = f"cortex-api — cortex — {cols}×{rows}"
+    s = SCALE
 
-    # One deterministic wallpaper per size; sized generously and rescaled to
-    # each canvas (all canvases in a set share dimensions anyway).
-    probe = Image.open(pngs[0])
-    wallpaper = make_wallpaper(probe.width * 2, probe.height * 2 + 200)
+    base = make_wallpaper(CANVAS_W * s, CANVAS_H * s)
+    draw_menu_bar(base, s)
 
     for raw_png in pngs:
-        compose(raw_png, args.output / raw_png.name, wallpaper, title)
+        compose(raw_png, args.output / raw_png.name, base, title, args.size, s)
     print(f"Wrote {len(pngs)} macOS composites to {args.output}")
     return 0
 

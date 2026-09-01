@@ -84,6 +84,16 @@ pub fn lock_scene_ids() -> &'static [&'static str] {
         "quota",
         "sandbox",
         "cloud",
+        "sudo",
+        "ask",
+        "files",
+        "queue",
+        "jobs",
+        "help",
+        "first_run",
+        "bash",
+        "config",
+        "footer_max",
     ]
 }
 
@@ -678,5 +688,113 @@ mod tests {
         let mcp = render_lock_scene("mcp", 120, 40).expect("mcp");
         assert!(mcp.plain.contains("authenticating"));
         assert!(mcp.plain.contains("failed"));
+    }
+
+    #[test]
+    fn lock_boards_21_30_product_copy() {
+        let always: &[(&str, &[&str])] = &[
+            (
+                "sudo",
+                &[
+                    "sudo",
+                    "elevated privileges",
+                    "Password for mathis",
+                    "Never stored",
+                ],
+            ),
+            ("ask", &["Ask", "read-only", "shift+tab", "Agent mode"]),
+            ("files", &["@rate", "rateLimit", "insert", "tab complete"]),
+            ("queue", &["Queued", "Retry-After", "ctrl+x clear queue"]),
+            ("jobs", &["/jobs", "2 running", "cloud"]),
+            ("help", &["/help", "/model", "Shortcuts"]),
+            (
+                "first_run",
+                &["Cortex CLI v1.0.0", "Tips for getting started"],
+            ),
+            (
+                "bash",
+                &["Bash mode", "the model is not involved", "redis-cli"],
+            ),
+            (
+                "config",
+                &["/config", "~/.cortex/config.json", "cortex-1-mini"],
+            ),
+            ("footer_max", &["Committed and pushed", "MAX", "& cloud"]),
+        ];
+
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for (id, needles) in always {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let lower = frame.plain.to_lowercase();
+                assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
+                assert!(
+                    !frame.plain.contains("gpt-"),
+                    "{id} must use a Cortex catalog slug:\n{}",
+                    frame.plain
+                );
+                if *id != "footer_max" {
+                    assert!(
+                        frame.plain.contains("cortex-1-mini") || frame.plain.contains("MAX"),
+                        "{id} footer at {size:?}:\n{}",
+                        frame.plain
+                    );
+                }
+                for needle in *needles {
+                    let hit = frame.plain.contains(needle)
+                        || needle
+                            .split_whitespace()
+                            .all(|word| frame.plain.contains(word));
+                    assert!(hit, "{id} missing `{needle}` at {size:?}:\n{}", frame.plain);
+                }
+            }
+        }
+
+        let ask = render_lock_scene("ask", 120, 40).expect("ask");
+        assert!(ask.plain.contains("Ask — read-only") || ask.plain.contains("read-only"));
+        assert!(ask.plain.contains("estimateTokens") || ask.plain.contains("src/lib/tokens.ts"));
+        assert!(ask.plain.contains(" · Ask · ") || ask.plain.contains("Ask"));
+
+        let jobs = render_lock_scene("jobs", 120, 40).expect("jobs");
+        assert!(jobs.plain.contains("subagent"));
+        assert!(jobs.plain.contains("failed"));
+        assert!(jobs.plain.contains("done"));
+
+        let help = render_lock_scene("help", 120, 40).expect("help");
+        for cmd in [
+            "/model",
+            "/jobs",
+            "/skills",
+            "/settings",
+            "/config",
+            "/resume",
+        ] {
+            assert!(help.plain.contains(cmd), "missing {cmd}:\n{}", help.plain);
+        }
+        assert!(help.plain.contains("cortex.foundation/docs"));
+        assert!(help.plain.contains("Cortex CLI v1.0.0"));
+        assert!(!help.plain.contains("/interrupt"));
+
+        let help_n = render_lock_scene("help", 40, 12).expect("help narrow");
+        assert!(help_n.plain.contains("/model"), "{}", help_n.plain);
+        for line in help_n.plain.lines() {
+            let t = line.trim();
+            if t.contains("foundatio") && !t.contains("foundation") {
+                panic!("mid-word cut: {t}");
+            }
+        }
+
+        let cfg = render_lock_scene("config", 120, 40).expect("config");
+        assert!(cfg.plain.contains(".cortex/config.json"));
+        assert!(cfg.plain.contains("MAX"));
+
+        let max = render_lock_scene("footer_max", 120, 40).expect("max");
+        assert!(max.plain.contains("rate-limit-9e4d"));
+        assert!(max.plain.contains("+214"));
+        assert!(max.plain.contains("-9"));
+        assert!(max.plain.contains("38% context left"));
     }
 }

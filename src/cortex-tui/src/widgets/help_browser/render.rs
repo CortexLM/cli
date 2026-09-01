@@ -1,7 +1,8 @@
 //! Help browser widget rendering.
 
 use cortex_core::style::{
-    BORDER, BORDER_FOCUS, CYAN_PRIMARY, ELECTRIC_BLUE, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
+    BORDER, BORDER_FOCUS, CYAN_PRIMARY, ELECTRIC_BLUE, SELECTION_BG, SURFACE_1, TEXT, TEXT_DIM,
+    TEXT_MUTED,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::Widget;
@@ -50,7 +51,7 @@ impl<'a> HelpBrowser<'a> {
         for y in area.y..area.y + area.height {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_char(' ').set_bg(VOID);
+                    cell.set_char(' ').set_bg(Color::Reset);
                 }
             }
         }
@@ -130,7 +131,7 @@ impl<'a> HelpBrowser<'a> {
             let prefix = if is_selected { "> " } else { "  " };
 
             let style = if is_selected && is_focused {
-                Style::default().fg(VOID).bg(CYAN_PRIMARY)
+                Style::default().fg(TEXT).bg(SELECTION_BG)
             } else if is_selected {
                 Style::default().fg(CYAN_PRIMARY)
             } else {
@@ -248,7 +249,7 @@ impl<'a> HelpBrowser<'a> {
         // Clear footer line
         for x in area.x + 1..area.x + area.width - 1 {
             if let Some(cell) = buf.cell_mut((x, footer_y)) {
-                cell.set_char(' ').set_bg(VOID);
+                cell.set_char(' ').set_bg(Color::Reset);
             }
         }
 

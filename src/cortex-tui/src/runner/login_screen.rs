@@ -19,7 +19,7 @@ use ratatui::widgets::{Clear, Paragraph};
 use tokio::sync::mpsc;
 
 use crate::ui::text_utils::{first_fitting_line, wrap_or_drop};
-use cortex_core::style::{CYAN_PRIMARY, ERROR, SELECTION_BG, TEXT, TEXT_DIM, VOID};
+use cortex_core::style::{ACCENT, ERROR, SELECTION_BG, TEXT, TEXT_DIM};
 use cortex_login::{SecureAuthData, save_auth_with_fallback};
 use cortex_tui_components::spinner::SpinnerStyle;
 
@@ -29,8 +29,8 @@ use cortex_tui_components::spinner::SpinnerStyle;
 
 const API_BASE_URL: &str = "https://api.cortex.foundation";
 
-/// Highlight token (mint) — success accents only; selection is `SELECTION_BG`.
-const HIGHLIGHT: ratatui::style::Color = CYAN_PRIMARY;
+/// Highlight token (violet) — success accents only; selection is `SELECTION_BG`.
+const HIGHLIGHT: ratatui::style::Color = ACCENT;
 
 // ============================================================================
 // Login Screen State
@@ -160,7 +160,7 @@ impl LoginScreen {
         screen
     }
 
-    /// Success screen (`Signed in.` mint).
+    /// Success screen (`Signed in.` violet).
     pub fn lock_success(version: &str) -> Self {
         let mut screen =
             Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
@@ -168,7 +168,7 @@ impl LoginScreen {
         screen
     }
 
-    /// Failed screen (product-facing error, no mint).
+    /// Failed screen (product-facing error, no accent).
     pub fn lock_failed(version: &str, error: &str) -> Self {
         let mut screen =
             Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
@@ -287,11 +287,9 @@ impl LoginScreen {
 
     pub fn render(&self, f: &mut ratatui::Frame) {
         let area = f.area();
+        // No background wash: cells stay on `Color::Reset`, so the host
+        // terminal (black by default) shows through.
         f.render_widget(Clear, area);
-        f.render_widget(
-            ratatui::widgets::Block::default().style(Style::default().bg(VOID)),
-            area,
-        );
 
         match self.state {
             LoginState::SelectMethod => self.render_select_method(f, area),

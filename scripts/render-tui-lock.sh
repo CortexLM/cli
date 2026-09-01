@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Render visual-lock TUI frames through MockTerminal and rasterise PNGs.
 #
+# Produces two sets per size:
+#   - raw captures         docs/media/tui-lock/{40x12,120x40}/*.png
+#   - macOS Terminal shots docs/media/tui-lock/macos/{40x12,120x40}/*.png
+#
 # Usage:
 #   ./scripts/render-tui-lock.sh
 #   OUTPUT_DIR=docs/media/tui-lock ./scripts/render-tui-lock.sh
@@ -25,15 +29,31 @@ for spec in 40x12 120x40; do
     --width "$width" --height "$height" --output "$frames"
   echo "==> Rasterising PNGs to $pngs"
   python3 scripts/ansi-frames-to-gif.py --frames "$frames" --png-only "$pngs"
+  echo "==> Compositing macOS Terminal shots to $output_dir/macos/$spec"
+  python3 scripts/compose-macos-terminal.py \
+    --raw "$pngs" --output "$output_dir/macos/$spec" --size "$spec"
 done
 
 cat > "$output_dir/README.md" <<'EOF'
 # Cortex CLI visual lock captures
 
 Headless `MockTerminal` renders of the session, login, slash palette, and
-settings hub. Regenerated with `./scripts/render-tui-lock.sh`.
+settings hub on the locked violet chrome. Regenerated with
+`./scripts/render-tui-lock.sh`.
 
-Each scene is captured at **40×12** (narrow) and **120×40** (wide).
+Each scene is captured at **40×12** (narrow) and **120×40** (wide), twice:
+
+- `40x12/`, `120x40/` — raw terminal pixels. The background is the host
+  terminal's (`Color::Reset`, black by default); nothing paints a navy wash
+  and no rounded frame is drawn — the TUI bleeds to the terminal edges.
+- `macos/40x12/`, `macos/120x40/` — the same captures composited 1:1 into a
+  macOS Terminal.app window (traffic lights, `cortex-api — cortex — W×H`
+  title, native shadow) on a desktop wallpaper. The rounded corners belong
+  to the macOS window chrome only, never to the TUI.
+
+Chrome rules: `#A78BFA` violet for the `>` prompt, selection caret, `●` tile
+dots and `✓` checks; selected rows are light text on the dark `#221A38` bar
+(never inverted); green appears only on `+N` diff additions.
 
 Splash copy in these frames is the lock line `Cortex CLI v1.0.0`. The shipped
 binary still reports the crate version.
@@ -48,7 +68,7 @@ binary still reports the crate version.
 | `permissions.png` | `/permissions` approval policy picker |
 | `working.png` | Working spinner + elapsed / tokens |
 | `read.png` | Read tile — numbered excerpt |
-| `login_select.png` | Aligned radios, mint on the selected row |
+| `login_select.png` | Aligned radios, dark selection bar on the chosen row |
 | `login_waiting.png` | Loading / waiting for browser auth |
 | `login_success.png` | `Signed in.` |
 | `login_error.png` | Product-facing error |

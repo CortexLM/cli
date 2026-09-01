@@ -35,7 +35,7 @@ fn is_terminal_output(stderr: bool) -> bool {
 
 /// ANSI color codes for light theme (bright/light terminal backgrounds).
 mod light_theme {
-    pub const SUCCESS: &str = "\x1b[38;2;0;150;125m"; // #00967D - Teal for contrast
+    pub const SUCCESS: &str = "\x1b[38;2;124;58;237m"; // #7C3AED - Darker violet for contrast
     pub const ERROR: &str = "\x1b[38;2;217;61;61m"; // #D93D3D - Darker red for contrast
     pub const WARNING: &str = "\x1b[38;2;201;154;46m"; // #C99A2E - Darker amber for contrast
     pub const INFO: &str = "\x1b[38;2;0;100;160m"; // Dark blue for contrast
@@ -46,7 +46,7 @@ mod light_theme {
 
 /// ANSI color codes for dark theme (dark terminal backgrounds).
 mod dark_theme {
-    pub const SUCCESS: &str = "\x1b[38;2;0;245;212m"; // Bright cyan-green (#00F5D4)
+    pub const SUCCESS: &str = "\x1b[38;2;167;139;250m"; // Violet accent (#A78BFA)
     pub const ERROR: &str = "\x1b[38;2;255;107;107m"; // Coral red (#FF6B6B)
     pub const WARNING: &str = "\x1b[38;2;255;200;87m"; // Golden amber (#FFC857)
     pub const INFO: &str = "\x1b[38;2;72;202;228m"; // Light blue (#48CAE4)

@@ -31,11 +31,13 @@
 //! frame.render_widget(&list, area);
 //! ```
 
-use cortex_core::style::{CYAN_PRIMARY, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, VOID};
+use cortex_core::style::{
+    CYAN_PRIMARY, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -521,9 +523,10 @@ impl SelectionList {
         width: u16,
         buf: &mut Buffer,
     ) {
-        // Determine styles based on selection and disabled state
+        // Determine styles based on selection and disabled state. Selected
+        // rows are light text on the dark violet bar — never inverted.
         let (bg, fg, prefix_fg) = if is_selected {
-            (CYAN_PRIMARY, VOID, VOID)
+            (SELECTION_BG, TEXT, CYAN_PRIMARY)
         } else if item.disabled {
             (SURFACE_0, TEXT_MUTED, TEXT_MUTED)
         } else {
@@ -581,11 +584,7 @@ impl SelectionList {
 
         if let Some(marker_text) = marker {
             col += 1; // space before marker
-            let marker_style = if is_selected {
-                Style::default().fg(VOID).bg(bg)
-            } else {
-                Style::default().fg(TEXT_DIM).bg(bg)
-            };
+            let marker_style = Style::default().fg(TEXT_DIM).bg(bg);
             buf.set_string(col, y, marker_text, marker_style);
         }
 
@@ -682,7 +681,7 @@ impl SelectionList {
         let cursor_x = x + 2 + self.search_query.len() as u16;
         if cursor_x < area.right().saturating_sub(1) {
             buf[(cursor_x, area.y)].set_bg(CYAN_PRIMARY);
-            buf[(cursor_x, area.y)].set_fg(VOID);
+            buf[(cursor_x, area.y)].set_fg(Color::Rgb(20, 20, 23));
         }
 
         // Result count on the right

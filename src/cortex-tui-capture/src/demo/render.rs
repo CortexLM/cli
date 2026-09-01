@@ -4,14 +4,14 @@
 //! real TUI palette instead of a second, drifting copy of it.
 
 use cortex_core::style::{
-    BORDER, BORDER_FOCUS, CYAN_PRIMARY, SKY_BLUE, SUCCESS, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
+    BORDER, BORDER_FOCUS, CYAN_PRIMARY, SKY_BLUE, SUCCESS, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use cortex_tui_components::welcome_card::{InfoCard, InfoCardPair, ToLines, WelcomeCard};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 
 use super::scene::{Scene, TimelineBlock, ToolState};
 
@@ -22,7 +22,6 @@ const COMPOSER_HEIGHT: u16 = 3;
 pub fn draw_scene(frame: &mut Frame, scene: &Scene) {
     let area = frame.area();
     frame.render_widget(Clear, area);
-    frame.render_widget(Block::default().style(Style::default().bg(VOID)), area);
 
     let body = Block::default()
         .padding(Padding::new(2, 2, 1, 1))
@@ -79,7 +78,7 @@ fn draw_welcome(frame: &mut Frame, area: Rect, scene: &Scene) {
             .to_lines(area.width),
     );
 
-    frame.render_widget(Paragraph::new(lines).style(Style::default().bg(VOID)), area);
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn draw_timeline(frame: &mut Frame, area: Rect, scene: &Scene) {
@@ -152,7 +151,7 @@ fn draw_timeline(frame: &mut Frame, area: Rect, scene: &Scene) {
         lines.drain(..lines.len() - height);
     }
 
-    frame.render_widget(Paragraph::new(lines).style(Style::default().bg(VOID)), area);
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn draw_status(frame: &mut Frame, area: Rect, scene: &Scene) {
@@ -175,7 +174,7 @@ fn draw_status(frame: &mut Frame, area: Rect, scene: &Scene) {
         None => Line::default(),
     };
 
-    frame.render_widget(Paragraph::new(line).style(Style::default().bg(VOID)), area);
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 fn draw_composer(frame: &mut Frame, area: Rect, scene: &Scene) {
@@ -187,9 +186,7 @@ fn draw_composer(frame: &mut Frame, area: Rect, scene: &Scene) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
         .border_style(border_style)
-        .style(Style::default().bg(VOID))
         .padding(Padding::horizontal(1));
 
     let mut spans = vec![Span::styled(
@@ -241,14 +238,6 @@ fn draw_hints(frame: &mut Frame, area: Rect, scene: &Scene) {
         Span::styled(scene.autonomy.clone(), Style::default().fg(TEXT_DIM)),
     ]);
 
-    frame.render_widget(
-        Paragraph::new(left).style(Style::default().bg(VOID)),
-        left_area,
-    );
-    frame.render_widget(
-        Paragraph::new(right)
-            .right_aligned()
-            .style(Style::default().bg(VOID)),
-        right_area,
-    );
+    frame.render_widget(Paragraph::new(left), left_area);
+    frame.render_widget(Paragraph::new(right).right_aligned(), right_area);
 }

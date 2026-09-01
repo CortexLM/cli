@@ -5,7 +5,7 @@ text, tool rows, borders, status and accents.
 
 | Theme id | Name | Description |
 |----------|------|-------------|
-| `dark` | Dark | The default. Dark background with green accents. |
+| `dark` | Dark | The default. Host terminal background with violet accents. |
 | `light` | Light | Light background with dark text. |
 | `ocean_dark` | Ocean Dark | Deep blue and cyan. Also accepted as `ocean`. |
 | `monokai` | Monokai | Classic code-editor colours. |
@@ -38,22 +38,24 @@ For reference — these are the colours the demo recording on the
 
 | Role | Colour |
 |------|--------|
-| Primary accent | `#00FFA3` |
-| Secondary accent | `#64FFB4` |
-| Links | `#00C882` |
-| Background | `#0A1628` |
-| Surfaces | `#0D1B2A`, `#1B2838`, `#243B53`, `#334E68` |
+| Primary accent | `#A78BFA` |
+| Secondary accent | `#C4B5FD` |
+| Links | `#8B5CF6` |
+| Background | terminal default (`Color::Reset` — never painted) |
+| Surfaces | `#141417`, `#1C1C20`, `#26262B`, `#32323A` |
+| Selection bar | `#221A38` (light text, never inverted) |
 | Text | `#FFFFFF` |
 | Dim text | `#829AB1` |
 | Muted text | `#486581` |
-| Border | `#1B4965` |
-| Focused border | `#00FFA3` |
-| Success | `#00F5D4` |
+| Border | `#2A2A32` |
+| Focused border | `#A78BFA` |
+| Success | `#A78BFA` |
+| Diff additions | `#4ADE80` (the only green in the chrome) |
 | Warning | `#FFC857` |
 | Error | `#FF6B6B` |
 | Info | `#48CAE4` |
 
-Operation modes have their own accent: Build `#00FFA3`, Plan `#FFC857`, Spec
+Operation modes have their own accent: Build `#A78BFA`, Plan `#FFC857`, Spec
 `#8B5CF6`.
 
 ## Related display settings

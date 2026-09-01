@@ -5,9 +5,7 @@
 
 use super::{CancelBehavior, Modal, ModalAction, ModalResult};
 use crate::widgets::ActionBar;
-use cortex_core::style::{
-    CYAN_PRIMARY, GREEN, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, WARNING,
-};
+use cortex_core::style::{CYAN_PRIMARY, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, WARNING};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -137,7 +135,7 @@ impl Modal for UpgradeModal {
 
         // Border color based on state
         let border_color = match &self.state {
-            UpgradeState::Complete { .. } => GREEN,
+            UpgradeState::Complete { .. } => CYAN_PRIMARY,
             UpgradeState::Failed { .. } => RED,
             UpgradeState::Available { .. } => WARNING,
             _ => CYAN_PRIMARY,
@@ -275,7 +273,7 @@ impl UpgradeModal {
 
         let msg1 = Line::from(vec![Span::styled(
             "[+] Cortex is up to date!",
-            Style::default().fg(GREEN),
+            Style::default().fg(CYAN_PRIMARY),
         )]);
         let x1 = chunks[1].x + (chunks[1].width.saturating_sub(msg1.width() as u16)) / 2;
         buf.set_line(x1, chunks[1].y, &msg1, chunks[1].width);
@@ -319,7 +317,7 @@ impl UpgradeModal {
         let version_line = Line::from(vec![
             Span::styled(current, Style::default().fg(TEXT_DIM)),
             Span::styled(" → ", Style::default().fg(TEXT_MUTED)),
-            Span::styled(new, Style::default().fg(GREEN)),
+            Span::styled(new, Style::default().fg(CYAN_PRIMARY)),
         ]);
         let vx = chunks[3].x + (chunks[3].width.saturating_sub(version_line.width() as u16)) / 2;
         buf.set_line(vx, chunks[3].y, &version_line, chunks[3].width);
@@ -433,7 +431,7 @@ impl UpgradeModal {
 
         let msg1 = Line::from(vec![Span::styled(
             "[+] Update installed successfully!",
-            Style::default().fg(GREEN),
+            Style::default().fg(CYAN_PRIMARY),
         )]);
         let x1 = chunks[1].x + (chunks[1].width.saturating_sub(msg1.width() as u16)) / 2;
         buf.set_line(x1, chunks[1].y, &msg1, chunks[1].width);

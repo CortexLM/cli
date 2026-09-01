@@ -18,7 +18,6 @@ use crate::backtrack::{BacktrackState, MessageRole, MessageSnapshot};
 use cortex_core::style::{
     CYAN_PRIMARY, PINK, PURPLE, SURFACE_1, SURFACE_2, TEXT, TEXT_DIM, TEXT_MUTED,
 };
-use cortex_tui_components::borders::ROUNDED_BORDER;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph, Widget};
 
@@ -202,7 +201,6 @@ impl Widget for BacktrackOverlay<'_> {
             .title_style(Style::default().fg(CYAN_PRIMARY).bold())
             .title_bottom(Line::from(footer).centered())
             .borders(Borders::ALL)
-            .border_set(ROUNDED_BORDER)
             .border_style(Style::default().fg(CYAN_PRIMARY))
             .padding(Padding::horizontal(1));
 

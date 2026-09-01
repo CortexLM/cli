@@ -7,7 +7,7 @@
 //! Uses sine wave radial expansion from center:
 //! - Wave expands outward from brain center
 //! - 2-second cycle (slow, hypnotic)
-//! - Green gradient (#00FFA3)
+//! - Violet gradient (#A78BFA)
 //!
 //! # Example
 //! ```
@@ -62,11 +62,11 @@ const WAVE_SPEED: f32 = std::f32::consts::PI * 2.0;
 /// Wave scale: controls the "wavelength" of radial rings
 const WAVE_SCALE: f32 = 6.0;
 
-/// Accent green color
-const ACCENT_GREEN: (u8, u8, u8) = (0x00, 0xFF, 0xA3);
+/// Bright violet accent color
+const ACCENT_VIOLET: (u8, u8, u8) = (0xA7, 0x8B, 0xFA);
 
-/// Dark green base color
-const DARK_GREEN: (u8, u8, u8) = (0x00, 0x40, 0x30);
+/// Dark violet base color
+const DARK_VIOLET: (u8, u8, u8) = (0x2A, 0x1F, 0x4A);
 
 // ============================================================
 // BRAIN WIDGET
@@ -194,15 +194,16 @@ impl Brain {
 
     /// Gets the style for a character based on wave intensity.
     ///
-    /// Creates a gradient from dark green to bright green (#00FFA3).
+    /// Creates a gradient from dark violet to the bright accent (#A78BFA).
     fn get_wave_style(&self, base_density: f32, wave: f32) -> Style {
         // Combine base density with wave for final brightness
         let brightness = base_density * (0.4 + wave * 0.6 * self.intensity);
 
-        // Interpolate between dark green and accent green
-        let r = DARK_GREEN.0;
-        let g = (DARK_GREEN.1 as f32 + (ACCENT_GREEN.1 - DARK_GREEN.1) as f32 * brightness) as u8;
-        let b = (DARK_GREEN.2 as f32 + (ACCENT_GREEN.2 - DARK_GREEN.2) as f32 * brightness) as u8;
+        // Interpolate between dark violet and the accent violet
+        let lerp = |from: u8, to: u8| (from as f32 + (to as f32 - from as f32) * brightness) as u8;
+        let r = lerp(DARK_VIOLET.0, ACCENT_VIOLET.0);
+        let g = lerp(DARK_VIOLET.1, ACCENT_VIOLET.1);
+        let b = lerp(DARK_VIOLET.2, ACCENT_VIOLET.2);
 
         Style::default().fg(Color::Rgb(r, g, b))
     }

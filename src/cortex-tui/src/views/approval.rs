@@ -173,7 +173,7 @@ impl<'a> ApprovalView<'a> {
 
     /// Renders the action hints at the bottom.
     fn render_actions(&self, area: Rect, buf: &mut Buffer) {
-        let approve_style = Style::default().fg(GREEN);
+        let approve_style = Style::default().fg(PINK);
         let reject_style = Style::default().fg(RED);
         let option_style = Style::default().fg(BLUE);
         let key_style = Style::default().fg(YELLOW).add_modifier(Modifier::BOLD);
@@ -378,7 +378,7 @@ fn syntax_highlight_json(json: &str) -> Vec<Line<'static>> {
                     if !current_str.is_empty() {
                         let style = if in_string {
                             if after_colon {
-                                Style::default().fg(GREEN) // String value
+                                Style::default().fg(TEXT) // String value
                             } else {
                                 Style::default().fg(BLUE) // Key
                             }
@@ -392,7 +392,7 @@ fn syntax_highlight_json(json: &str) -> Vec<Line<'static>> {
                     if in_string {
                         // End of string
                         let style = if after_colon {
-                            Style::default().fg(GREEN)
+                            Style::default().fg(TEXT)
                         } else {
                             Style::default().fg(BLUE)
                         };
@@ -436,7 +436,7 @@ fn syntax_highlight_json(json: &str) -> Vec<Line<'static>> {
         if !current_str.is_empty() {
             let style = if in_string {
                 if after_colon {
-                    Style::default().fg(GREEN)
+                    Style::default().fg(TEXT)
                 } else {
                     Style::default().fg(BLUE)
                 }
@@ -464,7 +464,7 @@ fn determine_value_style(value: &str) -> Style {
     } else if trimmed.parse::<f64>().is_ok() {
         Style::default().fg(YELLOW) // Number
     } else {
-        Style::default().fg(GREEN) // String or other
+        Style::default().fg(TEXT) // String or other
     }
 }
 

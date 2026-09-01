@@ -16,7 +16,7 @@
 
 use crate::providers::models::{ModelInfo, get_models_for_provider, get_popular_models};
 use cortex_core::style::{
-    BORDER_FOCUS, CYAN_PRIMARY, GREEN, ORANGE, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
+    ACCENT, BORDER_FOCUS, CYAN_PRIMARY, ORANGE, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::{
@@ -380,9 +380,10 @@ impl ModelPicker<'_> {
 
             let is_selected = start + i == self.state.selected;
 
-            // Selection highlight
+            // Selection highlight: light text on the dark violet bar — never
+            // inverted onto the accent.
             let (bg, fg) = if is_selected {
-                (CYAN_PRIMARY, VOID)
+                (SELECTION_BG, TEXT)
             } else {
                 (SURFACE_0, TEXT)
             };
@@ -403,7 +404,7 @@ impl ModelPicker<'_> {
                 " "
             };
             let status_color = if model.is_current {
-                GREEN
+                ACCENT
             } else if model.is_popular {
                 ORANGE
             } else {
@@ -422,11 +423,7 @@ impl ModelPicker<'_> {
             // Provider
             let provider_x = x + name_width as u16 + 3;
             if provider_x < area.right().saturating_sub(15) {
-                let provider_style = if is_selected {
-                    Style::default().fg(VOID).bg(bg)
-                } else {
-                    Style::default().fg(TEXT_DIM).bg(bg)
-                };
+                let provider_style = Style::default().fg(TEXT_DIM).bg(bg);
                 buf.set_string(provider_x, y, &model.provider, provider_style);
             }
 
@@ -435,11 +432,7 @@ impl ModelPicker<'_> {
                 let ctx_str = format!("{}k", ctx / 1000);
                 let ctx_x = area.right().saturating_sub(ctx_str.len() as u16 + 2);
                 if ctx_x > provider_x + model.provider.len() as u16 {
-                    let ctx_style = if is_selected {
-                        Style::default().fg(VOID).bg(bg)
-                    } else {
-                        Style::default().fg(TEXT_MUTED).bg(bg)
-                    };
+                    let ctx_style = Style::default().fg(TEXT_MUTED).bg(bg);
                     buf.set_string(ctx_x, y, &ctx_str, ctx_style);
                 }
             }
@@ -481,7 +474,7 @@ impl ModelPicker<'_> {
         let x = area.x + 1;
 
         // Legend
-        buf.set_string(x, y, "* current  ", Style::default().fg(GREEN));
+        buf.set_string(x, y, "* current  ", Style::default().fg(ACCENT));
         buf.set_string(x + 11, y, "+ popular", Style::default().fg(ORANGE));
 
         // Help

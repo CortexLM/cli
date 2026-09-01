@@ -16,7 +16,6 @@
 
 use crate::mentions::FileMentionState;
 use cortex_core::style::{CYAN_PRIMARY, PINK, SURFACE_1, SURFACE_2, TEXT, TEXT_MUTED};
-use cortex_tui_components::borders::ROUNDED_BORDER;
 use ratatui::prelude::*;
 use ratatui::widgets::{
     Block, Borders, Clear, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget,
@@ -222,7 +221,6 @@ impl Widget for MentionPopup<'_> {
             .title(title)
             .title_style(Style::default().fg(CYAN_PRIMARY).bold())
             .borders(Borders::ALL)
-            .border_set(ROUNDED_BORDER)
             .border_style(Style::default().fg(CYAN_PRIMARY));
 
         let inner = block.inner(popup_area);

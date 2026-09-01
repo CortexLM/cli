@@ -3,8 +3,8 @@
 //! The rendering widget for the command palette.
 
 use cortex_core::style::{
-    BORDER, BORDER_FOCUS, CYAN_PRIMARY, SKY_BLUE, SURFACE_0, SURFACE_2, TEXT, TEXT_DIM, TEXT_MUTED,
-    VOID,
+    BORDER, BORDER_FOCUS, CYAN_PRIMARY, SELECTION_BG, SKY_BLUE, SURFACE_0, SURFACE_2, TEXT,
+    TEXT_DIM, TEXT_MUTED,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::Widget;
@@ -129,7 +129,7 @@ impl<'a> CommandPalette<'a> {
         if cursor_x < area.x + area.width - 2
             && let Some(cell) = buf.cell_mut((cursor_x, y))
         {
-            cell.set_style(Style::default().fg(VOID).bg(CYAN_PRIMARY));
+            cell.set_style(Style::default().fg(Color::Rgb(20, 20, 23)).bg(CYAN_PRIMARY));
         }
 
         // Hint on right
@@ -247,8 +247,9 @@ impl<'a> CommandPalette<'a> {
         selected: bool,
         buf: &mut Buffer,
     ) {
+        // Selected rows: light text on the dark violet bar — never inverted.
         let style = if selected {
-            Style::default().fg(VOID).bg(CYAN_PRIMARY)
+            Style::default().fg(TEXT).bg(SELECTION_BG)
         } else {
             Style::default().fg(TEXT).bg(SURFACE_0)
         };

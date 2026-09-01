@@ -29,7 +29,7 @@
 
 use std::path::PathBuf;
 
-use cortex_core::style::{CYAN_PRIMARY, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED, VOID};
+use cortex_core::style::{CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED};
 #[cfg(test)]
 use crossterm::event::KeyModifiers;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -489,9 +489,9 @@ impl ApprovalOverlay {
             // Color code based on change type
             let (_type_color, summary_style) = match change.change_type {
                 ChangeType::Add => (
-                    cortex_core::style::SUCCESS,
+                    cortex_core::style::DIFF_ADD,
                     Style::default()
-                        .fg(cortex_core::style::SUCCESS)
+                        .fg(cortex_core::style::DIFF_ADD)
                         .bg(SURFACE_0),
                 ),
                 ChangeType::Modify => (
@@ -532,9 +532,10 @@ impl ApprovalOverlay {
 
             let is_selected = self.list.selected_index() == Some(idx);
 
-            // Clear line
+            // Clear line: selected rows use the dark violet bar, never an
+            // inverted accent fill.
             for col in area.x..area.right() {
-                buf[(col, y)].set_bg(if is_selected { CYAN_PRIMARY } else { SURFACE_0 });
+                buf[(col, y)].set_bg(if is_selected { SELECTION_BG } else { SURFACE_0 });
             }
 
             let mut col = area.x;
@@ -542,7 +543,7 @@ impl ApprovalOverlay {
             // Selection indicator
             let prefix = if is_selected { ">" } else { " " };
             let prefix_style = if is_selected {
-                Style::default().fg(VOID).bg(CYAN_PRIMARY)
+                Style::default().fg(CYAN_PRIMARY).bg(SELECTION_BG)
             } else {
                 Style::default().fg(CYAN_PRIMARY).bg(SURFACE_0)
             };
@@ -551,7 +552,10 @@ impl ApprovalOverlay {
 
             // Option label
             let label_style = if is_selected {
-                Style::default().fg(VOID).bg(CYAN_PRIMARY)
+                Style::default()
+                    .fg(TEXT)
+                    .bg(SELECTION_BG)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(TEXT).bg(SURFACE_0)
             };
@@ -563,7 +567,7 @@ impl ApprovalOverlay {
             let shortcut_str = format!("[{}]", option.shortcut);
             let shortcut_x = area.right().saturating_sub(shortcut_str.len() as u16 + 1);
             let shortcut_style = if is_selected {
-                Style::default().fg(VOID).bg(CYAN_PRIMARY)
+                Style::default().fg(TEXT_MUTED).bg(SELECTION_BG)
             } else {
                 Style::default().fg(TEXT_MUTED).bg(SURFACE_0)
             };

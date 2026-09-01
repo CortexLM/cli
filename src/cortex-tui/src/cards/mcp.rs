@@ -6,12 +6,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::Widget;
 
-use cortex_core::style::{
-    CYAN_PRIMARY, GREEN, ORANGE, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
-};
+use cortex_core::style::{CYAN_PRIMARY, ORANGE, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
 
 use crate::cards::{CancellationEvent, CardAction, CardResult, CardView};
 use crate::widgets::{SelectionItem, SelectionList, SelectionResult};
@@ -47,7 +45,7 @@ impl McpStatus {
     /// Returns the color for this status.
     pub fn color(&self) -> ratatui::style::Color {
         match self {
-            McpStatus::Running => GREEN,
+            McpStatus::Running => CYAN_PRIMARY,
             McpStatus::Stopped => TEXT_MUTED,
             McpStatus::Starting => ORANGE,
             McpStatus::Error => RED,
@@ -413,7 +411,7 @@ impl McpCard {
         let cursor_x = area.x + 1 + name.len() as u16;
         if cursor_x < area.x + area.width - 1 {
             buf[(cursor_x, input_y)].set_bg(CYAN_PRIMARY);
-            buf[(cursor_x, input_y)].set_fg(VOID);
+            buf[(cursor_x, input_y)].set_fg(Color::Rgb(20, 20, 23));
         }
 
         // Hint

@@ -1,10 +1,7 @@
 //! Renderer for interactive selection in the input area.
 
 use super::state::{InlineFormState, InteractiveItem, InteractiveState};
-use cortex_core::style::{
-    CYAN_PRIMARY, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
-};
-use cortex_tui_components::borders::ROUNDED_BORDER;
+use cortex_core::style::{ACCENT, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
@@ -150,13 +147,15 @@ impl<'a> Widget for InteractiveWidget<'a> {
                 let is_active = i == self.state.active_tab;
                 let is_hovered = self.state.hovered_tab == Some(i);
                 let tab_text = format!(" {} ", tab.label);
+                // Active tab: light text on the dark violet bar — never
+                // inverted onto the accent.
                 let style = if is_active {
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(CYAN_PRIMARY)
+                        .fg(TEXT)
+                        .bg(SELECTION_BG)
                         .add_modifier(Modifier::BOLD)
                 } else if is_hovered {
-                    Style::default().fg(CYAN_PRIMARY)
+                    Style::default().fg(ACCENT)
                 } else {
                     Style::default().fg(TEXT_DIM)
                 };
@@ -292,7 +291,7 @@ impl<'a> InteractiveWidget<'a> {
         is_hovered: bool,
         is_checked: bool,
     ) {
-        // Selected row: dark mint-tinted bar, white text — never inverted mint.
+        // Selected row: dark violet bar, light text — never inverted.
         let selected_bar = is_selected && !item.disabled && !item.is_separator;
         let (fg, bg) = if item.disabled {
             (TEXT_MUTED, Color::Reset)
@@ -414,16 +413,13 @@ impl<'a> InteractiveWidget<'a> {
 
     /// Render inline form for configuration within the panel.
     fn render_form(&self, form: &InlineFormState, area: Rect, buf: &mut Buffer) {
-        // Draw border with form title
+        // Draw border with form title — square corners, zero rounded frames.
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_set(ROUNDED_BORDER)
-            .border_style(Style::default().fg(CYAN_PRIMARY))
+            .border_style(Style::default().fg(ACCENT))
             .title(Span::styled(
                 format!(" {} ", form.title),
-                Style::default()
-                    .fg(CYAN_PRIMARY)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ));
 
         let inner = block.inner(area);
@@ -470,9 +466,7 @@ impl<'a> InteractiveWidget<'a> {
 
         // Label
         let label_style = if is_focused {
-            Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD)
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(TEXT_DIM)
         };
@@ -537,7 +531,7 @@ impl<'a> InteractiveWidget<'a> {
                 let cursor_x = value_x + display_value.len() as u16;
                 if cursor_x < area.x + area.width - 1 {
                     buf[(cursor_x, area.y)].set_char('_');
-                    buf[(cursor_x, area.y)].set_fg(CYAN_PRIMARY);
+                    buf[(cursor_x, area.y)].set_fg(ACCENT);
                 }
             }
         }

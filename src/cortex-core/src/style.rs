@@ -1,50 +1,56 @@
-//! Cortex Theme - Ocean/Cyan Visual Identity for Cortex CLI
+//! Cortex Theme - Violet chrome on the host terminal background.
 //!
-//! A cohesive ocean-inspired theme with cyan accents. All colors are constants
-//! optimized for 120 FPS rendering with the brain pulse aesthetic.
+//! The locked chrome never paints its own background: the terminal shows
+//! through (`Color::Reset`, black by default). The single accent is the
+//! violet `#A78BFA`, reserved for markers — `>` prompts, selection carets,
+//! `●` tile dots and `✓` checks. Green exists only for `+` diff additions.
 
 use ratatui::style::{Color, Modifier, Style};
 
 // ============================================================
-// BRAND COLORS - Primary accent colors (Green theme)
+// BRAND COLORS - Violet accent family
 // ============================================================
 
-/// Primary green - main accent color
-pub const CYAN_PRIMARY: Color = Color::Rgb(0, 255, 163); // #00FFA3
+/// Primary accent - the locked violet, for `>` markers and carets
+pub const ACCENT: Color = Color::Rgb(167, 139, 250); // #A78BFA
 
-/// Light green - secondary accent
-pub const SKY_BLUE: Color = Color::Rgb(100, 255, 180); // #64FFB4
+/// Legacy name for the primary accent (was the brand green)
+pub const CYAN_PRIMARY: Color = ACCENT;
 
-/// Bright green - bright accent for highlights
-pub const ELECTRIC_BLUE: Color = Color::Rgb(50, 255, 150); // #32FF96
+/// Soft accent - lighter violet for secondary emphasis
+pub const SKY_BLUE: Color = Color::Rgb(196, 181, 253); // #C4B5FD
 
-/// Mid green - links and interactive elements
-pub const DEEP_CYAN: Color = Color::Rgb(0, 200, 130); // #00C882
+/// Bright accent - lightest violet for highlights
+pub const ELECTRIC_BLUE: Color = Color::Rgb(221, 214, 254); // #DDD6FE
 
-/// Dark green - dark accent color
-pub const TEAL: Color = Color::Rgb(0, 139, 87); // #008B57
+/// Mid accent - links and interactive elements
+pub const DEEP_CYAN: Color = Color::Rgb(139, 92, 246); // #8B5CF6
 
-// ============================================================
-// BACKGROUND COLORS - Dark navy base
-// ============================================================
-
-/// Main background - deep void
-pub const VOID: Color = Color::Rgb(10, 22, 40); // #0A1628
-
-/// Surface level 0 - darkest surface
-pub const SURFACE_0: Color = Color::Rgb(13, 27, 42); // #0D1B2A
-
-/// Surface level 1 - mid surface
-pub const SURFACE_1: Color = Color::Rgb(27, 40, 56); // #1B2838
-
-/// Surface level 2 - light surface
-pub const SURFACE_2: Color = Color::Rgb(36, 59, 83); // #243B53
-
-/// Surface level 3 - lightest surface
-pub const SURFACE_3: Color = Color::Rgb(51, 78, 104); // #334E68
+/// Dark accent
+pub const TEAL: Color = Color::Rgb(109, 40, 217); // #6D28D9
 
 // ============================================================
-// TEXT COLORS - Cyan-tinted text
+// BACKGROUND COLORS - the host terminal owns the canvas
+// ============================================================
+
+/// Main background — never painted. The host terminal shows through
+/// (black by default). Do not swap this back to a solid navy/void fill.
+pub const VOID: Color = Color::Reset;
+
+/// Surface level 0 - darkest neutral surface (popups, command rows)
+pub const SURFACE_0: Color = Color::Rgb(20, 20, 23); // #141417
+
+/// Surface level 1 - mid neutral surface
+pub const SURFACE_1: Color = Color::Rgb(28, 28, 32); // #1C1C20
+
+/// Surface level 2 - light neutral surface
+pub const SURFACE_2: Color = Color::Rgb(38, 38, 43); // #26262B
+
+/// Surface level 3 - lightest neutral surface
+pub const SURFACE_3: Color = Color::Rgb(50, 50, 58); // #32323A
+
+// ============================================================
+// TEXT COLORS
 // ============================================================
 
 /// Primary text - white
@@ -63,8 +69,11 @@ pub const TEXT_BRIGHT: Color = Color::Rgb(255, 255, 255); // #FFFFFF
 // SEMANTIC COLORS
 // ============================================================
 
-/// Success - cyan-green for success states
-pub const SUCCESS: Color = Color::Rgb(0, 245, 212); // #00F5D4
+/// Success - the violet accent; `✓` and `●` markers are violet, not green
+pub const SUCCESS: Color = ACCENT; // #A78BFA
+
+/// Diff additions - the only green in the chrome (`+N`, `+` lines)
+pub const DIFF_ADD: Color = Color::Rgb(74, 222, 128); // #4ADE80
 
 /// Warning - golden amber for warnings
 pub const WARNING: Color = Color::Rgb(255, 200, 87); // #FFC857
@@ -78,21 +87,21 @@ pub const INFO: Color = Color::Rgb(72, 202, 228); // #48CAE4
 /// Highlight - bright electric blue for emphasis
 pub const HIGHLIGHT: Color = Color::Rgb(125, 249, 255); // #7DF9FF
 
-/// Selected-row background - dark mint-tinted navy, never inverted mint
-pub const SELECTION_BG: Color = Color::Rgb(26, 51, 48); // #1A3330
+/// Selected-row background - dark violet bar with light text, never inverted
+pub const SELECTION_BG: Color = Color::Rgb(34, 26, 56); // #221A38
 
 // ============================================================
 // BORDER COLORS
 // ============================================================
 
-/// Normal border - subtle navy blue
-pub const BORDER: Color = Color::Rgb(27, 73, 101); // #1B4965
+/// Normal border - subtle neutral gray
+pub const BORDER: Color = Color::Rgb(42, 42, 50); // #2A2A32
 
-/// Focused border - bright green for active elements
-pub const BORDER_FOCUS: Color = Color::Rgb(0, 255, 163); // #00FFA3
+/// Focused border - violet accent for active elements
+pub const BORDER_FOCUS: Color = ACCENT; // #A78BFA
 
 /// Dim border - very subtle border
-pub const BORDER_DIM: Color = Color::Rgb(16, 42, 67); // #102A43
+pub const BORDER_DIM: Color = Color::Rgb(30, 30, 36); // #1E1E24
 
 // ============================================================
 // LEGACY ALIASES - Backward compatibility
@@ -104,8 +113,8 @@ pub const PINK: Color = CYAN_PRIMARY;
 /// Alias for TEAL (legacy: PURPLE)
 pub const PURPLE: Color = TEAL;
 
-/// Alias for SUCCESS (legacy: GREEN)
-pub const GREEN: Color = SUCCESS;
+/// Alias for DIFF_ADD (legacy: GREEN) — green is diff additions only
+pub const GREEN: Color = DIFF_ADD;
 
 /// Alias for WARNING (legacy: ORANGE)
 pub const ORANGE: Color = WARNING;
@@ -159,7 +168,7 @@ pub struct ThemeColors {
 }
 
 impl ThemeColors {
-    /// Ocean/Cyan theme - the default Cortex theme
+    /// Violet-chrome theme - the default Cortex theme (legacy fn name)
     pub fn ocean_cyan() -> Self {
         Self {
             primary: CYAN_PRIMARY,
@@ -184,12 +193,12 @@ impl ThemeColors {
         Self::ocean_cyan()
     }
 
-    /// Light theme - darker accents on light background
+    /// Light theme - darker violet accents on light background
     pub fn light() -> Self {
         Self {
-            primary: Color::Rgb(0, 150, 100),
-            secondary: Color::Rgb(0, 120, 80),
-            accent: Color::Rgb(0, 100, 70),
+            primary: Color::Rgb(124, 58, 237),
+            secondary: Color::Rgb(109, 40, 217),
+            accent: Color::Rgb(91, 33, 182),
             background: Color::Rgb(255, 255, 255),
             surface: [
                 Color::Rgb(245, 245, 245),
@@ -200,12 +209,12 @@ impl ThemeColors {
             text: Color::Rgb(30, 30, 30),
             text_dim: Color::Rgb(100, 100, 100),
             text_muted: Color::Rgb(150, 150, 150),
-            success: Color::Rgb(0, 150, 0),
+            success: Color::Rgb(124, 58, 237),
             warning: Color::Rgb(200, 150, 0),
             error: Color::Rgb(200, 50, 50),
             info: Color::Rgb(50, 100, 200),
             border: Color::Rgb(200, 200, 200),
-            border_focus: Color::Rgb(0, 150, 100),
+            border_focus: Color::Rgb(124, 58, 237),
         }
     }
 
@@ -291,10 +300,10 @@ impl Default for ThemeColors {
 pub struct CortexStyle;
 
 impl CortexStyle {
-    /// Default style: primary text on void background
+    /// Default style: primary text on the host terminal background
     #[inline]
     pub fn default() -> Style {
-        Style::default().fg(TEXT).bg(VOID)
+        Style::default().fg(TEXT)
     }
 
     /// Header style: bright white bold text for titles and headers
@@ -305,10 +314,10 @@ impl CortexStyle {
             .add_modifier(Modifier::BOLD)
     }
 
-    /// Selected item style: void text on cyan background
+    /// Selected item style: light text on the dark violet bar — never inverted
     #[inline]
     pub fn selected() -> Style {
-        Style::default().fg(VOID).bg(CYAN_PRIMARY)
+        Style::default().fg(TEXT).bg(SELECTION_BG)
     }
 
     /// Error style: coral red text for error messages
@@ -317,7 +326,7 @@ impl CortexStyle {
         Style::default().fg(ERROR)
     }
 
-    /// Success style: cyan-green text for success messages
+    /// Success style: violet accent text for success messages
     #[inline]
     pub fn success() -> Style {
         Style::default().fg(SUCCESS)
@@ -593,7 +602,7 @@ mod tests {
         // Verify legacy aliases point to correct new colors
         assert_eq!(PINK, CYAN_PRIMARY);
         assert_eq!(PURPLE, TEAL);
-        assert_eq!(GREEN, SUCCESS);
+        assert_eq!(GREEN, DIFF_ADD);
         assert_eq!(ORANGE, WARNING);
         assert_eq!(BLUE, INFO);
         assert_eq!(RED, ERROR);

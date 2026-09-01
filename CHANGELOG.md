@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+- New violet chrome lock, replacing the mint/`#1A3330` chrome: the background is never painted (`Color::Reset` — the host terminal shows through, black by default), the accent is `#A78BFA` violet on the `>` prompt, selection carets, `●` tile dots and `✓` checks, selection bars are light text on `#221A38` (never inverted), and green (`#4ADE80`) appears only on `+` diff additions — `#00F5D4` and `#00FFA3` are banned everywhere
+- Zero rounded frames: the wide slash popup, inline forms and overlay widgets drop their `╭╮` / rounded borders; the TUI bleeds to the terminal edges
+- All 50 lock states recaptured at 40×12 and 120×40 on the violet chrome (layout, copy and wrap rules unchanged), plus a second committed set compositing each capture into a photorealistic macOS Terminal.app window under `docs/media/tui-lock/macos/`
+
 ### Added
 - Lock boards for typing, `/model` (compact + full), `/mode`, `/permissions`, working, and Read (states 02, 04–09) with captures at 40×12 and 120×40
 - Code session turns against `POST /v1/code/sessions/{id}/turns` (streaming tokens, tool rows, Plan/Spec harness locks)

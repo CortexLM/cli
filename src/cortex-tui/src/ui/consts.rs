@@ -32,12 +32,13 @@ pub const MAX_CARD_HEIGHT_PERCENT: u16 = 70;
 /// Padding between card border and content.
 pub const CARD_PADDING: u16 = 1;
 
-/// Border characters for rounded corners (Unicode box drawing).
+/// Border characters (Unicode box drawing) — square corners only; the
+/// locked chrome never draws rounded frames.
 pub mod border {
-    pub const TOP_LEFT: char = '╭';
-    pub const TOP_RIGHT: char = '╮';
-    pub const BOTTOM_LEFT: char = '╰';
-    pub const BOTTOM_RIGHT: char = '╯';
+    pub const TOP_LEFT: char = '┌';
+    pub const TOP_RIGHT: char = '┐';
+    pub const BOTTOM_LEFT: char = '└';
+    pub const BOTTOM_RIGHT: char = '┘';
     pub const HORIZONTAL: char = '─';
     pub const VERTICAL: char = '│';
 

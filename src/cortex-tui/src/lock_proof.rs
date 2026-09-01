@@ -7,10 +7,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use cortex_core::style::VOID;
 use cortex_core::widgets::Message;
 use cortex_tui_capture::{CaptureConfig, MockTerminal, StyleRendering};
-use ratatui::style::Style;
 use ratatui::widgets::Clear;
 use serde::Serialize;
 
@@ -172,11 +170,10 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
     terminal
         .draw(|frame| {
             let area = frame.area();
+            // The chrome never paints its own background: cells stay on
+            // `Color::Reset` so the host terminal (black by default) shows
+            // through.
             frame.render_widget(Clear, area);
-            frame.render_widget(
-                ratatui::widgets::Block::default().style(Style::default().bg(VOID)),
-                area,
-            );
             match id {
                 "splash" => {
                     crate::lock_boards::render_lock_board("splash", area, frame.buffer_mut());
@@ -345,17 +342,16 @@ mod tests {
     use super::*;
     use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
 
-    /// Every character the ANSI stream paints with the mint accent, in order.
+    /// Every character the ANSI stream paints with `fg`, in order.
     ///
     /// `to_ansi` resets styles (`ESC[0m`) before each change, so tracking the
     /// last `38;2;…` foreground since the previous reset is exact.
-    fn mint_painted_chars(ansi: &str) -> String {
-        const MINT_FG: &str = "38;2;0;245;212";
+    fn painted_chars(ansi: &str, fg: &str) -> String {
         let mut painted = String::new();
-        let mut mint = false;
+        let mut active = false;
         let mut rest = ansi;
         while let Some(start) = rest.find('\x1b') {
-            if mint {
+            if active {
                 painted.push_str(&rest[..start]);
             }
             rest = &rest[start..];
@@ -364,24 +360,33 @@ mod tests {
             };
             let params = &rest[2..end];
             if params == "0" {
-                mint = false;
+                active = false;
             } else if params.starts_with("38;2;") {
-                mint = params == MINT_FG;
+                active = params == fg;
             }
             rest = &rest[end + 1..];
         }
-        if mint {
+        if active {
             painted.push_str(rest);
         }
         painted.retain(|c| c != '\n');
         painted
     }
 
+    /// Locked violet accent `#A78BFA` as an SGR foreground.
+    const ACCENT_FG: &str = "38;2;167;139;250";
+    /// Locked diff green `#4ADE80` as an SGR foreground.
+    const DIFF_GREEN_FG: &str = "38;2;74;222;128";
+
+    fn accent_painted_chars(ansi: &str) -> String {
+        painted_chars(ansi, ACCENT_FG)
+    }
+
     #[test]
-    fn mint_is_reserved_for_markers_everywhere() {
-        // The locked chrome allows mint on the `>` prompt, the `●` success
-        // dot, `✓` checks and `+N` diff additions — never on a command name,
-        // label or sentence. Login sub-states are locked as shipped.
+    fn violet_is_reserved_for_markers_everywhere() {
+        // The locked chrome allows violet on the `>` prompt, the `●` dot,
+        // `✓` checks and small stats — never on a command name, label or
+        // sentence. Login sub-states are locked as shipped.
         let locked_login = ["login_waiting", "login_success", "login_error"];
         for id in lock_scene_ids() {
             if locked_login.contains(id) {
@@ -389,53 +394,114 @@ mod tests {
             }
             for size in [(40u16, 12u16), (120u16, 40u16)] {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let minted = mint_painted_chars(&frame.ansi);
+                let painted = accent_painted_chars(&frame.ansi);
                 assert!(
-                    minted
+                    painted
                         .chars()
-                        .all(|c| matches!(c, '>' | '●' | '✓' | '+' | '%' | '0'..='9' | ' ')),
-                    "{id} paints mint outside the marker set at {size:?}: {minted:?}"
+                        .all(|c| matches!(c, '>' | '●' | '✓' | '%' | '0'..='9' | ' ')),
+                    "{id} paints violet outside the marker set at {size:?}: {painted:?}"
                 );
             }
         }
     }
 
     #[test]
-    fn slash_palette_paints_mint_on_the_marker_only() {
+    fn green_is_reserved_for_diff_additions_everywhere() {
+        // The only green in the chrome is `+N` / `+` diff additions.
+        for id in lock_scene_ids() {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let painted = painted_chars(&frame.ansi, DIFF_GREEN_FG);
+                assert!(
+                    painted.chars().all(|c| matches!(c, '+' | '0'..='9' | ' ')),
+                    "{id} paints green outside +diff at {size:?}: {painted:?}"
+                );
+            }
+        }
+        // Diff additions really are green, not violet.
+        for id in ["footer_max", "write", "edit", "multi_diff"] {
+            let frame = render_lock_scene(id, 120, 40).expect(id);
+            let painted = painted_chars(&frame.ansi, DIFF_GREEN_FG);
+            assert!(
+                painted.contains('+'),
+                "{id} must paint its +diff green: {painted:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn banned_colors_never_painted() {
+        // The mint chrome is dead: #00F5D4 and #1A3330 are banned outright,
+        // the old brand green #00FFA3 with them, and no scene paints the
+        // navy #0A1628 wash — the host terminal owns the background.
+        const BANNED: [&str; 4] = ["0;245;212", "26;51;48", "0;255;163", "10;22;40"];
+        for id in lock_scene_ids() {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                for banned in BANNED {
+                    assert!(
+                        !frame.ansi.contains(banned),
+                        "{id} paints banned color {banned} at {size:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_rounded_frame_glyphs_anywhere() {
+        // Zero rounded frames: the TUI bleeds to the terminal edges and no
+        // scene draws a ╭╮╰╯ box.
+        for id in lock_scene_ids() {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                for glyph in ['╭', '╮', '╰', '╯'] {
+                    assert!(
+                        !frame.plain.contains(glyph),
+                        "{id} draws a rounded frame glyph {glyph} at {size:?}:\n{}",
+                        frame.plain
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn slash_palette_paints_violet_on_the_marker_only() {
         for size in [(40u16, 12u16), (120u16, 40u16)] {
             let frame = render_lock_scene("palette", size.0, size.1).expect("palette");
-            let minted = mint_painted_chars(&frame.ansi);
+            let painted = accent_painted_chars(&frame.ansi);
             assert!(
-                minted.chars().all(|c| matches!(c, '>' | ' ')),
-                "mint must stay on the `>` marker at {size:?}; painted {minted:?}"
+                painted.chars().all(|c| matches!(c, '>' | ' ')),
+                "violet must stay on the `>` marker at {size:?}; painted {painted:?}"
             );
             assert!(
-                minted.contains('>'),
-                "the prompt marker must stay mint at {size:?}"
+                painted.contains('>'),
+                "the prompt marker must stay violet at {size:?}"
             );
         }
         // The wide selected row keeps the 40×12 tone: dim description on the
-        // dark #1A3330 bar, never a bright (or mint) command row.
+        // dark #221A38 bar, never a bright (or violet) command row.
         let wide = render_lock_scene("palette", 120, 40).expect("palette wide");
         assert!(
             wide.ansi
-                .contains("\x1b[38;2;130;154;177m\x1b[48;2;26;51;48m"),
+                .contains("\x1b[38;2;130;154;177m\x1b[48;2;34;26;56m"),
             "selected description must be dim on the selection bar"
         );
     }
 
     #[test]
-    fn no_inverted_mint_selection_anywhere() {
-        // Mint is highlight-only: `>`, small accents, success. A selected row
-        // is a dark #1A3330 bar, never black-on-mint.
-        const MINT_BG: &str = "48;2;0;245;212";
-        const DARK_SELECTION_BG: &str = "48;2;26;51;48";
+    fn no_inverted_accent_selection_anywhere() {
+        // Violet is highlight-only: `>`, small accents, success. A selected
+        // row is a dark #221A38 bar with light text, never text-on-violet.
+        const ACCENT_BG: &str = "48;2;167;139;250";
+        const DARK_SELECTION_BG: &str = "48;2;34;26;56";
         for id in lock_scene_ids() {
             for size in [(40u16, 12u16), (120u16, 40u16)] {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 assert!(
-                    !frame.ansi.contains(MINT_BG),
-                    "{id} paints an inverted mint bar at {size:?}"
+                    !frame.ansi.contains(ACCENT_BG),
+                    "{id} paints an inverted violet bar at {size:?}"
                 );
             }
         }
@@ -446,6 +512,33 @@ mod tests {
                 "{id} must use the dark selection bar"
             );
         }
+    }
+
+    #[test]
+    fn session_stays_interactive_while_running() {
+        // Not a frozen session: while a run is streaming, stdin stays alive —
+        // the composer keeps rendering and a submitted follow-up is queued
+        // instead of dropped.
+        let config = capture_config(120, 40);
+        let mut terminal = MockTerminal::from_config(config.clone()).expect("terminal");
+        let mut state = loading_session_state();
+        assert!(state.streaming.is_streaming, "the run must be live");
+        state.queue_message("also add a Retry-After header".to_string());
+        assert_eq!(state.queued_count(), 1, "follow-ups queue while running");
+        terminal
+            .draw(|frame| draw_session(frame, state))
+            .map_err(|err| anyhow::anyhow!("{err}"))
+            .expect("draw");
+        let snapshot = terminal.snapshot();
+        let plain = snapshot.to_ascii(&config);
+        assert!(
+            plain.contains("[1 pending]"),
+            "queued follow-up badge must render:\n{plain}"
+        );
+        assert!(
+            plain.contains("> "),
+            "the composer stays on screen during a run:\n{plain}"
+        );
     }
 
     #[test]
@@ -866,8 +959,8 @@ mod tests {
     }
 
     #[test]
-    fn tool_tile_dots_are_mint() {
-        // Every tool tile paints its `●` status dot mint, exactly like the
+    fn tool_tile_dots_are_violet() {
+        // Every tool tile paints its `●` status dot violet, exactly like the
         // locked Grep tile. Labels stay white.
         let tiles = [
             "tool_tiles",
@@ -894,10 +987,10 @@ mod tests {
         for id in tiles {
             for size in [(40u16, 12u16), (120u16, 40u16)] {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let minted = mint_painted_chars(&frame.ansi);
+                let painted = accent_painted_chars(&frame.ansi);
                 assert!(
-                    minted.contains('●'),
-                    "{id} must paint its tile dot mint at {size:?}; minted {minted:?}"
+                    painted.contains('●'),
+                    "{id} must paint its tile dot violet at {size:?}; painted {painted:?}"
                 );
             }
         }

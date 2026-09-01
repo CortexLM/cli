@@ -3,7 +3,7 @@
 //! These scenes share session chrome (prompt, composer, cwd+git footer) and
 //! Cortex product copy only.
 
-use cortex_core::style::{ERROR, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM, WARNING};
+use cortex_core::style::{DIFF_ADD, ERROR, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM, WARNING};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -253,8 +253,8 @@ fn fill_row(buf: &mut Buffer, area: Rect, y: u16, bg: Color) {
     }
 }
 
-/// Paint the `>` caret of a selection bar mint, like the locked slash rows.
-fn mint_selection_caret(buf: &mut Buffer, area: Rect, y: u16) {
+/// Paint the `>` caret of a selection bar violet, like the locked slash rows.
+fn accent_selection_caret(buf: &mut Buffer, area: Rect, y: u16) {
     if let Some(cell) = buf.cell_mut((area.x, y)) {
         cell.set_style(Style::default().fg(SUCCESS).bg(SELECTION_BG));
         cell.set_char('>');
@@ -402,7 +402,7 @@ fn board_permission(area: Rect, buf: &mut Buffer) {
                     .bg(SELECTION_BG)
                     .add_modifier(Modifier::BOLD),
             );
-            mint_selection_caret(buf, area, y);
+            accent_selection_caret(buf, area, y);
             y += 1;
         } else {
             // Option copy word-wraps at narrow widths — words are never
@@ -514,7 +514,7 @@ fn board_plan(area: Rect, buf: &mut Buffer) {
                 .add_modifier(Modifier::BOLD),
         );
         if i == 0 {
-            mint_selection_caret(buf, area, y);
+            accent_selection_caret(buf, area, y);
         }
     }
     buf.set_string(
@@ -675,7 +675,7 @@ fn board_resume(area: Rect, buf: &mut Buffer) {
                 &shown,
                 Style::default().fg(TEXT).bg(SELECTION_BG),
             );
-            mint_selection_caret(buf, area, y);
+            accent_selection_caret(buf, area, y);
         } else if !compact(area) {
             let row = first_fitting_line(&format!("{when}  {title}  {branch}  {msgs}"), w);
             buf.set_string(area.x, y, format!("  {row}"), Style::default().fg(TEXT));
@@ -718,7 +718,7 @@ fn board_mcp(area: Rect, buf: &mut Buffer) {
         white(first_fitting_line("MCP servers · 2 of 4 connected", w)),
         Line::from(""),
     ];
-    // Mint marks connected servers only; every status word stays gray.
+    // Violet marks connected servers only; every status word stays gray.
     let servers = [
         (
             "●",
@@ -919,7 +919,7 @@ fn board_sandbox(area: Rect, buf: &mut Buffer) {
             .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD),
     );
-    mint_selection_caret(buf, area, y);
+    accent_selection_caret(buf, area, y);
     let on = "● On";
     let ox = area.right().saturating_sub(on.len() as u16 + 1);
     if ox > area.x + 4 {
@@ -1399,7 +1399,7 @@ fn board_jobs(area: Rect, buf: &mut Buffer) {
         status_color: Color,
         meta: &'static str,
     }
-    // Spinners and status words stay gray; mint marks the finished job.
+    // Spinners and status words stay gray; violet marks the finished job.
     let jobs = [
         Job {
             selected: true,
@@ -1916,7 +1916,7 @@ fn board_footer_max(area: Rect, buf: &mut Buffer) {
             "Committed and pushed · 3 files · ",
             Style::default().fg(TEXT),
         ),
-        Span::styled("+214", Style::default().fg(SUCCESS)),
+        Span::styled("+214", Style::default().fg(DIFF_ADD)),
         Span::styled(" ", Style::default().fg(TEXT_DIM)),
         Span::styled("-9", Style::default().fg(TEXT_DIM)),
     ]));
@@ -2311,7 +2311,7 @@ fn board_btw(area: Rect, buf: &mut Buffer) {
 }
 
 /// Composer row with a block cursor ahead of the ghost, per the Designer
-/// boards for interrupt and compact: mint `>`, white cursor, dim ghost.
+/// boards for interrupt and compact: violet `>`, white cursor, dim ghost.
 fn paint_cursor_composer(area: Rect, buf: &mut Buffer, footer_right: &str) {
     let w = inner_width(area);
     let composer_y = area.bottom().saturating_sub(3);
@@ -2339,7 +2339,7 @@ fn paint_cursor_composer(area: Rect, buf: &mut Buffer, footer_right: &str) {
 fn board_stopped(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = Vec::new();
-    // Prompt per the Designer board: mint `>`, white copy on every line.
+    // Prompt per the Designer board: violet `>`, white copy on every line.
     if compact(area) {
         lines.push(Line::from(vec![
             Span::styled("> ", Style::default().fg(SUCCESS)),
@@ -2406,7 +2406,7 @@ fn board_stopped(area: Rect, buf: &mut Buffer) {
 }
 
 /// State 38 — `/compact` result. Shared by the `compact` and `compacted`
-/// captures; 12% is the mint success stat on the Designer board.
+/// captures; 12% is the violet success stat on the Designer board.
 fn board_compacted(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = vec![
@@ -2453,7 +2453,7 @@ fn board_write(area: Rect, buf: &mut Buffer) {
             first_fitting_line("Write src/middleware/rateLimit.ts", w.saturating_sub(6)),
             Style::default().fg(TEXT),
         ),
-        Span::styled(" +84", Style::default().fg(SUCCESS)),
+        Span::styled(" +84", Style::default().fg(DIFF_ADD)),
     ]));
     lines.push(dim(first_fitting_line("new file", w)));
     let code: &[(u32, &str)] = &[
@@ -2962,7 +2962,7 @@ fn board_edit(area: Rect, buf: &mut Buffer) {
             first_fitting_line(path, w.saturating_sub(16)),
             Style::default().fg(TEXT),
         ),
-        Span::styled(" +9", Style::default().fg(SUCCESS)),
+        Span::styled(" +9", Style::default().fg(DIFF_ADD)),
         Span::styled(" -2", Style::default().fg(TEXT_DIM)),
     ]));
     if !compact(area) {
@@ -2971,7 +2971,7 @@ fn board_edit(area: Rect, buf: &mut Buffer) {
             w,
         )));
         lines.push(Line::from(vec![
-            Span::styled("  +   ", Style::default().fg(SUCCESS)),
+            Span::styled("  +   ", Style::default().fg(DIFF_ADD)),
             Span::styled(
                 first_fitting_line(
                     "const limiter = rateLimit({ limit: 60, windowSec: 60 });",
@@ -3039,7 +3039,7 @@ fn board_multi_diff(area: Rect, buf: &mut Buffer) {
             .right()
             .saturating_sub(stats.chars().count() as u16)
             .max(area.x);
-        buf.set_string(plus_x, y, plus, with_row_bg(Style::default().fg(SUCCESS)));
+        buf.set_string(plus_x, y, plus, with_row_bg(Style::default().fg(DIFF_ADD)));
         buf.set_string(
             plus_x + plus.chars().count() as u16 + 1,
             y,
@@ -3114,7 +3114,7 @@ fn board_settings_hub(area: Rect, buf: &mut Buffer) {
     );
 }
 
-fn paint_mint_prompt(area: Rect, buf: &mut Buffer, y: u16, rest: &str, dim_rest: bool) {
+fn paint_accent_prompt(area: Rect, buf: &mut Buffer, y: u16, rest: &str, dim_rest: bool) {
     let w = inner_width(area);
     if let Some(cell) = buf.cell_mut((area.x, y)) {
         cell.set_style(Style::default().fg(SUCCESS));
@@ -3142,7 +3142,7 @@ fn paint_launch_header(area: Rect, buf: &mut Buffer) -> u16 {
         Style::default().fg(TEXT_DIM),
     );
     y += 1;
-    paint_mint_prompt(area, buf, y, "cortex", false);
+    paint_accent_prompt(area, buf, y, "cortex", false);
     y += 1;
     buf.set_string(
         area.x,
@@ -3157,7 +3157,7 @@ fn board_splash(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let y = paint_launch_header(area, buf);
     let ghost = first_fitting_line("Plan, search, build anything", w.saturating_sub(2));
-    paint_mint_prompt(area, buf, y, "", false);
+    paint_accent_prompt(area, buf, y, "", false);
     if !ghost.is_empty() {
         buf.set_string(area.x + 2, y, &ghost, Style::default().fg(TEXT_DIM));
     }
@@ -3198,7 +3198,7 @@ const PALETTE_ROWS: &[(&str, &str)] = &[
 fn board_palette(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut y = paint_launch_header(area, buf);
-    paint_mint_prompt(area, buf, y, "/", false);
+    paint_accent_prompt(area, buf, y, "/", false);
     y += if compact(area) { 1 } else { 2 };
     let hint_reserve = 2u16;
     let two_line = compact(area);
@@ -3234,7 +3234,7 @@ fn board_palette(area: Rect, buf: &mut Buffer) {
         let same_line = first_fitting_line(desc, w.saturating_sub(gap));
         if !same_line.is_empty() && !two_line {
             // Selected row keeps the 40×12 tone: bold white label, dim
-            // description. Only the `>` marker is mint — never the copy.
+            // description. Only the `>` marker is violet — never the copy.
             let desc_style = if i == 0 {
                 Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
             } else {
@@ -3280,7 +3280,7 @@ fn board_typing(area: Rect, buf: &mut Buffer) {
     let typed = format!("{USER_PROMPT}█");
     if compact(area) {
         let fitted = first_fitting_line(USER_PROMPT, w.saturating_sub(3));
-        paint_mint_prompt(area, buf, y, &format!("{fitted}█"), false);
+        paint_accent_prompt(area, buf, y, &format!("{fitted}█"), false);
     } else {
         for (i, part) in wrap_or_drop(&typed, w.saturating_sub(2))
             .into_iter()
@@ -3290,7 +3290,7 @@ fn board_typing(area: Rect, buf: &mut Buffer) {
                 break;
             }
             if i == 0 {
-                paint_mint_prompt(area, buf, y, &part, false);
+                paint_accent_prompt(area, buf, y, &part, false);
             } else {
                 buf.set_string(area.x + 2, y, &part, Style::default().fg(TEXT));
             }
@@ -3306,7 +3306,7 @@ fn board_typing(area: Rect, buf: &mut Buffer) {
 }
 
 /// One picker row: `>` marker plus bold label on the dark bar when selected,
-/// dim meta right-aligned. Mint never touches the label itself.
+/// dim meta right-aligned. Violet never touches the label itself.
 fn picker_row(area: Rect, buf: &mut Buffer, y: u16, selected: bool, label: &str, meta: &str) {
     let w = inner_width(area);
     if selected {

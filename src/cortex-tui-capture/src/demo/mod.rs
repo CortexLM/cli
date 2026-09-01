@@ -329,8 +329,9 @@ mod tests {
     fn frames_carry_colour() {
         let recording = recording();
         // The recording is only useful as a GIF if the palette survives.
+        // The product accent is the locked violet #A78BFA.
         assert!(
-            recording.frames[0].ansi.contains("\x1b[38;2;0;255;163m"),
+            recording.frames[0].ansi.contains("\x1b[38;2;167;139;250m"),
             "expected the product accent colour in the first frame"
         );
     }

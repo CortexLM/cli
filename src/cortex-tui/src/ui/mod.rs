@@ -7,19 +7,15 @@
 //!
 //! ## Architecture
 //!
+//! The session is frameless — no box is drawn around it and nothing paints
+//! a background; content bleeds to the terminal edges:
+//!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │                      Terminal                                │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │  [Chat History - Terminal Scrollback]                       │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │  ● Status Indicator (shimmer) · Working...                  │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │  ╭─────────────────────────────────────────────────────────╮│
-//! │  │ Input Composer                                          ││
-//! │  ╰─────────────────────────────────────────────────────────╯│
-//! │  / commands · Ctrl+K palette · ? help                       │
-//! └─────────────────────────────────────────────────────────────┘
+//! [Chat History - Terminal Scrollback]
+//!
+//! ● Status Indicator (shimmer) · Working...
+//! > Input Composer
+//! / commands · Ctrl+K palette · ? help
 //! ```
 
 pub mod colors;

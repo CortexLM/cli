@@ -43,7 +43,7 @@ pub fn render_message_with_theme(
 
     match msg.role {
         MessageRole::User => {
-            // "> message" — mint marker, gray/white copy (locked chrome).
+            // "> message" — violet marker, gray/white copy (locked chrome).
             let prefix = Span::styled("> ", Style::default().fg(colors.accent));
 
             // Calculate available width for text (after "> " prefix)
@@ -165,11 +165,11 @@ pub fn render_tool_call(
         ToolStatus::Pending => (None, colors.text_muted),
         ToolStatus::Running => {
             let frame = TOOL_SPINNER_FRAMES[call.spinner_frame % TOOL_SPINNER_FRAMES.len()];
-            // Spinners stay gray — mint is reserved for markers and success.
+            // Spinners stay gray — violet is reserved for markers and success.
             (Some(frame.to_string()), colors.text_dim)
         }
-        // Completed tiles carry the mint status dot, same as the locked Grep
-        // tile; the label stays white.
+        // Completed tiles carry the violet status dot, same as the locked
+        // Grep tile; the label stays white.
         ToolStatus::Completed => (Some("●".to_string()), colors.accent),
         ToolStatus::Failed => (Some("●".to_string()), colors.error),
     };
@@ -226,8 +226,9 @@ pub fn render_tool_call(
             }
             let is_add = raw.starts_with('+') && !raw.starts_with("+++");
             let is_del = raw.starts_with('-') && !raw.starts_with("---");
+            // Diff additions are the only green in the chrome.
             let color = if is_add {
-                colors.accent
+                colors.diff_add
             } else if is_del {
                 colors.error
             } else {
@@ -250,12 +251,12 @@ pub fn render_tool_call(
         }
     } else if let Some(ref result) = call.result {
         let summary = result.summary.trim();
-        let mint_diff = summary.contains('+') || summary.contains('−') || summary.contains('-');
+        let has_diff = summary.contains('+') || summary.contains('−') || summary.contains('-');
         for line in wrap_or_drop(summary, inner) {
             lines.push(Line::from(Span::styled(
                 line,
-                Style::default().fg(if mint_diff {
-                    colors.accent
+                Style::default().fg(if has_diff {
+                    colors.diff_add
                 } else {
                     colors.text_dim
                 }),

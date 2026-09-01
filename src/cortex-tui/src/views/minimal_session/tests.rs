@@ -102,7 +102,7 @@ mod harness_snapshots {
         assert!(text.contains("Read"), "missing Read: {text}");
         assert!(
             text.contains("●"),
-            "completed tiles carry the mint status dot: {text}"
+            "completed tiles carry the violet status dot: {text}"
         );
         assert!(text.contains("Diagnostics"), "missing Diagnostics: {text}");
         assert!(!text.contains("L a.rs"), "{text}");
@@ -227,7 +227,7 @@ mod harness_snapshots {
             assert_eq!(
                 label_cell.style().fg,
                 Some(TEXT),
-                "selected label must stay gray/white, never mint: {row}"
+                "selected label must stay gray/white, never violet: {row}"
             );
             assert_eq!(
                 desc_cell.style().fg,

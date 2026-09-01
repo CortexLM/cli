@@ -22,19 +22,18 @@ pub use cortex_core::widgets::Message as ChatMessage;
 
 /// Minimalist session view for the chat interface.
 ///
+/// The view is frameless: content, composer and hints sit directly on the
+/// host terminal background and bleed to the terminal edges.
+///
 /// Layout:
 /// ```text
-/// ┌─────────────────────────────────────────────────────────┐
-/// │ > You: Hello, how are you?                              │
-/// │                                                         │
-/// │ Assistant: I'm doing well! How can I help you today?    │
-/// │                                                         │
-/// │ ⠹ Working · Analyzing code... (12s • Esc to interrupt)  │
-/// ├─────────────────────────────────────────────────────────┤
-/// │ > _                                                     │
-/// ├─────────────────────────────────────────────────────────┤
-/// │ Enter submit · Ctrl+K palette · Ctrl+M model · ? help   │
-/// └─────────────────────────────────────────────────────────┘
+/// > You: Hello, how are you?
+///
+/// Assistant: I'm doing well! How can I help you today?
+///
+/// ⠹ Working · Analyzing code... (12s • Esc to interrupt)
+/// > _
+/// Enter submit · Ctrl+K palette · Ctrl+M model · ? help
 /// ```
 pub struct MinimalSessionView<'a> {
     /// Reference to the application state
@@ -241,6 +240,9 @@ impl<'a> MinimalSessionView<'a> {
 
     /// Renders autocomplete suggestions inline below the input.
     /// The top stays fixed, only the bottom varies with item count.
+    ///
+    /// The popup is frameless at every width — zero rounded boxes; the rows
+    /// sit directly on the host terminal background.
     fn render_autocomplete_inline(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;
@@ -249,7 +251,6 @@ impl<'a> MinimalSessionView<'a> {
         let accent = self.colors.accent;
         let dim = self.colors.text_dim;
         let text = self.colors.text;
-        let border_style = Style::default().fg(dim);
 
         // Calculate actual height based on items (top stays fixed, bottom varies)
         let visible_items = self.app_state.autocomplete.visible_items();
@@ -260,55 +261,11 @@ impl<'a> MinimalSessionView<'a> {
             .len()
             .saturating_sub(self.app_state.autocomplete.scroll_offset + visible_items.len());
         let more_rows = if remaining > 0 { 1_u16 } else { 0 };
-        let draw_box = area.width >= 50 && area.height > PALETTE_HOME_LIMIT as u16 + more_rows + 2;
-        let chrome = if draw_box { 2 } else { 0 };
-        let max_items = area.height.saturating_sub(chrome + more_rows).max(1) as usize;
+        let max_items = area.height.saturating_sub(more_rows).max(1) as usize;
         let drawn = visible_items.len().min(max_items);
 
-        let actual_height = drawn as u16 + more_rows + chrome;
-        if draw_box {
-            // Draw top border with rounded corners
-            if let Some(cell) = buf.cell_mut((area.x, area.y)) {
-                cell.set_char('╭').set_style(border_style);
-            }
-            if let Some(cell) = buf.cell_mut((area.right() - 1, area.y)) {
-                cell.set_char('╮').set_style(border_style);
-            }
-            for x in (area.x + 1)..(area.right() - 1) {
-                if let Some(cell) = buf.cell_mut((x, area.y)) {
-                    cell.set_char('─').set_style(border_style);
-                }
-            }
-
-            // Draw side borders (only for actual content height)
-            for y in (area.y + 1)..(area.y + actual_height - 1) {
-                if let Some(cell) = buf.cell_mut((area.x, y)) {
-                    cell.set_char('│').set_style(border_style);
-                }
-                if let Some(cell) = buf.cell_mut((area.right() - 1, y)) {
-                    cell.set_char('│').set_style(border_style);
-                }
-            }
-
-            // Draw bottom border at actual content height (not at area.bottom)
-            let bottom_y = area.y + actual_height - 1;
-            if bottom_y > area.y {
-                if let Some(cell) = buf.cell_mut((area.x, bottom_y)) {
-                    cell.set_char('╰').set_style(border_style);
-                }
-                if let Some(cell) = buf.cell_mut((area.right() - 1, bottom_y)) {
-                    cell.set_char('╯').set_style(border_style);
-                }
-                for x in (area.x + 1)..(area.right() - 1) {
-                    if let Some(cell) = buf.cell_mut((x, bottom_y)) {
-                        cell.set_char('─').set_style(border_style);
-                    }
-                }
-            }
-        }
-
-        let inner_y = if draw_box { area.y + 1 } else { area.y };
-        let inner_x = if draw_box { area.x + 2 } else { area.x + 1 };
+        let inner_y = area.y;
+        let inner_x = area.x + 1;
 
         if visible_items.is_empty() {
             buf.set_string(
@@ -364,7 +321,7 @@ impl<'a> MinimalSessionView<'a> {
                 let desc = crate::ui::text_utils::first_fitting_line(&item.description, remaining);
                 if !desc.is_empty() {
                     // Descriptions stay dim even on the selection bar; only
-                    // the label is bright and only the `>` marker is mint.
+                    // the label is bright and only the `>` marker is violet.
                     let desc_style = if is_selected {
                         Style::default().fg(dim).bg(SELECTION_BG)
                     } else {
@@ -440,12 +397,9 @@ impl<'a> Widget for MinimalSessionView<'a> {
         let hints_height: u16 = 1;
 
         let bottom_stack = status_height + update_banner_height + input_height + hints_height;
-        let box_pad: u16 = if area.width >= 50 { 2 } else { 0 };
         let max_ac_height = area.height.saturating_sub(bottom_stack.saturating_add(1));
         let autocomplete_height: u16 = if autocomplete_visible {
-            ((ac_items as u16).saturating_add(box_pad))
-                .min(max_ac_height)
-                .max(1)
+            (ac_items as u16).min(max_ac_height).max(1)
         } else {
             0
         };

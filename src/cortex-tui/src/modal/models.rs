@@ -3,7 +3,9 @@
 //! This modal displays available AI models and allows the user to select one.
 //! Models are grouped by provider with section headers for easy navigation.
 
-use cortex_core::style::{BORDER, CYAN_PRIMARY, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED, VOID};
+use cortex_core::style::{
+    BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -324,8 +326,9 @@ impl ModelsModal {
         is_selected: bool,
     ) {
         // Determine styles
+        // Selected rows: light text on the dark violet bar — never inverted.
         let (bg, fg, prefix_fg) = if is_selected {
-            (CYAN_PRIMARY, VOID, VOID)
+            (SELECTION_BG, TEXT, CYAN_PRIMARY)
         } else {
             (SURFACE_0, TEXT, CYAN_PRIMARY)
         };
@@ -367,21 +370,13 @@ impl ModelsModal {
         let right_x = x + width.saturating_sub(right_section.len() as u16 + 2);
 
         if !ctx_str.is_empty() && right_x > col + truncated_name.len() as u16 + 2 {
-            let ctx_style = if is_selected {
-                Style::default().fg(VOID).bg(bg)
-            } else {
-                Style::default().fg(TEXT_DIM).bg(bg)
-            };
+            let ctx_style = Style::default().fg(TEXT_DIM).bg(bg);
             buf.set_string(right_x, y, &ctx_str, ctx_style);
         }
 
         if !current_marker.is_empty() {
             let marker_x = x + width.saturating_sub(current_marker.len() as u16 + 2);
-            let marker_style = if is_selected {
-                Style::default().fg(VOID).bg(bg)
-            } else {
-                Style::default().fg(TEXT_DIM).bg(bg)
-            };
+            let marker_style = Style::default().fg(TEXT_DIM).bg(bg);
             buf.set_string(marker_x, y, current_marker, marker_style);
         }
     }

@@ -30,11 +30,13 @@ except ImportError:  # pragma: no cover - dependency guard
         "Install it with: python3 -m pip install pillow"
     )
 
-# Product palette, mirroring cortex-core::style.
+# Product palette, mirroring cortex-core::style. The chrome never paints its
+# own background (`Color::Reset`), so unstyled cells rasterise as the host
+# terminal default: black. No frame, border or canvas tint is drawn — the TUI
+# bleeds to the terminal edges.
 DEFAULT_FG = (255, 255, 255)
-DEFAULT_BG = (10, 22, 40)  # VOID   #0A1628
-CANVAS_BG = (6, 13, 24)
-BORDER = (27, 73, 101)  # BORDER #1B4965
+DEFAULT_BG = (0, 0, 0)
+CANVAS_BG = (0, 0, 0)
 
 # Primary face first, then faces that fill in box-drawing and symbol glyphs
 # JetBrains Mono does not carry (the tool-result marker U+23BF, for instance).
@@ -216,15 +218,6 @@ def render_frame(
     inner_h = rows * cell_h
     image = Image.new("RGB", (inner_w + pad * 2, inner_h + pad * 2), CANVAS_BG)
     draw = ImageDraw.Draw(image)
-
-    radius = max(6, pad // 2)
-    draw.rounded_rectangle(
-        [(pad // 2, pad // 2), (image.width - pad // 2 - 1, image.height - pad // 2 - 1)],
-        radius=radius,
-        fill=DEFAULT_BG,
-        outline=BORDER,
-        width=1,
-    )
 
     for row_index, row in enumerate(grid):
         y = pad + row_index * cell_h

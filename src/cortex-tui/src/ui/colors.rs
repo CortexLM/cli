@@ -71,7 +71,7 @@ pub fn detect_terminal_bg() -> Option<(u8, u8, u8)> {
 /// Adaptive color palette that adjusts to terminal background
 #[derive(Debug, Clone)]
 pub struct AdaptiveColors {
-    /// Brand accent color (green like Amp)
+    /// Brand accent color — the locked mint, reserved for markers
     pub accent: Color,
     /// Primary text color
     pub text: Color,
@@ -105,8 +105,8 @@ impl AdaptiveColors {
 
     /// Create dark theme colors adapted to the given background
     pub fn dark_theme(bg: (u8, u8, u8)) -> Self {
-        // Amp-inspired green accent
-        let accent_rgb = (0x00, 0xFF, 0xA3); // #00FFA3
+        // Locked mint accent — matches cortex_core::style::SUCCESS
+        let accent_rgb = (0x00, 0xF5, 0xD4); // #00F5D4
 
         // Blend colors with background for better integration
         let text_dim_rgb = blend((0x80, 0x80, 0x80), bg, 0.9);
@@ -131,8 +131,8 @@ impl AdaptiveColors {
 
     /// Create light theme colors adapted to the given background
     pub fn light_theme(bg: (u8, u8, u8)) -> Self {
-        // Darker green for light backgrounds
-        let accent_rgb = (0x00, 0xA6, 0x6E); // Darker green for contrast
+        // Darker mint for contrast on light backgrounds
+        let accent_rgb = (0x00, 0x96, 0x7D);
 
         // Blend colors with background for better integration
         let text_dim_rgb = blend((0x60, 0x60, 0x60), bg, 0.9);
@@ -161,9 +161,9 @@ impl AdaptiveColors {
         let default_bg = (0x1A, 0x1A, 0x1A);
 
         Self {
-            accent: Color::Rgb(0x00, 0xFF, 0xA3),     // #00FFA3 - Amp green
-            text: Color::Rgb(0xE0, 0xE0, 0xE0),       // #E0E0E0
-            text_dim: Color::Rgb(0x80, 0x80, 0x80),   // #808080
+            accent: Color::Rgb(0x00, 0xF5, 0xD4),   // #00F5D4 - locked mint
+            text: Color::Rgb(0xE0, 0xE0, 0xE0),     // #E0E0E0
+            text_dim: Color::Rgb(0x80, 0x80, 0x80), // #808080
             text_muted: Color::Rgb(0x50, 0x50, 0x50), // #505050
             user_bg: Color::Rgb(0x2A, 0x2A, 0x2A),
             border: Color::Rgb(0x40, 0x40, 0x40),  // #404040
@@ -171,9 +171,9 @@ impl AdaptiveColors {
             error: Color::Rgb(0xFF, 0x6B, 0x6B),   // #FF6B6B
             warning: Color::Rgb(0xFF, 0xC8, 0x57), // #FFC857
             selection: Color::Rgb(
-                blend((0x00, 0xFF, 0xA3), default_bg, 0.3).0,
-                blend((0x00, 0xFF, 0xA3), default_bg, 0.3).1,
-                blend((0x00, 0xFF, 0xA3), default_bg, 0.3).2,
+                blend((0x00, 0xF5, 0xD4), default_bg, 0.3).0,
+                blend((0x00, 0xF5, 0xD4), default_bg, 0.3).1,
+                blend((0x00, 0xF5, 0xD4), default_bg, 0.3).2,
             ),
         }
     }
@@ -195,16 +195,19 @@ impl AdaptiveColors {
         };
 
         let selection_rgb = blend(
-            match theme.primary {
+            match theme.success {
                 Color::Rgb(r, g, b) => (r, g, b),
-                _ => (0, 255, 163),
+                _ => (0, 245, 212),
             },
             bg,
             0.3,
         );
 
         Self {
-            accent: theme.primary,
+            // The session chrome reserves its accent for `>` markers and
+            // success dots, so it maps to the locked mint, not the brand
+            // primary.
+            accent: theme.success,
             text: theme.text,
             text_dim: theme.text_dim,
             text_muted: theme.text_muted,
@@ -255,32 +258,32 @@ mod tests {
     #[test]
     fn test_default_dark_colors() {
         let colors = AdaptiveColors::default_dark();
-        // Verify accent is Amp green
-        assert!(matches!(colors.accent, Color::Rgb(0x00, 0xFF, 0xA3)));
+        // The accent is the locked mint.
+        assert!(matches!(colors.accent, Color::Rgb(0x00, 0xF5, 0xD4)));
     }
 
     #[test]
     fn test_dark_theme() {
         let colors = AdaptiveColors::dark_theme((0x1A, 0x1A, 0x1A));
-        assert!(matches!(colors.accent, Color::Rgb(0x00, 0xFF, 0xA3)));
+        assert!(matches!(colors.accent, Color::Rgb(0x00, 0xF5, 0xD4)));
     }
 
     #[test]
     fn test_light_theme() {
         let colors = AdaptiveColors::light_theme((255, 255, 255));
         // Light theme should have darker accent for contrast
-        assert!(matches!(colors.accent, Color::Rgb(0x00, 0xA6, 0x6E)));
+        assert!(matches!(colors.accent, Color::Rgb(0x00, 0x96, 0x7D)));
     }
 
     #[test]
     fn test_from_theme_name() {
         let dark_colors = AdaptiveColors::from_theme_name("dark");
-        // Dark theme should have the primary accent from ThemeColors::dark()
-        assert!(matches!(dark_colors.accent, Color::Rgb(0, 255, 163)));
+        // The session accent maps to the theme's success mint.
+        assert!(matches!(dark_colors.accent, Color::Rgb(0, 245, 212)));
 
         let light_colors = AdaptiveColors::from_theme_name("light");
         // Light theme should have different accent
-        assert!(matches!(light_colors.accent, Color::Rgb(0, 150, 100)));
+        assert!(matches!(light_colors.accent, Color::Rgb(0, 150, 0)));
 
         let monokai_colors = AdaptiveColors::from_theme_name("monokai");
         // Monokai has green accent
@@ -294,8 +297,9 @@ mod tests {
         let theme = ThemeColors::ocean_dark();
         let colors = AdaptiveColors::from_theme_colors(&theme);
 
-        // Should use theme's primary as accent
-        assert_eq!(colors.accent, theme.primary);
+        // The session accent is the theme's success mint, reserved for
+        // markers.
+        assert_eq!(colors.accent, theme.success);
         assert_eq!(colors.text, theme.text);
         assert_eq!(colors.text_dim, theme.text_dim);
         assert_eq!(colors.text_muted, theme.text_muted);

@@ -53,12 +53,19 @@ pub struct LockManifestFrame {
 pub fn lock_scene_ids() -> &'static [&'static str] {
     &[
         "splash",
+        "typing",
         "login_select",
         "login_waiting",
         "login_success",
         "login_error",
         "palette",
         "palette_empty",
+        "model_compact",
+        "model_full",
+        "mode",
+        "permissions",
+        "working",
+        "read",
         "settings_hub",
         "settings_empty",
         "tool_tiles",
@@ -204,9 +211,22 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
                 "multi_diff" => {
                     crate::lock_boards::render_lock_board("multi_diff", area, frame.buffer_mut());
                 }
-                "compact" => draw_session(frame, compact_state()),
-                "interrupt" => draw_session(frame, interrupt_state()),
-                "clear" => draw_session(frame, clear_state()),
+                // States 37, 38 and 40 are Designer boards, not the live
+                // session view: tiles stay on interrupt, compact reports the
+                // summary, and clear is the confirm dialog.
+                "interrupt" => {
+                    crate::lock_boards::render_lock_board("stopped", area, frame.buffer_mut());
+                }
+                "compact" => {
+                    crate::lock_boards::render_lock_board("compacted", area, frame.buffer_mut());
+                }
+                "clear" => {
+                    crate::lock_boards::render_lock_board(
+                        "clear_confirm",
+                        area,
+                        frame.buffer_mut(),
+                    );
+                }
                 "session_empty" => draw_session(frame, empty_session_state()),
                 "session_loading" => draw_session(frame, loading_session_state()),
                 "session_error" => draw_session(frame, error_session_state()),
@@ -238,7 +258,7 @@ fn draw_session(frame: &mut ratatui::Frame, state: AppState) {
 fn lock_app() -> AppState {
     let mut state = AppState::default();
     state.cli_version = LOCK_SPLASH_VERSION.to_string();
-    state.footer_cwd = "~/cli".into();
+    state.footer_cwd = "~/cortex-api".into();
     state.git_branch = "main".into();
     state.git_dirty = true;
     state.model = "cortex-1-mini".into();
@@ -310,25 +330,6 @@ fn settings_state(empty: bool, height: u16) -> AppState {
     state
 }
 
-fn compact_state() -> AppState {
-    let mut state = success_session_state();
-    state.compact_mode = true;
-    state
-}
-
-fn interrupt_state() -> AppState {
-    let mut state = loading_session_state();
-    state.input.set_text("/interrupt");
-    state
-}
-
-fn clear_state() -> AppState {
-    let mut state = success_session_state();
-    state.clear_messages();
-    state.cli_version = LOCK_SPLASH_VERSION.to_string();
-    state
-}
-
 /// Render the Ctrl+K palette over a session (wide lock surfaces).
 #[allow(dead_code)]
 pub fn command_palette_home() -> crate::widgets::CommandPaletteState {
@@ -343,6 +344,85 @@ pub fn command_palette_home() -> crate::widgets::CommandPaletteState {
 mod tests {
     use super::*;
     use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
+
+    /// Every character the ANSI stream paints with the mint accent, in order.
+    ///
+    /// `to_ansi` resets styles (`ESC[0m`) before each change, so tracking the
+    /// last `38;2;…` foreground since the previous reset is exact.
+    fn mint_painted_chars(ansi: &str) -> String {
+        const MINT_FG: &str = "38;2;0;245;212";
+        let mut painted = String::new();
+        let mut mint = false;
+        let mut rest = ansi;
+        while let Some(start) = rest.find('\x1b') {
+            if mint {
+                painted.push_str(&rest[..start]);
+            }
+            rest = &rest[start..];
+            let Some(end) = rest.find('m') else {
+                break;
+            };
+            let params = &rest[2..end];
+            if params == "0" {
+                mint = false;
+            } else if params.starts_with("38;2;") {
+                mint = params == MINT_FG;
+            }
+            rest = &rest[end + 1..];
+        }
+        if mint {
+            painted.push_str(rest);
+        }
+        painted.retain(|c| c != '\n');
+        painted
+    }
+
+    #[test]
+    fn mint_is_reserved_for_markers_everywhere() {
+        // The locked chrome allows mint on the `>` prompt, the `●` success
+        // dot, `✓` checks and `+N` diff additions — never on a command name,
+        // label or sentence. Login sub-states are locked as shipped.
+        let locked_login = ["login_waiting", "login_success", "login_error"];
+        for id in lock_scene_ids() {
+            if locked_login.contains(id) {
+                continue;
+            }
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let minted = mint_painted_chars(&frame.ansi);
+                assert!(
+                    minted
+                        .chars()
+                        .all(|c| matches!(c, '>' | '●' | '✓' | '+' | '%' | '0'..='9' | ' ')),
+                    "{id} paints mint outside the marker set at {size:?}: {minted:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn slash_palette_paints_mint_on_the_marker_only() {
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let frame = render_lock_scene("palette", size.0, size.1).expect("palette");
+            let minted = mint_painted_chars(&frame.ansi);
+            assert!(
+                minted.chars().all(|c| matches!(c, '>' | ' ')),
+                "mint must stay on the `>` marker at {size:?}; painted {minted:?}"
+            );
+            assert!(
+                minted.contains('>'),
+                "the prompt marker must stay mint at {size:?}"
+            );
+        }
+        // The wide selected row keeps the 40×12 tone: dim description on the
+        // dark #1A3330 bar, never a bright (or mint) command row.
+        let wide = render_lock_scene("palette", 120, 40).expect("palette wide");
+        assert!(
+            wide.ansi
+                .contains("\x1b[38;2;130;154;177m\x1b[48;2;26;51;48m"),
+            "selected description must be dim on the selection bar"
+        );
+    }
 
     #[test]
     fn no_inverted_mint_selection_anywhere() {
@@ -673,16 +753,233 @@ mod tests {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 assert!(!frame.plain.trim().is_empty(), "{id} empty at {size:?}");
                 assert!(!frame.plain.to_lowercase().contains("grok"));
+                assert!(
+                    !frame.plain.contains("~/cli "),
+                    "{id} must use the ~/cortex-api cwd at {size:?}:\n{}",
+                    frame.plain
+                );
             }
         }
-        let interrupt = render_lock_scene("interrupt", 120, 40).expect("interrupt");
-        assert!(
-            interrupt.plain.contains("interrupt") || interrupt.plain.contains("Esc"),
-            "{}",
-            interrupt.plain
-        );
+        // 37 interrupt keeps the prompt and tool tiles on screen, then shows
+        // `✗ Stopped` — never a lone `/interrupt` line or a bare splash.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let interrupt = render_lock_scene("interrupt", size.0, size.1).expect("interrupt");
+            assert!(interrupt.plain.contains("✗"), "{}", interrupt.plain);
+            assert!(interrupt.plain.contains("Stopped"), "{}", interrupt.plain);
+            assert!(interrupt.plain.contains("ctrl+c"), "{}", interrupt.plain);
+            assert!(
+                interrupt.plain.contains("completions.ts"),
+                "tiles must stay on screen:\n{}",
+                interrupt.plain
+            );
+            assert!(
+                !interrupt.plain.contains("/interrupt"),
+                "{}",
+                interrupt.plain
+            );
+            assert!(
+                !interrupt.plain.contains("Cortex CLI v1.0.0"),
+                "37 must not be a splash:\n{}",
+                interrupt.plain
+            );
+        }
+        // 38 compact reports the compaction, on the locked chrome.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let compacted = render_lock_scene("compact", size.0, size.1).expect("compact");
+            assert!(compacted.plain.contains("/compact"), "{}", compacted.plain);
+            assert!(
+                compacted.plain.contains("Thread compacted"),
+                "{}",
+                compacted.plain
+            );
+            assert!(compacted.plain.contains("86%"), "{}", compacted.plain);
+            assert!(compacted.plain.contains("12%"), "{}", compacted.plain);
+            assert!(
+                compacted.plain.contains("~/cortex-api"),
+                "{}",
+                compacted.plain
+            );
+        }
+        // 40 clear is the confirm dialog, not an empty splash.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let clear = render_lock_scene("clear", size.0, size.1).expect("clear");
+            assert!(
+                clear.plain.contains("Start a new thread?"),
+                "{}",
+                clear.plain
+            );
+            assert!(clear.plain.contains("Clear thread"), "{}", clear.plain);
+            assert!(clear.plain.contains("Cancel"), "{}", clear.plain);
+            assert!(
+                !clear.plain.contains("Cortex CLI v1.0.0"),
+                "40 must not be a splash:\n{}",
+                clear.plain
+            );
+        }
         let empty = render_lock_scene("session_empty", 80, 24).expect("empty");
         assert!(empty.plain.contains("Cortex CLI v1.0.0"), "{}", empty.plain);
+    }
+
+    #[test]
+    fn diagnostics_severity_words_carry_the_only_color() {
+        // 48 diagnostics: `error` is red and `warn` is amber — the message
+        // and the path stay gray/white.
+        const RED_FG: &str = "\x1b[38;2;255;107;107m";
+        const AMBER_FG: &str = "\x1b[38;2;255;200;87m";
+
+        /// Visible text right after `marker`, skipping SGR runs and spaces.
+        fn painted_after<'a>(ansi: &'a str, marker: &str) -> &'a str {
+            let at = ansi.find(marker).map(|i| i + marker.len()).unwrap_or(0);
+            let mut rest = &ansi[at..];
+            loop {
+                rest = rest.trim_start();
+                let Some(stripped) = rest.strip_prefix('\x1b') else {
+                    return rest;
+                };
+                let Some(end) = stripped.find('m') else {
+                    return rest;
+                };
+                rest = &stripped[end + 1..];
+            }
+        }
+
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let frame = render_lock_scene("diagnostics", size.0, size.1).expect("diagnostics");
+            assert!(frame.ansi.contains(RED_FG), "error must be red at {size:?}");
+            assert!(
+                frame.ansi.contains(AMBER_FG),
+                "warn must be amber at {size:?}"
+            );
+            assert!(
+                painted_after(&frame.ansi, RED_FG).starts_with("error"),
+                "red is reserved for the word `error` at {size:?}"
+            );
+            assert!(
+                painted_after(&frame.ansi, AMBER_FG).starts_with("warn"),
+                "amber is reserved for the word `warn` at {size:?}"
+            );
+            // One red run and one amber run — the color never bleeds into
+            // the message copy.
+            assert_eq!(frame.ansi.matches(RED_FG).count(), 1, "{size:?}");
+            assert_eq!(frame.ansi.matches(AMBER_FG).count(), 1, "{size:?}");
+        }
+    }
+
+    #[test]
+    fn tool_tile_dots_are_mint() {
+        // Every tool tile paints its `●` status dot mint, exactly like the
+        // locked Grep tile. Labels stay white.
+        let tiles = [
+            "tool_tiles",
+            "grep",
+            "read",
+            "plan",
+            "write",
+            "glob",
+            "edit",
+            "delete",
+            "list",
+            "fetch",
+            "mcp_call",
+            "task",
+            "diagnostics",
+            "shell",
+            "sudo",
+            "queue",
+            "stopped",
+            "interrupt",
+            "footer_max",
+            "permission",
+        ];
+        for id in tiles {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let minted = mint_painted_chars(&frame.ansi);
+                assert!(
+                    minted.contains('●'),
+                    "{id} must paint its tile dot mint at {size:?}; minted {minted:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lock_boards_02_09_product_copy() {
+        let always: &[(&str, &[&str])] = &[
+            ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "█"]),
+            (
+                "model_compact",
+                &[
+                    "/model",
+                    "Model",
+                    "cortex-1-mini",
+                    "cortex-1-max",
+                    "current",
+                ],
+            ),
+            (
+                "model_full",
+                &["/model", "Model", "cortex-1-mini", "cortex-1-max"],
+            ),
+            ("mode", &["/mode", "Agent", "Plan", "Ask"]),
+            (
+                "permissions",
+                &["/permissions", "Read-only", "Smart", "Full access"],
+            ),
+            ("working", &["Working", "esc to interrupt", "follow-up"]),
+            ("read", &["Read", "completions.ts", "141 lines"]),
+        ];
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for (id, needles) in always {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let lower = frame.plain.to_lowercase();
+                assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
+                assert!(
+                    !frame.plain.contains("gpt-"),
+                    "{id} must use Cortex catalog slugs:\n{}",
+                    frame.plain
+                );
+                for needle in *needles {
+                    let hit = frame.plain.contains(needle)
+                        || needle
+                            .split_whitespace()
+                            .all(|word| frame.plain.contains(word));
+                    assert!(hit, "{id} missing `{needle}` at {size:?}:\n{}", frame.plain);
+                }
+            }
+        }
+
+        let typing = render_lock_scene("typing", 120, 40).expect("typing");
+        assert!(typing.plain.contains("> cortex"), "{}", typing.plain);
+        assert!(
+            typing.plain.contains("Redis-backed, with tests█"),
+            "typing must end with the block cursor:\n{}",
+            typing.plain
+        );
+
+        let full = render_lock_scene("model_full", 120, 40).expect("model_full");
+        assert!(full.plain.contains("Effort"), "{}", full.plain);
+        assert!(full.plain.contains("● Medium"), "{}", full.plain);
+        assert!(
+            full.plain.contains("cortex.foundation/billing"),
+            "{}",
+            full.plain
+        );
+
+        let mode = render_lock_scene("mode", 120, 40).expect("mode");
+        assert!(
+            mode.plain.contains("shift+tab cycles modes"),
+            "{}",
+            mode.plain
+        );
+
+        let read = render_lock_scene("read", 120, 40).expect("read");
+        assert!(read.plain.contains("requireApiKey"), "{}", read.plain);
+        assert!(read.plain.contains("21"), "{}", read.plain);
     }
 
     #[test]
@@ -761,9 +1058,25 @@ mod tests {
         assert!(perm.plain.contains("Normal"));
         assert!(perm.plain.contains("tell Cortex"));
 
+        // At 40 columns option 2 wraps — `project` lands on its own line and
+        // is never dropped.
+        let perm_n = render_lock_scene("permission", 40, 12).expect("perm narrow");
+        assert!(
+            perm_n.plain.lines().any(|line| line.trim() == "project"),
+            "option copy must wrap, not truncate:\n{}",
+            perm_n.plain
+        );
+        assert!(perm_n.plain.contains("Edit command"), "{}", perm_n.plain);
+
         let plan = render_lock_scene("plan", 120, 40).expect("plan");
         assert!(plan.plain.contains("Redis-backed"));
         assert!(plan.plain.contains(" · Plan · ") || plan.plain.contains("Plan ·"));
+        let plan_n = render_lock_scene("plan", 40, 12).expect("plan narrow");
+        assert!(
+            plan_n.plain.contains("implement"),
+            "narrow plan must wrap the confirm label, never truncate it:\n{}",
+            plan_n.plain
+        );
 
         let resume = render_lock_scene("resume", 120, 40).expect("resume");
         assert!(resume.plain.contains("Sessions sync through Cortex Cloud"));
@@ -853,6 +1166,25 @@ mod tests {
             }
         }
 
+        // 23 @files never cuts inside a filename: at 40 columns the full
+        // names win and the timestamp is dropped where both cannot fit.
+        let files_n = render_lock_scene("files", 40, 12).expect("files narrow");
+        assert!(
+            files_n.plain.contains("src/middleware/rateLimit.ts"),
+            "full filename required:\n{}",
+            files_n.plain
+        );
+        assert!(
+            files_n.plain.contains("src/config/rateLimits.json"),
+            "full filename required:\n{}",
+            files_n.plain
+        );
+        assert!(
+            !files_n.plain.contains("rateLimit.ts  edited"),
+            "the cramped timestamp must be dropped:\n{}",
+            files_n.plain
+        );
+
         let ask = render_lock_scene("ask", 120, 40).expect("ask");
         assert!(ask.plain.contains("Ask — read-only") || ask.plain.contains("read-only"));
         assert!(ask.plain.contains("estimateTokens") || ask.plain.contains("src/lib/tokens.ts"));
@@ -913,7 +1245,7 @@ mod tests {
             ("thinking", &["Thinking", "follow-up"]),
             (
                 "todos",
-                &["Working 1/5", "Write ratelimit middleware", "rateLimit.ts"],
+                &["Working 1/5", "Write rateLimit middleware", "rateLimit.ts"],
             ),
             ("question", &["Where should the limiter live?", "1-9 pick"]),
             ("skills", &["/skills", "/pr", "run once"]),
@@ -1037,6 +1369,21 @@ mod tests {
         let list = render_lock_scene("list", 120, 40).expect("list");
         assert!(list.plain.contains("auth.ts"));
         assert!(list.plain.contains("cors.ts"));
+        // The identifier is camelCase everywhere, same as @files.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let list = render_lock_scene("list", size.0, size.1).expect("list");
+            assert!(
+                list.plain.contains("rateLimit.ts") && !list.plain.contains("ratelimit.ts"),
+                "list must use the camelCase identifier at {size:?}:\n{}",
+                list.plain
+            );
+            let todos = render_lock_scene("todos", size.0, size.1).expect("todos");
+            assert!(
+                todos.plain.contains("Write rateLimit middleware"),
+                "todos must use the camelCase identifier at {size:?}:\n{}",
+                todos.plain
+            );
+        }
         let fetch = render_lock_scene("fetch", 120, 40).expect("fetch");
         assert!(fetch.plain.contains("sorted set") || fetch.plain.contains("ZADD"));
         let mcp = render_lock_scene("mcp_call", 120, 40).expect("mcp_call");

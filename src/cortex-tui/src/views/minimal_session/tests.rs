@@ -100,6 +100,10 @@ mod harness_snapshots {
         let text = render(&state, 120, 40);
         dump_snapshot("tool_tiles", &text);
         assert!(text.contains("Read"), "missing Read: {text}");
+        assert!(
+            text.contains("●"),
+            "completed tiles carry the mint status dot: {text}"
+        );
         assert!(text.contains("Diagnostics"), "missing Diagnostics: {text}");
         assert!(!text.contains("L a.rs"), "{text}");
         let narrow = render(&state, 40, 12);
@@ -176,6 +180,65 @@ mod harness_snapshots {
         let wide = render(&state, 120, 40);
         assert!(!narrow.trim().is_empty());
         assert!(!wide.trim().is_empty());
+    }
+
+    #[test]
+    fn autocomplete_selected_row_keeps_dim_description_on_dark_bar() {
+        use cortex_core::style::{SELECTION_BG, TEXT, TEXT_DIM};
+
+        use crate::app::{AutocompleteItem, AutocompleteTrigger};
+        use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_LIMIT};
+
+        let mut state = AppState::default();
+        state.input.set_text("/");
+        state.autocomplete.show(AutocompleteTrigger::Command, 0);
+        let registry = CommandRegistry::default();
+        let engine = CompletionEngine::new(&registry);
+        let items: Vec<AutocompleteItem> = engine
+            .complete("/")
+            .into_iter()
+            .map(|c| AutocompleteItem::new(&c.command, &c.display, &c.description))
+            .collect();
+        state.autocomplete.set_items(items);
+        state.autocomplete.max_visible = PALETTE_HOME_LIMIT;
+
+        let view = MinimalSessionView::new(&state);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 120, 40));
+        view.render(Rect::new(0, 0, 120, 40), &mut buf);
+
+        // Find the selection bar and read back one row of glyphs + styles.
+        let mut checked = false;
+        for y in 0..40u16 {
+            let row: String = (0..120u16)
+                .map(|x| buf[(x, y)].symbol().to_string())
+                .collect();
+            if buf[(60, y)].style().bg != Some(SELECTION_BG) || !row.contains('/') {
+                continue;
+            }
+            let label_at = row.find('/').expect("selected command label");
+            let desc_at = row
+                .char_indices()
+                .skip(label_at)
+                .find(|(i, c)| c.is_ascii_uppercase() && *i > label_at)
+                .map(|(i, _)| i)
+                .expect("selected command description");
+            let label_cell = &buf[(label_at as u16, y)];
+            let desc_cell = &buf[(desc_at as u16, y)];
+            assert_eq!(
+                label_cell.style().fg,
+                Some(TEXT),
+                "selected label must stay gray/white, never mint: {row}"
+            );
+            assert_eq!(
+                desc_cell.style().fg,
+                Some(TEXT_DIM),
+                "selected description must stay dim on the bar: {row}"
+            );
+            assert_eq!(desc_cell.style().bg, Some(SELECTION_BG), "{row}");
+            checked = true;
+            break;
+        }
+        assert!(checked, "no selection bar found in the slash palette");
     }
 
     #[test]

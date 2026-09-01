@@ -41,6 +41,13 @@ binary still reports the crate version.
 | File | Surface |
 |------|---------|
 | `splash.png` | Empty session chrome: cwd, `> cortex`, version, composer |
+| `typing.png` | Prompt typed in the composer, block cursor |
+| `model_compact.png` | `/model` compact picker |
+| `model_full.png` | `/model` full picker with effort + billing note |
+| `mode.png` | `/mode` Agent / Plan / Ask radios |
+| `permissions.png` | `/permissions` approval policy picker |
+| `working.png` | Working spinner + elapsed / tokens |
+| `read.png` | Read tile — numbered excerpt |
 | `login_select.png` | Aligned radios, mint on the selected row |
 | `login_waiting.png` | Loading / waiting for browser auth |
 | `login_success.png` | `Signed in.` |
@@ -52,9 +59,9 @@ binary still reports the crate version.
 | `tool_tiles.png` | Grep tile (one card at a time) |
 | `diagnostics.png` | Diagnostics tile |
 | `multi_diff.png` | `/diff` files changed this turn |
-| `compact.png` | Compact mode |
-| `interrupt.png` | Interrupt / Esc |
-| `clear.png` | Clear (empty session again) |
+| `compact.png` | `/compact` — thread compacted (same board as `compacted.png`) |
+| `interrupt.png` | Interrupt — tiles stay on screen, `✗ Stopped` |
+| `clear.png` | `/clear` confirm (same board as `clear_confirm.png`) |
 | `session_empty.png` | Empty session |
 | `session_loading.png` | Loading / streaming |
 | `session_error.png` | Error |

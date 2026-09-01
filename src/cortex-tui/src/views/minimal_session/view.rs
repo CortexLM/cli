@@ -176,7 +176,7 @@ impl<'a> MinimalSessionView<'a> {
             );
             spans.push(Span::styled(shown, Style::default().fg(self.colors.text)));
         }
-        spans.push(Span::styled("█", Style::default().fg(self.colors.accent)));
+        spans.push(Span::styled("█", Style::default().fg(self.colors.text)));
 
         let line = Line::from(spans);
         let text_area = Rect::new(content_x, content_y, content_width, 1);
@@ -363,8 +363,10 @@ impl<'a> MinimalSessionView<'a> {
                 let remaining = area.right().saturating_sub(x + 3) as usize;
                 let desc = crate::ui::text_utils::first_fitting_line(&item.description, remaining);
                 if !desc.is_empty() {
+                    // Descriptions stay dim even on the selection bar; only
+                    // the label is bright and only the `>` marker is mint.
                     let desc_style = if is_selected {
-                        Style::default().fg(text).bg(SELECTION_BG)
+                        Style::default().fg(dim).bg(SELECTION_BG)
                     } else {
                         Style::default().fg(dim)
                     };

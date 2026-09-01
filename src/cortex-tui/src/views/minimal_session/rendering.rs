@@ -41,12 +41,9 @@ pub fn render_message_with_theme(
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
-    // Colors for user messages
-    let light_green = Color::Rgb(0x80, 0xFF, 0xD0); // Vert clair pour texte utilisateur
-
     match msg.role {
         MessageRole::User => {
-            // "> message" - prefix vert accent, texte vert clair
+            // "> message" — mint marker, gray/white copy (locked chrome).
             let prefix = Span::styled("> ", Style::default().fg(colors.accent));
 
             // Calculate available width for text (after "> " prefix)
@@ -58,12 +55,12 @@ pub fn render_message_with_theme(
                 if i == 0 {
                     lines.push(Line::from(vec![
                         prefix.clone(),
-                        Span::styled(line_content.clone(), Style::default().fg(light_green)),
+                        Span::styled(line_content.clone(), Style::default().fg(colors.text)),
                     ]));
                 } else {
                     lines.push(Line::from(vec![
                         Span::raw("  "), // Indent continuation (2 spaces = "> " length)
-                        Span::styled(line_content.clone(), Style::default().fg(light_green)),
+                        Span::styled(line_content.clone(), Style::default().fg(colors.text)),
                     ]));
                 }
             }
@@ -85,7 +82,7 @@ pub fn render_message_with_theme(
                 && let Some(last) = rendered_lines.last_mut()
             {
                 last.spans
-                    .push(Span::styled("▌", Style::default().fg(colors.accent)));
+                    .push(Span::styled("▌", Style::default().fg(colors.text)));
             }
 
             lines.extend(rendered_lines);
@@ -168,9 +165,12 @@ pub fn render_tool_call(
         ToolStatus::Pending => (None, colors.text_muted),
         ToolStatus::Running => {
             let frame = TOOL_SPINNER_FRAMES[call.spinner_frame % TOOL_SPINNER_FRAMES.len()];
-            (Some(frame.to_string()), colors.accent)
+            // Spinners stay gray — mint is reserved for markers and success.
+            (Some(frame.to_string()), colors.text_dim)
         }
-        ToolStatus::Completed => (None, colors.text),
+        // Completed tiles carry the mint status dot, same as the locked Grep
+        // tile; the label stays white.
+        ToolStatus::Completed => (Some("●".to_string()), colors.accent),
         ToolStatus::Failed => (Some("●".to_string()), colors.error),
     };
 
@@ -595,7 +595,7 @@ pub fn render_streaming_content_with_theme(
     // Add streaming cursor to the last line
     if let Some(last) = rendered_lines.last_mut() {
         last.spans
-            .push(Span::styled("▌", Style::default().fg(colors.accent)));
+            .push(Span::styled("▌", Style::default().fg(colors.text)));
     }
 
     rendered_lines.push(Line::from(""));

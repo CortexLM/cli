@@ -9,11 +9,14 @@ capture from `docs/media/tui-lock/{40x12,120x40}/` into that rect. The TUI
 pixels are only ever scaled uniformly; no terminal text is invented. The
 rounded corners belong to the macOS window; the TUI itself stays frameless.
 
-Placement:
-- 120x40 captures scale to the content rect height (left-anchored; the
-  remaining cells stay black, like any terminal background).
+Placement — TUI pixels are never resampled, so every locked colour (the
+`#4ADE80` of a `+58`, the `#A78BFA` of a `>`) survives exactly:
+- 120x40 captures are pasted 1:1 into the content rect (the chrome renders at
+  2.5x so the 912px-tall capture fits), left-anchored; the remaining cells
+  stay black, like any terminal background.
 - 40x12 captures keep the same chrome and title format but occupy a smaller
-  content rect at the top-left of the window.
+  content rect at the top-left of the window, blown up by an integer factor
+  with nearest-neighbour sampling (a 1x window on a retina screen).
 
 Usage:
     python3 scripts/compose-macos-terminal.py \
@@ -38,12 +41,23 @@ except ImportError:  # pragma: no cover - dependency guard
     )
 
 # ---------------------------------------------------------------------------
-# Geometry — the designer template is 1024x683; everything renders at 2x
-# (2048x1366, a retina screenshot) from these 1x metrics.
+# Geometry — the designer template is 1024x683; everything renders at 2.5x
+# (2560x1707) from these 1x metrics, the smallest uniform scale at which a
+# 120x40 capture fits the template's content rect without resampling.
 # ---------------------------------------------------------------------------
 
-SCALE = 2
+SCALE = 2.5
 CANVAS_W, CANVAS_H = 1024, 683
+
+
+def px(value: float, s: float) -> int:
+    """Scale a 1x metric to output pixels."""
+    return int(round(value * s))
+
+
+# Largest nearest-neighbour blow-up for a small capture: 2x reads as a 1x
+# terminal window on a retina screen; more would dwarf the chrome.
+MAX_BLOWUP = 2
 MENUBAR_H = 24
 WIN_X0, WIN_X1 = 147, 877
 TITLEBAR_Y0 = 143
@@ -189,9 +203,9 @@ def draw_apple_mark(draw: ImageDraw.ImageDraw, cx: int, cy: int, h: int, colour,
     draw.ellipse([lx, ly, lx + leaf_w, ly + leaf_h], fill=colour)
 
 
-def draw_menu_bar(canvas: Image.Image, s: int) -> None:
+def draw_menu_bar(canvas: Image.Image, s: float) -> None:
     """Dark translucent menu bar over the wallpaper."""
-    bar_h = MENUBAR_H * s
+    bar_h = px(MENUBAR_H, s)
     strip = canvas.crop((0, 0, canvas.width, bar_h)).filter(
         ImageFilter.GaussianBlur(radius=8 * s)
     )
@@ -200,54 +214,67 @@ def draw_menu_bar(canvas: Image.Image, s: int) -> None:
     canvas.paste(strip, (0, 0))
 
     draw = ImageDraw.Draw(canvas)
-    bold = font(SANS_BOLD, 13 * s)
-    regular = font(SANS_REGULAR, 13 * s)
+    bold = font(SANS_BOLD, px(13, s))
+    regular = font(SANS_REGULAR, px(13, s))
     cy = bar_h // 2
+    stroke = max(1, px(1, s))
 
-    bar_colour = canvas.getpixel((26 * s, cy))
-    draw_apple_mark(draw, 20 * s, cy, 15 * s, MENU_TEXT, bar_colour)
+    bar_colour = canvas.getpixel((px(26, s), cy))
+    draw_apple_mark(draw, px(20, s), cy, px(15, s), MENU_TEXT, bar_colour)
 
-    x = 38 * s
+    x = px(38, s)
     for i, item in enumerate(["Terminal", "File", "Edit", "View", "Shell", "Window", "Help"]):
         f = bold if i == 0 else regular
         bbox = draw.textbbox((0, 0), item, font=f)
         draw.text((x, cy - (bbox[3] - bbox[1]) // 2 - bbox[1]), item, font=f, fill=MENU_TEXT)
-        x += (bbox[2] - bbox[0]) + 15 * s
+        x += (bbox[2] - bbox[0]) + px(15, s)
 
     # Right side: clock, then status icons right-to-left.
     clock = "Fri May 10  14:32"
     bbox = draw.textbbox((0, 0), clock, font=regular)
-    cx = canvas.width - 12 * s - (bbox[2] - bbox[0])
+    cx = canvas.width - px(12, s) - (bbox[2] - bbox[0])
     draw.text((cx, cy - (bbox[3] - bbox[1]) // 2 - bbox[1]), clock, font=regular, fill=MENU_TEXT)
 
-    ix = cx - 20 * s
+    ix = cx - px(20, s)
     # control-centre toggle
     draw.rounded_rectangle(
-        [ix - 7 * s, cy - 4 * s, ix + 7 * s, cy + 4 * s], radius=4 * s, outline=MENU_TEXT, width=s
+        [ix - px(7, s), cy - px(4, s), ix + px(7, s), cy + px(4, s)],
+        radius=px(4, s),
+        outline=MENU_TEXT,
+        width=stroke,
     )
-    draw.ellipse([ix - 5 * s, cy - 2 * s, ix - s, cy + 2 * s], fill=MENU_TEXT)
-    ix -= 26 * s
+    draw.ellipse([ix - px(5, s), cy - px(2, s), ix - stroke, cy + px(2, s)], fill=MENU_TEXT)
+    ix -= px(26, s)
     # search
-    draw.ellipse([ix - 5 * s, cy - 5 * s, ix + 2 * s, cy + 2 * s], outline=MENU_TEXT, width=s)
-    draw.line([ix + 2 * s, cy + 2 * s, ix + 5 * s, cy + 5 * s], fill=MENU_TEXT, width=s)
-    ix -= 26 * s
+    draw.ellipse(
+        [ix - px(5, s), cy - px(5, s), ix + px(2, s), cy + px(2, s)],
+        outline=MENU_TEXT,
+        width=stroke,
+    )
+    draw.line(
+        [ix + px(2, s), cy + px(2, s), ix + px(5, s), cy + px(5, s)], fill=MENU_TEXT, width=stroke
+    )
+    ix -= px(26, s)
     # wifi arcs
-    for k, r in enumerate([7, 4]):
+    for r in (7, 4):
         draw.arc(
-            [ix - r * s, cy - r * s + 2 * s, ix + r * s, cy + r * s + 2 * s],
+            [ix - px(r, s), cy - px(r, s) + px(2, s), ix + px(r, s), cy + px(r, s) + px(2, s)],
             start=215,
             end=325,
             fill=MENU_TEXT,
-            width=s,
+            width=stroke,
         )
-    draw.ellipse([ix - s, cy + s, ix + s, cy + 3 * s], fill=MENU_TEXT)
-    ix -= 30 * s
+    draw.ellipse([ix - stroke, cy + stroke, ix + stroke, cy + px(3, s)], fill=MENU_TEXT)
+    ix -= px(30, s)
     # battery
     draw.rounded_rectangle(
-        [ix - 11 * s, cy - 5 * s, ix + 9 * s, cy + 5 * s], radius=2 * s, outline=MENU_TEXT, width=s
+        [ix - px(11, s), cy - px(5, s), ix + px(9, s), cy + px(5, s)],
+        radius=px(2, s),
+        outline=MENU_TEXT,
+        width=stroke,
     )
-    draw.rectangle([ix + 10 * s, cy - 2 * s, ix + 11 * s, cy + 2 * s], fill=MENU_TEXT)
-    draw.rectangle([ix - 9 * s, cy - 3 * s, ix + 4 * s, cy + 3 * s], fill=MENU_TEXT)
+    draw.rectangle([ix + px(10, s), cy - px(2, s), ix + px(11, s), cy + px(2, s)], fill=MENU_TEXT)
+    draw.rectangle([ix - px(9, s), cy - px(3, s), ix + px(4, s), cy + px(3, s)], fill=MENU_TEXT)
 
 
 # ---------------------------------------------------------------------------
@@ -255,31 +282,31 @@ def draw_menu_bar(canvas: Image.Image, s: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def draw_folder_icon(draw: ImageDraw.ImageDraw, x: int, cy: int, s: int) -> int:
+def draw_folder_icon(draw: ImageDraw.ImageDraw, x: int, cy: int, s: float) -> int:
     """Small blue folder proxy icon; returns its width."""
-    w, h = 14 * s, 11 * s
+    w, h = px(14, s), px(11, s)
     y0 = cy - h // 2
     tab_w = round(w * 0.42)
     draw.rounded_rectangle(
-        [x, y0, x + tab_w, y0 + 4 * s], radius=s, fill=(0x4C, 0x9E, 0xE8)
+        [x, y0, x + tab_w, y0 + px(4, s)], radius=px(1, s), fill=(0x4C, 0x9E, 0xE8)
     )
     draw.rounded_rectangle(
-        [x, y0 + 2 * s, x + w, y0 + h], radius=2 * s, fill=(0x55, 0xA9, 0xF0)
+        [x, y0 + px(2, s), x + w, y0 + h], radius=px(2, s), fill=(0x55, 0xA9, 0xF0)
     )
     draw.rounded_rectangle(
-        [x, y0 + 3 * s, x + w, y0 + h], radius=2 * s, outline=(0x3E, 0x86, 0xC8), width=1
+        [x, y0 + px(3, s), x + w, y0 + h], radius=px(2, s), outline=(0x3E, 0x86, 0xC8), width=1
     )
     return w
 
 
-def build_window(content_w: int, content_h: int, title: str, s: int) -> Image.Image:
+def build_window(content_w: int, content_h: int, title: str, s: float) -> Image.Image:
     """Terminal.app window (title bar + black content) on transparent."""
     width = content_w
-    height = TITLEBAR_H * s + content_h
+    bar_h = px(TITLEBAR_H, s)
+    height = bar_h + content_h
     window = Image.new("RGBA", (width, height))
     draw = ImageDraw.Draw(window)
 
-    bar_h = TITLEBAR_H * s
     for y in range(bar_h):
         t = y / max(1, bar_h - 1)
         draw.line(
@@ -302,8 +329,8 @@ def build_window(content_w: int, content_h: int, title: str, s: int) -> Image.Im
     lights = Image.new("RGBA", (width * ss, bar_h * ss), (0, 0, 0, 0))
     ldraw = ImageDraw.Draw(lights)
     for i, (fill, ring) in enumerate(TRAFFIC_LIGHTS):
-        cx = ((TRAFFIC_LIGHT_CX - WIN_X0) + i * TRAFFIC_LIGHT_GAP) * s * ss
-        r = TRAFFIC_LIGHT_R * s * ss
+        cx = round(((TRAFFIC_LIGHT_CX - WIN_X0) + i * TRAFFIC_LIGHT_GAP) * s * ss)
+        r = round(TRAFFIC_LIGHT_R * s * ss)
         ldraw.ellipse(
             [cx - r, cy * ss - r, cx + r, cy * ss + r],
             fill=(*fill, 255),
@@ -313,11 +340,11 @@ def build_window(content_w: int, content_h: int, title: str, s: int) -> Image.Im
     window.alpha_composite(lights.resize((width, bar_h), Image.LANCZOS), (0, 0))
 
     # Proxy icon + centred title.
-    tfont = font(SANS_REGULAR, 12 * s)
+    tfont = font(SANS_REGULAR, px(12, s))
     bbox = draw.textbbox((0, 0), title, font=tfont)
     text_w = bbox[2] - bbox[0]
-    icon_w = 14 * s
-    gap = 5 * s
+    icon_w = px(14, s)
+    gap = px(5, s)
     tx = (width - (icon_w + gap + text_w)) // 2
     draw_folder_icon(draw, tx, cy, s)
     draw.text(
@@ -328,16 +355,17 @@ def build_window(content_w: int, content_h: int, title: str, s: int) -> Image.Im
     )
 
     # Round the macOS window chrome only (never the TUI content).
+    radius = round(CORNER_RADIUS * s * ss)
     mask = Image.new("L", (width * ss, height * ss), 0)
     ImageDraw.Draw(mask).rounded_rectangle(
-        [(0, 0), (width * ss - 1, height * ss - 1)], radius=CORNER_RADIUS * s * ss, fill=255
+        [(0, 0), (width * ss - 1, height * ss - 1)], radius=radius, fill=255
     )
     window.putalpha(mask.resize((width, height), Image.LANCZOS))
 
     outline = Image.new("RGBA", (width * ss, height * ss), (0, 0, 0, 0))
     ImageDraw.Draw(outline).rounded_rectangle(
         [(0, 0), (width * ss - 1, height * ss - 1)],
-        radius=CORNER_RADIUS * s * ss,
+        radius=radius,
         outline=(0, 0, 0, 150),
         width=ss,
     )
@@ -350,26 +378,28 @@ def build_window(content_w: int, content_h: int, title: str, s: int) -> Image.Im
 # ---------------------------------------------------------------------------
 
 
-def place_capture(content: Image.Image, rect_w: int, rect_h: int, size: str, s: int) -> Image.Image:
-    """Scale the REAL capture into the black content rect.
+def place_capture(content: Image.Image, rect_w: int, rect_h: int) -> Image.Image:
+    """Place the REAL capture in the black content rect without resampling.
 
-    - 120x40: uniform scale to the rect height, anchored top-left; the rest
-      of the rect stays black (empty terminal cells). Nothing is cropped.
-    - 40x12: a smaller content rect — the capture keeps its native pixel
-      density (scaled by the canvas factor only), anchored top-left.
+    The capture is blown up by the largest integer factor that fits (1 = pasted
+    as-is) using nearest-neighbour sampling, so every locked colour survives
+    pixel-exact — no blend ever turns a `#4ADE80` glyph grayish. Anchored
+    top-left; the rest of the rect stays black (empty terminal cells). Nothing
+    is ever cropped.
     """
     area = Image.new("RGB", (rect_w, rect_h), (0, 0, 0))
-    if size == "40x12":
-        scale = float(s) * 0.75
-    else:
-        scale = rect_h / content.height
-    new_w = round(content.width * scale)
-    new_h = round(content.height * scale)
-    if new_w > rect_w or new_h > rect_h:
-        fit = min(rect_w / content.width, rect_h / content.height)
-        new_w, new_h = round(content.width * fit), round(content.height * fit)
-    scaled = content.resize((new_w, new_h), Image.LANCZOS)
-    area.paste(scaled, (0, 0))
+    factor = min(rect_w // content.width, rect_h // content.height, MAX_BLOWUP)
+    if factor < 1:
+        raise SystemExit(
+            f"capture {content.width}x{content.height} does not fit the "
+            f"{rect_w}x{rect_h} content rect without resampling; raise SCALE"
+        )
+    placed = content
+    if factor > 1:
+        placed = content.resize(
+            (content.width * factor, content.height * factor), Image.NEAREST
+        )
+    area.paste(placed, (0, 0))
     return area
 
 
@@ -378,34 +408,33 @@ def compose(
     out_png: Path,
     wallpaper_canvas: Image.Image,
     title: str,
-    size: str,
-    s: int,
+    s: float,
 ) -> None:
     canvas = wallpaper_canvas.copy()
 
-    content_w = (WIN_X1 - WIN_X0) * s
-    content_h = (CONTENT_Y1 - CONTENT_Y0) * s
+    content_w = px(WIN_X1 - WIN_X0, s)
+    content_h = px(CONTENT_Y1 - CONTENT_Y0, s)
     capture = Image.open(raw_png).convert("RGB")
-    content = place_capture(capture, content_w, content_h, size, s)
+    content = place_capture(capture, content_w, content_h)
 
     window = build_window(content_w, content_h, title, s)
-    window.paste(content.convert("RGBA"), (0, TITLEBAR_H * s), mask=None)
+    window.paste(content.convert("RGBA"), (0, px(TITLEBAR_H, s)), mask=None)
     # Re-apply the rounded alpha lost by the opaque paste.
     ss = 4
     mask = Image.new("L", (window.width * ss, window.height * ss), 0)
     ImageDraw.Draw(mask).rounded_rectangle(
         [(0, 0), (window.width * ss - 1, window.height * ss - 1)],
-        radius=CORNER_RADIUS * s * ss,
+        radius=round(CORNER_RADIUS * s * ss),
         fill=255,
     )
     window.putalpha(mask.resize(window.size, Image.LANCZOS))
 
     # Native window shadow.
-    wx, wy = WIN_X0 * s, TITLEBAR_Y0 * s
+    wx, wy = px(WIN_X0, s), px(TITLEBAR_Y0, s)
     shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     ImageDraw.Draw(shadow).rounded_rectangle(
-        [(wx, wy + 10 * s), (wx + window.width - 1, wy + window.height - 1 + 14 * s)],
-        radius=(CORNER_RADIUS + 4) * s,
+        [(wx, wy + px(10, s)), (wx + window.width - 1, wy + window.height - 1 + px(14, s))],
+        radius=px(CORNER_RADIUS + 4, s),
         fill=(0, 0, 0, 120),
     )
     shadow = shadow.filter(ImageFilter.GaussianBlur(16 * s))
@@ -431,11 +460,11 @@ def main() -> int:
     title = f"cortex-api — cortex — {cols}×{rows}"
     s = SCALE
 
-    base = make_wallpaper(CANVAS_W * s, CANVAS_H * s)
+    base = make_wallpaper(px(CANVAS_W, s), px(CANVAS_H, s))
     draw_menu_bar(base, s)
 
     for raw_png in pngs:
-        compose(raw_png, args.output / raw_png.name, base, title, args.size, s)
+        compose(raw_png, args.output / raw_png.name, base, title, s)
     print(f"Wrote {len(pngs)} macOS composites to {args.output}")
     return 0
 

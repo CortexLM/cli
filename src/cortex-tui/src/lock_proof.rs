@@ -474,6 +474,12 @@ mod tests {
                 painted_chars(&queue.ansi, DIFF_GREEN_FG).contains("+58"),
                 "queued Edit +58 must be green at {size:?}"
             );
+            // The queued Edit is the Edit tile's own format.
+            assert!(
+                queue.plain.contains("rateLimit.ts +58 -0"),
+                "queued Edit must read `Edit <path> +58 -0` at {size:?}:\n{}",
+                queue.plain
+            );
             let edit = render_lock_scene("edit", size.0, size.1).expect("edit");
             assert!(painted_chars(&edit.ansi, DIFF_GREEN_FG).contains("+9"));
             let max = render_lock_scene("footer_max", size.0, size.1).expect("footer_max");

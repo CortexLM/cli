@@ -12,10 +12,12 @@ Each scene is captured at **40×12** (narrow) and **120×40** (wide), twice:
 - `macos/40x12/`, `macos/120x40/` — the same captures composited into the
   designer macOS chrome template: Sequoia ray wallpaper, menu bar, and a
   Terminal.app window (traffic lights, `cortex-api — cortex — W×H` proxy
-  title, native shadow). The 120×40 captures scale into the window's black
-  content rect; the 40×12 captures keep the same chrome with a smaller
-  content rect. TUI pixels are only ever scaled uniformly — never re-typed —
-  and the rounded corners belong to the macOS window chrome only.
+  title, native shadow). TUI pixels are never resampled: 120×40 captures are
+  pasted 1:1 into the window's black content rect (the chrome renders at
+  2.5×), 40×12 captures keep the same chrome with a smaller content rect at an
+  integer 2× nearest-neighbour blow-up — so every locked colour survives
+  pixel-exact. Nothing is re-typed, and the rounded corners belong to the
+  macOS window chrome only.
 
 Chrome rules: `#A78BFA` violet for the `>` prompt, selection caret, `●` tile
 dots and `✓` checks; selected rows are light text on the dark `#221A38` bar

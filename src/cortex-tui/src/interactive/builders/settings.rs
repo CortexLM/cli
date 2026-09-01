@@ -48,6 +48,18 @@ impl SettingsHubRow {
             Self::Usage => "usage",
         }
     }
+
+    fn value(&self) -> &'static str {
+        match self {
+            Self::Model => "cortex-1-mini · Medium",
+            Self::Mode => "Agent",
+            Self::Permissions => "Smart",
+            Self::Sandbox => "On · workspace",
+            Self::Mcp => "3 of 4 connected",
+            Self::Config => "~/.cortex/config.json",
+            Self::Usage => "42 / 500 agent requests",
+        }
+    }
 }
 
 /// Setting category for grouping legacy toggles.
@@ -297,12 +309,20 @@ pub fn build_settings_selector(
 pub fn build_settings_hub(terminal_height: Option<u16>) -> InteractiveState {
     let items: Vec<InteractiveItem> = SettingsHubRow::ALL
         .iter()
-        .map(|row| InteractiveItem::new(row.id().to_string(), row.label().to_string()))
+        .map(|row| {
+            InteractiveItem::new(row.id().to_string(), row.label().to_string())
+                .with_description(row.value().to_string())
+        })
         .collect();
 
     let max_visible = visible_count(terminal_height, items.len());
     InteractiveState::new("Settings", items, InteractiveAction::ToggleSetting)
         .with_max_visible(max_visible)
+        .with_hints(vec![
+            ("↑↓".into(), "select".into()),
+            ("↵".into(), "open".into()),
+            ("esc".into(), "close".into()),
+        ])
 }
 
 /// One settings section's toggles.
@@ -413,6 +433,10 @@ mod tests {
             assert!(state.items.iter().any(|i| i.label == label), "{label}");
         }
         assert!(!state.items.iter().any(|i| i.label == "Display"));
+        assert_eq!(
+            state.items[0].description.as_deref(),
+            Some("cortex-1-mini · Medium")
+        );
     }
 
     #[test]

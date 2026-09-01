@@ -1,7 +1,7 @@
 //! Renderer for interactive selection in the input area.
 
 use super::state::{InlineFormState, InteractiveItem, InteractiveState};
-use cortex_core::style::{CYAN_PRIMARY, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{CYAN_PRIMARY, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, VOID};
 use cortex_tui_components::borders::ROUNDED_BORDER;
 use ratatui::{
     buffer::Buffer,
@@ -291,43 +291,30 @@ impl<'a> InteractiveWidget<'a> {
         is_checked: bool,
     ) {
         // Show hover highlight with subtle background
+        let mint_bar = is_selected && !item.disabled && !item.is_separator;
         let (fg, bg) = if item.disabled {
             (TEXT_MUTED, Color::Reset)
-        } else if is_selected {
-            (CYAN_PRIMARY, Color::Reset)
+        } else if mint_bar {
+            (VOID, SUCCESS)
         } else if is_hovered {
-            // Subtle hover highlight - use dim background
             (TEXT, Color::Rgb(40, 44, 52))
         } else {
             (TEXT, Color::Reset)
         };
 
-        // Apply background for hover effect
-        if is_hovered && !item.disabled && !item.is_separator {
+        if (mint_bar || (is_hovered && !item.disabled && !item.is_separator)) && bg != Color::Reset
+        {
             for dx in 0..area.width {
                 if let Some(cell) = buf.cell_mut((area.x + dx, area.y)) {
                     cell.set_bg(bg);
+                    if mint_bar {
+                        cell.set_fg(VOID);
+                    }
                 }
             }
         }
 
         let mut x = area.x + 1;
-
-        // Selection indicator (not shown for separators)
-        let indicator = if is_selected && !item.is_separator {
-            ">"
-        } else {
-            " "
-        };
-        buf.set_string(
-            x,
-            area.y,
-            indicator,
-            Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
-        );
-        x += 2;
 
         // Checkbox (multi-select)
         if self.state.multi_select {
@@ -354,8 +341,11 @@ impl<'a> InteractiveWidget<'a> {
             Style::default()
                 .fg(CYAN_PRIMARY)
                 .add_modifier(Modifier::BOLD)
-        } else if is_selected {
-            Style::default().fg(fg).add_modifier(Modifier::BOLD)
+        } else if mint_bar {
+            Style::default()
+                .fg(VOID)
+                .bg(SUCCESS)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(fg)
         };
@@ -365,37 +355,53 @@ impl<'a> InteractiveWidget<'a> {
         buf.set_string(x, area.y, &label, label_style);
         x += label.chars().count() as u16;
 
-        // Description (if the whole phrase fits)
+        // Description right-aligned when it fits beside the label.
         if let Some(ref desc) = item.description {
-            let desc_x = x + 2;
-            let remaining = (area.x + area.width).saturating_sub(desc_x) as usize;
+            let remaining = (area.x + area.width).saturating_sub(x + 2) as usize;
             let desc_text = crate::ui::text_utils::first_fitting_line(desc, remaining);
             if !desc_text.is_empty() {
-                buf.set_string(desc_x, area.y, &desc_text, Style::default().fg(TEXT_DIM));
+                let desc_w = desc_text.chars().count() as u16;
+                let desc_x = area.x + area.width.saturating_sub(desc_w + 1);
+                if desc_x > x + 1 {
+                    let desc_style = if mint_bar {
+                        Style::default().fg(VOID).bg(SUCCESS)
+                    } else {
+                        Style::default().fg(TEXT_DIM)
+                    };
+                    buf.set_string(desc_x, area.y, &desc_text, desc_style);
+                }
             }
         }
     }
 
     /// Render the key hints at the bottom.
     fn render_hints(&self, area: Rect, buf: &mut Buffer) {
-        let mut hints = vec![("↑↓", "navigate"), ("Enter", "select")];
+        let hint_text = if let Some(ref custom) = self.state.hints {
+            custom
+                .iter()
+                .map(|(key, action)| format!("{key} {action}"))
+                .collect::<Vec<_>>()
+                .join(" · ")
+        } else {
+            let mut hints = vec![("↑↓", "navigate"), ("Enter", "select")];
 
-        if self.state.multi_select {
-            hints.insert(1, ("Space", "toggle"));
-        }
+            if self.state.multi_select {
+                hints.insert(1, ("Space", "toggle"));
+            }
 
-        if self.state.searchable {
-            hints.push(("Type", "search"));
-        }
+            if self.state.searchable {
+                hints.push(("Type", "search"));
+            }
 
-        hints.push(("Esc", "cancel"));
+            hints.push(("Esc", "cancel"));
+            hints
+                .iter()
+                .map(|(key, action)| format!("[{key}] {action}"))
+                .collect::<Vec<_>>()
+                .join("  ")
+        };
 
         let hint_color = TEXT_DIM;
-        let hint_text = hints
-            .iter()
-            .map(|(key, action)| format!("[{key}] {action}"))
-            .collect::<Vec<_>>()
-            .join("  ");
         let shown = crate::ui::text_utils::first_fitting_line(
             &hint_text,
             area.width.saturating_sub(1) as usize,

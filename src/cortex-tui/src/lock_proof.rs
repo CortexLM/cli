@@ -14,14 +14,12 @@ use cortex_tui_components::welcome_card::WelcomeCard;
 use ratatui::style::Style;
 use ratatui::widgets::{Clear, Widget};
 use serde::Serialize;
-use serde_json::json;
 
 use crate::app::{AppState, AutocompleteItem, AutocompleteTrigger};
 use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_LIMIT};
 use crate::interactive::builders::build_settings_hub;
 use crate::runner::login_screen::LoginScreen;
 use crate::views::minimal_session::MinimalSessionView;
-use crate::views::tool_call::{ToolCallDisplay, ToolResultDisplay, ToolStatus};
 
 /// Splash line pinned by the visual lock (product version stays on the binary).
 pub const LOCK_SPLASH_VERSION: &str = "1.0.0";
@@ -104,6 +102,14 @@ pub fn lock_scene_ids() -> &'static [&'static str] {
         "compacted",
         "write",
         "clear_confirm",
+        "grep",
+        "glob",
+        "delete",
+        "list",
+        "fetch",
+        "mcp_call",
+        "task",
+        "edit",
     ]
 }
 
@@ -186,11 +192,19 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
                 }
                 "palette" => draw_session(frame, palette_state(false)),
                 "palette_empty" => draw_session(frame, palette_state(true)),
-                "settings_hub" => draw_session(frame, settings_state(false, height)),
                 "settings_empty" => draw_session(frame, settings_state(true, height)),
-                "tool_tiles" => draw_session(frame, tool_tiles_state()),
-                "diagnostics" => draw_session(frame, diagnostics_state()),
-                "multi_diff" => draw_session(frame, multi_diff_state()),
+                "settings_hub" => {
+                    crate::lock_boards::render_lock_board("settings_hub", area, frame.buffer_mut());
+                }
+                "tool_tiles" => {
+                    crate::lock_boards::render_lock_board("grep", area, frame.buffer_mut());
+                }
+                "diagnostics" => {
+                    crate::lock_boards::render_lock_board("diagnostics", area, frame.buffer_mut());
+                }
+                "multi_diff" => {
+                    crate::lock_boards::render_lock_board("multi_diff", area, frame.buffer_mut());
+                }
                 "compact" => draw_session(frame, compact_state()),
                 "interrupt" => draw_session(frame, interrupt_state()),
                 "clear" => draw_session(frame, clear_state()),
@@ -294,82 +308,6 @@ fn settings_state(empty: bool, height: u16) -> AppState {
         interactive.filtered_indices.clear();
     }
     state.enter_interactive_mode(interactive);
-    state
-}
-
-fn push_tool(
-    state: &mut AppState,
-    id: &str,
-    name: &str,
-    args: serde_json::Value,
-    sequence: u64,
-    summary: &str,
-    success: bool,
-) {
-    let mut call = ToolCallDisplay::new(id.into(), name.into(), args, sequence);
-    call.set_status(if success {
-        ToolStatus::Completed
-    } else {
-        ToolStatus::Failed
-    });
-    call.set_result(ToolResultDisplay {
-        output: summary.into(),
-        success,
-        summary: summary.into(),
-    });
-    state.tool_calls.push(call);
-}
-
-fn tool_tiles_state() -> AppState {
-    let mut state = lock_app();
-    state.add_message(Message::user("read the module"));
-    let mut call = ToolCallDisplay::new(
-        "1".into(),
-        "Read".into(),
-        json!({"file_path": "src/auth.rs"}),
-        1,
-    );
-    call.set_status(ToolStatus::Running);
-    call.set_result(ToolResultDisplay {
-        output: "pub fn sign_in() {\n    let client = Client::new();\n}".into(),
-        success: true,
-        summary: "src/auth.rs".into(),
-    });
-    state.tool_calls.push(call);
-    state
-}
-
-fn diagnostics_state() -> AppState {
-    let mut state = lock_app();
-    state.add_message(Message::user("lint a.rs"));
-    push_tool(
-        &mut state,
-        "d1",
-        "diagnostics",
-        json!({"file": "a.rs"}),
-        1,
-        "2 warnings",
-        true,
-    );
-    state
-}
-
-fn multi_diff_state() -> AppState {
-    let mut state = lock_app();
-    state.add_message(Message::user("apply the edit"));
-    let mut call = ToolCallDisplay::new(
-        "diff1".into(),
-        "Edit".into(),
-        json!({"file_path": "src/auth.rs"}),
-        1,
-    );
-    call.set_status(ToolStatus::Completed);
-    call.set_result(ToolResultDisplay {
-        output: "@@ -1,3 +1,4 @@\n fn main() {\n+    sign_in();\n     run();\n }".into(),
-        success: true,
-        summary: "+1 −0".into(),
-    });
-    state.tool_calls.push(call);
     state
 }
 
@@ -569,44 +507,80 @@ mod tests {
                 frame.plain
             );
         }
-        for banned in ["Display", "Behavior", "Privacy", "Syntax Highlight"] {
+        for banned in [
+            "Display",
+            "Behavior",
+            "Privacy",
+            "Syntax Highlight",
+            "Cloud",
+        ] {
             assert!(
                 !frame.plain.contains(banned),
                 "banned {banned}:\n{}",
                 frame.plain
             );
         }
+        assert!(
+            frame.plain.contains("cortex-1-mini · Medium"),
+            "{}",
+            frame.plain
+        );
+        assert!(frame.plain.contains("On · workspace"), "{}", frame.plain);
+        assert!(frame.plain.contains("3 of 4 connected"), "{}", frame.plain);
+        assert!(
+            frame.plain.contains("~/.cortex/config.json"),
+            "{}",
+            frame.plain
+        );
+        assert!(
+            frame.plain.contains("42 / 500 agent requests"),
+            "{}",
+            frame.plain
+        );
+        assert!(
+            frame.plain.contains("open") && frame.plain.contains("close"),
+            "{}",
+            frame.plain
+        );
+        assert_no_junk(&frame.plain);
+        let narrow = render_lock_scene("settings_hub", 40, 12).expect("narrow settings");
+        assert!(narrow.plain.contains("Model"), "{}", narrow.plain);
+        assert!(narrow.plain.contains("Usage"), "{}", narrow.plain);
+        assert!(!narrow.plain.contains("Display"), "{}", narrow.plain);
+        assert_no_junk(&narrow.plain);
     }
 
     #[test]
     fn tool_tiles_one_card() {
         let frame = render_lock_scene("tool_tiles", 120, 40).expect("tiles");
-        assert!(frame.plain.contains("Read"), "{}", frame.plain);
-        assert!(
-            frame.plain.contains("auth.rs") || frame.plain.contains("sign_in"),
-            "{}",
-            frame.plain
-        );
+        assert!(frame.plain.contains("Grep"), "{}", frame.plain);
+        assert!(frame.plain.contains("rateLimit"), "{}", frame.plain);
+        assert!(frame.plain.contains("4 hits"), "{}", frame.plain);
         assert!(!frame.plain.contains("L a.rs"), "{}", frame.plain);
+        assert!(!frame.plain.contains("L example"), "{}", frame.plain);
         let narrow = render_lock_scene("tool_tiles", 40, 12).expect("narrow tiles");
-        let tile_hits = ["Write", "Shell", "Grep", "Glob"]
+        let extra_tiles = ["Write", "Shell", "Glob", "List"]
             .iter()
             .filter(|t| narrow.plain.contains(**t))
             .count();
         assert!(
-            tile_hits == 0,
+            extra_tiles == 0,
             "40-col tile must be a single card:\n{}",
             narrow.plain
         );
         let diag = render_lock_scene("diagnostics", 120, 40).expect("diag");
         assert!(diag.plain.contains("Diagnostics"), "{}", diag.plain);
+        assert!(diag.plain.contains("error"), "{}", diag.plain);
+        assert!(diag.plain.contains("L22"), "{}", diag.plain);
+        assert!(diag.plain.contains("warn"), "{}", diag.plain);
+        assert!(diag.plain.contains("L47"), "{}", diag.plain);
+        assert!(!diag.plain.contains("L a.rs"), "{}", diag.plain);
+        assert!(!diag.plain.contains("L example"), "{}", diag.plain);
         let diff = render_lock_scene("multi_diff", 120, 40).expect("diff");
-        assert!(
-            diff.plain.contains("Edit") || diff.plain.contains("auth.rs"),
-            "{}",
-            diff.plain
-        );
-        assert!(diff.plain.contains('+'), "{}", diff.plain);
+        assert!(diff.plain.contains("Changed this turn"), "{}", diff.plain);
+        assert!(diff.plain.contains("4 files"), "{}", diff.plain);
+        assert!(diff.plain.contains("+84"), "{}", diff.plain);
+        assert!(diff.plain.contains("open"), "{}", diff.plain);
     }
 
     #[test]
@@ -917,5 +891,93 @@ mod tests {
         let compact = render_lock_scene("compacted", 120, 40).expect("compacted");
         assert!(compact.plain.contains("86%"));
         assert!(compact.plain.contains("unchanged"));
+    }
+
+    #[test]
+    fn lock_boards_41_50_product_copy() {
+        let always: &[(&str, &[&str])] = &[
+            ("grep", &["Grep", "rateLimit", "4 hits", "import"]),
+            ("glob", &["Glob", "**/*rate*", "4 files", "rateLimit.ts"]),
+            (
+                "delete",
+                &[
+                    "Delete",
+                    "rateLimit.legacy.ts",
+                    "File will be removed from disk",
+                    "Keep",
+                ],
+            ),
+            (
+                "list",
+                &["List", "src/middleware", "4 entries", "internal/"],
+            ),
+            ("fetch", &["Fetch", "redis.io", "ZADD"]),
+            ("mcp_call", &["MCP", "list_issues", "team=API", "API-184"]),
+            (
+                "task",
+                &["Task", "Write integration tests", "vitest", "18s"],
+            ),
+            (
+                "diagnostics",
+                &["Diagnostics", "rateLimit.ts", "error", "L22", "warn", "L47"],
+            ),
+            (
+                "multi_diff",
+                &["/diff", "Changed this turn", "4 files", "+84"],
+            ),
+            (
+                "settings_hub",
+                &["/settings", "Settings", "Model", "Usage", "Permissions"],
+            ),
+            ("edit", &["Edit", "completions.ts", "+9"]),
+        ];
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for (id, needles) in always {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let lower = frame.plain.to_lowercase();
+                assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
+                assert!(!frame.plain.contains("L example"), "{id}\n{}", frame.plain);
+                assert!(!frame.plain.contains("L a.rs"), "{id}\n{}", frame.plain);
+                for needle in *needles {
+                    let hit = frame.plain.contains(needle)
+                        || needle
+                            .split_whitespace()
+                            .all(|word| frame.plain.contains(word));
+                    assert!(hit, "{id} missing `{needle}` at {size:?}:\n{}", frame.plain);
+                }
+            }
+        }
+
+        let grep = render_lock_scene("grep", 120, 40).expect("grep");
+        assert!(grep.plain.contains("429") || grep.plain.contains("rate_limited"));
+        let glob = render_lock_scene("glob", 120, 40).expect("glob");
+        assert!(glob.plain.contains("docs/rate-limiting.md"));
+        let del = render_lock_scene("delete", 120, 40).expect("delete");
+        assert!(del.plain.contains("Undo via git"));
+        assert!(del.plain.contains("esc keep") || del.plain.contains("keep"));
+        let list = render_lock_scene("list", 120, 40).expect("list");
+        assert!(list.plain.contains("auth.ts"));
+        assert!(list.plain.contains("cors.ts"));
+        let fetch = render_lock_scene("fetch", 120, 40).expect("fetch");
+        assert!(fetch.plain.contains("sorted set") || fetch.plain.contains("ZADD"));
+        let mcp = render_lock_scene("mcp_call", 120, 40).expect("mcp_call");
+        assert!(mcp.plain.contains("API-191"));
+        let settings = render_lock_scene("settings_hub", 120, 40).expect("settings");
+        for banned in ["Display", "Behavior", "Privacy", "Cloud"] {
+            assert!(
+                !settings.plain.contains(banned),
+                "{banned}\n{}",
+                settings.plain
+            );
+        }
+        assert!(settings.plain.contains("cortex-1-mini"));
+        assert!(!settings.plain.contains("gpt-"));
+        let diff = render_lock_scene("multi_diff", 120, 40).expect("diff");
+        assert!(diff.plain.contains("completions.ts"));
+        assert!(diff.plain.contains("-2"));
     }
 }

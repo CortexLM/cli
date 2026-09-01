@@ -3,7 +3,7 @@
 //! This module provides fuzzy completion for slash commands,
 //! including scoring and category-aware sorting.
 
-use super::palette_home::{PALETTE_HOME_COMMANDS, PALETTE_HOME_LIMIT};
+use super::palette_home::PALETTE_HOME_COMMANDS;
 use super::registry::CommandRegistry;
 use super::types::CommandCategory;
 
@@ -188,7 +188,7 @@ impl<'a> CompletionEngine<'a> {
 
     /// Unfiltered `/` list: twenty first-class commands.
     fn home_completions(&self) -> Vec<Completion> {
-        let mut completions = Vec::with_capacity(PALETTE_HOME_LIMIT);
+        let mut completions = Vec::with_capacity(PALETTE_HOME_COMMANDS.len());
         for name in PALETTE_HOME_COMMANDS {
             if let Some(def) = self.registry.get(name) {
                 completions.push(Completion::new(
@@ -329,11 +329,12 @@ mod tests {
         let engine = CompletionEngine::new(&registry);
 
         let completions = engine.complete("/");
-        assert_eq!(completions.len(), PALETTE_HOME_LIMIT);
+        assert_eq!(completions.len(), PALETTE_HOME_COMMANDS.len());
         let names: Vec<_> = completions.iter().map(|c| c.command.as_str()).collect();
         assert_eq!(names, PALETTE_HOME_COMMANDS);
+        assert_eq!(&names[..10], &PALETTE_HOME_COMMANDS[..10]);
+        assert!(!names[0].eq("help"));
         assert!(names.contains(&"compact"));
-        assert!(names.contains(&"interrupt"));
         assert!(names.contains(&"clear"));
     }
 

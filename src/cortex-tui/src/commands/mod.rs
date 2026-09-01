@@ -46,7 +46,9 @@ pub mod types;
 pub use completion::{Completion, CompletionEngine};
 pub use executor::CommandExecutor;
 pub use forms::FormRegistry;
-pub use palette_home::{PALETTE_HOME_COMMANDS, PALETTE_HOME_LIMIT, is_palette_home_command};
+pub use palette_home::{
+    PALETTE_HOME_COMMANDS, PALETTE_HOME_LIMIT, SLASH_VISIBLE, is_palette_home_command,
+};
 pub use parser::CommandParser;
 pub use registry::{CommandRegistry, register_builtin_commands};
 pub use types::{CommandCategory, CommandDef, CommandResult, ModalType, ParsedCommand, ViewType};

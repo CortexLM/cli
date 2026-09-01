@@ -185,8 +185,8 @@ mod tests {
         assert!(registry.exists("mention"));
         assert!(registry.exists("images"));
 
-        // Model (note: "model" command was removed, use "models" instead)
-        assert!(!registry.exists("model"));
+        // Model
+        assert!(registry.exists("model"));
         assert!(registry.exists("models"));
         assert!(registry.exists("approval"));
         assert!(registry.exists("sandbox"));

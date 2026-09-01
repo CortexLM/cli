@@ -670,7 +670,6 @@ impl EventLoop {
 
                 let items: Vec<AutocompleteItem> = completions
                     .into_iter()
-                    .take(PALETTE_HOME_LIMIT)
                     .map(|c| {
                         AutocompleteItem::new(&c.command, &c.display, &c.description)
                             .with_category(format!("{:?}", c.category))

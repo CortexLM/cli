@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::app::{AppState, AutocompleteItem, AutocompleteTrigger};
-use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_COMMANDS};
+use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_LIMIT};
 use crate::interactive::builders::build_settings_hub;
 use crate::runner::login_screen::LoginScreen;
 use crate::views::minimal_session::MinimalSessionView;
@@ -190,6 +190,12 @@ fn draw_session(frame: &mut ratatui::Frame, state: AppState) {
 fn lock_app() -> AppState {
     let mut state = AppState::default();
     state.cli_version = LOCK_SPLASH_VERSION.to_string();
+    state.footer_cwd = "~/cli".into();
+    state.git_branch = "main".into();
+    state.git_dirty = true;
+    state.model = "cortex-1-mini".into();
+    state.agent_mode_label = "Agent".into();
+    state.context_percent = 100;
     state
 }
 
@@ -240,7 +246,7 @@ fn palette_state(empty: bool) -> AppState {
     } else {
         state.autocomplete.set_items(items);
     }
-    state.autocomplete.max_visible = PALETTE_HOME_COMMANDS.len();
+    state.autocomplete.max_visible = PALETTE_HOME_LIMIT;
     state
 }
 
@@ -281,36 +287,21 @@ fn push_tool(
 
 fn tool_tiles_state() -> AppState {
     let mut state = lock_app();
-    state.add_message(Message::user("run tools"));
-    let tiles = [
-        ("1", "Read", json!({"file_path": "a.rs"}), "a.rs"),
-        ("2", "Write", json!({"file_path": "b.rs"}), "+12"),
-        ("3", "Edit", json!({"file_path": "c.rs"}), "+3 −1"),
-        ("4", "Shell", json!({"command": "ls"}), "$ ls"),
-        ("5", "Grep", json!({"pattern": "fn"}), "fn"),
-        ("6", "Glob", json!({"pattern": "*.rs"}), "*.rs"),
-        ("7", "Delete", json!({"file_path": "gone.rs"}), "gone.rs"),
-        ("8", "List", json!({"path": "src"}), "src"),
-        (
-            "9",
-            "Fetch",
-            json!({"url": "https://example.test"}),
-            "example",
-        ),
-        ("10", "mcp__docs", json!({}), "docs"),
-        ("11", "Task", json!({"description": "explore"}), "explore"),
-    ];
-    for (id, name, args, summary) in tiles {
-        push_tool(
-            &mut state,
-            id,
-            name,
-            args,
-            id.parse().unwrap_or(1),
-            summary,
-            true,
-        );
-    }
+    state.add_message(Message::user("read the module"));
+    let mut call = ToolCallDisplay::new(
+        "1".into(),
+        "Read".into(),
+        json!({"file_path": "src/auth.rs"}),
+        1,
+    );
+    call.set_status(ToolStatus::Running);
+    call.append_output("pub fn sign_in() {".into());
+    call.set_result(ToolResultDisplay {
+        output: "pub fn sign_in() {\n    let client = Client::new();\n}".into(),
+        success: true,
+        summary: "src/auth.rs".into(),
+    });
+    state.tool_calls.push(call);
     state
 }
 
@@ -331,25 +322,20 @@ fn diagnostics_state() -> AppState {
 
 fn multi_diff_state() -> AppState {
     let mut state = lock_app();
-    state.add_message(Message::user("show the diff"));
-    push_tool(
-        &mut state,
-        "diff1",
-        "diff",
-        json!({"file": "a.rs"}),
+    state.add_message(Message::user("apply the edit"));
+    let mut call = ToolCallDisplay::new(
+        "diff1".into(),
+        "Edit".into(),
+        json!({"file_path": "src/auth.rs"}),
         1,
-        "+12 −3",
-        true,
     );
-    push_tool(
-        &mut state,
-        "diff2",
-        "multidiff",
-        json!({"files": ["a.rs", "b.rs"]}),
-        2,
-        "+4 −1",
-        true,
-    );
+    call.set_status(ToolStatus::Completed);
+    call.set_result(ToolResultDisplay {
+        output: "@@ -1,3 +1,4 @@\n fn main() {\n+    sign_in();\n     run();\n }".into(),
+        success: true,
+        summary: "+1 −0".into(),
+    });
+    state.tool_calls.push(call);
     state
 }
 
@@ -385,6 +371,7 @@ pub fn command_palette_home() -> crate::widgets::CommandPaletteState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
 
     #[test]
     fn splash_is_one_line_v1_no_mascot() {
@@ -399,78 +386,153 @@ mod tests {
         assert_eq!(occupied.len(), 1, "splash must be one line: {occupied:?}");
     }
 
+    fn assert_no_junk(plain: &str) {
+        for needle in [
+            "Guest",
+            "Directory",
+            "Computer",
+            "Display",
+            "L a.rs",
+            "L example",
+            "foundatio",
+            "mocortex",
+        ] {
+            assert!(!plain.contains(needle), "junk {needle:?} in:\n{plain}");
+        }
+        assert!(!plain.to_lowercase().contains("grok"));
+        assert!(!plain.to_lowercase().contains("claude"));
+        assert!(!plain.to_lowercase().contains("fable"));
+    }
+
     #[test]
     fn login_radios_and_states() {
         let select = render_lock_scene("login_select", 120, 40).expect("select");
         assert!(select.plain.contains("(●)"));
         assert!(select.plain.contains("( )"));
-        assert!(select.plain.contains("Cortex Foundation account"));
+        assert!(select.plain.contains("Continue with browser"));
+        assert!(select.plain.contains("Paste an API key"));
+        assert!(!select.plain.contains("Guest"));
+        assert!(!select.plain.contains("Exit"));
         assert!(!select.plain.contains("▄█▀▀▀▀█▄"));
+        assert_no_junk(&select.plain);
+
+        let narrow = render_lock_scene("login_select", 40, 12).expect("narrow");
+        assert!(
+            narrow.plain.contains("Continue with browser"),
+            "{}",
+            narrow.plain
+        );
+        assert!(
+            narrow.plain.contains("Paste an API key"),
+            "{}",
+            narrow.plain
+        );
+        assert!(!narrow.plain.contains("Devi"));
+        assert!(!narrow.plain.contains("foundatio"));
+        assert_no_junk(&narrow.plain);
 
         let waiting = render_lock_scene("login_waiting", 120, 40).expect("waiting");
-        assert!(waiting.plain.contains("Waiting for browser authentication"));
+        assert!(waiting.plain.contains("Waiting for browser"));
 
         let ok = render_lock_scene("login_success", 80, 24).expect("ok");
         assert!(ok.plain.contains("Signed in."));
 
         let err = render_lock_scene("login_error", 80, 24).expect("err");
         assert!(err.plain.contains("temporarily unavailable"));
-        assert!(!err.plain.to_lowercase().contains("grok"));
+        assert_no_junk(&err.plain);
     }
 
     #[test]
-    fn palette_home_shows_twenty_on_wide() {
+    fn palette_home_leads_with_lock_order() {
         let frame = render_lock_scene("palette", 120, 40).expect("palette");
-        for name in PALETTE_HOME_COMMANDS {
+        let first = PALETTE_HOME_COMMANDS[..SLASH_VISIBLE].to_vec();
+        for name in &first {
             assert!(
-                frame.plain.contains(name) || frame.plain.contains(&format!("/{name}")),
+                frame.plain.contains(&format!("/{name}")) || frame.plain.contains(name),
                 "missing {name}:\n{}",
                 frame.plain
             );
         }
-        let command_rows = frame
-            .plain
-            .lines()
-            .filter(|line| {
-                line.contains('/') && PALETTE_HOME_COMMANDS.iter().any(|n| line.contains(n))
-            })
-            .count();
         assert!(
-            command_rows <= PALETTE_HOME_COMMANDS.len(),
-            "must not dump extra palette rows: {command_rows}"
+            frame.plain.contains("more") && frame.plain.contains("keep typing"),
+            "{}",
+            frame.plain
         );
+        let help_idx = frame.plain.find("/help").unwrap_or(usize::MAX);
+        let model_idx = frame.plain.find("/model").unwrap_or(usize::MAX);
+        assert!(
+            model_idx < help_idx,
+            "must not lead with /help:\n{}",
+            frame.plain
+        );
+        assert!(!frame.plain.contains("/interrupt"));
+        assert_no_junk(&frame.plain);
+
+        let narrow = render_lock_scene("palette", 40, 12).expect("narrow palette");
+        assert!(
+            narrow.plain.contains("/model") || narrow.plain.contains("model"),
+            "{}",
+            narrow.plain
+        );
+        assert!(!narrow.plain.contains("/interrupt"));
+        assert_no_junk(&narrow.plain);
     }
 
     #[test]
-    fn settings_hub_is_sections() {
+    fn settings_hub_is_lock_rows() {
         let frame = render_lock_scene("settings_hub", 120, 40).expect("settings");
-        for section in ["Display", "Behavior", "AI", "Git", "Cloud", "Privacy"] {
+        for section in [
+            "Model",
+            "Mode",
+            "Permissions",
+            "Sandbox",
+            "MCP",
+            "Config",
+            "Usage",
+        ] {
             assert!(
                 frame.plain.contains(section),
                 "missing {section}:\n{}",
                 frame.plain
             );
         }
-        assert!(!frame.plain.contains("Syntax Highlight"));
-    }
-
-    #[test]
-    fn tool_tiles_match_lock() {
-        let frame = render_lock_scene("tool_tiles", 120, 40).expect("tiles");
-        for tile in [
-            "Read", "Write", "Edit", "Shell", "Grep", "Glob", "Delete", "List", "Fetch", "MCP",
-            "Task",
-        ] {
+        for banned in ["Display", "Behavior", "Privacy", "Syntax Highlight"] {
             assert!(
-                frame.plain.contains(tile),
-                "missing {tile}:\n{}",
+                !frame.plain.contains(banned),
+                "banned {banned}:\n{}",
                 frame.plain
             );
         }
+    }
+
+    #[test]
+    fn tool_tiles_one_card() {
+        let frame = render_lock_scene("tool_tiles", 120, 40).expect("tiles");
+        assert!(frame.plain.contains("Read"), "{}", frame.plain);
+        assert!(
+            frame.plain.contains("auth.rs") || frame.plain.contains("sign_in"),
+            "{}",
+            frame.plain
+        );
+        assert!(!frame.plain.contains("L a.rs"), "{}", frame.plain);
+        let narrow = render_lock_scene("tool_tiles", 40, 12).expect("narrow tiles");
+        let tile_hits = ["Write", "Shell", "Grep", "Glob"]
+            .iter()
+            .filter(|t| narrow.plain.contains(**t))
+            .count();
+        assert!(
+            tile_hits == 0,
+            "40-col tile must be a single card:\n{}",
+            narrow.plain
+        );
         let diag = render_lock_scene("diagnostics", 120, 40).expect("diag");
         assert!(diag.plain.contains("Diagnostics"), "{}", diag.plain);
         let diff = render_lock_scene("multi_diff", 120, 40).expect("diff");
-        assert!(diff.plain.contains("Diff"), "{}", diff.plain);
+        assert!(
+            diff.plain.contains("Edit") || diff.plain.contains("auth.rs"),
+            "{}",
+            diff.plain
+        );
         assert!(diff.plain.contains('+'), "{}", diff.plain);
     }
 

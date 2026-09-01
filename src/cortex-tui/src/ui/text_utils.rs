@@ -67,6 +67,50 @@ pub fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
     result
 }
 
+/// Wrap `text` on word boundaries. Words that cannot fit on a line are dropped
+/// instead of being cut mid-word.
+pub fn wrap_or_drop(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0usize;
+
+    for word in text.split_whitespace() {
+        let word_width = UnicodeWidthStr::width(word);
+        if word_width > max_width {
+            continue;
+        }
+        if current.is_empty() {
+            current = word.to_string();
+            current_width = word_width;
+        } else if current_width + 1 + word_width <= max_width {
+            current.push(' ');
+            current.push_str(word);
+            current_width += 1 + word_width;
+        } else {
+            lines.push(std::mem::take(&mut current));
+            current = word.to_string();
+            current_width = word_width;
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+/// First wrapped line, or empty when nothing fits without cutting a word.
+pub fn first_fitting_line(text: &str, max_width: usize) -> String {
+    wrap_or_drop(text, max_width)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
 /// Abbreviated versions of common hint descriptions.
 ///
 /// Maps full description to a shorter version for use when
@@ -604,5 +648,22 @@ mod tests {
     fn should_handle_empty_hints_slice() {
         let result = adaptive_hints(&[], 50);
         assert_eq!(result, "");
+    }
+
+    #[test]
+    fn wrap_or_drop_never_cuts_a_word() {
+        let lines = wrap_or_drop("Continue with browser Opens your browser", 12);
+        for line in &lines {
+            assert!(
+                !line.contains("Contin") || line.contains("Continue"),
+                "{line}"
+            );
+            assert!(!line.ends_with("brow"));
+        }
+        assert!(wrap_or_drop("supercalifragilistic", 8).is_empty());
+        assert_eq!(
+            first_fitting_line("Paste an API key", 40),
+            "Paste an API key"
+        );
     }
 }

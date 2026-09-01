@@ -2,7 +2,55 @@
 
 use crate::interactive::state::{InteractiveAction, InteractiveItem, InteractiveState};
 
-/// Setting category for grouping
+/// Lock hub rows for `/settings` (never Display / Behavior / AI / Git / Cloud / Privacy).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SettingsHubRow {
+    Model,
+    Mode,
+    Permissions,
+    Sandbox,
+    Mcp,
+    Config,
+    Usage,
+}
+
+impl SettingsHubRow {
+    const ALL: [SettingsHubRow; 7] = [
+        Self::Model,
+        Self::Mode,
+        Self::Permissions,
+        Self::Sandbox,
+        Self::Mcp,
+        Self::Config,
+        Self::Usage,
+    ];
+
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Model => "Model",
+            Self::Mode => "Mode",
+            Self::Permissions => "Permissions",
+            Self::Sandbox => "Sandbox",
+            Self::Mcp => "MCP",
+            Self::Config => "Config",
+            Self::Usage => "Usage",
+        }
+    }
+
+    fn id(&self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Mode => "mode",
+            Self::Permissions => "permissions",
+            Self::Sandbox => "sandbox",
+            Self::Mcp => "mcp",
+            Self::Config => "config",
+            Self::Usage => "usage",
+        }
+    }
+}
+
+/// Setting category for grouping legacy toggles.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum SettingCategory {
     Display,
@@ -57,17 +105,6 @@ impl SettingCategory {
                 .iter()
                 .copied()
                 .find(|c| c.label().eq_ignore_ascii_case(other)),
-        }
-    }
-
-    fn hub_description(&self) -> &'static str {
-        match self {
-            Self::Display => "Spacing, timestamps, wrap",
-            Self::Behavior => "Approvals, sandbox, sound",
-            Self::AI => "Thinking, debug, context",
-            Self::Git => "Commits and co-author",
-            Self::Cloud => "Sync and history",
-            Self::Privacy => "Telemetry",
         }
     }
 }
@@ -256,17 +293,11 @@ pub fn build_settings_selector(
     build_settings_hub(terminal_height)
 }
 
-/// Settings hub: one row per section.
+/// Settings hub: Model, Mode, Permissions, Sandbox, MCP, Config, Usage.
 pub fn build_settings_hub(terminal_height: Option<u16>) -> InteractiveState {
-    let items: Vec<InteractiveItem> = SettingCategory::ALL
+    let items: Vec<InteractiveItem> = SettingsHubRow::ALL
         .iter()
-        .map(|category| {
-            InteractiveItem::new(
-                format!("__section_{}", category.id()),
-                category.label().to_string(),
-            )
-            .with_description(category.hub_description().to_string())
-        })
+        .map(|row| InteractiveItem::new(row.id().to_string(), row.label().to_string()))
         .collect();
 
     let max_visible = visible_count(terminal_height, items.len());
@@ -350,13 +381,13 @@ fn setting_enabled(snapshot: &SettingsSnapshot, id: &str) -> bool {
 }
 
 fn visible_count(terminal_height: Option<u16>, total_items: usize) -> usize {
-    const UI_CHROME_HEIGHT: u16 = 6;
+    const UI_CHROME_HEIGHT: u16 = 4;
     match terminal_height {
         Some(height) => {
             let available = height.saturating_sub(UI_CHROME_HEIGHT) as usize;
-            available.clamp(6, total_items.max(6))
+            available.clamp(1, total_items.max(1))
         }
-        None => total_items.min(20),
+        None => total_items,
     }
 }
 
@@ -369,9 +400,19 @@ mod tests {
         let snapshot = SettingsSnapshot::default();
         let state = build_settings_selector(snapshot, None);
         assert_eq!(state.title, "Settings");
-        assert_eq!(state.items.len(), 6);
-        assert!(state.items.iter().any(|i| i.label == "Display"));
-        assert!(state.items.iter().all(|i| i.id.starts_with("__section_")));
+        assert_eq!(state.items.len(), 7);
+        for label in [
+            "Model",
+            "Mode",
+            "Permissions",
+            "Sandbox",
+            "MCP",
+            "Config",
+            "Usage",
+        ] {
+            assert!(state.items.iter().any(|i| i.label == label), "{label}");
+        }
+        assert!(!state.items.iter().any(|i| i.label == "Display"));
     }
 
     #[test]
@@ -398,7 +439,7 @@ mod tests {
         let snapshot = SettingsSnapshot::default();
 
         let state_small = build_settings_selector(snapshot.clone(), Some(12));
-        assert!(state_small.max_visible >= 6);
+        assert!(state_small.max_visible >= 7);
 
         let state_large = build_settings_selector(snapshot.clone(), Some(100));
         assert_eq!(state_large.max_visible, state_large.items.len());

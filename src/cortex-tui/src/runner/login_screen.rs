@@ -18,6 +18,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
 use tokio::sync::mpsc;
 
+use crate::ui::text_utils::{first_fitting_line, wrap_or_drop};
 use cortex_core::style::{CYAN_PRIMARY, ERROR, TEXT, TEXT_DIM, VOID};
 use cortex_login::{SecureAuthData, save_auth_with_fallback};
 use cortex_tui_components::spinner::SpinnerStyle;
@@ -46,37 +47,26 @@ pub enum LoginState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoginMethod {
-    CortexAccount,
-    Guest,
+    Browser,
     ApiKey,
-    Exit,
 }
 
 impl LoginMethod {
     fn all() -> &'static [LoginMethod] {
-        &[
-            LoginMethod::CortexAccount,
-            LoginMethod::Guest,
-            LoginMethod::ApiKey,
-            LoginMethod::Exit,
-        ]
+        &[LoginMethod::Browser, LoginMethod::ApiKey]
     }
 
     fn label(&self) -> &'static str {
         match self {
-            LoginMethod::CortexAccount => "Cortex Foundation account",
-            LoginMethod::Guest => "Guest session",
-            LoginMethod::ApiKey => "API Key",
-            LoginMethod::Exit => "Exit",
+            LoginMethod::Browser => "Continue with browser",
+            LoginMethod::ApiKey => "Paste an API key",
         }
     }
 
     fn description(&self) -> &'static str {
         match self {
-            LoginMethod::CortexAccount => "Device login at api.cortex.foundation",
-            LoginMethod::Guest => "Limited session without an account",
-            LoginMethod::ApiKey => "For API access without subscription",
-            LoginMethod::Exit => "",
+            LoginMethod::Browser => "Opens your browser to sign in",
+            LoginMethod::ApiKey => "Paste a key from your account",
         }
     }
 }
@@ -313,85 +303,75 @@ impl LoginScreen {
     fn render_select_method(&self, f: &mut ratatui::Frame, area: Rect) {
         let version = self.splash_version.as_str();
         let methods = LoginMethod::all();
-        let rows = methods.len() as u16;
-
-        let content_width = 70.min(area.width.saturating_sub(4)).max(20);
-        let content_height = 10 + rows;
-        let content_x = (area.width.saturating_sub(content_width)) / 2;
-        let content_y = (area.height.saturating_sub(content_height)) / 2;
-        let content_area = Rect::new(content_x, content_y, content_width, content_height);
-
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(rows),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-            ])
-            .split(content_area);
-
-        let splash = Paragraph::new(format!("Cortex CLI v{version}"))
-            .style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD));
-        f.render_widget(splash, chunks[0]);
-
-        let description = Paragraph::new("Sign in through api.cortex.foundation (device login).")
-            .style(Style::default().fg(TEXT_DIM));
-        f.render_widget(description, chunks[1]);
-
-        let header = Paragraph::new("Select login method:").style(Style::default().fg(TEXT));
-        f.render_widget(header, chunks[3]);
-
-        let label_width = methods
-            .iter()
-            .map(|m| m.label().chars().count())
-            .max()
-            .unwrap_or(0);
+        let inner_width = area.width.saturating_sub(2).max(1) as usize;
 
         let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(Span::styled(
+            first_fitting_line(&format!("Cortex CLI v{version}"), inner_width),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+
         for (i, method) in methods.iter().enumerate() {
             let is_selected = i == self.selected_method;
             let radio = if is_selected { "(●)" } else { "( )" };
-            let row_style = if is_selected {
+            let radio_style = if is_selected {
                 Style::default().fg(HIGHLIGHT)
             } else {
                 Style::default().fg(TEXT_DIM)
             };
-            let label_style = if is_selected {
-                Style::default().fg(HIGHLIGHT)
-            } else {
-                Style::default().fg(TEXT)
-            };
-
-            let label = format!("{:<width$}", method.label(), width = label_width);
-            let mut spans = vec![
-                Span::styled(format!(" {radio} "), row_style),
-                Span::styled(label, label_style),
-            ];
-            let desc = method.description();
-            if !desc.is_empty() {
-                spans.push(Span::styled(
-                    format!("  {desc}"),
-                    Style::default().fg(TEXT_DIM),
-                ));
+            let label = first_fitting_line(method.label(), inner_width.saturating_sub(5));
+            lines.push(Line::from(vec![
+                Span::styled(format!("{radio} "), radio_style),
+                Span::styled(label, Style::default().fg(TEXT)),
+            ]));
+            if is_selected {
+                let hint_width = inner_width.saturating_sub(4);
+                for hint_line in wrap_or_drop(method.description(), hint_width) {
+                    lines.push(Line::from(Span::styled(
+                        format!("    {hint_line}"),
+                        Style::default().fg(TEXT_DIM),
+                    )));
+                }
             }
-            lines.push(Line::from(spans));
         }
-        f.render_widget(Paragraph::new(lines), chunks[4]);
-
-        let hints = Paragraph::new("↑↓ to select · Enter to confirm · Ctrl+C to exit")
-            .style(Style::default().fg(TEXT_DIM));
-        f.render_widget(hints, chunks[6]);
 
         if let Some(ref error) = self.error_message {
-            let error_msg =
-                Paragraph::new(format!("Error: {error}")).style(Style::default().fg(ERROR));
-            f.render_widget(error_msg, chunks[7]);
+            lines.push(Line::from(""));
+            for err_line in wrap_or_drop(error, inner_width) {
+                lines.push(Line::from(Span::styled(
+                    err_line,
+                    Style::default().fg(ERROR),
+                )));
+            }
         }
+
+        lines.push(Line::from(""));
+        let hint = if area.width < 50 {
+            "↑↓ select · Enter confirm"
+        } else {
+            "↑↓ select · Enter confirm · Ctrl+C exit"
+        };
+        if let Some(line) = wrap_or_drop(hint, inner_width).into_iter().next() {
+            lines.push(Line::from(Span::styled(
+                line,
+                Style::default().fg(TEXT_DIM),
+            )));
+        }
+
+        let content_height = (lines.len() as u16).min(area.height);
+        let content_y = if area.height <= 12 {
+            area.y
+        } else {
+            area.y + (area.height.saturating_sub(content_height)) / 2
+        };
+        let content_area = Rect::new(
+            area.x + 1,
+            content_y,
+            area.width.saturating_sub(2),
+            content_height,
+        );
+        f.render_widget(Paragraph::new(lines), content_area);
     }
 
     fn render_waiting(&self, f: &mut ratatui::Frame, area: Rect) {
@@ -428,7 +408,12 @@ impl LoginScreen {
             .style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD));
         f.render_widget(splash, chunks[0]);
 
-        let waiting = Paragraph::new(format!("{spinner} Waiting for browser authentication"))
+        let waiting_text = if area.width < 50 {
+            format!("{spinner} Waiting for browser")
+        } else {
+            format!("{spinner} Waiting for browser authentication")
+        };
+        let waiting = Paragraph::new(first_fitting_line(&waiting_text, content_width as usize))
             .style(Style::default().fg(TEXT));
         f.render_widget(waiting, chunks[2]);
 
@@ -443,13 +428,21 @@ impl LoginScreen {
         } else {
             "(c to copy)"
         };
-        let browser_msg = Paragraph::new(format!(
-            "Browser didn't open? Open the URL below {copy_hint}"
-        ))
-        .style(Style::default().fg(TEXT_DIM));
-        f.render_widget(browser_msg, chunks[4]);
+        let browser_msg = if area.width < 50 {
+            first_fitting_line(copy_hint, content_width as usize)
+        } else {
+            first_fitting_line(
+                &format!("Browser didn't open? Open the URL below {copy_hint}"),
+                content_width as usize,
+            )
+        };
+        f.render_widget(
+            Paragraph::new(browser_msg).style(Style::default().fg(TEXT_DIM)),
+            chunks[4],
+        );
 
-        let url_line = Paragraph::new(direct_url).style(Style::default().fg(TEXT));
+        let url_line = Paragraph::new(first_fitting_line(&direct_url, content_width as usize))
+            .style(Style::default().fg(TEXT));
         f.render_widget(url_line, chunks[5]);
 
         let hints =
@@ -468,8 +461,29 @@ impl LoginScreen {
             .error_message
             .clone()
             .unwrap_or_else(|| "Sign-in failed.".to_string());
-        let widget = Paragraph::new(msg).style(Style::default().fg(ERROR));
-        f.render_widget(widget, centered_line(area, 60, 2));
+        let width = area.width.saturating_sub(2).max(1) as usize;
+        let mut lines: Vec<Line> = wrap_or_drop(&msg, width)
+            .into_iter()
+            .map(|line| Line::from(Span::styled(line, Style::default().fg(ERROR))))
+            .collect();
+        if let Some(hint) = wrap_or_drop("↑↓ select · esc close", width)
+            .into_iter()
+            .next()
+        {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                hint,
+                Style::default().fg(TEXT_DIM),
+            )));
+        }
+        f.render_widget(
+            Paragraph::new(lines.clone()),
+            centered_line(
+                area,
+                area.width.saturating_sub(2).max(1),
+                (lines.len() as u16).min(area.height).max(1),
+            ),
+        );
     }
 }
 
@@ -531,16 +545,7 @@ impl LoginScreen {
                 self.selected_method = 1;
                 return self.select_method();
             }
-            KeyCode::Char('3') => {
-                self.selected_method = 2;
-                return self.select_method();
-            }
-            KeyCode::Char('4') => {
-                if LoginMethod::all().len() > 3 {
-                    self.selected_method = 3;
-                    return self.select_method();
-                }
-            }
+            KeyCode::Char('3') | KeyCode::Char('4') => {}
             KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
                 return Some(LoginResult::Exit);
             }
@@ -551,16 +556,11 @@ impl LoginScreen {
 
     fn select_method(&mut self) -> Option<LoginResult> {
         match LoginMethod::all()[self.selected_method] {
-            LoginMethod::CortexAccount => {
+            LoginMethod::Browser => {
                 self.start_device_code_flow();
                 None
             }
-            LoginMethod::Guest => {
-                self.start_guest_session();
-                None
-            }
             LoginMethod::ApiKey => Some(LoginResult::ContinueWithApiKey),
-            LoginMethod::Exit => Some(LoginResult::Exit),
         }
     }
 
@@ -607,6 +607,7 @@ impl LoginScreen {
         });
     }
 
+    #[allow(dead_code)]
     fn start_guest_session(&mut self) {
         self.state = LoginState::WaitingForAuth;
         self.error_message = None;
@@ -902,8 +903,10 @@ mod tests {
             let _ = std::fs::write(std::path::Path::new(&dir).join("auth.txt"), &text);
         }
         assert!(text.contains("Cortex CLI"), "{text}");
-        assert!(text.contains("Cortex Foundation account"), "{text}");
-        assert!(text.contains("Guest session"), "{text}");
+        assert!(text.contains("Continue with browser"), "{text}");
+        assert!(text.contains("Paste an API key"), "{text}");
+        assert!(!text.contains("Guest"), "{text}");
+        assert!(!text.contains("Exit"), "{text}");
         assert!(text.contains("(●)"), "{text}");
         assert!(!text.contains("▄█▀▀▀▀█▄"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));

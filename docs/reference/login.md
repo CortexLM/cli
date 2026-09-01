@@ -28,11 +28,11 @@ cortex login --device-auth
 Cortex prints a code and a URL. Open the URL on a device that does have a
 browser, enter the code, and the CLI picks up the session when it is approved.
 
-## Guest session
+## API key
 
-From the TUI login screen, choose **Guest session** for a limited session
-without an account. Account login is never silently replaced with a guest
-session.
+From the TUI login screen, choose **Paste an API key** to store a key from
+your account. **Continue with browser** is the other option. There is no
+Guest or Exit row on that screen.
 
 ## Enterprise SSO
 

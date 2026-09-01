@@ -289,7 +289,7 @@ impl EventLoop {
                     }
                 }
             },
-            ModalType::ApprovalPicker => {
+            ModalType::ApprovalPicker | ModalType::Permissions => {
                 let current = self.app_state.approval_mode_string();
                 let interactive =
                     crate::interactive::builders::build_approval_selector(Some(&current));
@@ -368,6 +368,16 @@ impl EventLoop {
                     Some(terminal_height),
                 );
                 self.app_state.enter_interactive_mode(interactive);
+            }
+            ModalType::Mode => {
+                self.app_state.toasts.info("Mode: Agent · Plan · Ask");
+            }
+            ModalType::Plan => {
+                self.app_state.operation_mode = crate::app::OperationMode::Plan;
+                self.app_state.toasts.info("Plan mode");
+            }
+            ModalType::Effort => {
+                self.app_state.toasts.info("Effort");
             }
             _ => {
                 self.app_state

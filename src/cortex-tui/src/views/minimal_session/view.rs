@@ -8,16 +8,13 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
-use crate::app::AppState;
-use crate::commands::PALETTE_HOME_LIMIT;
-use crate::ui::colors::AdaptiveColors;
-use crate::ui::consts::{CURSOR_BLINK_INTERVAL_MS, border};
-use crate::widgets::{HintContext, KeyHints, StatusIndicator};
-
-use super::layout::LayoutManager;
 use super::rendering::{
     generate_message_lines, generate_welcome_lines, render_scroll_to_bottom_hint, render_scrollbar,
 };
+use crate::app::AppState;
+use crate::commands::PALETTE_HOME_LIMIT;
+use crate::ui::colors::AdaptiveColors;
+use crate::widgets::{HintContext, KeyHints, StatusIndicator};
 
 // Re-export for convenience
 pub use cortex_core::widgets::Message as ChatMessage;
@@ -129,31 +126,19 @@ impl<'a> MinimalSessionView<'a> {
 
     /// Renders the input area.
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
-        if area.is_empty() || area.height < 3 {
+        if area.is_empty() || area.height < 1 {
             return;
         }
 
-        let dim_style = Style::default().fg(self.colors.text_dim);
+        let _ = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
 
-        // Draw top border
-        if let Some(cell) = buf.cell_mut((area.x, area.y)) {
-            cell.set_char(border::TOP_LEFT).set_style(dim_style);
-        }
-        if let Some(cell) = buf.cell_mut((area.right() - 1, area.y)) {
-            cell.set_char(border::TOP_RIGHT).set_style(dim_style);
-        }
-        for x in (area.x + 1)..(area.right() - 1) {
-            if let Some(cell) = buf.cell_mut((x, area.y)) {
-                cell.set_char(border::HORIZONTAL).set_style(dim_style);
-            }
-        }
-
-        // Show queue indicator if there are pending messages
         let queue_count = self.app_state.queued_count();
         if queue_count > 0 {
             let indicator = format!("[{} pending]", queue_count);
-            let indicator_x = area.right().saturating_sub(indicator.len() as u16 + 2);
-            if indicator_x > area.x + 1 {
+            let indicator_x = area.right().saturating_sub(indicator.len() as u16);
+            if indicator_x > area.x {
                 buf.set_string(
                     indicator_x,
                     area.y,
@@ -163,61 +148,36 @@ impl<'a> MinimalSessionView<'a> {
             }
         }
 
-        // Draw bottom border
-        if let Some(cell) = buf.cell_mut((area.x, area.bottom() - 1)) {
-            cell.set_char(border::BOTTOM_LEFT).set_style(dim_style);
-        }
-        if let Some(cell) = buf.cell_mut((area.right() - 1, area.bottom() - 1)) {
-            cell.set_char(border::BOTTOM_RIGHT).set_style(dim_style);
-        }
-        for x in (area.x + 1)..(area.right() - 1) {
-            if let Some(cell) = buf.cell_mut((x, area.bottom() - 1)) {
-                cell.set_char(border::HORIZONTAL).set_style(dim_style);
-            }
-        }
-
-        // Draw side borders
-        if let Some(cell) = buf.cell_mut((area.x, area.y + 1)) {
-            cell.set_char(border::VERTICAL).set_style(dim_style);
-        }
-        if let Some(cell) = buf.cell_mut((area.right() - 1, area.y + 1)) {
-            cell.set_char(border::VERTICAL).set_style(dim_style);
-        }
-
-        // Get input text from app_state
         let input_text = self.app_state.input.text();
 
-        // Calculate cursor visibility
-        let show_cursor = (SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64
-            / CURSOR_BLINK_INTERVAL_MS)
-            .is_multiple_of(2);
+        // Simple unboxed prompt. Ghost when idle; block cursor.
+        let content_x = area.x;
+        let content_y = area.y;
+        let content_width = area.width.max(1);
 
-        // Content area is inside the box (1 char padding on left/right + 1 space padding)
-        // Layout: "│ > content ▌ │"
-        // Start x = area.x + 2 (border + space)
-
-        let content_x = area.x + 2;
-        let content_y = area.y + 1;
-        let content_width = area.width.saturating_sub(4); // 2 borders + 2 spaces padding
-
-        // Simple prompt: "> "
         let prompt_span = Span::styled("> ", Style::default().fg(self.colors.accent));
-        let text_span = Span::styled(
-            input_text.to_string(),
-            Style::default().fg(self.colors.text),
-        );
-
-        let mut spans = vec![prompt_span, text_span];
-
-        if show_cursor {
-            spans.push(Span::styled("▌", Style::default().fg(self.colors.accent)));
+        let mut spans = vec![prompt_span];
+        if input_text.is_empty() {
+            let ghost = crate::ui::text_utils::first_fitting_line(
+                "Plan, search, build anything",
+                content_width.saturating_sub(2) as usize,
+            );
+            if !ghost.is_empty() {
+                spans.push(Span::styled(
+                    ghost,
+                    Style::default().fg(self.colors.text_muted),
+                ));
+            }
+        } else {
+            let shown = crate::ui::text_utils::first_fitting_line(
+                &input_text,
+                content_width.saturating_sub(2) as usize,
+            );
+            spans.push(Span::styled(shown, Style::default().fg(self.colors.text)));
         }
+        spans.push(Span::styled("█", Style::default().fg(self.colors.accent)));
 
         let line = Line::from(spans);
-
         let text_area = Rect::new(content_x, content_y, content_width, 1);
         let paragraph = Paragraph::new(line);
         paragraph.render(text_area, buf);
@@ -292,52 +252,62 @@ impl<'a> MinimalSessionView<'a> {
 
         // Calculate actual height based on items (top stays fixed, bottom varies)
         let visible_items = self.app_state.autocomplete.visible_items();
-        let max_items = area.height.saturating_sub(2) as usize;
-        let item_count = visible_items.len().min(max_items) as u16;
-        let actual_height = item_count + 2;
+        let remaining = self
+            .app_state
+            .autocomplete
+            .items
+            .len()
+            .saturating_sub(self.app_state.autocomplete.scroll_offset + visible_items.len());
+        let more_rows = if remaining > 0 { 1_u16 } else { 0 };
+        let draw_box = area.width >= 50 && area.height > PALETTE_HOME_LIMIT as u16 + more_rows + 2;
+        let chrome = if draw_box { 2 } else { 0 };
+        let max_items = area.height.saturating_sub(chrome + more_rows).max(1) as usize;
+        let drawn = visible_items.len().min(max_items);
 
-        // Draw top border with rounded corners
-        if let Some(cell) = buf.cell_mut((area.x, area.y)) {
-            cell.set_char('╭').set_style(border_style);
-        }
-        if let Some(cell) = buf.cell_mut((area.right() - 1, area.y)) {
-            cell.set_char('╮').set_style(border_style);
-        }
-        for x in (area.x + 1)..(area.right() - 1) {
-            if let Some(cell) = buf.cell_mut((x, area.y)) {
-                cell.set_char('─').set_style(border_style);
+        let actual_height = drawn as u16 + more_rows + chrome;
+        if draw_box {
+            // Draw top border with rounded corners
+            if let Some(cell) = buf.cell_mut((area.x, area.y)) {
+                cell.set_char('╭').set_style(border_style);
             }
-        }
-
-        // Draw side borders (only for actual content height)
-        for y in (area.y + 1)..(area.y + actual_height - 1) {
-            if let Some(cell) = buf.cell_mut((area.x, y)) {
-                cell.set_char('│').set_style(border_style);
-            }
-            if let Some(cell) = buf.cell_mut((area.right() - 1, y)) {
-                cell.set_char('│').set_style(border_style);
-            }
-        }
-
-        // Draw bottom border at actual content height (not at area.bottom)
-        let bottom_y = area.y + actual_height - 1;
-        if bottom_y > area.y {
-            if let Some(cell) = buf.cell_mut((area.x, bottom_y)) {
-                cell.set_char('╰').set_style(border_style);
-            }
-            if let Some(cell) = buf.cell_mut((area.right() - 1, bottom_y)) {
-                cell.set_char('╯').set_style(border_style);
+            if let Some(cell) = buf.cell_mut((area.right() - 1, area.y)) {
+                cell.set_char('╮').set_style(border_style);
             }
             for x in (area.x + 1)..(area.right() - 1) {
-                if let Some(cell) = buf.cell_mut((x, bottom_y)) {
+                if let Some(cell) = buf.cell_mut((x, area.y)) {
                     cell.set_char('─').set_style(border_style);
+                }
+            }
+
+            // Draw side borders (only for actual content height)
+            for y in (area.y + 1)..(area.y + actual_height - 1) {
+                if let Some(cell) = buf.cell_mut((area.x, y)) {
+                    cell.set_char('│').set_style(border_style);
+                }
+                if let Some(cell) = buf.cell_mut((area.right() - 1, y)) {
+                    cell.set_char('│').set_style(border_style);
+                }
+            }
+
+            // Draw bottom border at actual content height (not at area.bottom)
+            let bottom_y = area.y + actual_height - 1;
+            if bottom_y > area.y {
+                if let Some(cell) = buf.cell_mut((area.x, bottom_y)) {
+                    cell.set_char('╰').set_style(border_style);
+                }
+                if let Some(cell) = buf.cell_mut((area.right() - 1, bottom_y)) {
+                    cell.set_char('╯').set_style(border_style);
+                }
+                for x in (area.x + 1)..(area.right() - 1) {
+                    if let Some(cell) = buf.cell_mut((x, bottom_y)) {
+                        cell.set_char('─').set_style(border_style);
+                    }
                 }
             }
         }
 
-        // Render items (aligned to top)
-        let inner_y = area.y + 1;
-        let inner_x = area.x + 2;
+        let inner_y = if draw_box { area.y + 1 } else { area.y };
+        let inner_x = if draw_box { area.x + 2 } else { area.x + 1 };
 
         if visible_items.is_empty() {
             buf.set_string(
@@ -349,9 +319,9 @@ impl<'a> MinimalSessionView<'a> {
             return;
         }
 
-        for (i, item) in visible_items.iter().enumerate() {
+        for (i, item) in visible_items.iter().take(drawn).enumerate() {
             let y = inner_y + i as u16;
-            if y >= area.y + area.height.saturating_sub(1) {
+            if y >= area.y + area.height {
                 break;
             }
 
@@ -365,48 +335,51 @@ impl<'a> MinimalSessionView<'a> {
             } else {
                 Style::default().fg(dim)
             };
-            buf.set_string(inner_x - 1, y, indicator, indicator_style);
+            buf.set_string(inner_x.saturating_sub(1), y, indicator, indicator_style);
 
-            // Icon
             let mut x = inner_x;
-            if item.icon != '\0' {
-                if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_char(item.icon)
-                        .set_style(Style::default().fg(accent));
-                }
-                x += 2;
-            }
-
-            // Label
             let label_style = if is_selected {
                 Style::default().fg(accent).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(text)
             };
-            for ch in item.label.chars() {
-                if x >= area.right() - 2 {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_char(ch).set_style(label_style);
-                }
-                x += 1;
-            }
+            let label = crate::ui::text_utils::first_fitting_line(
+                &item.label,
+                area.right().saturating_sub(x + 1) as usize,
+            );
+            buf.set_string(x, y, &label, label_style);
+            x += label.chars().count() as u16;
 
-            // Description (dimmed)
-            if !item.description.is_empty() && x + 4 < area.right() - 2 {
-                buf.set_string(x, y, " - ", Style::default().fg(dim));
-                x += 3;
-                let desc_style = Style::default().fg(dim);
-                for ch in item.description.chars() {
-                    if x >= area.right() - 2 {
-                        break;
-                    }
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_char(ch).set_style(desc_style);
-                    }
-                    x += 1;
+            if area.width >= 60 && !item.description.is_empty() {
+                let remaining = area.right().saturating_sub(x + 3) as usize;
+                let desc = crate::ui::text_utils::first_fitting_line(&item.description, remaining);
+                if !desc.is_empty() {
+                    buf.set_string(x, y, "  ", Style::default().fg(dim));
+                    buf.set_string(x + 2, y, &desc, Style::default().fg(dim));
                 }
+            }
+        }
+
+        let remaining = self
+            .app_state
+            .autocomplete
+            .items
+            .len()
+            .saturating_sub(self.app_state.autocomplete.scroll_offset + drawn);
+        if remaining > 0 {
+            let y = inner_y + drawn as u16;
+            if y < area.y + area.height {
+                let more = format!("{remaining} more — keep typing to filter");
+                let line = crate::ui::text_utils::first_fitting_line(
+                    &more,
+                    area.width.saturating_sub(2) as usize,
+                );
+                buf.set_string(
+                    inner_x.saturating_sub(1),
+                    y,
+                    &line,
+                    Style::default().fg(dim),
+                );
             }
         }
     }
@@ -422,6 +395,13 @@ impl<'a> Widget for MinimalSessionView<'a> {
 
         // Calculate fixed heights
         let autocomplete_visible = self.app_state.autocomplete.visible;
+        let remaining_cmds = self.app_state.autocomplete.items.len().saturating_sub(
+            self.app_state
+                .autocomplete
+                .visible_items()
+                .len()
+                .min(PALETTE_HOME_LIMIT),
+        );
         let ac_items = if autocomplete_visible {
             self.app_state
                 .autocomplete
@@ -433,89 +413,78 @@ impl<'a> Widget for MinimalSessionView<'a> {
                 } else {
                     1
                 })
-        } else {
-            0
-        };
-        let max_ac_height = area
-            .height
-            .saturating_sub(6)
-            .min((PALETTE_HOME_LIMIT as u16).saturating_add(2));
-        let autocomplete_height: u16 = if autocomplete_visible {
-            ((ac_items as u16).saturating_add(2))
-                .min(max_ac_height)
-                .max(3)
+                + if remaining_cmds > 0 { 1 } else { 0 }
         } else {
             0
         };
         let status_height: u16 = if is_task_running { 1 } else { 0 };
         let show_update_banner = self.app_state.should_show_update_banner();
         let update_banner_height: u16 = if show_update_banner { 1 } else { 0 };
-        let input_height: u16 = 3;
+        let input_height: u16 = 1;
         let hints_height: u16 = 1;
 
-        let welcome_card_height = 1_u16;
-        let info_cards_height = 4_u16;
-        let welcome_total = welcome_card_height + 1 + info_cards_height; // +1 gap between cards
+        let bottom_stack = status_height + update_banner_height + input_height + hints_height;
+        let box_pad: u16 = if area.width >= 50 { 2 } else { 0 };
+        let max_ac_height = area.height.saturating_sub(bottom_stack.saturating_add(1));
+        let autocomplete_height: u16 = if autocomplete_visible {
+            ((ac_items as u16).saturating_add(box_pad))
+                .min(max_ac_height)
+                .max(1)
+        } else {
+            0
+        };
 
-        // Use layout manager for automatic positioning
-        let mut layout = LayoutManager::new(area);
+        let hints_y = area.y + area.height.saturating_sub(hints_height);
+        let input_y = hints_y.saturating_sub(autocomplete_height + input_height);
+        let content_height = input_y.saturating_sub(area.y);
+        let content_area = Rect::new(area.x, area.y, area.width, content_height);
+        self.render_scrollable_content(content_area, buf, 1);
 
-        // 1. Top margin
-        layout.gap(1);
-
-        // Calculate available height for scrollable content (before input/hints)
-        let bottom_reserved = status_height
-            + update_banner_height
-            + input_height
-            + autocomplete_height
-            + hints_height
-            + 2; // +2 for gaps
-        let available_height = area.height.saturating_sub(1 + bottom_reserved); // 1 for top margin
-
-        // Render scrollable content area (welcome cards + messages together)
-        let content_area = layout.allocate(available_height);
-        let actual_content_height =
-            self.render_scrollable_content(content_area, buf, welcome_total);
-
-        // Position elements after actual content (not after allocated area)
-        let content_end_y = content_area.y + actual_content_height;
-        let mut next_y = content_end_y + 1; // +1 gap after content
-
-        // 5. Status indicator (if task running) - follows content
-        if is_task_running {
-            let status_area = Rect::new(area.x, next_y, area.width, status_height);
-            let header = self.status_header();
-            let elapsed = self.app_state.streaming.prompt_elapsed_seconds();
-            let status = StatusIndicator::new(header)
-                .with_elapsed_secs(elapsed)
-                .with_interrupt_hint(true);
-            status.render(status_area, buf);
-            next_y += status_height;
+        let mut next_y = input_y;
+        if is_task_running && status_height > 0 {
+            let status_area = Rect::new(
+                area.x,
+                next_y.saturating_sub(status_height),
+                area.width,
+                status_height,
+            );
+            let _ = status_area;
         }
 
-        // 5.5 Update banner (if applicable) - above input
         if show_update_banner {
-            let banner_area = Rect::new(area.x, next_y, area.width, update_banner_height);
+            let banner_y = input_y.saturating_sub(update_banner_height);
+            let banner_area = Rect::new(area.x, banner_y, area.width, update_banner_height);
             super::rendering::render_update_banner(
                 banner_area,
                 buf,
                 &self.colors,
                 &self.app_state.update_status,
             );
-            next_y += update_banner_height;
         }
 
-        // 6. Input area - follows update banner (or status if no banner)
-        let input_y = next_y;
+        if is_task_running {
+            let status_area = Rect::new(
+                area.x,
+                input_y.saturating_sub(update_banner_height + status_height),
+                area.width,
+                status_height,
+            );
+            let header = self.status_header();
+            let elapsed = self.app_state.streaming.prompt_elapsed_seconds();
+            let status = StatusIndicator::new(header)
+                .with_elapsed_secs(elapsed)
+                .with_interrupt_hint(true);
+            status.render(status_area, buf);
+        }
+
         let input_area = Rect::new(area.x, input_y, area.width, input_height);
 
         if self.app_state.is_interactive_mode() {
             if let Some(state) = self.app_state.get_interactive_state() {
                 let items_count = state.filtered_indices.len().min(state.max_visible);
-                let required_height = (items_count as u16) + 4;
-                let max_height = (area.height * 60 / 100).max(12);
+                let required_height = (items_count as u16) + 3;
+                let max_height = area.height.saturating_sub(hints_height).max(3);
                 let widget_height = required_height.min(max_height);
-                // Position at bottom of screen (above hints)
                 let interactive_y = area.y + area.height - widget_height - hints_height;
                 let interactive_area = Rect::new(area.x, interactive_y, area.width, widget_height);
                 let widget = crate::interactive::InteractiveWidget::new(state);
@@ -525,17 +494,14 @@ impl<'a> Widget for MinimalSessionView<'a> {
             self.render_input(input_area, buf);
         }
 
-        // 7. Autocomplete (below input if visible)
-        let mut next_y = input_y + input_height;
+        next_y = input_y + input_height;
         if autocomplete_visible {
             let autocomplete_area = Rect::new(area.x, next_y, area.width, autocomplete_height);
             self.render_autocomplete_inline(autocomplete_area, buf);
-            next_y += autocomplete_height;
         }
 
-        // 8. Key hints - only show when NOT in interactive mode
         if !self.app_state.is_interactive_mode() {
-            let hints_area = Rect::new(area.x, next_y, area.width, hints_height);
+            let hints_area = Rect::new(area.x, hints_y, area.width, hints_height);
             let context = if self.app_state.is_viewing_subagent() {
                 HintContext::SubagentView
             } else if is_task_running {
@@ -546,12 +512,18 @@ impl<'a> Widget for MinimalSessionView<'a> {
             let mut hints =
                 KeyHints::new(context).with_permission_mode(self.app_state.permission_mode);
             hints = hints.with_model(&self.app_state.model);
+            hints = hints.with_session_footer(
+                &self.app_state.footer_cwd,
+                &self.app_state.git_branch,
+                self.app_state.git_dirty,
+                &self.app_state.agent_mode_label,
+                self.app_state.context_percent,
+            );
             if let Some(ref budget) = self.app_state.thinking_budget {
                 hints = hints.with_thinking_budget(budget);
             }
             hints.render(hints_area, buf);
 
-            // Render "← Back to main (Esc)" hint when viewing a subagent
             if self.app_state.is_viewing_subagent() {
                 crate::views::minimal_session::rendering::render_back_to_main_hint(
                     hints_area,

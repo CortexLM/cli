@@ -12,7 +12,7 @@ impl CommandExecutor {
             "quit" | "q" | "exit" => CommandResult::Quit,
             "version" | "v" => self.cmd_version(),
             "upgrade" | "update" => CommandResult::OpenModal(ModalType::Upgrade),
-            "settings" | "config" | "prefs" => CommandResult::OpenModal(ModalType::Settings),
+            "settings" | "prefs" => CommandResult::OpenModal(ModalType::Settings),
             "reload-config" | "reload" => CommandResult::Async("config:reload".to_string()),
             "theme" => self.cmd_theme(cmd),
             "compact" => CommandResult::Toggle("compact".to_string()),
@@ -21,7 +21,12 @@ impl CommandExecutor {
             "init" => self.cmd_init(cmd),
             "commands" | "cmds" => CommandResult::Async("commands:list".to_string()),
             "agents" | "subagents" => CommandResult::OpenModal(ModalType::Agents),
-            "tasks" | "bg" | "background" => CommandResult::OpenModal(ModalType::Tasks),
+            "mode" => CommandResult::OpenModal(ModalType::Mode),
+            "permissions" | "perms" => CommandResult::OpenModal(ModalType::Permissions),
+            "plan" => CommandResult::OpenModal(ModalType::Plan),
+            "effort" => CommandResult::OpenModal(ModalType::Effort),
+            "btw" => CommandResult::Message("Side note captured for this turn.".to_string()),
+            "jobs" | "bg" | "background" | "tasks" => CommandResult::OpenModal(ModalType::Tasks),
             "skills" | "sk" => CommandResult::OpenModal(ModalType::Skills),
             "skill" | "invoke" => self.cmd_skill(cmd),
             "skill-reload" | "sr" => CommandResult::Async("skills:reload".to_string()),
@@ -39,9 +44,7 @@ impl CommandExecutor {
             "account" | "whoami" | "me" => CommandResult::Async("auth:account".to_string()),
 
             // ============ BILLING ============
-            "billing" | "plan" | "subscription" => {
-                CommandResult::Async("billing:status".to_string())
-            }
+            "billing" | "subscription" => CommandResult::Async("billing:status".to_string()),
             "usage" | "stats" | "credits" => self.cmd_usage(cmd),
             "refresh" | "retry" => CommandResult::Async("billing:refresh".to_string()),
 
@@ -85,7 +88,7 @@ impl CommandExecutor {
             "context" | "ctx" => CommandResult::Async("context".to_string()),
 
             // ============ MODEL ============
-            "models" | "m" | "lm" | "list-models" => self.cmd_models(cmd),
+            "model" | "models" | "m" | "lm" | "list-models" => self.cmd_models(cmd),
             "approval" | "approve" => self.cmd_approval(cmd),
             "sandbox" | "sb" => self.cmd_sandbox(cmd),
             "auto" | "autopilot" => self.cmd_auto(cmd),

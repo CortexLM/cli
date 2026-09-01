@@ -1,5 +1,7 @@
 //! Layout management utilities for minimal session view.
 
+#![allow(dead_code)]
+
 use ratatui::layout::Rect;
 
 /// Layout manager for automatic vertical positioning of UI elements.

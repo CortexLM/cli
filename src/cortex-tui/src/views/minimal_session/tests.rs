@@ -49,9 +49,8 @@ mod harness_snapshots {
             "home session should render splash: {text}"
         );
         assert!(
-            text.contains("Computer")
-                && (text.contains("This PC") || text.contains("Cloud") || text.contains("SSH")),
-            "home session should show where tools run: {text}"
+            !text.contains("Directory") && !text.contains("Computer"),
+            "home session must not show header cards: {text}"
         );
         for glyph in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█"]
         {
@@ -77,44 +76,37 @@ mod harness_snapshots {
     fn snapshot_tool_tiles_and_diagnostics() {
         let mut state = AppState::default();
         state.add_message(cortex_core::widgets::Message::user("run tools"));
-        for (id, name, args) in [
-            ("1", "Read", json!({"file_path": "a.rs"})),
-            ("2", "Write", json!({"file_path": "b.rs"})),
-            ("3", "Edit", json!({"file_path": "c.rs"})),
-            ("4", "Shell", json!({"command": "ls"})),
-            ("5", "Grep", json!({"pattern": "fn"})),
-            ("6", "Glob", json!({"pattern": "*.rs"})),
-            ("7", "Delete", json!({"file_path": "gone.rs"})),
-            ("8", "List", json!({"path": "src"})),
-            ("9", "Fetch", json!({"url": "https://example.test"})),
-            ("10", "mcp__docs", json!({})),
-            ("11", "Task", json!({"description": "explore"})),
-            ("12", "diagnostics", json!({"file": "a.rs"})),
-            ("13", "diff", json!({"file": "a.rs"})),
-        ] {
-            let mut call = ToolCallDisplay::new(id.into(), name.into(), args, 1);
-            call.set_status(ToolStatus::Completed);
-            state.tool_calls.push(call);
-        }
+        let mut call = ToolCallDisplay::new(
+            "1".into(),
+            "Read".into(),
+            json!({"file_path": "src/auth.rs"}),
+            1,
+        );
+        call.set_status(ToolStatus::Completed);
+        call.set_result(ToolResultDisplay {
+            output: "pub fn sign_in() {}".into(),
+            success: true,
+            summary: "src/auth.rs".into(),
+        });
+        state.tool_calls.push(call);
+        let mut diag = ToolCallDisplay::new(
+            "12".into(),
+            "diagnostics".into(),
+            json!({"file": "a.rs"}),
+            2,
+        );
+        diag.set_status(ToolStatus::Completed);
+        state.tool_calls.push(diag);
         let text = render(&state, 120, 40);
         dump_snapshot("tool_tiles", &text);
-        for tile in [
-            "Read",
-            "Write",
-            "Edit",
-            "Shell",
-            "Grep",
-            "Glob",
-            "Delete",
-            "List",
-            "Fetch",
-            "MCP",
-            "Task",
-            "Diagnostics",
-            "Diff",
-        ] {
-            assert!(text.contains(tile), "missing tile {tile}: {text}");
-        }
+        assert!(text.contains("Read"), "missing Read: {text}");
+        assert!(text.contains("Diagnostics"), "missing Diagnostics: {text}");
+        assert!(!text.contains("L a.rs"), "{text}");
+        let narrow = render(&state, 40, 12);
+        assert!(
+            narrow.contains("Read") || narrow.contains("Diagnostics"),
+            "{narrow}"
+        );
     }
 
     #[test]

@@ -16,6 +16,7 @@ use cortex_tui_components::welcome_card::{InfoCard, InfoCardPair, ToLines, Welco
 
 use crate::app::{AppState, SubagentDisplayStatus, SubagentTaskDisplay};
 use crate::ui::colors::AdaptiveColors;
+use crate::ui::text_utils::wrap_or_drop;
 use crate::views::tool_call::{ContentSegment, ToolCallDisplay, ToolStatus};
 
 use super::VERSION;
@@ -153,7 +154,7 @@ pub fn render_message_with_theme(
     lines
 }
 
-/// Renders a single tool call with status indicator
+/// Renders a single tool call as one card: name + path + body.
 pub fn render_tool_call(
     call: &ToolCallDisplay,
     width: u16,
@@ -161,134 +162,108 @@ pub fn render_tool_call(
 ) -> Vec<Line<'static>> {
     use crate::ui::consts::TOOL_SPINNER_FRAMES;
     let mut lines = Vec::new();
+    let inner = (width as usize).saturating_sub(1).max(1);
 
-    // Calculate available width for content (accounting for indentation)
-    let content_width = (width as usize).saturating_sub(6); // 6 chars for prefix/indent
-    let line_width = (width as usize).saturating_sub(8); // 8 chars for nested content
-
-    // Status indicator with color - animated spinner for Running status
     let (dot, dot_color) = match call.status {
-        ToolStatus::Pending => ("○".to_string(), colors.warning),
+        ToolStatus::Pending => (None, colors.text_muted),
         ToolStatus::Running => {
-            // Animated spinner using half-circle frames
             let frame = TOOL_SPINNER_FRAMES[call.spinner_frame % TOOL_SPINNER_FRAMES.len()];
-            (frame.to_string(), colors.accent)
+            (Some(frame.to_string()), colors.accent)
         }
-        ToolStatus::Completed => ("●".to_string(), colors.success),
-        ToolStatus::Failed => ("●".to_string(), colors.error),
+        ToolStatus::Completed => (None, colors.text),
+        ToolStatus::Failed => (Some("●".to_string()), colors.error),
     };
 
-    // Line 1: ◐ ToolName summary_args (truncate summary to fit terminal width)
-    let summary = crate::views::tool_call::format_tool_summary(&call.name, &call.arguments);
-    let max_summary = content_width.saturating_sub(call.name.len() + 2);
-    let summary_truncated = if summary.len() > max_summary {
-        format!(
-            "{}...",
-            &summary
-                .chars()
-                .take(max_summary.saturating_sub(3))
-                .collect::<String>()
-        )
-    } else {
-        summary
-    };
-    lines.push(Line::from(vec![
-        Span::styled(dot, Style::default().fg(dot_color)),
-        Span::raw(" "),
-        Span::styled(
-            crate::views::tool_call::tool_tile_label(&call.name),
-            Style::default()
-                .fg(colors.text)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-        Span::styled(summary_truncated, Style::default().fg(colors.text_dim)),
-    ]));
+    let name = crate::views::tool_call::tool_tile_label(&call.name);
+    let path = crate::views::tool_call::format_tool_summary(&call.name, &call.arguments);
+    let mut header = name.clone();
+    if !path.is_empty() {
+        header.push(' ');
+        header.push_str(&path);
+    }
 
-    // Live output lines (for Running status with output)
+    let mut header_spans = Vec::new();
+    if let Some(dot) = dot {
+        header_spans.push(Span::styled(
+            format!("{dot} "),
+            Style::default().fg(dot_color),
+        ));
+    }
+    let header_text = wrap_or_drop(&header, inner.saturating_sub(2))
+        .into_iter()
+        .next()
+        .unwrap_or(name);
+    header_spans.push(Span::styled(
+        header_text,
+        Style::default()
+            .fg(colors.text)
+            .add_modifier(Modifier::BOLD),
+    ));
+    lines.push(Line::from(header_spans));
+
     if call.status == ToolStatus::Running && !call.live_output.is_empty() {
         for output_line in &call.live_output {
-            // Truncate long lines to fit terminal width
-            let truncated = if output_line.len() > line_width {
-                format!(
-                    "{}...",
-                    &output_line
-                        .chars()
-                        .take(line_width.saturating_sub(3))
-                        .collect::<String>()
-                )
+            for wrapped in wrap_or_drop(output_line, inner.saturating_sub(2)) {
+                lines.push(Line::from(Span::styled(
+                    wrapped,
+                    Style::default().fg(colors.text_dim),
+                )));
+            }
+        }
+    }
+
+    let body = call
+        .result
+        .as_ref()
+        .map(|r| r.output.as_str())
+        .unwrap_or("");
+    if !body.is_empty() {
+        let max_body = if width < 50 { 4 } else { 8 };
+        let mut emitted = 0usize;
+        for raw in body.lines() {
+            if emitted >= max_body {
+                break;
+            }
+            let is_add = raw.starts_with('+') && !raw.starts_with("+++");
+            let is_del = raw.starts_with('-') && !raw.starts_with("---");
+            let color = if is_add {
+                colors.accent
+            } else if is_del {
+                colors.error
             } else {
-                output_line.clone()
+                colors.text_dim
             };
-            lines.push(Line::from(vec![
-                Span::styled("  │ ", Style::default().fg(colors.text_muted)),
-                Span::styled(truncated, Style::default().fg(colors.text_dim)),
-            ]));
-        }
-    }
-
-    // Result summary line (if completed/failed) - truncate to fit terminal width
-    if let Some(ref result) = call.result {
-        let result_color = if !result.success {
-            colors.error
-        } else if result.summary.contains('+') || result.summary.contains('−') {
-            colors.accent
-        } else {
-            colors.text_dim
-        };
-        let summary_truncated = if result.summary.len() > line_width {
-            format!(
-                "{}...",
-                &result
-                    .summary
-                    .chars()
-                    .take(line_width.saturating_sub(3))
-                    .collect::<String>()
-            )
-        } else {
-            result.summary.clone()
-        };
-        lines.push(Line::from(vec![
-            Span::raw("  ⎿ "),
-            Span::styled(summary_truncated, Style::default().fg(result_color)),
-        ]));
-
-        // If error and not collapsed, show full error with wrapping
-        if !result.success && !call.collapsed {
-            for err_line in result.output.lines().take(5) {
-                // Wrap long error lines
-                let wrapped = wrap_text(err_line, line_width.saturating_sub(4));
-                for wrapped_line in wrapped.iter() {
-                    lines.push(Line::from(vec![
-                        Span::raw("    ".to_string()),
-                        Span::styled(wrapped_line.clone(), Style::default().fg(colors.error)),
-                    ]));
+            let wrapped = wrap_or_drop(raw, inner);
+            if wrapped.is_empty() {
+                continue;
+            }
+            for wrapped_line in wrapped {
+                if emitted >= max_body {
+                    break;
                 }
+                lines.push(Line::from(Span::styled(
+                    wrapped_line,
+                    Style::default().fg(color),
+                )));
+                emitted += 1;
             }
         }
-    }
-
-    // Expanded view (if not collapsed and has result)
-    if !call.collapsed && call.result.is_some() {
-        // Show arguments
-        lines.push(Line::from(Span::styled(
-            "  Arguments:",
-            Style::default().fg(colors.text_dim),
-        )));
-        if let Ok(args_str) = serde_json::to_string_pretty(&call.arguments) {
-            for arg_line in args_str.lines().take(10) {
-                // Wrap long argument lines
-                let wrapped = wrap_text(arg_line, line_width.saturating_sub(4));
-                for wrapped_line in wrapped.iter() {
-                    lines.push(Line::from(vec![
-                        Span::raw("    ".to_string()),
-                        Span::styled(wrapped_line.clone(), Style::default().fg(colors.text)),
-                    ]));
-                }
-            }
+    } else if let Some(ref result) = call.result {
+        let summary = result.summary.trim();
+        let mint_diff = summary.contains('+') || summary.contains('−') || summary.contains('-');
+        for line in wrap_or_drop(summary, inner) {
+            lines.push(Line::from(Span::styled(
+                line,
+                Style::default().fg(if mint_diff {
+                    colors.accent
+                } else {
+                    colors.text_dim
+                }),
+            )));
         }
     }
 
+    lines.push(Line::from(""));
     lines
 }
 
@@ -423,11 +398,6 @@ pub fn generate_welcome_lines(
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    let org_name = app_state.org_name.as_deref().unwrap_or("Personal");
-    let cwd = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "~/".to_string());
-
     let version = if app_state.cli_version.is_empty() {
         VERSION
     } else {
@@ -440,33 +410,19 @@ pub fn generate_welcome_lines(
         .border_color(colors.text_dim);
 
     lines.extend(welcome_card.to_lines(width));
-    if !app_state.compact_mode {
-        lines.push(Line::from(""));
+
+    let empty = app_state.messages.is_empty()
+        && !app_state.streaming.is_streaming
+        && app_state.tool_calls.is_empty();
+    if empty && width >= 48 {
+        let hints = "/ commands · @ files · ! shell · shift+tab modes";
+        for line in crate::ui::text_utils::wrap_or_drop(hints, width as usize) {
+            lines.push(Line::from(Span::styled(
+                line,
+                Style::default().fg(colors.text_dim),
+            )));
+        }
     }
-
-    let left_card = InfoCard::new()
-        .add("Directory", &cwd)
-        .add("Org", org_name)
-        .dim_color(colors.text_dim)
-        .text_color(colors.text)
-        .border_color(colors.text_dim);
-
-    let right_card = InfoCard::new()
-        .add("Plan", "Pro")
-        .add(
-            "Computer",
-            cortex_engine::client::ComputerKind::detect().label(),
-        )
-        .dim_color(colors.text_dim)
-        .text_color(colors.text)
-        .border_color(colors.text_dim);
-
-    let info_cards = InfoCardPair::new(left_card, right_card)
-        .gap(2)
-        .right_width(25);
-
-    // Generate lines from info cards
-    lines.extend(info_cards.to_lines(width));
 
     lines
 }
@@ -532,6 +488,11 @@ pub fn generate_message_lines(
         let mut sorted_segments: Vec<_> = app_state.content_segments.iter().collect();
         sorted_segments.sort_by_key(|s| s.sequence());
 
+        let last_tool_id = sorted_segments.iter().rev().find_map(|seg| match seg {
+            ContentSegment::ToolCall { tool_call_id, .. } => Some(tool_call_id.as_str()),
+            _ => None,
+        });
+
         for segment in sorted_segments {
             match segment {
                 ContentSegment::Text { content, .. } => {
@@ -542,6 +503,9 @@ pub fn generate_message_lines(
                     ));
                 }
                 ContentSegment::ToolCall { tool_call_id, .. } => {
+                    if width < 50 && last_tool_id != Some(tool_call_id.as_str()) {
+                        continue;
+                    }
                     if let Some(call) = app_state.tool_calls.iter().find(|c| &c.id == tool_call_id)
                     {
                         all_lines.extend(render_tool_call(call, width, colors));
@@ -574,7 +538,11 @@ pub fn generate_message_lines(
             ));
         }
 
+        let last_id = sorted_calls.last().map(|c| c.id.as_str());
         for call in &sorted_calls {
+            if width < 50 && last_id != Some(call.id.as_str()) {
+                continue;
+            }
             all_lines.extend(render_tool_call(call, width, colors));
         }
     } else if let Some(ref content) = streaming_content {

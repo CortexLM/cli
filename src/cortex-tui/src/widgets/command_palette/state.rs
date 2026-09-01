@@ -405,22 +405,22 @@ mod tests {
         let mut state = CommandPaletteState::new();
         state.items = vec![
             PaletteItem::Command {
+                name: "model".to_string(),
+                description: "Model".to_string(),
+                shortcut: None,
+                category: CommandCategory::Model,
+            },
+            PaletteItem::Command {
+                name: "mode".to_string(),
+                description: "Mode".to_string(),
+                shortcut: None,
+                category: CommandCategory::General,
+            },
+            PaletteItem::Command {
                 name: "help".to_string(),
                 description: "Help".to_string(),
                 shortcut: None,
                 category: CommandCategory::General,
-            },
-            PaletteItem::Command {
-                name: "quit".to_string(),
-                description: "Quit".to_string(),
-                shortcut: None,
-                category: CommandCategory::General,
-            },
-            PaletteItem::Command {
-                name: "models".to_string(),
-                description: "Models".to_string(),
-                shortcut: None,
-                category: CommandCategory::Model,
             },
         ];
         state.filter();
@@ -462,7 +462,7 @@ mod tests {
                 category: CommandCategory::Navigation,
             },
             PaletteItem::Command {
-                name: "models".to_string(),
+                name: "model".to_string(),
                 description: "Switch model".to_string(),
                 shortcut: None,
                 category: CommandCategory::Model,
@@ -542,24 +542,24 @@ mod tests {
         let mut state = CommandPaletteState::new();
         state.items = vec![
             PaletteItem::Command {
-                name: "help".to_string(),
-                description: "Help".to_string(),
+                name: "model".to_string(),
+                description: "Model".to_string(),
                 shortcut: None,
-                category: CommandCategory::General,
+                category: CommandCategory::Model,
             },
             PaletteItem::Command {
-                name: "quit".to_string(),
-                description: "Quit".to_string(),
+                name: "help".to_string(),
+                description: "Help".to_string(),
                 shortcut: None,
                 category: CommandCategory::General,
             },
         ];
         state.filter();
 
-        assert_eq!(state.selected().unwrap().display_text(), "help");
+        assert_eq!(state.selected().unwrap().display_text(), "model");
 
         state.selected_index = 1;
-        assert_eq!(state.selected().unwrap().display_text(), "quit");
+        assert_eq!(state.selected().unwrap().display_text(), "help");
     }
 
     #[test]

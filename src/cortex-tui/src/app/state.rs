@@ -172,6 +172,16 @@ pub struct AppState {
     pub compact_mode: bool,
     /// Version shown on the empty-session splash (`Cortex CLI v{cli_version}`).
     pub cli_version: String,
+    /// Short cwd shown in the session footer (`~/cli`).
+    pub footer_cwd: String,
+    /// Git branch shown in the session footer.
+    pub git_branch: String,
+    /// Whether the worktree is dirty (`branch*`).
+    pub git_dirty: bool,
+    /// Agent / Plan / Ask label in the footer.
+    pub agent_mode_label: String,
+    /// Remaining context percent shown in the footer.
+    pub context_percent: u8,
     /// Debug mode enabled
     pub debug_mode: bool,
     /// Sandbox mode (restricted execution)
@@ -307,6 +317,11 @@ impl AppState {
             markdown_theme: MarkdownTheme::default(),
             compact_mode: false,
             cli_version: env!("CARGO_PKG_VERSION").to_string(),
+            footer_cwd: default_footer_cwd(),
+            git_branch: String::from("main"),
+            git_dirty: false,
+            agent_mode_label: String::from("Agent"),
+            context_percent: 100,
             debug_mode: false,
             sandbox_mode: false,
             temperature: 0.7,
@@ -372,6 +387,16 @@ impl Default for AppState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn default_footer_cwd() -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|p| {
+            p.file_name()
+                .map(|name| format!("~/{}", name.to_string_lossy()))
+        })
+        .unwrap_or_else(|| "~/".to_string())
 }
 
 // ============================================================================

@@ -33,5 +33,5 @@ pub use consts::*;
 pub use shimmer::shimmer_spans;
 pub use text_utils::{
     AdaptiveHint, HintDisplayMode, MIN_TERMINAL_WIDTH, adaptive_hints, calculate_hint_display_mode,
-    format_hints, truncate_with_ellipsis,
+    first_fitting_line, format_hints, truncate_with_ellipsis, wrap_or_drop,
 };

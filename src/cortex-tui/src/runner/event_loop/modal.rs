@@ -584,6 +584,36 @@ impl EventLoop {
                     return true;
                 }
                 match item_id.as_str() {
+                    "model" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("Model");
+                        return false;
+                    }
+                    "mode" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("Mode: Agent · Plan · Ask");
+                        return false;
+                    }
+                    "permissions" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("Permissions");
+                        return false;
+                    }
+                    "mcp" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("MCP");
+                        return false;
+                    }
+                    "config" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("Config");
+                        return false;
+                    }
+                    "usage" => {
+                        self.app_state.exit_interactive_mode();
+                        self.add_system_message("Usage");
+                        return false;
+                    }
                     "compact" => {
                         self.app_state.compact_mode = !self.app_state.compact_mode;
                     }

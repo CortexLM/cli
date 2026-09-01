@@ -1,35 +1,37 @@
 //! Default `/` palette rows.
 //!
-//! Unfiltered `/` and Ctrl+K show twenty first-class commands. Everything else
-//! is reachable by typing a filter.
+//! Unfiltered `/` shows twenty first-class commands (ten on screen, the rest
+//! via “keep typing to filter”). Everything else is reachable by a filter.
 
-/// Maximum rows shown in the unfiltered slash palette.
-pub const PALETTE_HOME_LIMIT: usize = 20;
+/// Rows visible in the unfiltered slash menu (lock: 10 + “11 more”).
+pub const SLASH_VISIBLE: usize = 10;
 
-/// Commands listed when the user types `/` with no filter.
-///
-/// `compact`, `interrupt`, and `clear` stay on this list.
-pub const PALETTE_HOME_COMMANDS: [&str; PALETTE_HOME_LIMIT] = [
-    "help",
-    "settings",
-    "compact",
-    "interrupt",
-    "clear",
-    "new",
-    "login",
-    "models",
-    "palette",
-    "status",
+/// Maximum rows shown in the unfiltered slash palette viewport.
+pub const PALETTE_HOME_LIMIT: usize = SLASH_VISIBLE;
+
+/// Commands listed when the user types `/` with no filter, in lock order.
+pub const PALETTE_HOME_COMMANDS: [&str; 21] = [
+    "model",
+    "mode",
+    "permissions",
+    "plan",
+    "effort",
     "mcp",
-    "tasks",
-    "diff",
-    "diagnostics",
-    "spec",
+    "sandbox",
+    "usage",
     "resume",
-    "sessions",
-    "theme",
-    "quit",
-    "version",
+    "jobs",
+    "skills",
+    "btw",
+    "compact",
+    "clear",
+    "diff",
+    "copy",
+    "config",
+    "login",
+    "logout",
+    "settings",
+    "help",
 ];
 
 /// True when `name` is one of the unfiltered palette rows.

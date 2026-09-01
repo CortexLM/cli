@@ -50,9 +50,63 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
 
     registry.register(CommandDef::new(
         "settings",
-        &["config", "prefs"],
+        &["prefs"],
         "Open settings panel",
         "/settings",
+        CommandCategory::General,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
+        "mode",
+        &[],
+        "Switch between Agent, Plan and Ask",
+        "/mode",
+        CommandCategory::General,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
+        "permissions",
+        &["perms"],
+        "Set the approval policy for edits and commands",
+        "/permissions",
+        CommandCategory::General,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
+        "plan",
+        &[],
+        "Draft a plan before writing any code",
+        "/plan",
+        CommandCategory::General,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
+        "effort",
+        &[],
+        "Tune reasoning effort for the current model",
+        "/effort",
+        CommandCategory::Model,
+        true,
+    ));
+
+    registry.register(CommandDef::new(
+        "btw",
+        &[],
+        "Side note for the current turn",
+        "/btw [note]",
+        CommandCategory::General,
+        true,
+    ));
+
+    registry.register(CommandDef::new(
+        "jobs",
+        &["bg", "background", "tasks"],
+        "Background agents and subagents",
+        "/jobs",
         CommandCategory::General,
         false,
     ));
@@ -141,7 +195,7 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
 
     registry.register(CommandDef::new(
         "tasks",
-        &["bg", "background"],
+        &[],
         "View and manage background tasks/agents",
         "/tasks",
         CommandCategory::General,
@@ -221,7 +275,7 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
 
     registry.register(CommandDef::new(
         "billing",
-        &["plan", "subscription"],
+        &["subscription"],
         "Show billing status and credits",
         "/billing",
         CommandCategory::Billing,
@@ -515,10 +569,10 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     // ========================================
 
     registry.register(CommandDef::new(
-        "models",
-        &["m", "lm", "list-models"],
-        "List available models or switch to a model",
-        "/models [name]",
+        "model",
+        &["models", "m", "lm", "list-models"],
+        "Choose the model for this session",
+        "/model [name]",
         CommandCategory::Model,
         true,
     ));

@@ -160,6 +160,14 @@ pub enum ModalType {
     Tasks,
     /// Skills manager modal for listing and invoking skills
     Skills,
+    /// Agent / Plan / Ask mode picker
+    Mode,
+    /// Edit and command approval policy
+    Permissions,
+    /// Plan draft modal
+    Plan,
+    /// Reasoning effort picker
+    Effort,
 }
 
 impl ModalType {
@@ -187,6 +195,10 @@ impl ModalType {
             ModalType::Agents => "Agents",
             ModalType::Tasks => "Background Tasks",
             ModalType::Skills => "Skills",
+            ModalType::Mode => "Mode",
+            ModalType::Permissions => "Permissions",
+            ModalType::Plan => "Plan",
+            ModalType::Effort => "Effort",
         }
     }
 }

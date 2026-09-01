@@ -361,26 +361,16 @@ impl<'a> InteractiveWidget<'a> {
         };
 
         let max_label_len = (area.width as usize).saturating_sub((x - area.x) as usize + 2);
-        let label = if item.label.len() > max_label_len {
-            format!("{}...", &item.label[..max_label_len.saturating_sub(3)])
-        } else {
-            item.label.clone()
-        };
+        let label = crate::ui::text_utils::first_fitting_line(&item.label, max_label_len);
         buf.set_string(x, area.y, &label, label_style);
-        x += label.len() as u16;
+        x += label.chars().count() as u16;
 
-        // Description (if room)
+        // Description (if the whole phrase fits)
         if let Some(ref desc) = item.description {
             let desc_x = x + 2;
-            let remaining = (area.x + area.width).saturating_sub(desc_x);
-            if remaining > 10 {
-                let desc_text = if desc.len() > remaining as usize {
-                    let max_desc = (remaining as usize).saturating_sub(5);
-                    let truncated = &desc[..desc.floor_char_boundary(max_desc)];
-                    format!("({}...)", truncated)
-                } else {
-                    format!("({})", desc)
-                };
+            let remaining = (area.x + area.width).saturating_sub(desc_x) as usize;
+            let desc_text = crate::ui::text_utils::first_fitting_line(desc, remaining);
+            if !desc_text.is_empty() {
                 buf.set_string(desc_x, area.y, &desc_text, Style::default().fg(TEXT_DIM));
             }
         }

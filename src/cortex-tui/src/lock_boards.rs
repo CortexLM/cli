@@ -947,27 +947,6 @@ fn paint_hints_and_footer(area: Rect, buf: &mut Buffer, hints: &str, footer: &st
     paint_footer(area, buf, footer);
 }
 
-fn paint_footer_left(area: Rect, buf: &mut Buffer, left: &str, right: &str) {
-    let y = area.bottom().saturating_sub(1);
-    let w = area.width as usize;
-    let left_fit = first_fitting_line(left, w);
-    buf.set_string(area.x, y, &left_fit, Style::default().fg(TEXT_DIM));
-    let left_len = left_fit.chars().count();
-    let mut right_fit = first_fitting_line(right, w);
-    let gap_ok = |r: &str| left_len + 1 + r.chars().count() <= w;
-    if !gap_ok(&right_fit) {
-        right_fit = MODEL.to_string();
-    }
-    if right_fit.is_empty() || !gap_ok(&right_fit) {
-        return;
-    }
-    let rx = area
-        .right()
-        .saturating_sub(right_fit.chars().count() as u16)
-        .max(area.x);
-    buf.set_string(rx, y, &right_fit, Style::default().fg(TEXT_DIM));
-}
-
 fn paint_match_path(path: &str, needle: &str) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut rest = path;
@@ -1775,12 +1754,29 @@ fn board_config(area: Rect, buf: &mut Buffer) {
         first_fitting_line("↑↓ navigate · ↵ edit · r reset to default · esc close", w),
         Style::default().fg(TEXT_DIM),
     );
-    paint_footer_left(
-        area,
-        buf,
-        &format!("{CWD} {GIT}"),
-        &format!("{MODEL} · MAX · Agent"),
-    );
+    let fy = area.bottom().saturating_sub(1);
+    let left = first_fitting_line(&format!("{CWD} {GIT}"), w);
+    buf.set_string(area.x, fy, &left, Style::default().fg(TEXT_DIM));
+    let right_full = format!("{MODEL} · MAX · Agent");
+    if left.chars().count() + 1 + right_full.chars().count() <= w {
+        let prefix = format!("{MODEL} · ");
+        let rx = area
+            .right()
+            .saturating_sub(right_full.chars().count() as u16);
+        buf.set_string(rx, fy, &prefix, Style::default().fg(TEXT_DIM));
+        buf.set_string(
+            rx.saturating_add(prefix.chars().count() as u16),
+            fy,
+            "MAX",
+            Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD),
+        );
+        buf.set_string(
+            rx.saturating_add(prefix.chars().count() as u16 + 3),
+            fy,
+            " · Agent",
+            Style::default().fg(TEXT_DIM),
+        );
+    }
 }
 
 fn board_footer_max(area: Rect, buf: &mut Buffer) {

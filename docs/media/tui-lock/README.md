@@ -39,3 +39,13 @@ binary still reports the crate version.
 | `quota.png` | Agent quota exhausted |
 | `sandbox.png` | `/sandbox` |
 | `cloud.png` | Cloud handoff |
+| `sudo.png` | Elevated Shell password |
+| `ask.png` | Ask read-only mode |
+| `files.png` | `@` file picker |
+| `queue.png` | Follow-up queue |
+| `jobs.png` | `/jobs` agents |
+| `help.png` | `/help` two-column commands |
+| `first_run.png` | First-run tips |
+| `bash.png` | Bash mode |
+| `config.png` | `/config` tree |
+| `footer_max.png` | MAX footer after push |

@@ -2097,7 +2097,7 @@ fn board_todos(area: Rect, buf: &mut Buffer) {
     lines.push(Line::from(vec![
         Span::styled("› ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
         Span::styled(
-            first_fitting_line("Write ratelimit middleware", w.saturating_sub(2)),
+            first_fitting_line("Write rateLimit middleware", w.saturating_sub(2)),
             Style::default().fg(TEXT),
         ),
     ]));
@@ -2773,7 +2773,7 @@ fn board_list(area: Rect, buf: &mut Buffer) {
             Style::default().fg(TEXT_DIM),
         ),
     ]));
-    for name in ["auth.ts", "ratelimit.ts", "cors.ts"] {
+    for name in ["auth.ts", "rateLimit.ts", "cors.ts"] {
         lines.push(white(format!("  {name}")));
     }
     lines.push(Line::from(Span::styled(

@@ -1245,7 +1245,7 @@ mod tests {
             ("thinking", &["Thinking", "follow-up"]),
             (
                 "todos",
-                &["Working 1/5", "Write ratelimit middleware", "rateLimit.ts"],
+                &["Working 1/5", "Write rateLimit middleware", "rateLimit.ts"],
             ),
             ("question", &["Where should the limiter live?", "1-9 pick"]),
             ("skills", &["/skills", "/pr", "run once"]),
@@ -1369,6 +1369,21 @@ mod tests {
         let list = render_lock_scene("list", 120, 40).expect("list");
         assert!(list.plain.contains("auth.ts"));
         assert!(list.plain.contains("cors.ts"));
+        // The identifier is camelCase everywhere, same as @files.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let list = render_lock_scene("list", size.0, size.1).expect("list");
+            assert!(
+                list.plain.contains("rateLimit.ts") && !list.plain.contains("ratelimit.ts"),
+                "list must use the camelCase identifier at {size:?}:\n{}",
+                list.plain
+            );
+            let todos = render_lock_scene("todos", size.0, size.1).expect("todos");
+            assert!(
+                todos.plain.contains("Write rateLimit middleware"),
+                "todos must use the camelCase identifier at {size:?}:\n{}",
+                todos.plain
+            );
+        }
         let fetch = render_lock_scene("fetch", 120, 40).expect("fetch");
         assert!(fetch.plain.contains("sorted set") || fetch.plain.contains("ZADD"));
         let mcp = render_lock_scene("mcp_call", 120, 40).expect("mcp_call");

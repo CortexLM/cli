@@ -600,19 +600,20 @@ impl EventLoop {
                 .warning("Usage limit reached. Run /refresh after adding payment.");
         } else {
             // Product-facing copy only — never raw provider or transport names.
-            let message = if e.to_lowercase().contains("unavailable")
+            let service_down = e.to_lowercase().contains("unavailable")
                 || e.to_lowercase().contains("connection")
                 || e.to_lowercase().contains("timed out")
                 || e.to_lowercase().contains("timeout")
                 || e.to_lowercase().contains("dns")
                 || e.to_lowercase().contains("reqwest")
-                || e.to_lowercase().contains("hyper")
-            {
-                "The coding service is temporarily unavailable".to_string()
+                || e.to_lowercase().contains("hyper");
+            if service_down {
+                self.add_system_message("The coding service is temporarily unavailable");
+                // Error plus what to do next — never a lone error line.
+                self.add_system_message(crate::ui::consts::SERVICE_UNAVAILABLE_NEXT_STEP);
             } else {
-                e
-            };
-            self.add_system_message(&message);
+                self.add_system_message(&e);
+            }
         }
 
         self.stream_controller.reset();

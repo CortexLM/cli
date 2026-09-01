@@ -90,6 +90,7 @@ pub fn render_message_with_theme(
         MessageRole::System => {
             // Detect error messages - show in error color
             let is_error = msg.content.contains("Check your")
+                || msg.content.contains("temporarily unavailable")
                 || msg.content.contains("Access denied")
                 || msg.content.contains("timed out")
                 || msg.content.contains("failed")
@@ -144,7 +145,9 @@ pub fn render_message_with_theme(
         }
     }
 
-    if !compact {
+    // System notices stack tightly (an error and its next step belong
+    // together); conversation turns keep their breathing room.
+    if !compact && msg.role != MessageRole::System {
         lines.push(Line::from(""));
     }
 
@@ -415,9 +418,12 @@ pub fn generate_welcome_lines(
     let empty = app_state.messages.is_empty()
         && !app_state.streaming.is_streaming
         && app_state.tool_calls.is_empty();
-    if empty && width >= 48 {
+    if empty {
+        // The keystroke hints are part of the empty-session chrome at every
+        // width; narrow terminals show the leading keys that fit.
         let hints = "/ commands · @ files · ! shell · shift+tab modes";
-        for line in crate::ui::text_utils::wrap_or_drop(hints, width as usize) {
+        let line = crate::ui::text_utils::first_fitting_line(hints, width as usize);
+        if !line.is_empty() {
             lines.push(Line::from(Span::styled(
                 line,
                 Style::default().fg(colors.text_dim),

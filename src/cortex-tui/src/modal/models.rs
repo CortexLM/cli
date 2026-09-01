@@ -158,7 +158,8 @@ impl ModelsModal {
                 }
                 let description = desc_parts.join(" | ");
 
-                SelectionItem::new(&model.name)
+                // Rows show the English product name, never the served slug.
+                SelectionItem::new(crate::ui::text_utils::model_display_name(&model.name))
                     .with_description(description)
                     .with_current(is_current)
             })
@@ -345,13 +346,14 @@ impl ModelsModal {
         buf.set_string(col, y, prefix, Style::default().fg(prefix_fg).bg(bg));
         col += 2;
 
-        // Model name
+        // Model name — English product name, never the served slug.
         let name_style = Style::default().fg(fg).bg(bg);
+        let display = crate::ui::text_utils::model_display_name(&model.name);
         let max_name_len = 35.min(width.saturating_sub(30) as usize);
-        let truncated_name = if model.name.len() > max_name_len && max_name_len > 3 {
-            format!("{}...", &model.name[..max_name_len.saturating_sub(3)])
+        let truncated_name = if display.len() > max_name_len && max_name_len > 3 {
+            format!("{}...", &display[..max_name_len.saturating_sub(3)])
         } else {
-            model.name.clone()
+            display
         };
         buf.set_string(col, y, &truncated_name, name_style);
 

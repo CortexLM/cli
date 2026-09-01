@@ -29,5 +29,6 @@ pub use consts::*;
 pub use shimmer::shimmer_spans;
 pub use text_utils::{
     AdaptiveHint, HintDisplayMode, MIN_TERMINAL_WIDTH, adaptive_hints, calculate_hint_display_mode,
-    first_fitting_line, format_hints, truncate_with_ellipsis, wrap_or_drop,
+    first_fitting_line, fit_line, format_hints, model_display_name, trim_dangling_separator,
+    truncate_with_ellipsis, wrap_keep_indent, wrap_or_drop,
 };

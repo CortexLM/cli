@@ -51,7 +51,7 @@ impl SettingsHubRow {
 
     fn value(&self) -> &'static str {
         match self {
-            Self::Model => "cortex-1-mini · Medium",
+            Self::Model => "Cortex Mini 1 · Medium",
             Self::Mode => "Agent",
             Self::Permissions => "Smart",
             Self::Sandbox => "On · workspace",
@@ -435,7 +435,7 @@ mod tests {
         assert!(!state.items.iter().any(|i| i.label == "Display"));
         assert_eq!(
             state.items[0].description.as_deref(),
-            Some("cortex-1-mini · Medium")
+            Some("Cortex Mini 1 · Medium")
         );
     }
 

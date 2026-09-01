@@ -151,9 +151,10 @@ impl KeyHints {
         self
     }
 
-    /// Sets the model name to display on the right
+    /// Sets the model to display on the right — always the English product
+    /// name, never the served slug.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
-        self.model_name = Some(model.into());
+        self.model_name = Some(crate::ui::text_utils::model_display_name(&model.into()));
         self
     }
 

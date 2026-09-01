@@ -103,10 +103,10 @@ pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, 
     // Session name (left-aligned)
     let name_style = Style::default().fg(fg).bg(bg);
 
-    // Build metadata: "2h ago   15 msgs   claude-opus"
+    // Build metadata: "2h ago   15 msgs   Cortex Mini 1"
     let time_ago = session.relative_time();
     let msg_count = format!("{} msgs", session.message_count);
-    let model = session.short_model();
+    let model = crate::ui::text_utils::model_display_name(session.short_model());
     let meta = format!("{}   {}   {}", time_ago, msg_count, model);
     let meta_len = meta.len();
 

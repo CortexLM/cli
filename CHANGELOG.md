@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Changed
+- Models show as English product names everywhere in the TUI — `Cortex Mini 1`, `Cortex 1`, `Cortex Max 1` — in the footer, `/model`, `/settings`, `/config`, session lists and the splash; served ids stay hyphenated internally
+- Every 40×12 and 120×40 lock fixture carries whole copy: bodies wrap at word boundaries instead of stopping at a fragment, code spans keep a trailing space (`estimateTokens(prompt) counts`, `rateLimit() checks`), code excerpts keep their indentation, list rows keep their column gaps and end in an ellipsis when shortened
+- Live session chrome stays complete in the empty, loading, error and no-match states (version, keystroke hints, composer, cwd + model footer); a live run says `Working · 0s · esc to interrupt` and the composer invites `Add a follow-up ↵ to queue`; the settings panel shows a real empty state; *The coding service is temporarily unavailable* is followed by what to do next
 - New violet chrome lock, replacing the mint/`#1A3330` chrome: the background is never painted (`Color::Reset` — the host terminal shows through, black by default), the accent is `#A78BFA` violet on the `>` prompt, selection carets, `●` tile dots and `✓` checks, selection bars are light text on `#221A38` (never inverted), and green (`#4ADE80`) appears only on `+` diff additions — `#00F5D4` and `#00FFA3` are banned everywhere
 - Zero rounded frames: the wide slash popup, inline forms and overlay widgets drop their `╭╮` / rounded borders; the TUI bleeds to the terminal edges
 - All 50 lock states recaptured at 40×12 and 120×40 on the violet chrome (layout, copy and wrap rules unchanged), plus a second committed set compositing each capture into a photorealistic macOS Terminal.app window under `docs/media/tui-lock/macos/`

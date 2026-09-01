@@ -32,6 +32,11 @@ pub const MAX_CARD_HEIGHT_PERCENT: u16 = 70;
 /// Padding between card border and content.
 pub const CARD_PADDING: u16 = 1;
 
+/// Product-facing next step shown under *The coding service is temporarily
+/// unavailable* — the error is never a lone line.
+pub const SERVICE_UNAVAILABLE_NEXT_STEP: &str =
+    "Try again in a moment — your work so far is saved in this session.";
+
 /// Border characters (Unicode box drawing) — square corners only; the
 /// locked chrome never draws rounded frames.
 pub mod border {

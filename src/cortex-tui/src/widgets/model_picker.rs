@@ -412,11 +412,12 @@ impl ModelPicker<'_> {
             };
             buf.set_string(x, y, status, Style::default().fg(status_color).bg(bg));
 
-            // Model name
-            let name = if model.name.len() > name_width {
-                format!("{}...", &model.name[..name_width.saturating_sub(3)])
+            // Model name — English product name, never the served slug.
+            let display = crate::ui::text_utils::model_display_name(&model.name);
+            let name = if display.len() > name_width {
+                format!("{}...", &display[..name_width.saturating_sub(3)])
             } else {
-                model.name.clone()
+                display
             };
             buf.set_string(x + 2, y, &name, Style::default().fg(fg).bg(bg));
 

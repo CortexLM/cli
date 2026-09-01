@@ -31,7 +31,7 @@ pub struct StatusIndicator {
     header: String,
     /// Optional details line shown below the header.
     details: Option<String>,
-    /// Whether to show the interrupt hint (e.g., "Esc to interrupt").
+    /// Whether to show the interrupt hint ("esc to interrupt").
     show_interrupt_hint: bool,
     /// Pre-computed elapsed seconds (when using external timing).
     elapsed_secs: u64,
@@ -145,7 +145,7 @@ impl Widget for StatusIndicator {
         let colors = AdaptiveColors::default();
         let elapsed_str = fmt_elapsed_compact(self.elapsed_secs);
 
-        // Build the header line: "⠹ Working · Analyzing code (45s • Esc to interrupt)"
+        // Build the header line, locked copy: "⠇ Working · 12s · esc to interrupt"
         let mut spans: Vec<Span<'_>> = Vec::with_capacity(8);
 
         // Spinner — gray, never the accent: violet is reserved for markers.
@@ -158,17 +158,10 @@ impl Widget for StatusIndicator {
         // Header with shimmer effect
         spans.extend(shimmer_spans(&self.header));
 
-        // Elapsed time and optional interrupt hint
-        spans.push(Span::raw(" "));
+        // Elapsed time and optional interrupt hint, dim, dot-separated.
+        spans.push(Span::raw(format!(" · {elapsed_str}")).dim());
         if self.show_interrupt_hint {
-            spans.push(Span::raw(format!("({elapsed_str} \u{2022} ")).dim());
-            spans.push(Span::styled(
-                "Esc",
-                ratatui::style::Style::default().fg(colors.text),
-            ));
-            spans.push(Span::raw(" to interrupt)").dim());
-        } else {
-            spans.push(Span::raw(format!("({elapsed_str})")).dim());
+            spans.push(Span::raw(" · esc to interrupt").dim());
         }
 
         // Render the header line

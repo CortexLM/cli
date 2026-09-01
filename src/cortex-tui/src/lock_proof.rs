@@ -278,7 +278,11 @@ fn loading_session_state() -> AppState {
 fn error_session_state() -> AppState {
     let mut state = lock_app();
     state.add_message(Message::user("review the auth module"));
-    state.add_message(Message::assistant(PRODUCT_ERROR));
+    // Same two lines the runtime emits: the product error, then what to do.
+    state.add_message(Message::system(PRODUCT_ERROR));
+    state.add_message(Message::system(
+        crate::ui::consts::SERVICE_UNAVAILABLE_NEXT_STEP,
+    ));
     state
 }
 
@@ -449,6 +453,184 @@ mod tests {
     }
 
     #[test]
+    fn model_slugs_never_shown() {
+        // Users see English product names — `Cortex Mini 1`, never the
+        // served `cortex-1-mini` / `cortex-1-max` / `cortex-1` slugs.
+        for id in lock_scene_ids() {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                assert!(
+                    !frame.plain.contains("cortex-1"),
+                    "{id} shows a model slug at {size:?}:\n{}",
+                    frame.plain
+                );
+                assert!(
+                    !frame.plain.contains("cortex-mini") && !frame.plain.contains("cortex-max"),
+                    "{id} shows a reordered slug at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
+        }
+        for id in ["splash", "settings_hub", "model_compact", "model_full"] {
+            let frame = render_lock_scene(id, 120, 40).expect(id);
+            assert!(
+                frame.plain.contains("Cortex Mini 1"),
+                "{id} must show the product model name:\n{}",
+                frame.plain
+            );
+        }
+    }
+
+    #[test]
+    fn no_smashed_tokens_anywhere() {
+        // A code span is always followed by a space: never
+        // `estimateTokens(prompt)counts` or `rateLimit()checks`.
+        for id in lock_scene_ids() {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let chars: Vec<char> = frame.plain.chars().collect();
+                for pair in chars.windows(2) {
+                    assert!(
+                        !(pair[0] == ')' && pair[1].is_ascii_alphabetic()),
+                        "{id} smashes a code span into the next word at {size:?}:\n{}",
+                        frame.plain
+                    );
+                }
+            }
+        }
+        let ask = render_lock_scene("ask", 120, 40).expect("ask");
+        for needle in [
+            "estimateTokens(prompt) counts",
+            "usage.completion_tokens arrives",
+            "reconcileUsage() corrects",
+            "┐ Cortex will not",
+        ] {
+            assert!(
+                ask.plain.contains(needle),
+                "ask missing `{needle}`:\n{}",
+                ask.plain
+            );
+        }
+        let stream = render_lock_scene("streaming", 120, 40).expect("streaming");
+        for needle in ["rateLimit() checks", "ZADD records", "429 is returned"] {
+            assert!(
+                stream.plain.contains(needle),
+                "streaming missing `{needle}`:\n{}",
+                stream.plain
+            );
+        }
+        // Code excerpts keep their indentation.
+        assert!(
+            stream.plain.contains("  const now = Date.now();"),
+            "{}",
+            stream.plain
+        );
+        let mcp = render_lock_scene("mcp_call", 120, 40).expect("mcp_call");
+        assert!(
+            mcp.plain.contains("429 body    In Progress"),
+            "{}",
+            mcp.plain
+        );
+    }
+
+    #[test]
+    fn live_states_keep_chrome_complete() {
+        // Empty is allowed, but the chrome is whole at both sizes: version,
+        // keystroke hints, composer, cwd + model footer.
+        for id in [
+            "session_empty",
+            "session_loading",
+            "session_error",
+            "palette_empty",
+        ] {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                for needle in ["Cortex CLI v1.0.0", "> ", "~/cortex-api", "Cortex Mini 1"] {
+                    assert!(
+                        frame.plain.contains(needle),
+                        "{id} missing `{needle}` at {size:?}:\n{}",
+                        frame.plain
+                    );
+                }
+                assert!(
+                    !frame.plain.contains('▐'),
+                    "{id} must not overflow into a scrollbar at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
+        }
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let empty = render_lock_scene("session_empty", size.0, size.1).expect("empty");
+            assert!(empty.plain.contains("/ commands"), "{}", empty.plain);
+            assert!(
+                empty.plain.contains("Plan, search, build anything"),
+                "{}",
+                empty.plain
+            );
+
+            // The error is never a lone line: what happened, then what to do
+            // (the sentence may wrap at 40 columns, never mid-word).
+            let error = render_lock_scene("session_error", size.0, size.1).expect("error");
+            assert!(
+                error.plain.contains("temporarily") && error.plain.contains("unavailable"),
+                "{}",
+                error.plain
+            );
+            assert!(
+                error.plain.contains("Try again in a moment"),
+                "{}",
+                error.plain
+            );
+
+            // A live run says Working, offers esc, and invites a follow-up.
+            let loading = render_lock_scene("session_loading", size.0, size.1).expect("loading");
+            assert!(loading.plain.contains("Working"), "{}", loading.plain);
+            assert!(
+                loading.plain.contains("esc to interrupt"),
+                "{}",
+                loading.plain
+            );
+            assert!(
+                loading.plain.contains("Add a follow-up"),
+                "{}",
+                loading.plain
+            );
+
+            // No-match states keep their panel: title, filter and a real
+            // empty copy, over the session footer.
+            let settings = render_lock_scene("settings_empty", size.0, size.1).expect("settings");
+            assert!(settings.plain.contains("Settings"), "{}", settings.plain);
+            assert!(
+                settings.plain.contains("zzzz-no-such-setting"),
+                "{}",
+                settings.plain
+            );
+            assert!(
+                settings.plain.contains("No settings match")
+                    || settings.plain.contains("No matches for"),
+                "{}",
+                settings.plain
+            );
+            assert!(
+                settings.plain.contains("esc clears the search"),
+                "{}",
+                settings.plain
+            );
+            assert!(
+                settings.plain.contains("~/cortex-api"),
+                "{}",
+                settings.plain
+            );
+            let palette = render_lock_scene("palette_empty", size.0, size.1).expect("palette");
+            assert!(
+                palette.plain.contains("No matching commands"),
+                "{}",
+                palette.plain
+            );
+        }
+    }
+
+    #[test]
     fn no_rounded_frame_glyphs_anywhere() {
         // Zero rounded frames: the TUI bleeds to the terminal edges and no
         // scene draws a ╭╮╰╯ box.
@@ -565,7 +747,7 @@ mod tests {
                 frame.plain
             );
             assert!(
-                frame.plain.contains("cortex-1-mini"),
+                frame.plain.contains("Cortex Mini 1"),
                 "{:?}\n{}",
                 size,
                 frame.plain
@@ -769,7 +951,7 @@ mod tests {
             );
         }
         assert!(
-            frame.plain.contains("cortex-1-mini · Medium"),
+            frame.plain.contains("Cortex Mini 1 · Medium"),
             "{}",
             frame.plain
         );
@@ -1005,14 +1187,14 @@ mod tests {
                 &[
                     "/model",
                     "Model",
-                    "cortex-1-mini",
-                    "cortex-1-max",
+                    "Cortex Mini 1",
+                    "Cortex Max 1",
                     "current",
                 ],
             ),
             (
                 "model_full",
-                &["/model", "Model", "cortex-1-mini", "cortex-1-max"],
+                &["/model", "Model", "Cortex Mini 1", "Cortex Max 1"],
             ),
             ("mode", &["/mode", "Agent", "Plan", "Ask"]),
             (
@@ -1033,7 +1215,7 @@ mod tests {
                 assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
                 assert!(
                     !frame.plain.contains("gpt-"),
-                    "{id} must use Cortex catalog slugs:\n{}",
+                    "{id} must use Cortex product model names:\n{}",
                     frame.plain
                 );
                 for needle in *needles {
@@ -1122,7 +1304,7 @@ mod tests {
                 assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
                 assert!(
-                    frame.plain.contains("cortex-1-mini"),
+                    frame.plain.contains("Cortex Mini 1"),
                     "{id} footer model at {size:?}:\n{}",
                     frame.plain
                 );
@@ -1223,7 +1405,7 @@ mod tests {
             ),
             (
                 "config",
-                &["/config", "~/.cortex/config.json", "cortex-1-mini"],
+                &["/config", "~/.cortex/config.json", "Cortex Mini 1"],
             ),
             ("footer_max", &["Committed and pushed", "MAX", "& cloud"]),
         ];
@@ -1239,12 +1421,12 @@ mod tests {
                 assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
                 assert!(
                     !frame.plain.contains("gpt-"),
-                    "{id} must use a Cortex catalog slug:\n{}",
+                    "{id} must use a Cortex product model name:\n{}",
                     frame.plain
                 );
                 if *id != "footer_max" {
                     assert!(
-                        frame.plain.contains("cortex-1-mini") || frame.plain.contains("MAX"),
+                        frame.plain.contains("Cortex Mini 1") || frame.plain.contains("MAX"),
                         "{id} footer at {size:?}:\n{}",
                         frame.plain
                     );
@@ -1489,7 +1671,7 @@ mod tests {
                 settings.plain
             );
         }
-        assert!(settings.plain.contains("cortex-1-mini"));
+        assert!(settings.plain.contains("Cortex Mini 1"));
         assert!(!settings.plain.contains("gpt-"));
         let diff = render_lock_scene("multi_diff", 120, 40).expect("diff");
         assert!(diff.plain.contains("completions.ts"));

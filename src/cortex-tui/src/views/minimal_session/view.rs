@@ -31,7 +31,7 @@ pub use cortex_core::widgets::Message as ChatMessage;
 ///
 /// Assistant: I'm doing well! How can I help you today?
 ///
-/// ⠹ Working · Analyzing code... (12s • Esc to interrupt)
+/// ⠹ Working · 12s · esc to interrupt
 /// > _
 /// Enter submit · Ctrl+K palette · Ctrl+M model · ? help
 /// ```
@@ -158,8 +158,15 @@ impl<'a> MinimalSessionView<'a> {
         let prompt_span = Span::styled("> ", Style::default().fg(self.colors.accent));
         let mut spans = vec![prompt_span];
         if input_text.is_empty() {
+            // While a run is live the composer invites a queued follow-up —
+            // stdin stays alive.
+            let ghost_copy = if self.is_task_running() {
+                "Add a follow-up ↵ to queue"
+            } else {
+                "Plan, search, build anything"
+            };
             let ghost = crate::ui::text_utils::first_fitting_line(
-                "Plan, search, build anything",
+                ghost_copy,
                 content_width.saturating_sub(2) as usize,
             );
             if !ghost.is_empty() {
@@ -227,12 +234,9 @@ impl<'a> MinimalSessionView<'a> {
         } else if self.app_state.streaming.thinking && self.app_state.thinking_budget.is_some() {
             "Thinking".to_string()
         } else if self.app_state.streaming.is_streaming {
-            // Differentiate between waiting for first token and actively streaming
-            if self.app_state.streaming.is_actively_streaming {
-                "Streaming..".to_string()
-            } else {
-                "Execute".to_string()
-            }
+            // Locked copy: a live turn is "Working", whether the first token
+            // has arrived yet or not.
+            "Working".to_string()
         } else {
             "Idle".to_string()
         }
@@ -406,11 +410,9 @@ impl<'a> Widget for MinimalSessionView<'a> {
 
         let hints_y = area.y + area.height.saturating_sub(hints_height);
         let input_y = hints_y.saturating_sub(autocomplete_height + input_height);
-        let content_height = if autocomplete_visible {
-            0
-        } else {
-            input_y.saturating_sub(area.y)
-        };
+        // The popup sits below the composer, so the transcript (or the empty
+        // session chrome) keeps the rows above it.
+        let content_height = input_y.saturating_sub(area.y);
         let content_area = Rect::new(area.x, area.y, area.width, content_height);
         self.render_scrollable_content(content_area, buf, 1);
 
@@ -455,8 +457,15 @@ impl<'a> Widget for MinimalSessionView<'a> {
 
         if self.app_state.is_interactive_mode() {
             if let Some(state) = self.app_state.get_interactive_state() {
-                let items_count = state.filtered_indices.len().min(state.max_visible);
-                let required_height = (items_count as u16) + 3;
+                // Always leave rows for the empty-state copy and one for the
+                // search filter, so "no matches" is never a blank panel.
+                let items_count = if state.filtered_indices.is_empty() {
+                    2
+                } else {
+                    state.filtered_indices.len().min(state.max_visible)
+                };
+                let search_rows: u16 = if state.searchable { 1 } else { 0 };
+                let required_height = (items_count as u16) + 3 + search_rows;
                 let max_height = area.height.saturating_sub(hints_height).max(3);
                 let widget_height = required_height.min(max_height);
                 let interactive_y = area.y + area.height - widget_height - hints_height;
@@ -474,37 +483,36 @@ impl<'a> Widget for MinimalSessionView<'a> {
             self.render_autocomplete_inline(autocomplete_area, buf);
         }
 
-        if !self.app_state.is_interactive_mode() {
-            let hints_area = Rect::new(area.x, hints_y, area.width, hints_height);
-            let context = if self.app_state.is_viewing_subagent() {
-                HintContext::SubagentView
-            } else if is_task_running {
-                HintContext::TaskRunning
-            } else {
-                HintContext::Idle
-            };
-            let mut hints =
-                KeyHints::new(context).with_permission_mode(self.app_state.permission_mode);
-            hints = hints.with_model(&self.app_state.model);
-            hints = hints.with_session_footer(
-                &self.app_state.footer_cwd,
-                &self.app_state.git_branch,
-                self.app_state.git_dirty,
-                &self.app_state.agent_mode_label,
-                self.app_state.context_percent,
-            );
-            if let Some(ref budget) = self.app_state.thinking_budget {
-                hints = hints.with_thinking_budget(budget);
-            }
-            hints.render(hints_area, buf);
+        // The session footer (cwd · git, model · mode · context) stays on
+        // screen in every mode, including the interactive pickers.
+        let hints_area = Rect::new(area.x, hints_y, area.width, hints_height);
+        let context = if self.app_state.is_viewing_subagent() {
+            HintContext::SubagentView
+        } else if is_task_running {
+            HintContext::TaskRunning
+        } else {
+            HintContext::Idle
+        };
+        let mut hints = KeyHints::new(context).with_permission_mode(self.app_state.permission_mode);
+        hints = hints.with_model(&self.app_state.model);
+        hints = hints.with_session_footer(
+            &self.app_state.footer_cwd,
+            &self.app_state.git_branch,
+            self.app_state.git_dirty,
+            &self.app_state.agent_mode_label,
+            self.app_state.context_percent,
+        );
+        if let Some(ref budget) = self.app_state.thinking_budget {
+            hints = hints.with_thinking_budget(budget);
+        }
+        hints.render(hints_area, buf);
 
-            if self.app_state.is_viewing_subagent() {
-                crate::views::minimal_session::rendering::render_back_to_main_hint(
-                    hints_area,
-                    buf,
-                    &self.colors,
-                );
-            }
+        if self.app_state.is_viewing_subagent() && !self.app_state.is_interactive_mode() {
+            crate::views::minimal_session::rendering::render_back_to_main_hint(
+                hints_area,
+                buf,
+                &self.colors,
+            );
         }
     }
 }

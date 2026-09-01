@@ -226,11 +226,32 @@ impl<'a> InteractiveWidget<'a> {
     fn render_items(&self, area: Rect, buf: &mut Buffer) {
         let visible_items = self.state.visible_items();
         if visible_items.is_empty() {
-            Paragraph::new(Span::styled(
-                "No matching settings",
-                Style::default().fg(TEXT_MUTED),
-            ))
-            .render(area, buf);
+            // A real empty state: say what did not match and how to recover,
+            // whole, across the rows available.
+            let copy: Vec<String> = if self.state.search_query.is_empty() {
+                vec!["Nothing to show here yet.".to_string()]
+            } else if area.width >= 60 {
+                vec![format!(
+                    "No settings match “{}” — esc clears the search.",
+                    self.state.search_query
+                )]
+            } else {
+                vec![
+                    format!("No matches for “{}”", self.state.search_query),
+                    "esc clears the search".to_string(),
+                ]
+            };
+            let width = area.width.saturating_sub(2) as usize;
+            let mut y = area.y;
+            for text in copy {
+                for part in crate::ui::text_utils::wrap_or_drop(&text, width) {
+                    if y >= area.bottom() {
+                        return;
+                    }
+                    buf.set_string(area.x + 1, y, &part, Style::default().fg(TEXT_DIM));
+                    y += 1;
+                }
+            }
             return;
         }
         let start = self.state.scroll_offset;

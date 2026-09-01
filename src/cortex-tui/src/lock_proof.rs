@@ -345,6 +345,30 @@ mod tests {
     use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
 
     #[test]
+    fn no_inverted_mint_selection_anywhere() {
+        // Mint is highlight-only: `>`, small accents, success. A selected row
+        // is a dark #1A3330 bar, never black-on-mint.
+        const MINT_BG: &str = "48;2;0;245;212";
+        const DARK_SELECTION_BG: &str = "48;2;26;51;48";
+        for id in lock_scene_ids() {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                assert!(
+                    !frame.ansi.contains(MINT_BG),
+                    "{id} paints an inverted mint bar at {size:?}"
+                );
+            }
+        }
+        for id in ["palette", "settings_hub", "login_select", "multi_diff"] {
+            let frame = render_lock_scene(id, 120, 40).expect(id);
+            assert!(
+                frame.ansi.contains(DARK_SELECTION_BG),
+                "{id} must use the dark selection bar"
+            );
+        }
+    }
+
+    #[test]
     fn splash_has_session_chrome() {
         for size in [(40u16, 12u16), (120u16, 40u16)] {
             let frame = render_lock_scene("splash", size.0, size.1).expect("splash");

@@ -19,7 +19,7 @@ use ratatui::widgets::{Clear, Paragraph};
 use tokio::sync::mpsc;
 
 use crate::ui::text_utils::{first_fitting_line, wrap_or_drop};
-use cortex_core::style::{CYAN_PRIMARY, ERROR, TEXT, TEXT_DIM, VOID};
+use cortex_core::style::{CYAN_PRIMARY, ERROR, SELECTION_BG, TEXT, TEXT_DIM, VOID};
 use cortex_login::{SecureAuthData, save_auth_with_fallback};
 use cortex_tui_components::spinner::SpinnerStyle;
 
@@ -29,7 +29,7 @@ use cortex_tui_components::spinner::SpinnerStyle;
 
 const API_BASE_URL: &str = "https://api.cortex.foundation";
 
-/// Highlight token (mint) — selected radio row, success, and nowhere else on this screen.
+/// Highlight token (mint) — success accents only; selection is `SELECTION_BG`.
 const HIGHLIGHT: ratatui::style::Color = CYAN_PRIMARY;
 
 // ============================================================================
@@ -334,8 +334,8 @@ impl LoginScreen {
             if is_selected {
                 for x in area.x..area.right() {
                     if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_bg(HIGHLIGHT);
-                        cell.set_fg(VOID);
+                        cell.set_bg(SELECTION_BG);
+                        cell.set_fg(TEXT);
                     }
                 }
                 buf.set_string(
@@ -343,8 +343,8 @@ impl LoginScreen {
                     y,
                     first_fitting_line(&format!("{radio} {label}"), w),
                     Style::default()
-                        .fg(VOID)
-                        .bg(HIGHLIGHT)
+                        .fg(TEXT)
+                        .bg(SELECTION_BG)
                         .add_modifier(Modifier::BOLD),
                 );
             } else {

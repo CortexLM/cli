@@ -15,7 +15,7 @@ use crate::app::AppState;
 use crate::commands::PALETTE_HOME_LIMIT;
 use crate::ui::colors::AdaptiveColors;
 use crate::widgets::{HintContext, KeyHints, StatusIndicator};
-use cortex_core::style::VOID;
+use cortex_core::style::SELECTION_BG;
 
 // Re-export for convenience
 pub use cortex_core::widgets::Message as ChatMessage;
@@ -331,17 +331,23 @@ impl<'a> MinimalSessionView<'a> {
             if is_selected {
                 for dx in 0..area.width {
                     if let Some(cell) = buf.cell_mut((area.x + dx, y)) {
-                        cell.set_bg(accent);
-                        cell.set_fg(VOID);
+                        cell.set_bg(SELECTION_BG);
+                        cell.set_fg(text);
                     }
                 }
+                buf.set_string(
+                    inner_x.saturating_sub(1),
+                    y,
+                    "> ",
+                    Style::default().fg(accent).bg(SELECTION_BG),
+                );
             }
 
-            let mut x = inner_x;
+            let mut x = inner_x + 1;
             let label_style = if is_selected {
                 Style::default()
-                    .fg(VOID)
-                    .bg(accent)
+                    .fg(text)
+                    .bg(SELECTION_BG)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(text)
@@ -358,7 +364,7 @@ impl<'a> MinimalSessionView<'a> {
                 let desc = crate::ui::text_utils::first_fitting_line(&item.description, remaining);
                 if !desc.is_empty() {
                     let desc_style = if is_selected {
-                        Style::default().fg(VOID).bg(accent)
+                        Style::default().fg(text).bg(SELECTION_BG)
                     } else {
                         Style::default().fg(dim)
                     };

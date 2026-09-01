@@ -3,7 +3,7 @@
 //! These scenes share session chrome (prompt, composer, cwd+git footer) and
 //! Cortex product copy only.
 
-use cortex_core::style::{ERROR, INFO, SUCCESS, TEXT, TEXT_DIM, VOID, WARNING};
+use cortex_core::style::{ERROR, INFO, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM, WARNING};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -236,7 +236,7 @@ fn fill_row(buf: &mut Buffer, area: Rect, y: u16, bg: Color) {
     for x in area.x..area.right() {
         if let Some(cell) = buf.cell_mut((x, y)) {
             cell.set_bg(bg);
-            cell.set_fg(VOID);
+            cell.set_fg(TEXT);
         }
     }
 }
@@ -378,14 +378,14 @@ fn board_permission(area: Rect, buf: &mut Buffer) {
         };
         let shown = first_fitting_line(&text, w);
         if selected {
-            fill_row(buf, area, y, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
             buf.set_string(
                 area.x,
                 y,
                 &shown,
                 Style::default()
-                    .fg(VOID)
-                    .bg(SUCCESS)
+                    .fg(TEXT)
+                    .bg(SELECTION_BG)
                     .add_modifier(Modifier::BOLD),
             );
         } else {
@@ -469,14 +469,14 @@ fn board_plan(area: Rect, buf: &mut Buffer) {
 
     let y = area.bottom().saturating_sub(4);
     let yes = first_fitting_line("> Yes, switch to Agent mode and implement", w);
-    fill_row(buf, area, y, SUCCESS);
+    fill_row(buf, area, y, SELECTION_BG);
     buf.set_string(
         area.x,
         y,
         &yes,
         Style::default()
-            .fg(VOID)
-            .bg(SUCCESS)
+            .fg(TEXT)
+            .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD),
     );
     buf.set_string(
@@ -619,13 +619,18 @@ fn board_resume(area: Rect, buf: &mut Buffer) {
             break;
         }
         if selected {
-            fill_row(buf, area, y, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
             let shown = if compact(area) {
                 first_fitting_line(&format!("> {when}  Rate limiting  {msgs}"), w)
             } else {
                 first_fitting_line(&format!("> {when}  {title}  {branch}  {msgs}"), w)
             };
-            buf.set_string(area.x, y, &shown, Style::default().fg(VOID).bg(SUCCESS));
+            buf.set_string(
+                area.x,
+                y,
+                &shown,
+                Style::default().fg(TEXT).bg(SELECTION_BG),
+            );
         } else if !compact(area) {
             let row = first_fitting_line(&format!("{when}  {title}  {branch}  {msgs}"), w);
             buf.set_string(area.x, y, format!("  {row}"), Style::default().fg(TEXT));
@@ -851,21 +856,21 @@ fn board_sandbox(area: Rect, buf: &mut Buffer) {
     .render(Rect::new(area.x, area.y, area.width, 1), buf);
 
     let y = area.y + 2;
-    fill_row(buf, area, y, SUCCESS);
+    fill_row(buf, area, y, SELECTION_BG);
     let row = first_fitting_line("> Sandbox mode", w.saturating_sub(8));
     buf.set_string(
         area.x,
         y,
         &row,
         Style::default()
-            .fg(VOID)
-            .bg(SUCCESS)
+            .fg(TEXT)
+            .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD),
     );
     let on = "● On";
     let ox = area.right().saturating_sub(on.len() as u16 + 1);
     if ox > area.x + 4 {
-        buf.set_string(ox, y, on, Style::default().fg(VOID).bg(SUCCESS));
+        buf.set_string(ox, y, on, Style::default().fg(TEXT).bg(SELECTION_BG));
     }
 
     let details = [
@@ -1194,12 +1199,12 @@ fn board_files(area: Rect, buf: &mut Buffer) {
         let when_fit = first_fitting_line(when, 16);
         let path_budget = w.saturating_sub(when_fit.chars().count() + 4);
         if selected {
-            fill_row(buf, area, y, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
         }
         let mut x = area.x;
         let marker = if selected { ">" } else { " " };
         let marker_style = if selected {
-            Style::default().fg(VOID).bg(SUCCESS)
+            Style::default().fg(TEXT).bg(SELECTION_BG)
         } else {
             Style::default().fg(TEXT)
         };
@@ -1209,7 +1214,7 @@ fn board_files(area: Rect, buf: &mut Buffer) {
         let mut used = 0usize;
         for span in &mut spans {
             if selected {
-                span.style = span.style.fg(VOID).bg(SUCCESS);
+                span.style = span.style.fg(TEXT).bg(SELECTION_BG);
             }
             let content = span.content.to_string();
             let take = first_fitting_line(&content, path_budget.saturating_sub(used));
@@ -1225,7 +1230,7 @@ fn board_files(area: Rect, buf: &mut Buffer) {
             .saturating_sub(when_fit.chars().count() as u16)
             .max(x.saturating_add(1));
         let when_style = if selected {
-            Style::default().fg(VOID).bg(SUCCESS)
+            Style::default().fg(TEXT).bg(SELECTION_BG)
         } else {
             Style::default().fg(TEXT_DIM)
         };
@@ -1380,20 +1385,19 @@ fn board_jobs(area: Rect, buf: &mut Buffer) {
             break;
         }
         if job.selected {
-            fill_row(buf, area, y, SUCCESS);
-            fill_row(buf, area, y + 1, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
+            fill_row(buf, area, y + 1, SELECTION_BG);
         }
-        let fg = if job.selected { VOID } else { TEXT };
-        let bg = if job.selected { SUCCESS } else { VOID };
-        let base = Style::default().fg(fg).bg(bg);
-        buf.set_string(
-            area.x,
-            y,
-            job.icon,
-            Style::default()
-                .fg(if job.selected { VOID } else { job.icon_color })
-                .bg(bg),
-        );
+        let base = if job.selected {
+            Style::default().fg(TEXT).bg(SELECTION_BG)
+        } else {
+            Style::default().fg(TEXT)
+        };
+        let mut icon_style = Style::default().fg(job.icon_color);
+        if job.selected {
+            icon_style = icon_style.bg(SELECTION_BG);
+        }
+        buf.set_string(area.x, y, job.icon, icon_style);
         buf.set_string(
             area.x.saturating_add(2),
             y,
@@ -1405,20 +1409,17 @@ fn board_jobs(area: Rect, buf: &mut Buffer) {
         );
         let st = job.status;
         let sx = area.right().saturating_sub(st.len() as u16);
-        buf.set_string(
-            sx,
-            y,
-            st,
-            Style::default()
-                .fg(if job.selected { VOID } else { job.status_color })
-                .bg(bg),
-        );
+        let mut status_style = Style::default().fg(job.status_color);
+        if job.selected {
+            status_style = status_style.bg(SELECTION_BG);
+        }
+        buf.set_string(sx, y, st, status_style);
         buf.set_string(
             area.x.saturating_add(2),
             y + 1,
             first_fitting_line(job.meta, w.saturating_sub(2)),
             if job.selected {
-                Style::default().fg(VOID).bg(SUCCESS)
+                Style::default().fg(TEXT).bg(SELECTION_BG)
             } else {
                 Style::default().fg(TEXT_DIM)
             },
@@ -1758,18 +1759,18 @@ fn board_config(area: Rect, buf: &mut Buffer) {
         let label = format!("{prefix}{branch}{key}");
         let value_fit = first_fitting_line(value, w.saturating_sub(label.chars().count() + 2));
         if *selected {
-            fill_row(buf, area, y, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
             buf.set_string(
                 area.x,
                 y,
                 first_fitting_line(&format!("{label}  {value_fit}"), w.saturating_sub(8)),
-                Style::default().fg(VOID).bg(SUCCESS),
+                Style::default().fg(TEXT).bg(SELECTION_BG),
             );
             buf.set_string(
                 area.right().saturating_sub(6),
                 y,
                 "⏎ edit",
-                Style::default().fg(VOID).bg(SUCCESS),
+                Style::default().fg(TEXT).bg(SELECTION_BG),
             );
         } else {
             buf.set_string(area.x, y, &label, Style::default().fg(TEXT));
@@ -1954,14 +1955,14 @@ fn board_login(area: Rect, buf: &mut Buffer) {
     );
     y += 2;
 
-    fill_row(buf, area, y, SUCCESS);
+    fill_row(buf, area, y, SELECTION_BG);
     buf.set_string(
         area.x,
         y,
         first_fitting_line("● Continue with browser", w),
         Style::default()
-            .fg(VOID)
-            .bg(SUCCESS)
+            .fg(TEXT)
+            .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD),
     );
     y += 1;
@@ -2104,14 +2105,14 @@ fn board_question(area: Rect, buf: &mut Buffer) {
         }
         let shown = first_fitting_line(label, w);
         if selected {
-            fill_row(buf, area, y, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
             buf.set_string(
                 area.x,
                 y,
                 &shown,
                 Style::default()
-                    .fg(VOID)
-                    .bg(SUCCESS)
+                    .fg(TEXT)
+                    .bg(SELECTION_BG)
                     .add_modifier(Modifier::BOLD),
             );
         } else {
@@ -2159,8 +2160,8 @@ fn board_skills(area: Rect, buf: &mut Buffer) {
         }
         let line = first_fitting_line(&format!("{cmd}  {desc}"), w);
         if selected {
-            fill_row(buf, area, y, SUCCESS);
-            buf.set_string(area.x, y, &line, Style::default().fg(VOID).bg(SUCCESS));
+            fill_row(buf, area, y, SELECTION_BG);
+            buf.set_string(area.x, y, &line, Style::default().fg(TEXT).bg(SELECTION_BG));
         } else {
             buf.set_string(area.x, y, cmd, Style::default().fg(SUCCESS));
             buf.set_string(
@@ -2388,14 +2389,14 @@ fn board_clear_confirm(area: Rect, buf: &mut Buffer) {
         y += 1;
     }
     y += 1;
-    fill_row(buf, area, y, SUCCESS);
+    fill_row(buf, area, y, SELECTION_BG);
     buf.set_string(
         area.x,
         y,
         first_fitting_line("● Clear thread", w),
         Style::default()
-            .fg(VOID)
-            .bg(SUCCESS)
+            .fg(TEXT)
+            .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD),
     );
     y += 1;
@@ -2413,9 +2414,9 @@ fn board_clear_confirm(area: Rect, buf: &mut Buffer) {
     );
 }
 
-const KW: Color = Color::Rgb(0xC4, 0xB5, 0xFD);
+const KW: Color = Color::Rgb(0x48, 0xCA, 0xE4);
 const STR: Color = Color::Rgb(0xF5, 0xE6, 0x6E);
-const NUM: Color = Color::Rgb(0x60, 0xA5, 0xFA);
+const NUM: Color = Color::Rgb(0xFF, 0xC8, 0x57);
 
 fn paint_command_prompt(area: Rect, buf: &mut Buffer, command: &str) {
     let w = inner_width(area);
@@ -2609,14 +2610,14 @@ fn board_delete(area: Rect, buf: &mut Buffer) {
     );
     let body_h = lines.len() as u16;
     let y = area.y + body_h.min(area.height.saturating_sub(4));
-    fill_row(buf, area, y, SUCCESS);
+    fill_row(buf, area, y, SELECTION_BG);
     buf.set_string(
         area.x,
         y,
         first_fitting_line("● Delete", w),
         Style::default()
-            .fg(VOID)
-            .bg(SUCCESS)
+            .fg(TEXT)
+            .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD),
     );
     buf.set_string(
@@ -2888,39 +2889,30 @@ fn board_multi_diff(area: Rect, buf: &mut Buffer) {
             break;
         }
         if i == 0 {
-            fill_row(buf, area, y, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
         }
         let stats = format!("{plus} {minus}");
         let path_w = w.saturating_sub(stats.chars().count() + 1);
         let shown = first_fitting_line(path, path_w);
-        let row_fg = if i == 0 { VOID } else { TEXT };
-        let row_bg = if i == 0 { SUCCESS } else { VOID };
-        buf.set_string(area.x, y, &shown, Style::default().fg(row_fg).bg(row_bg));
+        let selected = i == 0;
+        let with_row_bg = |style: Style| {
+            if selected {
+                style.bg(SELECTION_BG)
+            } else {
+                style
+            }
+        };
+        buf.set_string(area.x, y, &shown, with_row_bg(Style::default().fg(TEXT)));
         let plus_x = area
             .right()
             .saturating_sub(stats.chars().count() as u16)
             .max(area.x);
-        buf.set_string(
-            plus_x,
-            y,
-            plus,
-            Style::default()
-                .fg(if i == 0 { VOID } else { SUCCESS })
-                .bg(row_bg),
-        );
+        buf.set_string(plus_x, y, plus, with_row_bg(Style::default().fg(SUCCESS)));
         buf.set_string(
             plus_x + plus.chars().count() as u16 + 1,
             y,
             minus,
-            Style::default()
-                .fg(if i == 0 {
-                    VOID
-                } else if *minus == "-" {
-                    TEXT_DIM
-                } else {
-                    ERROR
-                })
-                .bg(row_bg),
+            with_row_bg(Style::default().fg(if *minus == "-" { TEXT_DIM } else { ERROR })),
         );
         y += 1;
     }
@@ -2956,12 +2948,12 @@ fn board_settings_hub(area: Rect, buf: &mut Buffer) {
             break;
         }
         if i == 0 {
-            fill_row(buf, area, y, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
         }
         let label_style = if i == 0 {
             Style::default()
-                .fg(VOID)
-                .bg(SUCCESS)
+                .fg(TEXT)
+                .bg(SELECTION_BG)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(TEXT)
@@ -2974,7 +2966,7 @@ fn board_settings_hub(area: Rect, buf: &mut Buffer) {
                 .saturating_sub(shown.chars().count() as u16)
                 .max(area.x + label.chars().count() as u16 + 2);
             let value_style = if i == 0 {
-                Style::default().fg(VOID).bg(SUCCESS)
+                Style::default().fg(TEXT).bg(SELECTION_BG)
             } else {
                 Style::default().fg(TEXT_DIM)
             };
@@ -3088,23 +3080,29 @@ fn board_palette(area: Rect, buf: &mut Buffer) {
             break;
         }
         if i == 0 {
-            fill_row(buf, area, y, SUCCESS);
+            fill_row(buf, area, y, SELECTION_BG);
+            buf.set_string(
+                area.x,
+                y,
+                "> ",
+                Style::default().fg(SUCCESS).bg(SELECTION_BG),
+            );
         }
         let cmd_style = if i == 0 {
             Style::default()
-                .fg(VOID)
-                .bg(SUCCESS)
+                .fg(TEXT)
+                .bg(SELECTION_BG)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(TEXT)
         };
-        let name = first_fitting_line(cmd, w);
-        buf.set_string(area.x, y, &name, cmd_style);
-        let gap = name.chars().count() + 2;
+        let name = first_fitting_line(cmd, w.saturating_sub(2));
+        buf.set_string(area.x + 2, y, &name, cmd_style);
+        let gap = 2 + name.chars().count() + 2;
         let same_line = first_fitting_line(desc, w.saturating_sub(gap));
         if !same_line.is_empty() && !two_line {
             let desc_style = if i == 0 {
-                Style::default().fg(VOID).bg(SUCCESS)
+                Style::default().fg(TEXT).bg(SELECTION_BG)
             } else {
                 Style::default().fg(TEXT_DIM)
             };
@@ -3113,12 +3111,12 @@ fn board_palette(area: Rect, buf: &mut Buffer) {
         y += 1;
         shown += 1;
         if two_line && y + hint_reserve < area.bottom() {
-            let wrapped = wrap_or_drop(desc, w.saturating_sub(2));
+            let wrapped = wrap_or_drop(desc, w.saturating_sub(4));
             if let Some(line) = wrapped.first() {
                 buf.set_string(
                     area.x,
                     y,
-                    format!("  {line}"),
+                    format!("    {line}"),
                     Style::default().fg(TEXT_DIM),
                 );
                 y += 1;

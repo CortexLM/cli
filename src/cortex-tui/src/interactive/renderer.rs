@@ -1,7 +1,9 @@
 //! Renderer for interactive selection in the input area.
 
 use super::state::{InlineFormState, InteractiveItem, InteractiveState};
-use cortex_core::style::{CYAN_PRIMARY, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, VOID};
+use cortex_core::style::{
+    CYAN_PRIMARY, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use cortex_tui_components::borders::ROUNDED_BORDER;
 use ratatui::{
     buffer::Buffer,
@@ -290,25 +292,26 @@ impl<'a> InteractiveWidget<'a> {
         is_hovered: bool,
         is_checked: bool,
     ) {
-        // Show hover highlight with subtle background
-        let mint_bar = is_selected && !item.disabled && !item.is_separator;
+        // Selected row: dark mint-tinted bar, white text — never inverted mint.
+        let selected_bar = is_selected && !item.disabled && !item.is_separator;
         let (fg, bg) = if item.disabled {
             (TEXT_MUTED, Color::Reset)
-        } else if mint_bar {
-            (VOID, SUCCESS)
+        } else if selected_bar {
+            (TEXT, SELECTION_BG)
         } else if is_hovered {
             (TEXT, Color::Rgb(40, 44, 52))
         } else {
             (TEXT, Color::Reset)
         };
 
-        if (mint_bar || (is_hovered && !item.disabled && !item.is_separator)) && bg != Color::Reset
+        if (selected_bar || (is_hovered && !item.disabled && !item.is_separator))
+            && bg != Color::Reset
         {
             for dx in 0..area.width {
                 if let Some(cell) = buf.cell_mut((area.x + dx, area.y)) {
                     cell.set_bg(bg);
-                    if mint_bar {
-                        cell.set_fg(VOID);
+                    if selected_bar {
+                        cell.set_fg(TEXT);
                     }
                 }
             }
@@ -338,13 +341,11 @@ impl<'a> InteractiveWidget<'a> {
 
         // Label - bold for separators (category headers)
         let label_style = if item.is_separator {
+            Style::default().fg(TEXT_DIM).add_modifier(Modifier::BOLD)
+        } else if selected_bar {
             Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD)
-        } else if mint_bar {
-            Style::default()
-                .fg(VOID)
-                .bg(SUCCESS)
+                .fg(TEXT)
+                .bg(SELECTION_BG)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(fg)
@@ -363,8 +364,8 @@ impl<'a> InteractiveWidget<'a> {
                 let desc_w = desc_text.chars().count() as u16;
                 let desc_x = area.x + area.width.saturating_sub(desc_w + 1);
                 if desc_x > x + 1 {
-                    let desc_style = if mint_bar {
-                        Style::default().fg(VOID).bg(SUCCESS)
+                    let desc_style = if selected_bar {
+                        Style::default().fg(TEXT).bg(SELECTION_BG)
                     } else {
                         Style::default().fg(TEXT_DIM)
                     };

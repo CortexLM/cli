@@ -201,7 +201,7 @@ pub fn render_tool_call(
     ));
     lines.push(Line::from(header_spans));
 
-    if call.status == ToolStatus::Running && !call.live_output.is_empty() {
+    if call.status == ToolStatus::Running && call.result.is_none() && !call.live_output.is_empty() {
         for output_line in &call.live_output {
             for wrapped in wrap_or_drop(output_line, inner.saturating_sub(2)) {
                 lines.push(Line::from(Span::styled(

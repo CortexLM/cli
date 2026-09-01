@@ -436,7 +436,11 @@ impl<'a> Widget for MinimalSessionView<'a> {
 
         let hints_y = area.y + area.height.saturating_sub(hints_height);
         let input_y = hints_y.saturating_sub(autocomplete_height + input_height);
-        let content_height = input_y.saturating_sub(area.y);
+        let content_height = if autocomplete_visible {
+            0
+        } else {
+            input_y.saturating_sub(area.y)
+        };
         let content_area = Rect::new(area.x, area.y, area.width, content_height);
         self.render_scrollable_content(content_area, buf, 1);
 

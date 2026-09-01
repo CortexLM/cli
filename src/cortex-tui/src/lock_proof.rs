@@ -295,7 +295,6 @@ fn tool_tiles_state() -> AppState {
         1,
     );
     call.set_status(ToolStatus::Running);
-    call.append_output("pub fn sign_in() {".into());
     call.set_result(ToolResultDisplay {
         output: "pub fn sign_in() {\n    let client = Client::new();\n}".into(),
         success: true,

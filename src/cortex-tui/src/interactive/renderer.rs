@@ -390,26 +390,19 @@ impl<'a> InteractiveWidget<'a> {
 
         hints.push(("Esc", "cancel"));
 
-        // Use standard TEXT_DIM color for hints
         let hint_color = TEXT_DIM;
-
-        let mut spans = Vec::new();
-        for (i, (key, action)) in hints.iter().enumerate() {
-            if i > 0 {
-                spans.push(Span::styled("  ", Style::default()));
-            }
-            spans.push(Span::styled(
-                format!("[{}]", key),
-                Style::default().fg(hint_color),
-            ));
-            spans.push(Span::styled(
-                format!(" {}", action),
-                Style::default().fg(hint_color),
-            ));
+        let hint_text = hints
+            .iter()
+            .map(|(key, action)| format!("[{key}] {action}"))
+            .collect::<Vec<_>>()
+            .join("  ");
+        let shown = crate::ui::text_utils::first_fitting_line(
+            &hint_text,
+            area.width.saturating_sub(1) as usize,
+        );
+        if !shown.is_empty() {
+            Paragraph::new(Span::styled(shown, Style::default().fg(hint_color))).render(area, buf);
         }
-
-        let hints_line = Line::from(spans);
-        Paragraph::new(hints_line).render(area, buf);
     }
 
     /// Render inline form for configuration within the panel.

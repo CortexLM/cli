@@ -2029,26 +2029,47 @@ fn board_config(area: Rect, buf: &mut Buffer) {
         first_fitting_line("↑↓ navigate · ↵ edit · r reset to default · esc close", w),
         Style::default().fg(TEXT_DIM),
     );
+    paint_max_footer(area, buf, &format!("{CWD} {GIT}"), " · Agent");
+}
+
+/// Footer with the bold `MAX` badge: `{left}` on the left, `Cortex Mini 1 ·
+/// MAX{suffix}` on the right. The model name is always shown — when the full
+/// right side cannot fit, the suffix goes first, then the left side shrinks
+/// to the cwd alone.
+fn paint_max_footer(area: Rect, buf: &mut Buffer, left: &str, suffix: &str) {
+    let w = inner_width(area);
     let fy = area.bottom().saturating_sub(1);
-    let left = first_fitting_line(&format!("{CWD} {GIT}"), w);
-    buf.set_string(area.x, fy, &left, Style::default().fg(TEXT_DIM));
-    let right_full = format!("{MODEL} · MAX · Agent");
-    if left.chars().count() + 1 + right_full.chars().count() <= w {
-        let prefix = format!("{MODEL} · ");
-        let rx = area
-            .right()
-            .saturating_sub(right_full.chars().count() as u16);
-        buf.set_string(rx, fy, &prefix, Style::default().fg(TEXT_DIM));
+    let prefix = format!("{MODEL} · ");
+    let badge = "MAX";
+    let mut left_fit = first_fitting_line(left, w);
+    let fits = |left_len: usize, suffix: &str| {
+        left_len + 1 + prefix.chars().count() + badge.len() + suffix.chars().count() <= w
+    };
+    let mut suffix_fit = suffix;
+    if !fits(left_fit.chars().count(), suffix_fit) {
+        suffix_fit = "";
+    }
+    if !fits(left_fit.chars().count(), suffix_fit) {
+        left_fit = first_fitting_line(CWD, w);
+    }
+    buf.set_string(area.x, fy, &left_fit, Style::default().fg(TEXT_DIM));
+    if !fits(left_fit.chars().count(), suffix_fit) {
+        return;
+    }
+    let right_len = prefix.chars().count() + badge.len() + suffix_fit.chars().count();
+    let rx = area.right().saturating_sub(right_len as u16);
+    buf.set_string(rx, fy, &prefix, Style::default().fg(TEXT_DIM));
+    buf.set_string(
+        rx.saturating_add(prefix.chars().count() as u16),
+        fy,
+        badge,
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    if !suffix_fit.is_empty() {
         buf.set_string(
-            rx.saturating_add(prefix.chars().count() as u16),
+            rx.saturating_add(prefix.chars().count() as u16 + badge.len() as u16),
             fy,
-            "MAX",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-        );
-        buf.set_string(
-            rx.saturating_add(prefix.chars().count() as u16 + 3),
-            fy,
-            " · Agent",
+            suffix_fit,
             Style::default().fg(TEXT_DIM),
         );
     }
@@ -2149,40 +2170,12 @@ fn board_footer_max(area: Rect, buf: &mut Buffer) {
         Style::default().fg(TEXT_DIM),
     );
 
-    let y = area.bottom().saturating_sub(1);
-    let left = first_fitting_line("~/cortex-api rate-limit-9e4d", w);
-    buf.set_string(area.x, y, &left, Style::default().fg(TEXT_DIM));
-    let right_full = format!("{MODEL} · MAX · Agent · Smart · 38% context left");
-    if left.chars().count() + 1 + right_full.chars().count() <= w {
-        let prefix = format!("{MODEL} · ");
-        let suffix = " · Agent · Smart · 38% context left";
-        let rx = area
-            .right()
-            .saturating_sub(right_full.chars().count() as u16);
-        buf.set_string(rx, y, &prefix, Style::default().fg(TEXT_DIM));
-        buf.set_string(
-            rx.saturating_add(prefix.chars().count() as u16),
-            y,
-            "MAX",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-        );
-        buf.set_string(
-            rx.saturating_add(prefix.chars().count() as u16 + 3),
-            y,
-            suffix,
-            Style::default().fg(TEXT_DIM),
-        );
-    } else {
-        let rx = area.right().saturating_sub(3);
-        if rx > area.x + left.chars().count() as u16 {
-            buf.set_string(
-                rx,
-                y,
-                "MAX",
-                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-            );
-        }
-    }
+    paint_max_footer(
+        area,
+        buf,
+        "~/cortex-api rate-limit-9e4d",
+        " · Agent · Smart · 38% context left",
+    );
 }
 
 fn board_login(area: Rect, buf: &mut Buffer) {

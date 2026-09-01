@@ -631,9 +631,59 @@ mod tests {
     }
 
     #[test]
+    fn footer_shows_product_model_everywhere() {
+        // Every session footer names the model as a product — `Cortex Mini 1`
+        // — at both sizes. Only the login sub-states have no footer.
+        let no_footer = ["login_waiting", "login_success", "login_error"];
+        for id in lock_scene_ids() {
+            if no_footer.contains(id) {
+                continue;
+            }
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let footer = frame.plain.lines().last().unwrap_or_default();
+                assert!(
+                    footer.contains("Cortex Mini 1"),
+                    "{id} footer must name Cortex Mini 1 at {size:?}: {footer:?}"
+                );
+            }
+        }
+        // The MAX badge keeps the model beside it, even at 40 columns.
+        for id in ["footer_max", "config"] {
+            let frame = render_lock_scene(id, 40, 12).expect(id);
+            let footer = frame.plain.lines().last().unwrap_or_default();
+            assert!(
+                footer.contains("Cortex Mini 1 · MAX"),
+                "{id} footer must read Cortex Mini 1 · MAX: {footer:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mode_chips_are_kept() {
+        // `┌ Ask — read-only ┐` and `┌ Bash mode ┐` are square mode chips,
+        // not session frames — they stay at both sizes.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let ask = render_lock_scene("ask", size.0, size.1).expect("ask");
+            assert!(
+                ask.plain.contains("┌ Ask — read-only ┐"),
+                "the Ask mode chip must stay at {size:?}:\n{}",
+                ask.plain
+            );
+            let bash = render_lock_scene("bash", size.0, size.1).expect("bash");
+            assert!(
+                bash.plain.contains("┌ Bash mode ┐"),
+                "the Bash mode chip must stay at {size:?}:\n{}",
+                bash.plain
+            );
+        }
+    }
+
+    #[test]
     fn no_rounded_frame_glyphs_anywhere() {
         // Zero rounded frames: the TUI bleeds to the terminal edges and no
-        // scene draws a ╭╮╰╯ box.
+        // scene draws a ╭╮╰╯ box. Square `┌ … ┐` mode chips are not frames
+        // and are allowed.
         for id in lock_scene_ids() {
             for size in [(40u16, 12u16), (120u16, 40u16)] {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);

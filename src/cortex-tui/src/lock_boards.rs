@@ -1249,8 +1249,15 @@ fn board_files(area: Rect, buf: &mut Buffer) {
         if y >= area.bottom().saturating_sub(3) {
             break;
         }
+        // The full filename always wins: when the row cannot hold both, the
+        // timestamp is dropped rather than ever cutting inside the name.
         let when_fit = first_fitting_line(when, 16);
-        let path_budget = w.saturating_sub(when_fit.chars().count() + 4);
+        let show_when = 2 + path.chars().count() + 2 + when_fit.chars().count() <= w;
+        let path_budget = if show_when {
+            w.saturating_sub(when_fit.chars().count() + 4)
+        } else {
+            w.saturating_sub(2)
+        };
         if selected {
             fill_row(buf, area, y, SELECTION_BG);
         }
@@ -1278,16 +1285,18 @@ fn board_files(area: Rect, buf: &mut Buffer) {
             x = x.saturating_add(take.chars().count() as u16);
             used += take.chars().count();
         }
-        let rx = area
-            .right()
-            .saturating_sub(when_fit.chars().count() as u16)
-            .max(x.saturating_add(1));
-        let when_style = if selected {
-            Style::default().fg(TEXT).bg(SELECTION_BG)
-        } else {
-            Style::default().fg(TEXT_DIM)
-        };
-        buf.set_string(rx, y, &when_fit, when_style);
+        if show_when {
+            let rx = area
+                .right()
+                .saturating_sub(when_fit.chars().count() as u16)
+                .max(x.saturating_add(1));
+            let when_style = if selected {
+                Style::default().fg(TEXT).bg(SELECTION_BG)
+            } else {
+                Style::default().fg(TEXT_DIM)
+            };
+            buf.set_string(rx, y, &when_fit, when_style);
+        }
         y += 1;
     }
     y += 1;

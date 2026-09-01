@@ -1166,6 +1166,25 @@ mod tests {
             }
         }
 
+        // 23 @files never cuts inside a filename: at 40 columns the full
+        // names win and the timestamp is dropped where both cannot fit.
+        let files_n = render_lock_scene("files", 40, 12).expect("files narrow");
+        assert!(
+            files_n.plain.contains("src/middleware/rateLimit.ts"),
+            "full filename required:\n{}",
+            files_n.plain
+        );
+        assert!(
+            files_n.plain.contains("src/config/rateLimits.json"),
+            "full filename required:\n{}",
+            files_n.plain
+        );
+        assert!(
+            !files_n.plain.contains("rateLimit.ts  edited"),
+            "the cramped timestamp must be dropped:\n{}",
+            files_n.plain
+        );
+
         let ask = render_lock_scene("ask", 120, 40).expect("ask");
         assert!(ask.plain.contains("Ask — read-only") || ask.plain.contains("read-only"));
         assert!(ask.plain.contains("estimateTokens") || ask.plain.contains("src/lib/tokens.ts"));

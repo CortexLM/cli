@@ -20,11 +20,18 @@ const PASS: Color = Color::Rgb(0x22, 0xC5, 0x5E);
 const AUTH_ORANGE: Color = Color::Rgb(0xFF, 0x8C, 0x32);
 const COMMAND_BG: Color = Color::Rgb(0x1C, 0x1C, 0x20);
 
-/// True when `id` is a dedicated lock-board painter (11–50).
+/// True when `id` is a dedicated lock-board painter (01–50).
 pub fn is_lock_board(id: &str) -> bool {
     matches!(
         id,
-        "shell"
+        "typing"
+            | "model_compact"
+            | "model_full"
+            | "mode"
+            | "permissions"
+            | "working"
+            | "read"
+            | "shell"
             | "permission"
             | "plan"
             | "streaming"
@@ -73,6 +80,13 @@ pub fn is_lock_board(id: &str) -> bool {
 /// Paint one board into `area`.
 pub fn render_lock_board(id: &str, area: Rect, buf: &mut Buffer) {
     match id {
+        "typing" => board_typing(area, buf),
+        "model_compact" => board_model_compact(area, buf),
+        "model_full" => board_model_full(area, buf),
+        "mode" => board_mode(area, buf),
+        "permissions" => board_permissions(area, buf),
+        "working" => board_working(area, buf),
+        "read" => board_read(area, buf),
         "shell" => board_shell(area, buf),
         "permission" => board_permission(area, buf),
         "plan" => board_plan(area, buf),
@@ -3139,5 +3153,355 @@ fn board_palette(area: Rect, buf: &mut Buffer) {
         buf,
         "↑↓ select  ·  ↵ run  ·  tab complete  ·  esc close",
         &format!("{MODEL} · Agent"),
+    );
+}
+
+fn board_typing(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut y = paint_launch_header(area, buf);
+    let typed = format!("{USER_PROMPT}█");
+    if compact(area) {
+        let fitted = first_fitting_line(USER_PROMPT, w.saturating_sub(3));
+        paint_mint_prompt(area, buf, y, &format!("{fitted}█"), false);
+    } else {
+        for (i, part) in wrap_or_drop(&typed, w.saturating_sub(2))
+            .into_iter()
+            .enumerate()
+        {
+            if y + 2 >= area.bottom() {
+                break;
+            }
+            if i == 0 {
+                paint_mint_prompt(area, buf, y, &part, false);
+            } else {
+                buf.set_string(area.x + 2, y, &part, Style::default().fg(TEXT));
+            }
+            y += 1;
+        }
+    }
+    paint_hints_and_footer(
+        area,
+        buf,
+        "/ commands · @ files · ! shell · shift+tab modes",
+        &format!("{MODEL} · Agent · 100% context"),
+    );
+}
+
+/// One picker row: `>` marker plus bold label on the dark bar when selected,
+/// dim meta right-aligned. Mint never touches the label itself.
+fn picker_row(area: Rect, buf: &mut Buffer, y: u16, selected: bool, label: &str, meta: &str) {
+    let w = inner_width(area);
+    if selected {
+        fill_row(buf, area, y, SELECTION_BG);
+        buf.set_string(
+            area.x,
+            y,
+            "> ",
+            Style::default().fg(SUCCESS).bg(SELECTION_BG),
+        );
+    }
+    let label_style = if selected {
+        Style::default()
+            .fg(TEXT)
+            .bg(SELECTION_BG)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(TEXT)
+    };
+    let name = first_fitting_line(label, w.saturating_sub(2));
+    buf.set_string(area.x + 2, y, &name, label_style);
+    let shown = first_fitting_line(meta, w.saturating_sub(name.chars().count() + 4));
+    if shown.is_empty() {
+        return;
+    }
+    let vx = area
+        .right()
+        .saturating_sub(shown.chars().count() as u16)
+        .max(area.x + name.chars().count() as u16 + 4);
+    let meta_style = if selected {
+        Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
+    } else {
+        Style::default().fg(TEXT_DIM)
+    };
+    buf.set_string(vx, y, &shown, meta_style);
+}
+
+const MODEL_ROWS: &[(bool, &str, &str, &str)] = &[
+    (
+        true,
+        "cortex-1-mini",
+        "Medium · current",
+        "Fast default for everyday coding.",
+    ),
+    (
+        false,
+        "cortex-1",
+        "High",
+        "Deeper reasoning for hard changes.",
+    ),
+    (
+        false,
+        "cortex-1-max",
+        "MAX · token billing",
+        "Longest context — bills by token instead of per request.",
+    ),
+];
+
+fn board_model_compact(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    paint_command_prompt(area, buf, "/model");
+    buf.set_string(
+        area.x,
+        area.y + 2,
+        first_fitting_line("Model", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    let mut y = area.y + 3;
+    for (selected, name, meta, _detail) in MODEL_ROWS {
+        if y >= area.bottom().saturating_sub(2) {
+            break;
+        }
+        picker_row(area, buf, y, *selected, name, meta);
+        y += 1;
+    }
+    paint_hints_and_footer(
+        area,
+        buf,
+        "↑↓ select · ↵ confirm · tab effort · esc close",
+        &format!("{MODEL} · Agent"),
+    );
+}
+
+fn board_model_full(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    paint_command_prompt(area, buf, "/model");
+    buf.set_string(
+        area.x,
+        area.y + 2,
+        first_fitting_line("Model", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    let mut y = area.y + 3;
+    for (selected, name, meta, detail) in MODEL_ROWS {
+        if y >= area.bottom().saturating_sub(3) {
+            break;
+        }
+        picker_row(area, buf, y, *selected, name, meta);
+        y += 1;
+        if !compact(area) {
+            buf.set_string(
+                area.x + 2,
+                y,
+                first_fitting_line(detail, w.saturating_sub(2)),
+                Style::default().fg(TEXT_DIM),
+            );
+            y += 1;
+        }
+    }
+    if !compact(area) {
+        y += 1;
+        buf.set_string(
+            area.x,
+            y,
+            first_fitting_line("Effort", w),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        );
+        y += 1;
+        buf.set_string(
+            area.x,
+            y,
+            first_fitting_line("○ Low   ● Medium   ○ High", w),
+            Style::default().fg(TEXT),
+        );
+        y += 2;
+        for part in wrap_or_drop(
+            "MAX bills by token instead of per request — manage at cortex.foundation/billing",
+            w,
+        ) {
+            if y >= area.bottom().saturating_sub(3) {
+                break;
+            }
+            buf.set_string(area.x, y, &part, Style::default().fg(TEXT_DIM));
+            y += 1;
+        }
+    }
+    paint_hints_and_footer(
+        area,
+        buf,
+        "↑↓ select · ↵ confirm · tab effort · esc close",
+        &format!("{MODEL} · Agent"),
+    );
+}
+
+fn board_mode(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    paint_command_prompt(area, buf, "/mode");
+    buf.set_string(
+        area.x,
+        area.y + 2,
+        first_fitting_line("Mode", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    let rows = [
+        (true, "● Agent", "edits files and runs commands"),
+        (false, "○ Plan", "draft an approach first — no edits"),
+        (false, "○ Ask", "read-only answers about the codebase"),
+    ];
+    let mut y = area.y + 3;
+    for (selected, label, desc) in rows {
+        if y >= area.bottom().saturating_sub(2) {
+            break;
+        }
+        if selected {
+            fill_row(buf, area, y, SELECTION_BG);
+        }
+        let label_style = if selected {
+            Style::default()
+                .fg(TEXT)
+                .bg(SELECTION_BG)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(TEXT)
+        };
+        buf.set_string(area.x, y, label, label_style);
+        let gap = label.chars().count() + 2;
+        let shown = first_fitting_line(desc, w.saturating_sub(gap));
+        if !shown.is_empty() {
+            let desc_style = if selected {
+                Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
+            } else {
+                Style::default().fg(TEXT_DIM)
+            };
+            buf.set_string(area.x + gap as u16, y, &shown, desc_style);
+        }
+        y += 1;
+    }
+    if !compact(area) {
+        y += 1;
+        buf.set_string(
+            area.x,
+            y,
+            first_fitting_line("shift+tab cycles modes anytime — even mid-turn.", w),
+            Style::default().fg(TEXT_DIM),
+        );
+    }
+    paint_hints_and_footer(
+        area,
+        buf,
+        "↑↓ select · ↵ confirm · esc close",
+        &format!("{MODEL} · Agent"),
+    );
+}
+
+fn board_permissions(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    paint_command_prompt(area, buf, "/permissions");
+    buf.set_string(
+        area.x,
+        area.y + 2,
+        first_fitting_line("Permissions", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    let rows = [
+        (false, "Read-only", "never edit files or run commands"),
+        (true, "Smart", "auto-approve safe reads — ask before edits"),
+        (false, "Full access", "only ask when leaving the sandbox"),
+    ];
+    let mut y = area.y + 3;
+    for (selected, label, desc) in rows {
+        if y >= area.bottom().saturating_sub(2) {
+            break;
+        }
+        picker_row(area, buf, y, selected, label, desc);
+        y += 1;
+    }
+    if !compact(area) {
+        y += 1;
+        for part in wrap_or_drop(
+            "Applies to this project — overrides live in .cortex/config.json.",
+            w,
+        ) {
+            if y >= area.bottom().saturating_sub(3) {
+                break;
+            }
+            buf.set_string(area.x, y, &part, Style::default().fg(TEXT_DIM));
+            y += 1;
+        }
+    }
+    paint_hints_and_footer(
+        area,
+        buf,
+        "↑↓ select · ↵ confirm · esc close",
+        &format!("{MODEL} · Agent · Smart"),
+    );
+}
+
+fn board_working(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_prompt_lines(w, area);
+    lines.push(Line::from(vec![
+        Span::styled("⠇ ", Style::default().fg(TEXT_DIM)),
+        Span::styled(
+            first_fitting_line(
+                "Working — wiring the limiter into completions",
+                w.saturating_sub(2),
+            ),
+            Style::default().fg(TEXT),
+        ),
+    ]));
+    lines.push(dim(first_fitting_line(
+        "1m 12s · 8.2k tokens · esc to interrupt",
+        w,
+    )));
+    paint_lines(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · 92% context"),
+        "Add a follow-up ↵ to queue",
+    );
+}
+
+fn board_read(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_prompt_lines(w, area);
+    let path = if compact(area) {
+        "completions.ts"
+    } else {
+        "src/server/routes/completions.ts"
+    };
+    lines.push(Line::from(vec![
+        Span::styled("● ", Style::default().fg(SUCCESS)),
+        Span::styled(
+            "Read ",
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            first_fitting_line(path, w.saturating_sub(18)),
+            Style::default().fg(TEXT),
+        ),
+        Span::styled(" · 141 lines", Style::default().fg(TEXT_DIM)),
+    ]));
+    let excerpt: &[(u32, &str)] = &[
+        (21, "import { requireApiKey } from \"../middleware/auth\";"),
+        (
+            23,
+            "export async function completionsRoute(app: FastifyInstance) {",
+        ),
+        (
+            24,
+            "  app.post(\"/v1/completions\", { preHandler: [requireApiKey] },",
+        ),
+    ];
+    let take = if compact(area) { 2 } else { excerpt.len() };
+    for (no, code) in excerpt.iter().take(take) {
+        lines.extend(grep_hit_line(w, *no, code));
+    }
+    paint_lines(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · 95% context"),
+        "Add a follow-up ↵ to queue",
     );
 }

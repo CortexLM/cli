@@ -41,6 +41,13 @@ binary still reports the crate version.
 | File | Surface |
 |------|---------|
 | `splash.png` | Empty session chrome: cwd, `> cortex`, version, composer |
+| `typing.png` | Prompt typed in the composer, block cursor |
+| `model_compact.png` | `/model` compact picker |
+| `model_full.png` | `/model` full picker with effort + billing note |
+| `mode.png` | `/mode` Agent / Plan / Ask radios |
+| `permissions.png` | `/permissions` approval policy picker |
+| `working.png` | Working spinner + elapsed / tokens |
+| `read.png` | Read tile — numbered excerpt |
 | `login_select.png` | Aligned radios, mint on the selected row |
 | `login_waiting.png` | Loading / waiting for browser auth |
 | `login_success.png` | `Signed in.` |

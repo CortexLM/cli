@@ -53,12 +53,19 @@ pub struct LockManifestFrame {
 pub fn lock_scene_ids() -> &'static [&'static str] {
     &[
         "splash",
+        "typing",
         "login_select",
         "login_waiting",
         "login_success",
         "login_error",
         "palette",
         "palette_empty",
+        "model_compact",
+        "model_full",
+        "mode",
+        "permissions",
+        "working",
+        "read",
         "settings_hub",
         "settings_empty",
         "tool_tiles",
@@ -739,6 +746,85 @@ mod tests {
         );
         let empty = render_lock_scene("session_empty", 80, 24).expect("empty");
         assert!(empty.plain.contains("Cortex CLI v1.0.0"), "{}", empty.plain);
+    }
+
+    #[test]
+    fn lock_boards_02_09_product_copy() {
+        let always: &[(&str, &[&str])] = &[
+            ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "█"]),
+            (
+                "model_compact",
+                &[
+                    "/model",
+                    "Model",
+                    "cortex-1-mini",
+                    "cortex-1-max",
+                    "current",
+                ],
+            ),
+            (
+                "model_full",
+                &["/model", "Model", "cortex-1-mini", "cortex-1-max"],
+            ),
+            ("mode", &["/mode", "Agent", "Plan", "Ask"]),
+            (
+                "permissions",
+                &["/permissions", "Read-only", "Smart", "Full access"],
+            ),
+            ("working", &["Working", "esc to interrupt", "follow-up"]),
+            ("read", &["Read", "completions.ts", "141 lines"]),
+        ];
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for (id, needles) in always {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let lower = frame.plain.to_lowercase();
+                assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
+                assert!(
+                    !frame.plain.contains("gpt-"),
+                    "{id} must use Cortex catalog slugs:\n{}",
+                    frame.plain
+                );
+                for needle in *needles {
+                    let hit = frame.plain.contains(needle)
+                        || needle
+                            .split_whitespace()
+                            .all(|word| frame.plain.contains(word));
+                    assert!(hit, "{id} missing `{needle}` at {size:?}:\n{}", frame.plain);
+                }
+            }
+        }
+
+        let typing = render_lock_scene("typing", 120, 40).expect("typing");
+        assert!(typing.plain.contains("> cortex"), "{}", typing.plain);
+        assert!(
+            typing.plain.contains("Redis-backed, with tests█"),
+            "typing must end with the block cursor:\n{}",
+            typing.plain
+        );
+
+        let full = render_lock_scene("model_full", 120, 40).expect("model_full");
+        assert!(full.plain.contains("Effort"), "{}", full.plain);
+        assert!(full.plain.contains("● Medium"), "{}", full.plain);
+        assert!(
+            full.plain.contains("cortex.foundation/billing"),
+            "{}",
+            full.plain
+        );
+
+        let mode = render_lock_scene("mode", 120, 40).expect("mode");
+        assert!(
+            mode.plain.contains("shift+tab cycles modes"),
+            "{}",
+            mode.plain
+        );
+
+        let read = render_lock_scene("read", 120, 40).expect("read");
+        assert!(read.plain.contains("requireApiKey"), "{}", read.plain);
+        assert!(read.plain.contains("21"), "{}", read.plain);
     }
 
     #[test]

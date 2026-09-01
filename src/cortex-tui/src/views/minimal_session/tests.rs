@@ -205,7 +205,9 @@ mod harness_snapshots {
         // Find the selection bar and read back one row of glyphs + styles.
         let mut checked = false;
         for y in 0..40u16 {
-            let row: String = (0..120u16).map(|x| buf[(x, y)].symbol().to_string()).collect();
+            let row: String = (0..120u16)
+                .map(|x| buf[(x, y)].symbol().to_string())
+                .collect();
             if buf[(60, y)].style().bg != Some(SELECTION_BG) || !row.contains('/') {
                 continue;
             }

@@ -3101,8 +3101,10 @@ fn board_palette(area: Rect, buf: &mut Buffer) {
         let gap = 2 + name.chars().count() + 2;
         let same_line = first_fitting_line(desc, w.saturating_sub(gap));
         if !same_line.is_empty() && !two_line {
+            // Selected row keeps the 40×12 tone: bold white label, dim
+            // description. Only the `>` marker is mint — never the copy.
             let desc_style = if i == 0 {
-                Style::default().fg(TEXT).bg(SELECTION_BG)
+                Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
             } else {
                 Style::default().fg(TEXT_DIM)
             };

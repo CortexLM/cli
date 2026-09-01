@@ -344,6 +344,62 @@ mod tests {
     use super::*;
     use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
 
+    /// Every character the ANSI stream paints with the mint accent, in order.
+    ///
+    /// `to_ansi` resets styles (`ESC[0m`) before each change, so tracking the
+    /// last `38;2;…` foreground since the previous reset is exact.
+    fn mint_painted_chars(ansi: &str) -> String {
+        const MINT_FG: &str = "38;2;0;245;212";
+        let mut painted = String::new();
+        let mut mint = false;
+        let mut rest = ansi;
+        while let Some(start) = rest.find('\x1b') {
+            if mint {
+                painted.push_str(&rest[..start]);
+            }
+            rest = &rest[start..];
+            let Some(end) = rest.find('m') else {
+                break;
+            };
+            let params = &rest[2..end];
+            if params == "0" {
+                mint = false;
+            } else if params.starts_with("38;2;") {
+                mint = params == MINT_FG;
+            }
+            rest = &rest[end + 1..];
+        }
+        if mint {
+            painted.push_str(rest);
+        }
+        painted.retain(|c| c != '\n');
+        painted
+    }
+
+    #[test]
+    fn slash_palette_paints_mint_on_the_marker_only() {
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let frame = render_lock_scene("palette", size.0, size.1).expect("palette");
+            let minted = mint_painted_chars(&frame.ansi);
+            assert!(
+                minted.chars().all(|c| matches!(c, '>' | ' ')),
+                "mint must stay on the `>` marker at {size:?}; painted {minted:?}"
+            );
+            assert!(
+                minted.contains('>'),
+                "the prompt marker must stay mint at {size:?}"
+            );
+        }
+        // The wide selected row keeps the 40×12 tone: dim description on the
+        // dark #1A3330 bar, never a bright (or mint) command row.
+        let wide = render_lock_scene("palette", 120, 40).expect("palette wide");
+        assert!(
+            wide.ansi
+                .contains("\x1b[38;2;130;154;177m\x1b[48;2;26;51;48m"),
+            "selected description must be dim on the selection bar"
+        );
+    }
+
     #[test]
     fn no_inverted_mint_selection_anywhere() {
         // Mint is highlight-only: `>`, small accents, success. A selected row

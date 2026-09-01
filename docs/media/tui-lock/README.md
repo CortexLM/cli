@@ -10,7 +10,7 @@ binary still reports the crate version.
 
 | File | Surface |
 |------|---------|
-| `splash.png` | One-line splash, no mascot |
+| `splash.png` | Empty session chrome: cwd, `> cortex`, version, composer |
 | `login_select.png` | Aligned radios, mint on the selected row |
 | `login_waiting.png` | Loading / waiting for browser auth |
 | `login_success.png` | `Signed in.` |

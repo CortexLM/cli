@@ -65,8 +65,10 @@ impl LoginMethod {
 
     fn description(&self) -> &'static str {
         match self {
-            LoginMethod::Browser => "Opens your browser to sign in",
-            LoginMethod::ApiKey => "Paste a key from your account",
+            LoginMethod::Browser => {
+                "Opens cortex.foundation/cli/auth — token never hits the model."
+            }
+            LoginMethod::ApiKey => "Paste a key from your Cortex account.",
         }
     }
 }
@@ -303,75 +305,85 @@ impl LoginScreen {
     fn render_select_method(&self, f: &mut ratatui::Frame, area: Rect) {
         let version = self.splash_version.as_str();
         let methods = LoginMethod::all();
-        let inner_width = area.width.saturating_sub(2).max(1) as usize;
+        let buf = f.buffer_mut();
+        let w = area.width.saturating_sub(1).max(1) as usize;
+        let mut y = area.y;
 
-        let mut lines: Vec<Line> = Vec::new();
-        lines.push(Line::from(Span::styled(
-            first_fitting_line(&format!("Cortex CLI v{version}"), inner_width),
+        buf.set_string(
+            area.x,
+            y,
+            first_fitting_line(&format!("Cortex CLI v{version}"), w),
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-        )));
-        lines.push(Line::from(""));
+        );
+        y += 2;
+        buf.set_string(
+            area.x,
+            y,
+            first_fitting_line("Sign in to Cortex", w),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        );
+        y += 2;
 
         for (i, method) in methods.iter().enumerate() {
+            if y >= area.bottom().saturating_sub(3) {
+                break;
+            }
             let is_selected = i == self.selected_method;
-            let radio = if is_selected { "(●)" } else { "( )" };
-            let radio_style = if is_selected {
-                Style::default().fg(HIGHLIGHT)
-            } else {
-                Style::default().fg(TEXT_DIM)
-            };
-            let label = first_fitting_line(method.label(), inner_width.saturating_sub(5));
-            lines.push(Line::from(vec![
-                Span::styled(format!("{radio} "), radio_style),
-                Span::styled(label, Style::default().fg(TEXT)),
-            ]));
+            let radio = if is_selected { "●" } else { "○" };
+            let label = first_fitting_line(method.label(), w.saturating_sub(2));
             if is_selected {
-                let hint_width = inner_width.saturating_sub(4);
-                for hint_line in wrap_or_drop(method.description(), hint_width) {
-                    lines.push(Line::from(Span::styled(
-                        format!("    {hint_line}"),
-                        Style::default().fg(TEXT_DIM),
-                    )));
+                for x in area.x..area.right() {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_bg(HIGHLIGHT);
+                        cell.set_fg(VOID);
+                    }
+                }
+                buf.set_string(
+                    area.x,
+                    y,
+                    first_fitting_line(&format!("{radio} {label}"), w),
+                    Style::default()
+                        .fg(VOID)
+                        .bg(HIGHLIGHT)
+                        .add_modifier(Modifier::BOLD),
+                );
+            } else {
+                buf.set_string(
+                    area.x,
+                    y,
+                    first_fitting_line(&format!("{radio} {label}"), w),
+                    Style::default().fg(TEXT),
+                );
+            }
+            y += 1;
+            if is_selected {
+                for hint_line in wrap_or_drop(method.description(), w) {
+                    if y >= area.bottom().saturating_sub(3) {
+                        break;
+                    }
+                    buf.set_string(area.x, y, &hint_line, Style::default().fg(TEXT_DIM));
+                    y += 1;
                 }
             }
         }
 
         if let Some(ref error) = self.error_message {
-            lines.push(Line::from(""));
-            for err_line in wrap_or_drop(error, inner_width) {
-                lines.push(Line::from(Span::styled(
-                    err_line,
-                    Style::default().fg(ERROR),
-                )));
+            y += 1;
+            for err_line in wrap_or_drop(error, w) {
+                if y >= area.bottom().saturating_sub(2) {
+                    break;
+                }
+                buf.set_string(area.x, y, &err_line, Style::default().fg(ERROR));
+                y += 1;
             }
         }
 
-        lines.push(Line::from(""));
-        let hint = if area.width < 50 {
-            "↑↓ select · Enter confirm"
-        } else {
-            "↑↓ select · Enter confirm · Ctrl+C exit"
-        };
-        if let Some(line) = wrap_or_drop(hint, inner_width).into_iter().next() {
-            lines.push(Line::from(Span::styled(
-                line,
-                Style::default().fg(TEXT_DIM),
-            )));
-        }
-
-        let content_height = (lines.len() as u16).min(area.height);
-        let content_y = if area.height <= 12 {
-            area.y
-        } else {
-            area.y + (area.height.saturating_sub(content_height)) / 2
-        };
-        let content_area = Rect::new(
-            area.x + 1,
-            content_y,
-            area.width.saturating_sub(2),
-            content_height,
+        buf.set_string(
+            area.x,
+            area.bottom().saturating_sub(2),
+            first_fitting_line("↑↓ select · ↵ continue · esc quit", w),
+            Style::default().fg(TEXT_DIM),
         );
-        f.render_widget(Paragraph::new(lines), content_area);
     }
 
     fn render_waiting(&self, f: &mut ratatui::Frame, area: Rect) {
@@ -907,7 +919,17 @@ mod tests {
         assert!(text.contains("Paste an API key"), "{text}");
         assert!(!text.contains("Guest"), "{text}");
         assert!(!text.contains("Exit"), "{text}");
-        assert!(text.contains("(●)"), "{text}");
+        assert!(text.contains("Sign in to Cortex"), "{text}");
+        assert!(text.contains("●"), "{text}");
+        assert!(text.contains("○"), "{text}");
+        assert!(
+            text.contains("cortex.foundation/cli/auth") || text.contains("foundation"),
+            "{text}"
+        );
+        assert!(
+            text.contains("↵ continue") || text.contains("continue"),
+            "{text}"
+        );
         assert!(!text.contains("▄█▀▀▀▀█▄"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));
     }

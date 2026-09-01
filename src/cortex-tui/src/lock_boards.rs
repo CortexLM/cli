@@ -44,6 +44,16 @@ pub fn is_lock_board(id: &str) -> bool {
             | "bash"
             | "config"
             | "footer_max"
+            | "login"
+            | "thinking"
+            | "todos"
+            | "question"
+            | "skills"
+            | "btw"
+            | "stopped"
+            | "compacted"
+            | "write"
+            | "clear_confirm"
     )
 }
 
@@ -70,6 +80,16 @@ pub fn render_lock_board(id: &str, area: Rect, buf: &mut Buffer) {
         "bash" => board_bash(area, buf),
         "config" => board_config(area, buf),
         "footer_max" => board_footer_max(area, buf),
+        "login" => board_login(area, buf),
+        "thinking" => board_thinking(area, buf),
+        "todos" => board_todos(area, buf),
+        "question" => board_question(area, buf),
+        "skills" => board_skills(area, buf),
+        "btw" => board_btw(area, buf),
+        "stopped" => board_stopped(area, buf),
+        "compacted" => board_compacted(area, buf),
+        "write" => board_write(area, buf),
+        "clear_confirm" => board_clear_confirm(area, buf),
         _ => {}
     }
 }
@@ -1880,4 +1900,489 @@ fn board_footer_max(area: Rect, buf: &mut Buffer) {
             );
         }
     }
+}
+
+fn board_login(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut y = area.y;
+    if !compact(area) {
+        buf.set_string(area.x, y, "> cortex", Style::default().fg(TEXT));
+        if let Some(cell) = buf.cell_mut((area.x, y)) {
+            cell.set_style(Style::default().fg(SUCCESS));
+            cell.set_char('>');
+        }
+        y += 2;
+    }
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line("Cortex CLI v1.0.0", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    y += 2;
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line("Sign in to Cortex", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    y += 2;
+
+    fill_row(buf, area, y, SUCCESS);
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line("● Continue with browser", w),
+        Style::default()
+            .fg(VOID)
+            .bg(SUCCESS)
+            .add_modifier(Modifier::BOLD),
+    );
+    y += 1;
+    for part in wrap_or_drop(
+        "Opens cortex.foundation/cli/auth — token never hits the model.",
+        w,
+    ) {
+        if y >= area.bottom().saturating_sub(4) {
+            break;
+        }
+        buf.set_string(area.x, y, &part, Style::default().fg(TEXT_DIM));
+        y += 1;
+    }
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line("○ Paste an API key", w),
+        Style::default().fg(TEXT),
+    );
+    paint_hints_and_footer(
+        area,
+        buf,
+        "↑↓ select · ↵ continue · esc quit",
+        &format!("{MODEL} · Agent"),
+    );
+}
+
+fn board_thinking(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_prompt_lines(w, area);
+    lines.push(Line::from(vec![
+        Span::styled("⠇ ", Style::default().fg(SUCCESS)),
+        Span::styled("Thinking", Style::default().fg(TEXT)),
+    ]));
+    for thought in [
+        "Need a sliding window, not a fixed counter — bursts at minute boundaries would leak.",
+        "ioredis sorted set per API key: ZADD now, ZREMRANGEBYSCORE older than window.",
+        "Fail closed if Redis is down — don't let completions through unmetered.",
+    ] {
+        for part in wrap_or_drop(thought, w) {
+            lines.push(dim(part));
+            if compact(area) {
+                break;
+            }
+        }
+        if compact(area) {
+            break;
+        }
+    }
+    paint_lines(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · 97% context"),
+        "Add a follow-up ↵ to queue",
+    );
+}
+
+fn board_todos(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_prompt_lines(w, area);
+    lines.push(white(first_fitting_line("Working 1/5", w)));
+    lines.push(Line::from(vec![
+        Span::styled("✓ ", Style::default().fg(SUCCESS)),
+        Span::styled(
+            first_fitting_line("Add Redis client singleton", w.saturating_sub(2)),
+            Style::default().fg(TEXT),
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("› ", Style::default().fg(SUCCESS)),
+        Span::styled(
+            first_fitting_line("Write ratelimit middleware", w.saturating_sub(2)),
+            Style::default().fg(TEXT),
+        ),
+    ]));
+    if !compact(area) {
+        for pending in [
+            "Wire into POST /v1/completions",
+            "Env + .env.example",
+            "Integration tests with ioredis-mock",
+        ] {
+            lines.push(Line::from(vec![
+                Span::styled("○ ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    first_fitting_line(pending, w.saturating_sub(2)),
+                    Style::default().fg(TEXT_DIM),
+                ),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("⠋ ", Style::default().fg(SUCCESS)),
+        Span::styled(
+            first_fitting_line("Writing src/middleware/rateLimit.ts", w.saturating_sub(2)),
+            Style::default().fg(TEXT),
+        ),
+    ]));
+    paint_lines(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · 90% context"),
+        "Add a follow-up ↵ to queue",
+    );
+}
+
+fn board_question(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut y = area.y;
+    if !compact(area) {
+        for line in user_prompt_lines(w, area) {
+            Paragraph::new(vec![line]).render(Rect::new(area.x, y, area.width, 1), buf);
+            y += 1;
+            if y + 8 >= area.bottom() {
+                break;
+            }
+        }
+    }
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line("Where should the limiter live?", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    y += 2;
+    let options = [
+        (false, "1  Middleware on POST /v1/completions only"),
+        (true, "2  Shared limiter for every /v1/* route"),
+        (false, "3  Per-model limits, configured in the catalog"),
+        (
+            false,
+            "4  Skip for now - I'll point you at an existing helper",
+        ),
+    ];
+    for (selected, label) in options {
+        if y >= area.bottom().saturating_sub(3) {
+            break;
+        }
+        let shown = first_fitting_line(label, w);
+        if selected {
+            fill_row(buf, area, y, SUCCESS);
+            buf.set_string(
+                area.x,
+                y,
+                &shown,
+                Style::default()
+                    .fg(VOID)
+                    .bg(SUCCESS)
+                    .add_modifier(Modifier::BOLD),
+            );
+        } else {
+            buf.set_string(area.x, y, &shown, Style::default().fg(TEXT));
+        }
+        y += 1;
+    }
+    paint_hints_and_footer(
+        area,
+        buf,
+        "1-9 pick · ↑↓ move · ↵ confirm · esc skip",
+        &format!("{MODEL} · Plan"),
+    );
+}
+
+fn board_skills(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    buf.set_string(
+        area.x,
+        area.y,
+        first_fitting_line("> /skills", w),
+        Style::default().fg(TEXT),
+    );
+    if let Some(cell) = buf.cell_mut((area.x, area.y)) {
+        cell.set_style(Style::default().fg(SUCCESS));
+        cell.set_char('>');
+    }
+    buf.set_string(
+        area.x,
+        area.y + 1,
+        first_fitting_line("/ Type to search skills", w),
+        Style::default().fg(TEXT_DIM),
+    );
+    let rows = [
+        (false, "/commit", "Stage, write a message, commit"),
+        (true, "/pr", "Open a pull request with summary + test plan"),
+        (false, "/review", "Review the current diff like a teammate"),
+        (false, "/fix-ci", "Reproduce the failed check and patch it"),
+        (false, "/migrate", "Draft a reversible database migration"),
+    ];
+    let mut y = area.y + 3;
+    for (selected, cmd, desc) in rows {
+        if y >= area.bottom().saturating_sub(3) {
+            break;
+        }
+        let line = first_fitting_line(&format!("{cmd}  {desc}"), w);
+        if selected {
+            fill_row(buf, area, y, SUCCESS);
+            buf.set_string(area.x, y, &line, Style::default().fg(VOID).bg(SUCCESS));
+        } else {
+            buf.set_string(area.x, y, cmd, Style::default().fg(SUCCESS));
+            buf.set_string(
+                area.x.saturating_add(cmd.len() as u16 + 2),
+                y,
+                first_fitting_line(desc, w.saturating_sub(cmd.len() + 2)),
+                Style::default().fg(TEXT),
+            );
+        }
+        y += 1;
+        if compact(area) && selected {
+            break;
+        }
+    }
+    buf.set_string(
+        area.x,
+        area.bottom().saturating_sub(2),
+        first_fitting_line("↑↓ select · ↵ run once · ⌥↵ pin as mode · esc close", w),
+        Style::default().fg(TEXT_DIM),
+    );
+    paint_footer(area, buf, &format!("{MODEL} · Agent"));
+}
+
+fn board_btw(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_prompt_lines(w, area);
+    lines.push(Line::from(vec![
+        Span::styled("⠇ ", Style::default().fg(SUCCESS)),
+        Span::styled(
+            first_fitting_line(
+                "Implementing the sliding-window limiter...",
+                w.saturating_sub(2),
+            ),
+            Style::default().fg(TEXT),
+        ),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("│ ", Style::default().fg(INFO)),
+        Span::styled("btw", Style::default().fg(INFO)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("│ ", Style::default().fg(INFO)),
+        Span::styled(
+            first_fitting_line("Is ioredis already a dependency?", w.saturating_sub(2)),
+            Style::default().fg(TEXT),
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("│ ", Style::default().fg(INFO)),
+        Span::styled(
+            first_fitting_line(
+                "Yes – ioredis@5.4.1 is in dependencies. No install needed.",
+                w.saturating_sub(3),
+            ),
+            Style::default().fg(TEXT),
+        ),
+        Span::styled("█", Style::default().fg(TEXT)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("│ ", Style::default().fg(INFO)),
+        Span::styled(
+            first_fitting_line("not added to the main thread", w.saturating_sub(2)),
+            Style::default().fg(TEXT_DIM),
+        ),
+    ]));
+    paint_lines(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · 91% context"),
+        "Add a follow-up ↵ to queue",
+    );
+}
+
+fn board_stopped(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_prompt_lines(w, area);
+    lines.push(Line::from(vec![
+        Span::styled("● ", Style::default().fg(SUCCESS)),
+        Span::styled("Read ", Style::default().fg(TEXT)),
+        Span::styled(
+            first_fitting_line(
+                "src/server/routes/completions.ts · 141 lines",
+                w.saturating_sub(7),
+            ),
+            Style::default().fg(TEXT_DIM),
+        ),
+    ]));
+    if !compact(area) {
+        lines.push(Line::from(vec![
+            Span::styled("● ", Style::default().fg(SUCCESS)),
+            Span::styled("Read ", Style::default().fg(TEXT)),
+            Span::styled(
+                first_fitting_line("src/middleware/auth.ts · 68 lines", w.saturating_sub(7)),
+                Style::default().fg(TEXT_DIM),
+            ),
+        ]));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("x ", Style::default().fg(ERROR)),
+        Span::styled(
+            "Stopped",
+            Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    lines.push(dim(first_fitting_line("12s · 4.1k tokens · ctrl+c", w)));
+    paint_lines(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · 94% context"),
+        "Plan, search, build anything",
+    );
+}
+
+fn board_compacted(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(SUCCESS)),
+            Span::styled("/compact", Style::default().fg(TEXT)),
+        ]),
+        Line::from(Span::styled(
+            first_fitting_line("Thread compacted", w),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(vec![
+            Span::styled("Context  ", Style::default().fg(TEXT_DIM)),
+            Span::styled("86%", Style::default().fg(TEXT)),
+            Span::styled("  →  ", Style::default().fg(TEXT)),
+            Span::styled(
+                "12%",
+                Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" used", Style::default().fg(TEXT_DIM)),
+        ]),
+        dim(first_fitting_line(
+            "Summary kept  ·  2.1k tokens kept  ·  files and todos are unchanged.",
+            w,
+        )),
+    ];
+    if compact(area) {
+        lines.pop();
+        lines.push(dim(first_fitting_line(
+            "Summary kept · files and todos are unchanged.",
+            w,
+        )));
+    }
+    paint_lines(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · 88% context"),
+        "Plan, search, build anything",
+    );
+}
+
+fn board_write(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_prompt_lines(w, area);
+    lines.push(Line::from(vec![
+        Span::styled("● ", Style::default().fg(SUCCESS)),
+        Span::styled(
+            first_fitting_line("Write src/middleware/rateLimit.ts", w.saturating_sub(6)),
+            Style::default().fg(TEXT),
+        ),
+        Span::styled(" +84", Style::default().fg(SUCCESS)),
+    ]));
+    lines.push(dim(first_fitting_line("new file", w)));
+    if !compact(area) {
+        let code = [
+            "1  import Redis from \"ioredis\";",
+            "2  import type { FastifyRequest, FastifyReply } from \"fastify\";",
+            "3",
+            "4  export function rateLimit(opts: { limit: number; windowSec: number; keyOf: (r: FastifyRequest) => string }) {",
+            "5    const redis = new Redis(process.env.REDIS_URL);",
+            "6    return async (req: FastifyRequest, reply: FastifyReply) => {",
+            "7      const key = `rl:${opts.keyOf(req)}`;",
+        ];
+        for (i, line) in code.iter().enumerate() {
+            let color = if i < 2 { INFO } else { TEXT };
+            for part in wrap_or_drop(line, w) {
+                lines.push(Line::from(Span::styled(part, Style::default().fg(color))));
+            }
+        }
+    } else {
+        for part in wrap_or_drop("1  import Redis from \"ioredis\";", w) {
+            lines.push(Line::from(Span::styled(part, Style::default().fg(INFO))));
+        }
+    }
+    paint_lines(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · 86% context"),
+        "Add a follow-up ↵ to queue",
+    );
+}
+
+fn board_clear_confirm(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    buf.set_string(
+        area.x,
+        area.y,
+        first_fitting_line("> /clear", w),
+        Style::default().fg(TEXT),
+    );
+    if let Some(cell) = buf.cell_mut((area.x, area.y)) {
+        cell.set_style(Style::default().fg(SUCCESS));
+        cell.set_char('>');
+    }
+    buf.set_string(
+        area.x,
+        area.y + 2,
+        first_fitting_line("Start a new thread?", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    let mut y = area.y + 3;
+    for part in wrap_or_drop(
+        "The transcript is dropped. Git, files and config stay as they are.",
+        w,
+    ) {
+        buf.set_string(area.x, y, &part, Style::default().fg(TEXT_DIM));
+        y += 1;
+    }
+    y += 1;
+    fill_row(buf, area, y, SUCCESS);
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line("● Clear thread", w),
+        Style::default()
+            .fg(VOID)
+            .bg(SUCCESS)
+            .add_modifier(Modifier::BOLD),
+    );
+    y += 1;
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line("○ Cancel", w),
+        Style::default().fg(TEXT),
+    );
+    paint_hints_and_footer(
+        area,
+        buf,
+        "↑↓ select · ↵ confirm · esc cancel",
+        &format!("{MODEL} · Agent"),
+    );
 }

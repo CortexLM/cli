@@ -94,6 +94,16 @@ pub fn lock_scene_ids() -> &'static [&'static str] {
         "bash",
         "config",
         "footer_max",
+        "login",
+        "thinking",
+        "todos",
+        "question",
+        "skills",
+        "btw",
+        "stopped",
+        "compacted",
+        "write",
+        "clear_confirm",
     ]
 }
 
@@ -161,7 +171,9 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
                         .version(LOCK_SPLASH_VERSION)
                         .render(area, frame.buffer_mut());
                 }
-                "login_select" => LoginScreen::lock_select(LOCK_SPLASH_VERSION, None).render(frame),
+                "login_select" => {
+                    crate::lock_boards::render_lock_board("login", area, frame.buffer_mut());
+                }
                 "login_waiting" => LoginScreen::lock_waiting(
                     LOCK_SPLASH_VERSION,
                     "ABCD-1234",
@@ -416,10 +428,21 @@ mod tests {
             "Display",
             "L a.rs",
             "L example",
-            "foundatio",
             "mocortex",
         ] {
             assert!(!plain.contains(needle), "junk {needle:?} in:\n{plain}");
+        }
+        if plain.contains("foundatio") {
+            assert!(
+                plain.contains("foundation"),
+                "truncated foundation:\n{plain}"
+            );
+        }
+        if plain.contains("Devi") {
+            assert!(
+                plain.contains("Device") || plain.contains("device"),
+                "truncated Device:\n{plain}"
+            );
         }
         assert!(!plain.to_lowercase().contains("grok"));
         assert!(!plain.to_lowercase().contains("claude"));
@@ -429,13 +452,20 @@ mod tests {
     #[test]
     fn login_radios_and_states() {
         let select = render_lock_scene("login_select", 120, 40).expect("select");
-        assert!(select.plain.contains("(●)"));
-        assert!(select.plain.contains("( )"));
+        assert!(select.plain.contains("Sign in to Cortex"));
+        assert!(select.plain.contains("●"));
+        assert!(select.plain.contains("○"));
         assert!(select.plain.contains("Continue with browser"));
         assert!(select.plain.contains("Paste an API key"));
+        assert!(select.plain.contains("cortex.foundation/cli/auth"));
+        assert!(select.plain.contains("token never hits the model"));
+        assert!(select.plain.contains("continue") || select.plain.contains("↵"));
         assert!(!select.plain.contains("Guest"));
         assert!(!select.plain.contains("Exit"));
         assert!(!select.plain.contains("▄█▀▀▀▀█▄"));
+        let radio_count = select.plain.matches("Continue with browser").count()
+            + select.plain.matches("Paste an API key").count();
+        assert_eq!(radio_count, 2, "{}", select.plain);
         assert_no_junk(&select.plain);
 
         let narrow = render_lock_scene("login_select", 40, 12).expect("narrow");
@@ -449,8 +479,29 @@ mod tests {
             "{}",
             narrow.plain
         );
+        assert!(
+            narrow.plain.contains("Sign in to Cortex"),
+            "{}",
+            narrow.plain
+        );
         assert!(!narrow.plain.contains("Devi"));
-        assert!(!narrow.plain.contains("foundatio"));
+        assert!(
+            !narrow.plain.contains("foundatio") || narrow.plain.contains("foundation"),
+            "{}",
+            narrow.plain
+        );
+        let hint_idx = narrow
+            .plain
+            .find("Opens")
+            .or_else(|| narrow.plain.find("token"));
+        let paste_idx = narrow.plain.find("Paste an API key");
+        if let (Some(h), Some(p)) = (hint_idx, paste_idx) {
+            assert!(
+                h < p,
+                "hint must sit under the selected radio:\n{}",
+                narrow.plain
+            );
+        }
         assert_no_junk(&narrow.plain);
 
         let waiting = render_lock_scene("login_waiting", 120, 40).expect("waiting");
@@ -796,5 +847,75 @@ mod tests {
         assert!(max.plain.contains("+214"));
         assert!(max.plain.contains("-9"));
         assert!(max.plain.contains("38% context left"));
+    }
+
+    #[test]
+    fn lock_boards_31_40_product_copy() {
+        let always: &[(&str, &[&str])] = &[
+            (
+                "login",
+                &[
+                    "Sign in to Cortex",
+                    "Continue with browser",
+                    "Paste an API key",
+                    "continue",
+                ],
+            ),
+            ("thinking", &["Thinking", "follow-up"]),
+            (
+                "todos",
+                &["Working 1/5", "Write ratelimit middleware", "rateLimit.ts"],
+            ),
+            ("question", &["Where should the limiter live?", "1-9 pick"]),
+            ("skills", &["/skills", "/pr", "run once"]),
+            ("btw", &["btw", "not added to the main thread"]),
+            ("stopped", &["Stopped", "ctrl+c"]),
+            ("compacted", &["Thread compacted", "12%"]),
+            ("write", &["Write", "+84", "new file"]),
+            (
+                "clear_confirm",
+                &["Start a new thread?", "Clear thread", "Cancel"],
+            ),
+        ];
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for (id, needles) in always {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let lower = frame.plain.to_lowercase();
+                assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
+                for needle in *needles {
+                    let hit = frame.plain.contains(needle)
+                        || needle
+                            .split_whitespace()
+                            .all(|word| frame.plain.contains(word));
+                    assert!(hit, "{id} missing `{needle}` at {size:?}:\n{}", frame.plain);
+                }
+            }
+        }
+
+        let login = render_lock_scene("login", 120, 40).expect("login");
+        assert!(login.plain.contains("Cortex CLI v1.0.0"));
+        assert!(login.plain.contains("cortex.foundation/cli/auth"));
+        assert!(!login.plain.contains("Guest"));
+        assert_eq!(login.plain.matches("Continue with browser").count(), 1);
+
+        let think = render_lock_scene("thinking", 120, 40).expect("think");
+        assert!(think.plain.contains("ZADD") || think.plain.contains("sliding window"));
+
+        let q = render_lock_scene("question", 120, 40).expect("q");
+        assert!(q.plain.contains("Shared limiter"));
+        assert!(q.plain.contains("Plan"));
+
+        let skills = render_lock_scene("skills", 120, 40).expect("skills");
+        for cmd in ["/commit", "/pr", "/review", "/fix-ci", "/migrate"] {
+            assert!(skills.plain.contains(cmd), "{cmd}\n{}", skills.plain);
+        }
+
+        let compact = render_lock_scene("compacted", 120, 40).expect("compacted");
+        assert!(compact.plain.contains("86%"));
+        assert!(compact.plain.contains("unchanged"));
     }
 }

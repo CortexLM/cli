@@ -79,6 +79,16 @@ binary still reports the crate version.
 | `bash.png` | Bash mode |
 | `config.png` | `/config` tree |
 | `footer_max.png` | MAX footer after push |
+| `login.png` | Sign in — two radios, hint under browser |
+| `thinking.png` | Thinking spinner + reasoning |
+| `todos.png` | Working 1/5 checklist |
+| `question.png` | Clarifying question |
+| `skills.png` | `/skills` picker |
+| `btw.png` | Side thread |
+| `stopped.png` | Interrupt / Stopped |
+| `compacted.png` | `/compact` |
+| `write.png` | Write new file excerpt |
+| `clear_confirm.png` | `/clear` confirm |
 EOF
 
 echo "Wrote $output_dir"

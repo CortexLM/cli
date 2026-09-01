@@ -46,18 +46,18 @@ mod harness_snapshots {
         assert!(!text.to_lowercase().contains("grok"));
         assert!(
             text.contains("Cortex CLI"),
-            "home session should render WelcomeCard: {text}"
+            "home session should render splash: {text}"
         );
         assert!(
             text.contains("Computer")
                 && (text.contains("This PC") || text.contains("Cloud") || text.contains("SSH")),
             "home session should show where tools run: {text}"
         );
-        for glyph in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█", "█    █"]
+        for glyph in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█"]
         {
             assert!(
-                text.contains(glyph),
-                "home session missing mascot line {glyph:?}: {text}"
+                !text.contains(glyph),
+                "home session must not show mascot {glyph:?}: {text}"
             );
         }
     }
@@ -71,6 +71,50 @@ mod harness_snapshots {
         dump_snapshot("session", &text);
         assert!(text.contains("List the files") || text.contains("Hi"));
         assert!(!text.to_lowercase().contains("grok"));
+    }
+
+    #[test]
+    fn snapshot_tool_tiles_and_diagnostics() {
+        let mut state = AppState::default();
+        state.add_message(cortex_core::widgets::Message::user("run tools"));
+        for (id, name, args) in [
+            ("1", "Read", json!({"file_path": "a.rs"})),
+            ("2", "Write", json!({"file_path": "b.rs"})),
+            ("3", "Edit", json!({"file_path": "c.rs"})),
+            ("4", "Shell", json!({"command": "ls"})),
+            ("5", "Grep", json!({"pattern": "fn"})),
+            ("6", "Glob", json!({"pattern": "*.rs"})),
+            ("7", "Delete", json!({"file_path": "gone.rs"})),
+            ("8", "List", json!({"path": "src"})),
+            ("9", "Fetch", json!({"url": "https://example.test"})),
+            ("10", "mcp__docs", json!({})),
+            ("11", "Task", json!({"description": "explore"})),
+            ("12", "diagnostics", json!({"file": "a.rs"})),
+            ("13", "diff", json!({"file": "a.rs"})),
+        ] {
+            let mut call = ToolCallDisplay::new(id.into(), name.into(), args, 1);
+            call.set_status(ToolStatus::Completed);
+            state.tool_calls.push(call);
+        }
+        let text = render(&state, 120, 40);
+        dump_snapshot("tool_tiles", &text);
+        for tile in [
+            "Read",
+            "Write",
+            "Edit",
+            "Shell",
+            "Grep",
+            "Glob",
+            "Delete",
+            "List",
+            "Fetch",
+            "MCP",
+            "Task",
+            "Diagnostics",
+            "Diff",
+        ] {
+            assert!(text.contains(tile), "missing tile {tile}: {text}");
+        }
     }
 
     #[test]

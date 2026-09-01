@@ -35,6 +35,10 @@ impl EventLoop {
                 self.app_state.clear_messages();
             }
 
+            CommandResult::Interrupt => {
+                self.cancel_streaming();
+            }
+
             CommandResult::NewSession => {
                 self.app_state.new_session();
             }

@@ -208,6 +208,8 @@ pub enum CommandResult {
     Quit,
     /// Command requests clearing the current view/session.
     Clear,
+    /// Command requests interrupting the in-flight turn.
+    Interrupt,
     /// Command requests opening a modal.
     OpenModal(ModalType),
     /// Command requests switching to a view.
@@ -236,6 +238,7 @@ impl CommandResult {
             CommandResult::Success
                 | CommandResult::Message(_)
                 | CommandResult::Clear
+                | CommandResult::Interrupt
                 | CommandResult::OpenModal(_)
                 | CommandResult::SwitchView(_)
                 | CommandResult::NewSession

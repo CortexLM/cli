@@ -127,13 +127,37 @@ pub struct ToolResultDisplay {
     pub summary: String,
 }
 
-/// Format tool arguments for collapsed view based on tool name
+/// Canonical timeline tile label for a tool name.
+pub fn tool_tile_label(name: &str) -> String {
+    match name.to_lowercase().as_str() {
+        "read" => "Read".to_string(),
+        "write" | "create" | "createfile" => "Write".to_string(),
+        "edit" | "multiedit" | "strreplace" => "Edit".to_string(),
+        "shell" | "bash" | "execute" | "command" | "local_shell" => "Shell".to_string(),
+        "grep" | "search" | "codesearch" => "Grep".to_string(),
+        "glob" => "Glob".to_string(),
+        "delete" | "rm" | "unlink" => "Delete".to_string(),
+        "list" | "ls" | "listdir" => "List".to_string(),
+        "fetch" | "fetchurl" | "webfetch" | "websearch" => "Fetch".to_string(),
+        "task" | "todo" | "todowrite" => "Task".to_string(),
+        "diagnostics" | "diag" | "lint" => "Diagnostics".to_string(),
+        "diff" | "multidiff" | "multi-diff" => "Diff".to_string(),
+        other if other.starts_with("mcp") || other.contains("__") => "MCP".to_string(),
+        other => {
+            let mut chars = other.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                None => "Tool".to_string(),
+            }
+        }
+    }
+}
 ///
 /// Returns a short summary of the tool call arguments suitable for display
 /// in a collapsed view.
 pub fn format_tool_summary(name: &str, args: &Value) -> String {
     match name.to_lowercase().as_str() {
-        "read" | "edit" => {
+        "read" | "edit" | "write" | "delete" => {
             if let Some(path) = args.get("file_path").or_else(|| args.get("filePath"))
                 && let Some(path_str) = path.as_str()
             {
@@ -141,7 +165,7 @@ pub fn format_tool_summary(name: &str, args: &Value) -> String {
             }
             format_first_arg(args)
         }
-        "execute" | "bash" => {
+        "execute" | "bash" | "shell" => {
             if let Some(cmd) = args.get("command")
                 && let Some(cmd_str) = cmd.as_str()
             {
@@ -167,7 +191,7 @@ pub fn format_tool_summary(name: &str, args: &Value) -> String {
             }
             format_first_arg(args)
         }
-        "websearch" | "codesearch" => {
+        "websearch" | "codesearch" | "fetch" | "fetchurl" => {
             if let Some(query) = args.get("query")
                 && let Some(query_str) = query.as_str()
             {
@@ -198,8 +222,8 @@ pub fn format_result_summary(name: &str, output: &str, success: bool) -> String 
             format!("↳ Read {line_count} lines")
         }
         "edit" | "multiedit" => "↳ Applied edit".to_string(),
-        "create" => "↳ File created".to_string(),
-        "execute" | "bash" => {
+        "write" | "create" => "↳ File written".to_string(),
+        "execute" | "bash" | "shell" => {
             let line_count = output.lines().count();
             if line_count == 0 {
                 "↳ Completed".to_string()
@@ -225,7 +249,7 @@ pub fn format_result_summary(name: &str, output: &str, success: bool) -> String 
                 n => format!("↳ Found {n} matches"),
             }
         }
-        "ls" => {
+        "ls" | "list" => {
             let item_count = output.lines().count();
             match item_count {
                 0 => "↳ Empty directory".to_string(),
@@ -233,7 +257,8 @@ pub fn format_result_summary(name: &str, output: &str, success: bool) -> String 
                 n => format!("↳ Listed {n} items"),
             }
         }
-        "websearch" | "codesearch" | "fetchurl" => {
+        "delete" => "↳ Deleted".to_string(),
+        "fetch" | "fetchurl" | "websearch" | "codesearch" => {
             let char_count = output.len();
             if char_count > 1000 {
                 format!("↳ Retrieved ~{} chars", char_count)
@@ -241,9 +266,26 @@ pub fn format_result_summary(name: &str, output: &str, success: bool) -> String 
                 "↳ Retrieved results".to_string()
             }
         }
-        "write" => "↳ File written".to_string(),
-        "todowrite" => "↳ Todos updated".to_string(),
-        "task" => "↳ Task completed".to_string(),
+        "task" | "todowrite" => "↳ Task completed".to_string(),
+        "mcp" => "↳ MCP".to_string(),
+        "diagnostics" | "diag" => {
+            let n = output.lines().count();
+            match n {
+                0 => "↳ No diagnostics".to_string(),
+                1 => "↳ 1 diagnostic".to_string(),
+                n => format!("↳ {n} diagnostics"),
+            }
+        }
+        "diff" | "multidiff" => {
+            if output.contains('+') || output.contains('−') || output.contains('-') {
+                format!(
+                    "↳ {}",
+                    truncate_str(output.lines().next().unwrap_or(output), 40)
+                )
+            } else {
+                "↳ Diff".to_string()
+            }
+        }
         "plan" => "↳ Plan (mermaid)".to_string(),
         "exitspecmode" => "↳ ExitSpecMode".to_string(),
         _ => {
@@ -364,6 +406,30 @@ mod tests {
         display.set_result(result);
         assert!(display.result.is_some());
         assert!(display.result.as_ref().unwrap().success);
+    }
+
+    #[test]
+    fn tool_tile_labels_match_the_lock() {
+        let cases = [
+            ("read", "Read"),
+            ("Write", "Write"),
+            ("create", "Write"),
+            ("edit", "Edit"),
+            ("bash", "Shell"),
+            ("execute", "Shell"),
+            ("grep", "Grep"),
+            ("glob", "Glob"),
+            ("delete", "Delete"),
+            ("ls", "List"),
+            ("fetchurl", "Fetch"),
+            ("mcp__server__tool", "MCP"),
+            ("task", "Task"),
+            ("diagnostics", "Diagnostics"),
+            ("multidiff", "Diff"),
+        ];
+        for (raw, tile) in cases {
+            assert_eq!(tool_tile_label(raw), tile);
+        }
     }
 
     #[test]

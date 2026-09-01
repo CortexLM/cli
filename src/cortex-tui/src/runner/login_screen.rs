@@ -13,13 +13,13 @@ use futures::StreamExt;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
 use tokio::sync::mpsc;
 
+use cortex_core::style::{CYAN_PRIMARY, ERROR, TEXT, TEXT_DIM};
 use cortex_login::{SecureAuthData, save_auth_with_fallback};
-use cortex_tui_components::mascot::MASCOT_MINIMAL_LINES;
 use cortex_tui_components::spinner::SpinnerStyle;
 
 // ============================================================================
@@ -28,10 +28,8 @@ use cortex_tui_components::spinner::SpinnerStyle;
 
 const API_BASE_URL: &str = "https://api.cortex.foundation";
 
-// Colors matching the original design
-const PRIMARY: Color = Color::Rgb(0x00, 0xFF, 0xA3);
-const DIM: Color = Color::Rgb(0x6b, 0x6b, 0x7b);
-const CYAN: Color = Color::Cyan;
+/// Highlight token (mint) — selected radio row, success, and nowhere else on this screen.
+const HIGHLIGHT: ratatui::style::Color = CYAN_PRIMARY;
 
 // ============================================================================
 // Login Screen State
@@ -257,16 +255,19 @@ impl LoginScreen {
         match self.state {
             LoginState::SelectMethod => self.render_select_method(f, area),
             LoginState::WaitingForAuth => self.render_waiting(f, area),
-            _ => {}
+            LoginState::Success => self.render_success(f, area),
+            LoginState::Failed => self.render_failed(f, area),
+            LoginState::Exit => {}
         }
     }
 
     fn render_select_method(&self, f: &mut ratatui::Frame, area: Rect) {
         let version = env!("CARGO_PKG_VERSION");
+        let methods = LoginMethod::all();
+        let rows = methods.len() as u16;
 
-        // Center the content
-        let content_width = 70.min(area.width.saturating_sub(4));
-        let content_height = 16;
+        let content_width = 70.min(area.width.saturating_sub(4)).max(20);
+        let content_height = 10 + rows;
         let content_x = (area.width.saturating_sub(content_width)) / 2;
         let content_y = (area.height.saturating_sub(content_height)) / 2;
         let content_area = Rect::new(content_x, content_y, content_width, content_height);
@@ -274,85 +275,73 @@ impl LoginScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // Separator
-                Constraint::Length(1), // Welcome message
-                Constraint::Length(1), // Description
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Select header
-                Constraint::Length(1), // Empty
-                Constraint::Length(4), // Method options
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Hints
-                Constraint::Length(1), // Error message (if any)
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(rows),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
             ])
             .split(content_area);
 
-        // Line 1: Separator
-        let separator =
-            Paragraph::new("────────────────────────────────────────────────────────────")
-                .style(Style::default().fg(DIM));
-        f.render_widget(separator, chunks[0]);
+        let splash = Paragraph::new(format!("Cortex CLI v{version}"))
+            .style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD));
+        f.render_widget(splash, chunks[0]);
 
-        // Line 2: Welcome message
-        let welcome = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "Welcome to Cortex CLI",
-                Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!(" v{}", version), Style::default().fg(DIM)),
-        ]));
-        f.render_widget(welcome, chunks[1]);
+        let description = Paragraph::new("Sign in through api.cortex.foundation (device login).")
+            .style(Style::default().fg(TEXT_DIM));
+        f.render_widget(description, chunks[1]);
 
-        // Line 3: Description
-        let description =
-            Paragraph::new("Cortex signs in through api.cortex.foundation (device login).")
-                .style(Style::default().fg(DIM));
-        f.render_widget(description, chunks[2]);
+        let header = Paragraph::new("Select login method:").style(Style::default().fg(TEXT));
+        f.render_widget(header, chunks[3]);
 
-        // Line 5: Select header
-        let header = Paragraph::new(" Select login method:");
-        f.render_widget(header, chunks[4]);
+        let label_width = methods
+            .iter()
+            .map(|m| m.label().chars().count())
+            .max()
+            .unwrap_or(0);
 
-        // Lines 7-9: Method options
         let mut lines: Vec<Line> = Vec::new();
-        for (i, method) in LoginMethod::all().iter().enumerate() {
+        for (i, method) in methods.iter().enumerate() {
             let is_selected = i == self.selected_method;
-            let prefix = if is_selected { " › " } else { "   " };
+            let radio = if is_selected { "(●)" } else { "( )" };
+            let row_style = if is_selected {
+                Style::default().fg(HIGHLIGHT)
+            } else {
+                Style::default().fg(TEXT_DIM)
+            };
+            let label_style = if is_selected {
+                Style::default().fg(HIGHLIGHT)
+            } else {
+                Style::default().fg(TEXT)
+            };
 
+            let label = format!("{:<width$}", method.label(), width = label_width);
             let mut spans = vec![
-                Span::styled(
-                    format!("{}{}. ", prefix, i + 1),
-                    Style::default().fg(if is_selected { PRIMARY } else { DIM }),
-                ),
-                Span::styled(
-                    method.label(),
-                    Style::default().fg(if is_selected { PRIMARY } else { Color::White }),
-                ),
+                Span::styled(format!(" {radio} "), row_style),
+                Span::styled(label, label_style),
             ];
-
             let desc = method.description();
             if !desc.is_empty() {
                 spans.push(Span::styled(
-                    format!(" · {}", desc),
-                    Style::default().fg(DIM),
+                    format!("  {desc}"),
+                    Style::default().fg(TEXT_DIM),
                 ));
             }
-
             lines.push(Line::from(spans));
         }
-        let options = Paragraph::new(lines);
-        f.render_widget(options, chunks[6]);
+        f.render_widget(Paragraph::new(lines), chunks[4]);
 
-        // Line 11: Hints
         let hints = Paragraph::new("↑↓ to select · Enter to confirm · Ctrl+C to exit")
-            .style(Style::default().fg(DIM));
-        f.render_widget(hints, chunks[8]);
+            .style(Style::default().fg(TEXT_DIM));
+        f.render_widget(hints, chunks[6]);
 
-        // Line 12: Error message (if any)
         if let Some(ref error) = self.error_message {
             let error_msg =
-                Paragraph::new(format!("Error: {}", error)).style(Style::default().fg(Color::Red));
-            f.render_widget(error_msg, chunks[9]);
+                Paragraph::new(format!("Error: {error}")).style(Style::default().fg(ERROR));
+            f.render_widget(error_msg, chunks[7]);
         }
     }
 
@@ -366,9 +355,8 @@ impl LoginScreen {
             .clone()
             .unwrap_or_else(|| "https://api.cortex.foundation".to_string());
 
-        // Center the content
-        let content_width = 70.min(area.width.saturating_sub(4));
-        let content_height = 14;
+        let content_width = 70.min(area.width.saturating_sub(4)).max(20);
+        let content_height = 10;
         let content_x = (area.width.saturating_sub(content_width)) / 2;
         let content_y = (area.height.saturating_sub(content_height)) / 2;
         let content_area = Rect::new(content_x, content_y, content_width, content_height);
@@ -376,79 +364,78 @@ impl LoginScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // Welcome message
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Mascot top
-                Constraint::Length(1), // Mascot + waiting message
-                Constraint::Length(1), // Mascot bottom
-                Constraint::Length(1), // Mascot legs
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Browser message
-                Constraint::Length(1), // URL
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Hints
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
             ])
             .split(content_area);
 
-        // Line 1: Welcome message
-        let welcome = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "Welcome to Cortex CLI",
-                Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!(" v{}", version), Style::default().fg(DIM)),
-        ]));
-        f.render_widget(welcome, chunks[0]);
+        let splash = Paragraph::new(format!("Cortex CLI v{version}"))
+            .style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD));
+        f.render_widget(splash, chunks[0]);
 
-        // Lines 3-6: official welcome mascot (`MASCOT_MINIMAL_LINES`).
-        f.render_widget(
-            Paragraph::new(MASCOT_MINIMAL_LINES[0]).style(Style::default().fg(PRIMARY)),
-            chunks[2],
-        );
-        f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(MASCOT_MINIMAL_LINES[1], Style::default().fg(PRIMARY)),
-                Span::styled(
-                    format!(" Waiting for browser authentication  {spinner}"),
-                    Style::default().fg(PRIMARY),
-                ),
-            ])),
-            chunks[3],
-        );
-        f.render_widget(
-            Paragraph::new(MASCOT_MINIMAL_LINES[2]).style(Style::default().fg(PRIMARY)),
-            chunks[4],
-        );
-        f.render_widget(
-            Paragraph::new(MASCOT_MINIMAL_LINES[3]).style(Style::default().fg(PRIMARY)),
-            chunks[5],
-        );
+        let waiting = Paragraph::new(format!("{spinner} Waiting for browser authentication"))
+            .style(Style::default().fg(TEXT));
+        f.render_widget(waiting, chunks[2]);
 
-        // Line 8: Browser message
+        if let Some(code) = &self.user_code {
+            let code_line =
+                Paragraph::new(format!("Code: {code}")).style(Style::default().fg(TEXT));
+            f.render_widget(code_line, chunks[3]);
+        }
+
         let copy_hint = if self.copied_notification.is_some() {
-            "(✓ Copied!)"
+            "(copied)"
         } else {
             "(c to copy)"
         };
-        let browser_msg = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "Browser didn't open? Click the URL below ",
-                Style::default().fg(DIM),
-            ),
-            Span::styled(copy_hint, Style::default().fg(DIM)),
-        ]));
-        f.render_widget(browser_msg, chunks[7]);
+        let browser_msg = Paragraph::new(format!(
+            "Browser didn't open? Open the URL below {copy_hint}"
+        ))
+        .style(Style::default().fg(TEXT_DIM));
+        f.render_widget(browser_msg, chunks[4]);
 
-        // Line 9: URL
-        let url_line = Paragraph::new(&*direct_url).style(Style::default().fg(CYAN));
-        f.render_widget(url_line, chunks[8]);
+        let url_line = Paragraph::new(direct_url).style(Style::default().fg(TEXT));
+        f.render_widget(url_line, chunks[5]);
 
-        // Line 11: Hints
         let hints =
-            Paragraph::new("Esc to go back · Ctrl+C to exit").style(Style::default().fg(DIM));
-        f.render_widget(hints, chunks[10]);
+            Paragraph::new("Esc to go back · Ctrl+C to exit").style(Style::default().fg(TEXT_DIM));
+        f.render_widget(hints, chunks[7]);
     }
 
+    fn render_success(&self, f: &mut ratatui::Frame, area: Rect) {
+        let msg = Paragraph::new("Signed in.")
+            .style(Style::default().fg(HIGHLIGHT).add_modifier(Modifier::BOLD));
+        f.render_widget(msg, centered_line(area, 20, 1));
+    }
+
+    fn render_failed(&self, f: &mut ratatui::Frame, area: Rect) {
+        let msg = self
+            .error_message
+            .clone()
+            .unwrap_or_else(|| "Sign-in failed.".to_string());
+        let widget = Paragraph::new(msg).style(Style::default().fg(ERROR));
+        f.render_widget(widget, centered_line(area, 60, 2));
+    }
+}
+
+fn centered_line(area: Rect, width: u16, height: u16) -> Rect {
+    let w = width.min(area.width);
+    let h = height.min(area.height);
+    Rect::new(
+        area.x + (area.width.saturating_sub(w)) / 2,
+        area.y + (area.height.saturating_sub(h)) / 2,
+        w,
+        h,
+    )
+}
+
+impl LoginScreen {
     fn get_direct_url(&self) -> String {
         self.verification_uri
             .clone()
@@ -865,9 +852,11 @@ mod tests {
             let _ = std::fs::create_dir_all(&dir);
             let _ = std::fs::write(std::path::Path::new(&dir).join("auth.txt"), &text);
         }
-        assert!(text.contains("Welcome to Cortex CLI"), "{text}");
+        assert!(text.contains("Cortex CLI"), "{text}");
         assert!(text.contains("Cortex Foundation account"), "{text}");
         assert!(text.contains("Guest session"), "{text}");
+        assert!(text.contains("(●)"), "{text}");
+        assert!(!text.contains("▄█▀▀▀▀█▄"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));
     }
 
@@ -894,13 +883,8 @@ mod tests {
                 || waiting.contains("Cortex"),
             "{waiting}"
         );
-        for glyph in MASCOT_MINIMAL_LINES {
-            let needle = glyph.trim();
-            assert!(
-                waiting.contains(needle),
-                "login waiting screen missing mascot line {needle:?}: {waiting}"
-            );
-        }
+        assert!(waiting.contains("Waiting"), "{waiting}");
+        assert!(!waiting.contains("▄█▀▀▀▀█▄"), "{waiting}");
 
         screen.state = LoginState::SelectMethod;
         screen.error_message = Some("The coding service is temporarily unavailable".into());
@@ -908,5 +892,35 @@ mod tests {
         let err = buffer_text(&terminal);
         assert!(err.contains("temporarily unavailable"), "{err}");
         assert!(!err.to_lowercase().contains("grok"));
+    }
+
+    #[test]
+    fn snapshot_auth_success_and_failed() {
+        let mut screen = LoginScreen::new(PathBuf::from("/tmp"), None);
+        screen.state = LoginState::Success;
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal.draw(|f| screen.render(f)).expect("draw");
+        let ok = buffer_text(&terminal);
+        assert!(ok.contains("Signed in."), "{ok}");
+
+        screen.state = LoginState::Failed;
+        screen.error_message = Some("The coding service is temporarily unavailable".into());
+        terminal.draw(|f| screen.render(f)).expect("draw");
+        let fail = buffer_text(&terminal);
+        assert!(fail.contains("temporarily unavailable"), "{fail}");
+    }
+
+    #[test]
+    fn snapshot_auth_narrow_and_wide() {
+        let screen = LoginScreen::new(PathBuf::from("/tmp"), None);
+        for (w, h) in [(40, 12), (120, 40)] {
+            let backend = TestBackend::new(w, h);
+            let mut terminal = Terminal::new(backend).expect("test backend");
+            terminal.draw(|f| screen.render(f)).expect("draw");
+            let text = buffer_text(&terminal);
+            assert!(text.contains("Cortex CLI"), "{text}");
+            assert!(!text.trim().is_empty());
+        }
     }
 }

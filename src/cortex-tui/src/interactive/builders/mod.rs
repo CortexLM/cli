@@ -42,6 +42,9 @@ pub use model::build_model_selector;
 pub use resume_picker::build_resume_picker;
 pub use scroll::build_scroll_selector;
 pub use sessions::build_sessions_selector;
-pub use settings::{SettingsSnapshot, build_settings_selector, build_settings_selector_with_tab};
+pub use settings::{
+    SettingsSnapshot, build_settings_hub, build_settings_section, build_settings_selector,
+    build_settings_selector_with_tab,
+};
 pub use temperature::build_temperature_selector;
 pub use theme::build_theme_selector;

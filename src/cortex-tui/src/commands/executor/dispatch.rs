@@ -16,6 +16,7 @@ impl CommandExecutor {
             "reload-config" | "reload" => CommandResult::Async("config:reload".to_string()),
             "theme" => self.cmd_theme(cmd),
             "compact" => CommandResult::Toggle("compact".to_string()),
+            "interrupt" | "stop" | "cancel" => CommandResult::Interrupt,
             "palette" | "cmd" => CommandResult::OpenModal(ModalType::CommandPalette),
             "init" => self.cmd_init(cmd),
             "commands" | "cmds" => CommandResult::Async("commands:list".to_string()),

@@ -250,17 +250,9 @@ mod tests {
             "welcome frame missing the public endpoint:\n{}",
             first.plain
         );
-        for glyph in cortex_tui_components::mascot::MASCOT_MINIMAL_LINES {
-            let needle = glyph.trim();
-            assert!(
-                first.plain.contains(needle),
-                "welcome frame missing mascot line {needle:?}:\n{}",
-                first.plain
-            );
-        }
         assert!(
-            first.plain.contains("Welcome!"),
-            "welcome frame missing the greeting:\n{}",
+            !first.plain.contains("▄█▀▀▀▀█▄"),
+            "welcome frame must not show a mascot:\n{}",
             first.plain
         );
         assert!(
@@ -271,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    fn welcome_beats_keep_the_mascot_on_screen() {
+    fn welcome_beats_keep_the_one_line_splash() {
         let recording = recording();
         for frame in recording
             .frames
@@ -279,8 +271,14 @@ mod tests {
             .filter(|frame| frame.label == "welcome")
         {
             assert!(
-                frame.plain.contains("▄█▀▀▀▀█▄"),
-                "welcome beat {} lost the mascot:\n{}",
+                frame.plain.contains("Cortex CLI"),
+                "welcome beat {} lost the splash:\n{}",
+                frame.index,
+                frame.plain
+            );
+            assert!(
+                !frame.plain.contains("▄█▀▀▀▀█▄"),
+                "welcome beat {} showed a mascot:\n{}",
                 frame.index,
                 frame.plain
             );
@@ -299,7 +297,7 @@ mod tests {
             "final frame scrolled the prompt away:\n{}",
             last.plain
         );
-        for tool in ["Grep", "Read", "Create", "Edit", "Execute"] {
+        for tool in ["Grep", "Read", "Write", "Edit", "Shell"] {
             assert!(
                 recording
                     .frames

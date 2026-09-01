@@ -1,6 +1,6 @@
 //! Builder for settings selection with categories.
 
-use crate::interactive::state::{InteractiveAction, InteractiveItem, InteractiveState, NavTab};
+use crate::interactive::state::{InteractiveAction, InteractiveItem, InteractiveState};
 
 /// Setting category for grouping
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -14,6 +14,15 @@ enum SettingCategory {
 }
 
 impl SettingCategory {
+    const ALL: [SettingCategory; 6] = [
+        Self::Display,
+        Self::Behavior,
+        Self::AI,
+        Self::Git,
+        Self::Cloud,
+        Self::Privacy,
+    ];
+
     fn label(&self) -> &'static str {
         match self {
             Self::Display => "Display",
@@ -22,6 +31,43 @@ impl SettingCategory {
             Self::Git => "Git",
             Self::Cloud => "Cloud",
             Self::Privacy => "Privacy",
+        }
+    }
+
+    fn id(&self) -> &'static str {
+        match self {
+            Self::Display => "display",
+            Self::Behavior => "behavior",
+            Self::AI => "ai",
+            Self::Git => "git",
+            Self::Cloud => "cloud",
+            Self::Privacy => "privacy",
+        }
+    }
+
+    fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "display" => Some(Self::Display),
+            "behavior" => Some(Self::Behavior),
+            "ai" => Some(Self::AI),
+            "git" => Some(Self::Git),
+            "cloud" => Some(Self::Cloud),
+            "privacy" => Some(Self::Privacy),
+            other => Self::ALL
+                .iter()
+                .copied()
+                .find(|c| c.label().eq_ignore_ascii_case(other)),
+        }
+    }
+
+    fn hub_description(&self) -> &'static str {
+        match self {
+            Self::Display => "Spacing, timestamps, wrap",
+            Self::Behavior => "Approvals, sandbox, sound",
+            Self::AI => "Thinking, debug, context",
+            Self::Git => "Commits and co-author",
+            Self::Cloud => "Sync and history",
+            Self::Privacy => "Telemetry",
         }
     }
 }
@@ -201,130 +247,117 @@ pub struct SettingsSnapshot {
     pub analytics: bool,
 }
 
-/// Tab pages for settings (max 3 categories per page)
-const TABS: &[(&str, &str, &[SettingCategory])] = &[
-    (
-        "general",
-        "General",
-        &[SettingCategory::Display, SettingCategory::Behavior],
-    ),
-    (
-        "ai",
-        "AI & Git",
-        &[SettingCategory::AI, SettingCategory::Git],
-    ),
-    (
-        "cloud",
-        "Cloud",
-        &[SettingCategory::Cloud, SettingCategory::Privacy],
-    ),
-];
-
-/// Build an interactive state for settings selection with tabbed navigation.
-///
-/// # Arguments
-/// * `snapshot` - Current settings values
-/// * `terminal_height` - Optional terminal height for dynamic max_visible calculation.
-/// * `active_tab` - Which tab to show (0, 1, or 2)
+/// Build an interactive state for settings: a hub of sections, not a dumped list.
 pub fn build_settings_selector(
     snapshot: SettingsSnapshot,
     terminal_height: Option<u16>,
 ) -> InteractiveState {
-    build_settings_selector_with_tab(snapshot, terminal_height, 0)
+    let _ = snapshot;
+    build_settings_hub(terminal_height)
 }
 
-/// Build settings selector with specific tab active.
+/// Settings hub: one row per section.
+pub fn build_settings_hub(terminal_height: Option<u16>) -> InteractiveState {
+    let items: Vec<InteractiveItem> = SettingCategory::ALL
+        .iter()
+        .map(|category| {
+            InteractiveItem::new(
+                format!("__section_{}", category.id()),
+                category.label().to_string(),
+            )
+            .with_description(category.hub_description().to_string())
+        })
+        .collect();
+
+    let max_visible = visible_count(terminal_height, items.len());
+    InteractiveState::new("Settings", items, InteractiveAction::ToggleSetting)
+        .with_max_visible(max_visible)
+}
+
+/// One settings section's toggles.
+pub fn build_settings_section(
+    snapshot: SettingsSnapshot,
+    terminal_height: Option<u16>,
+    section_id: &str,
+) -> InteractiveState {
+    let Some(category) = SettingCategory::from_id(section_id) else {
+        return build_settings_hub(terminal_height);
+    };
+
+    let mut items = vec![
+        InteractiveItem::new("__hub__", "< Sections")
+            .with_description("Back to settings hub".to_string()),
+    ];
+
+    for setting in SETTINGS.iter().filter(|s| s.category == category) {
+        let is_enabled = setting_enabled(&snapshot, setting.id);
+        let status = if is_enabled { "Enabled" } else { "Disabled" };
+        let icon = if is_enabled { '>' } else { ' ' };
+        items.push(
+            InteractiveItem::new(setting.id, setting.label)
+                .with_description(format!("{} ({})", setting.description, status))
+                .with_icon(icon),
+        );
+    }
+
+    let max_visible = visible_count(terminal_height, items.len());
+    InteractiveState::new(
+        format!("Settings · {}", category.label()),
+        items,
+        InteractiveAction::ToggleSetting,
+    )
+    .with_max_visible(max_visible)
+}
+
+/// Build settings selector with specific tab active (legacy; maps onto a section).
 pub fn build_settings_selector_with_tab(
     snapshot: SettingsSnapshot,
     terminal_height: Option<u16>,
     active_tab: usize,
 ) -> InteractiveState {
-    let active_tab = active_tab.min(TABS.len() - 1);
-    let (_, _, categories) = TABS[active_tab];
+    let categories = SettingCategory::ALL;
+    let section = categories
+        .get(active_tab)
+        .unwrap_or(&SettingCategory::Display);
+    build_settings_section(snapshot, terminal_height, section.id())
+}
 
-    let mut items = Vec::new();
-    let mut current_category: Option<SettingCategory> = None;
-
-    for setting in SETTINGS {
-        // Only include settings from active tab's categories
-        if !categories.contains(&setting.category) {
-            continue;
-        }
-
-        // Add category separator if category changed
-        if current_category != Some(setting.category) {
-            current_category = Some(setting.category);
-            let sep = InteractiveItem::new(
-                format!("__cat_{}", setting.category.label()),
-                setting.category.label().to_string(),
-            )
-            .as_separator();
-            items.push(sep);
-        }
-
-        let is_enabled = match setting.id {
-            // Display
-            "compact" => snapshot.compact_mode,
-            "timestamps" => snapshot.timestamps,
-            "line_numbers" => snapshot.line_numbers,
-            "word_wrap" => snapshot.word_wrap,
-            "syntax_highlight" => snapshot.syntax_highlight,
-            // Behavior
-            "auto_approve" => snapshot.auto_approve,
-            "sandbox" => snapshot.sandbox_mode,
-            "streaming" => snapshot.streaming_enabled,
-            "auto_scroll" => snapshot.auto_scroll,
-            "sound" => snapshot.sound,
-            // AI
-            "thinking" => snapshot.thinking_enabled,
-            "debug" => snapshot.debug_mode,
-            "context_aware" => snapshot.context_aware,
-            // Git
-            "co_author" => snapshot.co_author,
-            "auto_commit" => snapshot.auto_commit,
-            "sign_commits" => snapshot.sign_commits,
-            // Cloud
-            "cloud_sync" => snapshot.cloud_sync,
-            "auto_save" => snapshot.auto_save,
-            "session_history" => snapshot.session_history,
-            // Privacy
-            "telemetry" => snapshot.telemetry,
-            "analytics" => snapshot.analytics,
-            _ => false,
-        };
-
-        let status = if is_enabled { "Enabled" } else { "Disabled" };
-        let icon = if is_enabled { '>' } else { ' ' };
-
-        let item = InteractiveItem::new(setting.id, setting.label)
-            .with_description(format!("{} ({})", setting.description, status))
-            .with_icon(icon);
-
-        items.push(item);
+fn setting_enabled(snapshot: &SettingsSnapshot, id: &str) -> bool {
+    match id {
+        "compact" => snapshot.compact_mode,
+        "timestamps" => snapshot.timestamps,
+        "line_numbers" => snapshot.line_numbers,
+        "word_wrap" => snapshot.word_wrap,
+        "syntax_highlight" => snapshot.syntax_highlight,
+        "auto_approve" => snapshot.auto_approve,
+        "sandbox" => snapshot.sandbox_mode,
+        "streaming" => snapshot.streaming_enabled,
+        "auto_scroll" => snapshot.auto_scroll,
+        "sound" => snapshot.sound,
+        "thinking" => snapshot.thinking_enabled,
+        "debug" => snapshot.debug_mode,
+        "context_aware" => snapshot.context_aware,
+        "co_author" => snapshot.co_author,
+        "auto_commit" => snapshot.auto_commit,
+        "sign_commits" => snapshot.sign_commits,
+        "cloud_sync" => snapshot.cloud_sync,
+        "auto_save" => snapshot.auto_save,
+        "session_history" => snapshot.session_history,
+        "telemetry" => snapshot.telemetry,
+        "analytics" => snapshot.analytics,
+        _ => false,
     }
+}
 
-    // Build tabs
-    let tabs: Vec<NavTab> = TABS
-        .iter()
-        .map(|(id, label, _)| NavTab::new(*id, *label))
-        .collect();
-
-    // Calculate max_visible dynamically
+fn visible_count(terminal_height: Option<u16>, total_items: usize) -> usize {
     const UI_CHROME_HEIGHT: u16 = 6;
-    let total_items = items.len();
-    let max_visible = match terminal_height {
+    match terminal_height {
         Some(height) => {
             let available = height.saturating_sub(UI_CHROME_HEIGHT) as usize;
-            available.clamp(8, total_items)
+            available.clamp(6, total_items.max(6))
         }
-        None => total_items.min(40),
-    };
-
-    let mut state = InteractiveState::new("Settings", items, InteractiveAction::ToggleSetting)
-        .with_max_visible(max_visible)
-        .with_tabs(tabs);
-    state.active_tab = active_tab;
-    state
+        None => total_items.min(20),
+    }
 }
 
 #[cfg(test)]
@@ -335,37 +368,41 @@ mod tests {
     fn test_build_settings_selector() {
         let snapshot = SettingsSnapshot::default();
         let state = build_settings_selector(snapshot, None);
-        assert!(!state.items.is_empty());
         assert_eq!(state.title, "Settings");
+        assert_eq!(state.items.len(), 6);
+        assert!(state.items.iter().any(|i| i.label == "Display"));
+        assert!(state.items.iter().all(|i| i.id.starts_with("__section_")));
     }
 
     #[test]
-    fn test_settings_categories() {
+    fn test_settings_hub_is_not_a_dumped_list() {
         let snapshot = SettingsSnapshot::default();
         let state = build_settings_selector(snapshot, None);
+        assert!(
+            !state.items.iter().any(|i| i.id == "compact"),
+            "hub must not dump individual settings"
+        );
+    }
 
-        // Check that category separators exist
-        let categories: Vec<_> = state
-            .items
-            .iter()
-            .filter(|i| i.id.starts_with("__cat_"))
-            .collect();
-        assert!(!categories.is_empty());
+    #[test]
+    fn test_settings_section_lists_toggles() {
+        let snapshot = SettingsSnapshot::default();
+        let state = build_settings_section(snapshot, None, "display");
+        assert!(state.title.contains("Display"));
+        assert!(state.items.iter().any(|i| i.id == "compact"));
+        assert!(state.items.iter().any(|i| i.id == "__hub__"));
     }
 
     #[test]
     fn test_max_visible_dynamic_calculation() {
         let snapshot = SettingsSnapshot::default();
 
-        // Small terminal - should clamp to minimum of 8
         let state_small = build_settings_selector(snapshot.clone(), Some(12));
-        assert!(state_small.max_visible >= 8);
+        assert!(state_small.max_visible >= 6);
 
-        // Large terminal - should show all items
         let state_large = build_settings_selector(snapshot.clone(), Some(100));
         assert_eq!(state_large.max_visible, state_large.items.len());
 
-        // No terminal height - should default to showing all items
         let state_default = build_settings_selector(snapshot, None);
         assert_eq!(state_default.max_visible, state_default.items.len());
     }

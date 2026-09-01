@@ -95,6 +95,15 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     ));
 
     registry.register(CommandDef::new(
+        "interrupt",
+        &["stop", "cancel"],
+        "Interrupt the current turn",
+        "/interrupt",
+        CommandCategory::General,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
         "palette",
         &["cmd"],
         "Open command palette",

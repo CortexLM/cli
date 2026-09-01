@@ -609,7 +609,7 @@ impl EventLoop {
     /// Detects `/` for commands and `@` for mentions and populates
     /// the autocomplete popup accordingly.
     pub(super) fn update_autocomplete(&mut self) {
-        use crate::commands::{CommandRegistry, CompletionEngine};
+        use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_LIMIT};
         use crate::widgets::filter_mentions;
 
         let text = self.app_state.input.text();
@@ -670,13 +670,14 @@ impl EventLoop {
 
                 let items: Vec<AutocompleteItem> = completions
                     .into_iter()
-                    .take(10)
+                    .take(PALETTE_HOME_LIMIT)
                     .map(|c| {
                         AutocompleteItem::new(&c.command, &c.display, &c.description)
                             .with_category(format!("{:?}", c.category))
                     })
                     .collect();
 
+                self.app_state.autocomplete.max_visible = PALETTE_HOME_LIMIT;
                 self.app_state.autocomplete.set_items(items);
             }
             Some((pos, AutocompleteTrigger::Mention)) => {

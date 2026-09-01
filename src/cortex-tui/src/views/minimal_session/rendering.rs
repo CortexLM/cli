@@ -194,9 +194,9 @@ pub fn render_tool_call(
         Span::styled(dot, Style::default().fg(dot_color)),
         Span::raw(" "),
         Span::styled(
-            call.name.clone(),
+            crate::views::tool_call::tool_tile_label(&call.name),
             Style::default()
-                .fg(colors.accent)
+                .fg(colors.text)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
@@ -227,10 +227,12 @@ pub fn render_tool_call(
 
     // Result summary line (if completed/failed) - truncate to fit terminal width
     if let Some(ref result) = call.result {
-        let result_color = if result.success {
-            colors.text_dim
-        } else {
+        let result_color = if !result.success {
             colors.error
+        } else if result.summary.contains('+') || result.summary.contains('−') {
+            colors.accent
+        } else {
+            colors.text_dim
         };
         let summary_truncated = if result.summary.len() > line_width {
             format!(
@@ -420,8 +422,6 @@ pub fn generate_welcome_lines(
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    // Get user info
-    let user_name = app_state.user_name.as_deref().unwrap_or("User");
     let org_name = app_state.org_name.as_deref().unwrap_or("Personal");
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
@@ -429,31 +429,20 @@ pub fn generate_welcome_lines(
 
     // Create welcome card using component
     let welcome_card = WelcomeCard::new()
-        .user_name(user_name)
-        .subtitle("Your AI-powered coding assistant.")
         .version(VERSION)
-        .tips(&[
-            "Send /help for available commands.",
-            "Use Tab for autocomplete. Press Esc to cancel.",
-        ])
-        .accent_color(colors.accent)
         .text_color(colors.text)
         .dim_color(colors.text_dim)
-        .border_color(colors.accent);
+        .border_color(colors.text_dim);
 
-    // Generate lines from welcome card
     lines.extend(welcome_card.to_lines(width));
-
-    // Gap between cards
     lines.push(Line::from(""));
 
-    // Create info cards using components
     let left_card = InfoCard::new()
         .add("Directory", &cwd)
         .add("Org", org_name)
         .dim_color(colors.text_dim)
         .text_color(colors.text)
-        .border_color(colors.accent);
+        .border_color(colors.text_dim);
 
     let right_card = InfoCard::new()
         .add("Plan", "Pro")
@@ -463,7 +452,7 @@ pub fn generate_welcome_lines(
         )
         .dim_color(colors.text_dim)
         .text_color(colors.text)
-        .border_color(colors.accent);
+        .border_color(colors.text_dim);
 
     let info_cards = InfoCardPair::new(left_card, right_card)
         .gap(2)
@@ -703,10 +692,10 @@ pub fn render_scroll_to_bottom_hint(area: Rect, buf: &mut Buffer, colors: &Adapt
 
 /// Renders the MOTD (Message of the Day) with cards layout.
 ///
-/// Layout: Main card with mascot + welcome, then two info cards below.
+/// Layout: splash line, then two info cards below.
 pub fn _render_motd(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, app_state: &AppState) {
     let card_width = 79_u16.min(area.width.saturating_sub(2));
-    let welcome_card_height = 11_u16;
+    let welcome_card_height = 1_u16;
     let info_cards_height = 4_u16; // 2 items + 2 borders
     let gap = 1_u16;
     let total_height = welcome_card_height + gap + info_cards_height;
@@ -729,22 +718,11 @@ pub fn _render_motd(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, app_s
         welcome_card_height,
     );
 
-    // Get user info from app_state
-    let user_name = app_state.user_name.as_deref().unwrap_or("User");
-
-    // Render welcome card using the component with accent color for borders
     let welcome_card = WelcomeCard::new()
-        .user_name(user_name)
-        .subtitle("Your AI-powered coding assistant.")
         .version(VERSION)
-        .tips(&[
-            "Send /help for available commands.",
-            "Use Tab for autocomplete. Press Esc to cancel.",
-        ])
-        .accent_color(colors.accent)
         .text_color(colors.text)
         .dim_color(colors.text_dim)
-        .border_color(colors.accent);
+        .border_color(colors.text_dim);
 
     welcome_card.render(welcome_area, buf);
 
@@ -768,7 +746,7 @@ pub fn _render_motd(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, app_s
         .add("Org", org_name)
         .dim_color(colors.text_dim)
         .text_color(colors.text)
-        .border_color(colors.accent);
+        .border_color(colors.text_dim);
 
     // Right card: Plan + where tools run
     let right_card = InfoCard::new()
@@ -779,7 +757,7 @@ pub fn _render_motd(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, app_s
         )
         .dim_color(colors.text_dim)
         .text_color(colors.text)
-        .border_color(colors.accent);
+        .border_color(colors.text_dim);
 
     // Render info cards side by side
     InfoCardPair::new(left_card, right_card)

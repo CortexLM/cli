@@ -7,6 +7,7 @@ use crate::commands::CommandRegistry;
 
 use super::fuzzy::fuzzy_score;
 use super::types::PaletteItem;
+use crate::commands::PALETTE_HOME_COMMANDS;
 
 /// Returns the keyboard shortcut for a command, if known.
 fn get_command_shortcut(name: &str) -> Option<String> {
@@ -59,7 +60,7 @@ impl CommandPaletteState {
             items: Vec::new(),
             filtered_items: Vec::new(),
             recent: Vec::new(),
-            visible_count: 10,
+            visible_count: 20,
         }
     }
 
@@ -68,20 +69,16 @@ impl CommandPaletteState {
         self.filtered_items.clear();
 
         if self.query.is_empty() {
-            // Show all items with default score, sorted by category
-            let mut items_with_indices: Vec<(usize, i32, u8)> = self
-                .items
-                .iter()
-                .enumerate()
-                .map(|(idx, item)| (idx, 0i32, item.sort_key()))
-                .collect();
-
-            items_with_indices.sort_by_key(|(_, _, sort_key)| *sort_key);
-
-            self.filtered_items = items_with_indices
-                .into_iter()
-                .map(|(idx, score, _)| (idx, score))
-                .collect();
+            let mut pinned: Vec<(usize, i32)> = Vec::new();
+            for name in PALETTE_HOME_COMMANDS {
+                if let Some(idx) = self.items.iter().position(|item| match item {
+                    PaletteItem::Command { name: cmd, .. } => cmd == name,
+                    _ => false,
+                }) {
+                    pinned.push((idx, 0));
+                }
+            }
+            self.filtered_items = pinned;
         } else {
             // Fuzzy match against query
             let query_lower = self.query.to_lowercase();
@@ -472,9 +469,9 @@ mod tests {
             },
         ];
 
-        // Empty query shows all
+        // Empty query shows the pinned home list (history is off-list)
         state.filter();
-        assert_eq!(state.filtered_items.len(), 3);
+        assert_eq!(state.filtered_items.len(), 2);
 
         // Filter by "h" matches "help" and "history"
         state.query = "h".to_string();

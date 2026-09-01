@@ -108,6 +108,23 @@ fn test_needs_args() {
 }
 
 #[test]
+fn test_interrupt_is_first_class() {
+    let executor = CommandExecutor::new();
+    assert!(matches!(
+        executor.execute_str("/interrupt"),
+        CommandResult::Interrupt
+    ));
+    assert!(matches!(
+        executor.execute_str("/compact"),
+        CommandResult::Toggle(ref s) if s == "compact"
+    ));
+    assert!(matches!(
+        executor.execute_str("/clear"),
+        CommandResult::Clear
+    ));
+}
+
+#[test]
 fn test_clear() {
     let executor = CommandExecutor::new();
     assert!(matches!(

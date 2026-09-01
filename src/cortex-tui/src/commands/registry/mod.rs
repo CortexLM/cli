@@ -151,6 +151,7 @@ mod tests {
         assert!(registry.exists("settings"));
         assert!(registry.exists("theme"));
         assert!(registry.exists("compact"));
+        assert!(registry.exists("interrupt"));
         assert!(registry.exists("init"));
         assert!(registry.exists("commands"));
         assert!(registry.exists("agents"));

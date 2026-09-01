@@ -73,11 +73,11 @@ pub fn storyboard() -> Vec<Beat> {
     let tools = [
         ("Grep", "\"healthz\" in src/", "no matches in src/routes"),
         ("Read", "src/routes/mod.rs", "128 lines"),
-        ("Create", "src/routes/health.rs", "+18 −0"),
+        ("Write", "src/routes/health.rs", "+18 −0"),
         ("Edit", "src/routes/mod.rs", "+2 −0"),
-        ("Create", "tests/health.rs", "+21 −0"),
+        ("Write", "tests/health.rs", "+21 −0"),
         (
-            "Execute",
+            "Shell",
             "cargo test --test health",
             "test result: ok. 14 passed; 0 failed",
         ),

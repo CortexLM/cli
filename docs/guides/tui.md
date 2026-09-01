@@ -41,7 +41,7 @@ The timeline is the transcript. It renders several kinds of row:
 | Tool call | `◐`/`●` then the tool name and a short argument summary | A tool the agent invoked |
 | Tool result | `⎿ …` indented under the call | What the tool returned |
 | Subagent task | `● Task <type>` with a todo list underneath | Work delegated to a subagent |
-| Welcome card | Bordered card with the ASCII mascot, greeting, tips, workspace, and Computer | Shown while the session is empty |
+| Welcome | One line: `Cortex CLI v{version}`. Directory and Computer cards sit under it. | Shown while the session is empty |
 
 Tool rows collapse to a summary. Press `e` while the timeline has focus to
 expand or collapse the details of the selected tool call.

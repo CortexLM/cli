@@ -3,6 +3,7 @@
 //! This module provides fuzzy completion for slash commands,
 //! including scoring and category-aware sorting.
 
+use super::palette_home::{PALETTE_HOME_COMMANDS, PALETTE_HOME_LIMIT};
 use super::registry::CommandRegistry;
 use super::types::CommandCategory;
 
@@ -101,6 +102,10 @@ impl<'a> CompletionEngine<'a> {
         }
 
         let query = &partial[1..].to_lowercase();
+        if query.is_empty() {
+            return self.home_completions();
+        }
+
         let mut completions = Vec::new();
 
         // Score and collect matching commands
@@ -179,6 +184,23 @@ impl<'a> CompletionEngine<'a> {
         }
 
         groups
+    }
+
+    /// Unfiltered `/` list: twenty first-class commands.
+    fn home_completions(&self) -> Vec<Completion> {
+        let mut completions = Vec::with_capacity(PALETTE_HOME_LIMIT);
+        for name in PALETTE_HOME_COMMANDS {
+            if let Some(def) = self.registry.get(name) {
+                completions.push(Completion::new(
+                    def.name.to_string(),
+                    format!("/{}", def.name),
+                    def.description.to_string(),
+                    def.category,
+                    1000,
+                ));
+            }
+        }
+        completions
     }
 
     /// Calculates fuzzy match score.
@@ -307,7 +329,24 @@ mod tests {
         let engine = CompletionEngine::new(&registry);
 
         let completions = engine.complete("/");
-        assert!(!completions.is_empty());
+        assert_eq!(completions.len(), PALETTE_HOME_LIMIT);
+        let names: Vec<_> = completions.iter().map(|c| c.command.as_str()).collect();
+        assert_eq!(names, PALETTE_HOME_COMMANDS);
+        assert!(names.contains(&"compact"));
+        assert!(names.contains(&"interrupt"));
+        assert!(names.contains(&"clear"));
+    }
+
+    #[test]
+    fn test_complete_filter_reaches_commands_off_the_home_list() {
+        let registry = test_registry();
+        let engine = CompletionEngine::new(&registry);
+        let completions = engine.complete("/mcp-reload");
+        assert!(completions.iter().any(|c| c.command == "mcp-reload"));
+        assert!(
+            !PALETTE_HOME_COMMANDS.contains(&"mcp-reload"),
+            "filter target must not already be on the home list"
+        );
     }
 
     #[test]
@@ -376,11 +415,8 @@ mod tests {
         let registry = test_registry();
         let engine = CompletionEngine::new(&registry);
 
-        let groups = engine.complete_grouped("/");
+        let groups = engine.complete_grouped("/hel");
         assert!(!groups.is_empty());
-
-        // Should have multiple categories
-        assert!(groups.len() > 1);
     }
 
     #[test]

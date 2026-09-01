@@ -1,10 +1,11 @@
 //! Default `/` palette rows.
 //!
-//! Unfiltered `/` shows twenty first-class commands (ten on screen, the rest
-//! via “keep typing to filter”). Everything else is reachable by a filter.
+//! Unfiltered `/` shows twenty first-class commands on a tall viewport, then
+//! “N more — keep typing to filter” if anything remains. Everything else is
+//! reachable by a filter.
 
-/// Rows visible in the unfiltered slash menu (lock: 10 + “11 more”).
-pub const SLASH_VISIBLE: usize = 10;
+/// Rows visible in the unfiltered slash menu on a wide/tall lock surface.
+pub const SLASH_VISIBLE: usize = 20;
 
 /// Maximum rows shown in the unfiltered slash palette viewport.
 pub const PALETTE_HOME_LIMIT: usize = SLASH_VISIBLE;

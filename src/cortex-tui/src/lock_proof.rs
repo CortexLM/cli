@@ -10,9 +10,8 @@ use anyhow::{Context, Result};
 use cortex_core::style::VOID;
 use cortex_core::widgets::Message;
 use cortex_tui_capture::{CaptureConfig, MockTerminal, StyleRendering};
-use cortex_tui_components::welcome_card::WelcomeCard;
 use ratatui::style::Style;
-use ratatui::widgets::{Clear, Widget};
+use ratatui::widgets::Clear;
 use serde::Serialize;
 
 use crate::app::{AppState, AutocompleteItem, AutocompleteTrigger};
@@ -173,9 +172,7 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
             );
             match id {
                 "splash" => {
-                    WelcomeCard::new()
-                        .version(LOCK_SPLASH_VERSION)
-                        .render(area, frame.buffer_mut());
+                    crate::lock_boards::render_lock_board("splash", area, frame.buffer_mut());
                 }
                 "login_select" => {
                     crate::lock_boards::render_lock_board("login", area, frame.buffer_mut());
@@ -190,7 +187,9 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
                 "login_error" => {
                     LoginScreen::lock_failed(LOCK_SPLASH_VERSION, PRODUCT_ERROR).render(frame)
                 }
-                "palette" => draw_session(frame, palette_state(false)),
+                "palette" => {
+                    crate::lock_boards::render_lock_board("palette", area, frame.buffer_mut());
+                }
                 "palette_empty" => draw_session(frame, palette_state(true)),
                 "settings_empty" => draw_session(frame, settings_state(true, height)),
                 "settings_hub" => {
@@ -346,16 +345,49 @@ mod tests {
     use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
 
     #[test]
-    fn splash_is_one_line_v1_no_mascot() {
-        let frame = render_lock_scene("splash", 40, 12).expect("splash");
-        assert!(frame.plain.contains("Cortex CLI v1.0.0"), "{}", frame.plain);
-        assert!(!frame.plain.contains("▄█▀▀▀▀█▄"));
-        let occupied: Vec<_> = frame
-            .plain
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .collect();
-        assert_eq!(occupied.len(), 1, "splash must be one line: {occupied:?}");
+    fn splash_has_session_chrome() {
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let frame = render_lock_scene("splash", size.0, size.1).expect("splash");
+            assert!(
+                frame.plain.contains("Cortex CLI v1.0.0"),
+                "{:?}\n{}",
+                size,
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("Plan, search, build anything")
+                    || frame.plain.contains("Plan, search"),
+                "{:?}\n{}",
+                size,
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("~/cortex-api") || frame.plain.contains("cortex-api"),
+                "{:?}\n{}",
+                size,
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("cortex-1-mini"),
+                "{:?}\n{}",
+                size,
+                frame.plain
+            );
+            assert!(!frame.plain.contains("▄█▀▀▀▀█▄"), "{}", frame.plain);
+            assert_no_junk(&frame.plain);
+            assert!(
+                !frame.plain.trim().is_empty(),
+                "splash must not be empty at {size:?}"
+            );
+        }
+        let wide = render_lock_scene("splash", 120, 40).expect("splash wide");
+        assert!(wide.plain.contains("> cortex") || wide.plain.contains("cortex"));
+        assert!(
+            wide.plain.contains("/ commands") || wide.plain.contains("commands"),
+            "{}",
+            wide.plain
+        );
+        assert!(wide.plain.contains("100% context") || wide.plain.contains("Agent"));
     }
 
     fn assert_no_junk(plain: &str) {
@@ -469,11 +501,22 @@ mod tests {
             "{}",
             frame.plain
         );
-        let help_idx = frame.plain.find("/help").unwrap_or(usize::MAX);
-        let model_idx = frame.plain.find("/model").unwrap_or(usize::MAX);
         assert!(
-            model_idx < help_idx,
+            !frame.plain.contains("11 more"),
+            "wide palette must show 20 rows, not 10+11:\n{}",
+            frame.plain
+        );
+        let model_idx = frame.plain.find("/model").unwrap_or(usize::MAX);
+        let settings_idx = frame.plain.find("/settings").unwrap_or(usize::MAX);
+        let help_idx = frame.plain.find("/help").unwrap_or(usize::MAX);
+        assert!(
+            model_idx < settings_idx,
             "must not lead with /help:\n{}",
+            frame.plain
+        );
+        assert!(
+            help_idx == usize::MAX || settings_idx < help_idx,
+            "/help must not lead:\n{}",
             frame.plain
         );
         assert!(!frame.plain.contains("/interrupt"));
@@ -485,7 +528,15 @@ mod tests {
             "{}",
             narrow.plain
         );
+        assert!(
+            narrow.plain.contains("Choose the model")
+                || narrow.plain.contains("model for this")
+                || narrow.plain.contains("session"),
+            "narrow slash should keep a description when it fits:\n{}",
+            narrow.plain
+        );
         assert!(!narrow.plain.contains("/interrupt"));
+        assert!(!narrow.plain.contains("/theme"));
         assert_no_junk(&narrow.plain);
     }
 

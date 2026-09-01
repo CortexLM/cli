@@ -65,6 +65,8 @@ pub fn is_lock_board(id: &str) -> bool {
             | "multi_diff"
             | "settings_hub"
             | "edit"
+            | "splash"
+            | "palette"
     )
 }
 
@@ -112,6 +114,8 @@ pub fn render_lock_board(id: &str, area: Rect, buf: &mut Buffer) {
         "multi_diff" => board_multi_diff(area, buf),
         "settings_hub" => board_settings_hub(area, buf),
         "edit" => board_edit(area, buf),
+        "splash" => board_splash(area, buf),
+        "palette" => board_palette(area, buf),
         _ => {}
     }
 }
@@ -2982,6 +2986,158 @@ fn board_settings_hub(area: Rect, buf: &mut Buffer) {
         area,
         buf,
         "↑↓ select · ↵ open · esc close",
+        &format!("{MODEL} · Agent"),
+    );
+}
+
+fn paint_mint_prompt(area: Rect, buf: &mut Buffer, y: u16, rest: &str, dim_rest: bool) {
+    let w = inner_width(area);
+    if let Some(cell) = buf.cell_mut((area.x, y)) {
+        cell.set_style(Style::default().fg(SUCCESS));
+        cell.set_char('>');
+    }
+    if rest.is_empty() {
+        return;
+    }
+    let shown = first_fitting_line(rest, w.saturating_sub(2));
+    if shown.is_empty() {
+        return;
+    }
+    let fg = if dim_rest { TEXT_DIM } else { TEXT };
+    buf.set_string(area.x + 2, y, &shown, Style::default().fg(fg));
+}
+
+/// History chrome shared by splash and slash: cwd/git, `> cortex`, version.
+fn paint_launch_header(area: Rect, buf: &mut Buffer) -> u16 {
+    let w = inner_width(area);
+    let mut y = area.y;
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line(&format!("{CWD} {GIT}"), w),
+        Style::default().fg(TEXT_DIM),
+    );
+    y += 1;
+    paint_mint_prompt(area, buf, y, "cortex", false);
+    y += 1;
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line("Cortex CLI v1.0.0", w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    y + 2
+}
+
+fn board_splash(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let y = paint_launch_header(area, buf);
+    let ghost = first_fitting_line("Plan, search, build anything", w.saturating_sub(2));
+    paint_mint_prompt(area, buf, y, "", false);
+    if !ghost.is_empty() {
+        buf.set_string(area.x + 2, y, &ghost, Style::default().fg(TEXT_DIM));
+    }
+    paint_hints_and_footer(
+        area,
+        buf,
+        "/ commands · @ files · ! shell · shift+tab modes",
+        &format!("{MODEL} · Agent · 100% context"),
+    );
+}
+
+const PALETTE_ROWS: &[(&str, &str)] = &[
+    ("/model", "Choose the model for this session"),
+    ("/mode", "Switch between Agent, Plan and Ask"),
+    (
+        "/permissions",
+        "Set the approval policy for edits and commands",
+    ),
+    ("/plan", "Draft a plan before writing any code"),
+    ("/effort", "Tune reasoning effort for the current model"),
+    ("/mcp", "View and manage MCP servers"),
+    ("/sandbox", "Configure sandboxed command execution"),
+    ("/usage", "Plan usage, quota and limits"),
+    ("/resume", "Resume a previous session"),
+    ("/jobs", "Background agents and subagents"),
+    ("/skills", "List and manage skills"),
+    ("/btw", "Side note for the current turn"),
+    ("/compact", "Toggle compact display mode"),
+    ("/clear", "Clear current conversation"),
+    ("/diff", "Show file diff"),
+    ("/copy", "Show how to copy text"),
+    ("/config", "Show configuration"),
+    ("/login", "Authenticate with Cortex"),
+    ("/logout", "Clear stored credentials"),
+    ("/settings", "Open settings panel"),
+];
+
+fn board_palette(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut y = paint_launch_header(area, buf);
+    paint_mint_prompt(area, buf, y, "/", false);
+    y += if compact(area) { 1 } else { 2 };
+    let hint_reserve = 2u16;
+    let two_line = compact(area);
+    let take = if compact(area) { 2 } else { PALETTE_ROWS.len() };
+    let mut shown = 0usize;
+    for (i, (cmd, desc)) in PALETTE_ROWS.iter().enumerate() {
+        if shown >= take {
+            break;
+        }
+        if y + hint_reserve >= area.bottom() {
+            break;
+        }
+        if i == 0 {
+            fill_row(buf, area, y, SUCCESS);
+        }
+        let cmd_style = if i == 0 {
+            Style::default()
+                .fg(VOID)
+                .bg(SUCCESS)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(TEXT)
+        };
+        let name = first_fitting_line(cmd, w);
+        buf.set_string(area.x, y, &name, cmd_style);
+        let gap = name.chars().count() + 2;
+        let same_line = first_fitting_line(desc, w.saturating_sub(gap));
+        if !same_line.is_empty() && !two_line {
+            let desc_style = if i == 0 {
+                Style::default().fg(VOID).bg(SUCCESS)
+            } else {
+                Style::default().fg(TEXT_DIM)
+            };
+            buf.set_string(area.x + gap as u16, y, &same_line, desc_style);
+        }
+        y += 1;
+        shown += 1;
+        if two_line && y + hint_reserve < area.bottom() {
+            let wrapped = wrap_or_drop(desc, w.saturating_sub(2));
+            if let Some(line) = wrapped.first() {
+                buf.set_string(
+                    area.x,
+                    y,
+                    format!("  {line}"),
+                    Style::default().fg(TEXT_DIM),
+                );
+                y += 1;
+            }
+        }
+    }
+    let remaining = 21usize.saturating_sub(shown);
+    if remaining > 0 && y + hint_reserve < area.bottom() {
+        buf.set_string(
+            area.x,
+            y,
+            first_fitting_line(&format!("{remaining} more — keep typing to filter"), w),
+            Style::default().fg(TEXT_DIM),
+        );
+    }
+    paint_hints_and_footer(
+        area,
+        buf,
+        "↑↓ select  ·  ↵ run  ·  tab complete  ·  esc close",
         &format!("{MODEL} · Agent"),
     );
 }

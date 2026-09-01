@@ -15,6 +15,7 @@ use crate::app::AppState;
 use crate::commands::PALETTE_HOME_LIMIT;
 use crate::ui::colors::AdaptiveColors;
 use crate::widgets::{HintContext, KeyHints, StatusIndicator};
+use cortex_core::style::VOID;
 
 // Re-export for convenience
 pub use cortex_core::widgets::Message as ChatMessage;
@@ -327,19 +328,21 @@ impl<'a> MinimalSessionView<'a> {
 
             let is_selected = self.app_state.autocomplete.scroll_offset + i
                 == self.app_state.autocomplete.selected;
-
-            // Selection indicator
-            let indicator = if is_selected { "> " } else { "  " };
-            let indicator_style = if is_selected {
-                Style::default().fg(accent)
-            } else {
-                Style::default().fg(dim)
-            };
-            buf.set_string(inner_x.saturating_sub(1), y, indicator, indicator_style);
+            if is_selected {
+                for dx in 0..area.width {
+                    if let Some(cell) = buf.cell_mut((area.x + dx, y)) {
+                        cell.set_bg(accent);
+                        cell.set_fg(VOID);
+                    }
+                }
+            }
 
             let mut x = inner_x;
             let label_style = if is_selected {
-                Style::default().fg(accent).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(VOID)
+                    .bg(accent)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(text)
             };
@@ -350,12 +353,17 @@ impl<'a> MinimalSessionView<'a> {
             buf.set_string(x, y, &label, label_style);
             x += label.chars().count() as u16;
 
-            if area.width >= 60 && !item.description.is_empty() {
+            if !item.description.is_empty() {
                 let remaining = area.right().saturating_sub(x + 3) as usize;
                 let desc = crate::ui::text_utils::first_fitting_line(&item.description, remaining);
                 if !desc.is_empty() {
-                    buf.set_string(x, y, "  ", Style::default().fg(dim));
-                    buf.set_string(x + 2, y, &desc, Style::default().fg(dim));
+                    let desc_style = if is_selected {
+                        Style::default().fg(VOID).bg(accent)
+                    } else {
+                        Style::default().fg(dim)
+                    };
+                    buf.set_string(x, y, "  ", desc_style);
+                    buf.set_string(x + 2, y, &desc, desc_style);
                 }
             }
         }

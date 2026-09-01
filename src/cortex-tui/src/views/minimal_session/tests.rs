@@ -100,6 +100,10 @@ mod harness_snapshots {
         let text = render(&state, 120, 40);
         dump_snapshot("tool_tiles", &text);
         assert!(text.contains("Read"), "missing Read: {text}");
+        assert!(
+            text.contains("●"),
+            "completed tiles carry the mint status dot: {text}"
+        );
         assert!(text.contains("Diagnostics"), "missing Diagnostics: {text}");
         assert!(!text.contains("L a.rs"), "{text}");
         let narrow = render(&state, 40, 12);

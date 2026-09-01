@@ -29,9 +29,9 @@ binary still reports the crate version.
 | `tool_tiles.png` | Grep tile (one card at a time) |
 | `diagnostics.png` | Diagnostics tile |
 | `multi_diff.png` | `/diff` files changed this turn |
-| `compact.png` | Compact mode |
-| `interrupt.png` | Interrupt / Esc |
-| `clear.png` | Clear (empty session again) |
+| `compact.png` | `/compact` — thread compacted (same board as `compacted.png`) |
+| `interrupt.png` | Interrupt — tiles stay on screen, `✗ Stopped` |
+| `clear.png` | `/clear` confirm (same board as `clear_confirm.png`) |
 | `session_empty.png` | Empty session |
 | `session_loading.png` | Loading / streaming |
 | `session_error.png` | Error |

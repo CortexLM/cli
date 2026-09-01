@@ -211,9 +211,22 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
                 "multi_diff" => {
                     crate::lock_boards::render_lock_board("multi_diff", area, frame.buffer_mut());
                 }
-                "compact" => draw_session(frame, compact_state()),
-                "interrupt" => draw_session(frame, interrupt_state()),
-                "clear" => draw_session(frame, clear_state()),
+                // States 37, 38 and 40 are Designer boards, not the live
+                // session view: tiles stay on interrupt, compact reports the
+                // summary, and clear is the confirm dialog.
+                "interrupt" => {
+                    crate::lock_boards::render_lock_board("stopped", area, frame.buffer_mut());
+                }
+                "compact" => {
+                    crate::lock_boards::render_lock_board("compacted", area, frame.buffer_mut());
+                }
+                "clear" => {
+                    crate::lock_boards::render_lock_board(
+                        "clear_confirm",
+                        area,
+                        frame.buffer_mut(),
+                    );
+                }
                 "session_empty" => draw_session(frame, empty_session_state()),
                 "session_loading" => draw_session(frame, loading_session_state()),
                 "session_error" => draw_session(frame, error_session_state()),
@@ -245,7 +258,7 @@ fn draw_session(frame: &mut ratatui::Frame, state: AppState) {
 fn lock_app() -> AppState {
     let mut state = AppState::default();
     state.cli_version = LOCK_SPLASH_VERSION.to_string();
-    state.footer_cwd = "~/cli".into();
+    state.footer_cwd = "~/cortex-api".into();
     state.git_branch = "main".into();
     state.git_dirty = true;
     state.model = "cortex-1-mini".into();
@@ -317,25 +330,6 @@ fn settings_state(empty: bool, height: u16) -> AppState {
     state
 }
 
-fn compact_state() -> AppState {
-    let mut state = success_session_state();
-    state.compact_mode = true;
-    state
-}
-
-fn interrupt_state() -> AppState {
-    let mut state = loading_session_state();
-    state.input.set_text("/interrupt");
-    state
-}
-
-fn clear_state() -> AppState {
-    let mut state = success_session_state();
-    state.clear_messages();
-    state.cli_version = LOCK_SPLASH_VERSION.to_string();
-    state
-}
-
 /// Render the Ctrl+K palette over a session (wide lock surfaces).
 #[allow(dead_code)]
 pub fn command_palette_home() -> crate::widgets::CommandPaletteState {
@@ -399,7 +393,7 @@ mod tests {
                 assert!(
                     minted
                         .chars()
-                        .all(|c| matches!(c, '>' | '●' | '✓' | '+' | '0'..='9' | ' ')),
+                        .all(|c| matches!(c, '>' | '●' | '✓' | '+' | '%' | '0'..='9' | ' ')),
                     "{id} paints mint outside the marker set at {size:?}: {minted:?}"
                 );
             }
@@ -759,16 +753,109 @@ mod tests {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 assert!(!frame.plain.trim().is_empty(), "{id} empty at {size:?}");
                 assert!(!frame.plain.to_lowercase().contains("grok"));
+                assert!(
+                    !frame.plain.contains("~/cli "),
+                    "{id} must use the ~/cortex-api cwd at {size:?}:\n{}",
+                    frame.plain
+                );
             }
         }
-        let interrupt = render_lock_scene("interrupt", 120, 40).expect("interrupt");
-        assert!(
-            interrupt.plain.contains("interrupt") || interrupt.plain.contains("Esc"),
-            "{}",
-            interrupt.plain
-        );
+        // 37 interrupt keeps the prompt and tool tiles on screen, then shows
+        // `✗ Stopped` — never a lone `/interrupt` line or a bare splash.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let interrupt = render_lock_scene("interrupt", size.0, size.1).expect("interrupt");
+            assert!(interrupt.plain.contains("✗"), "{}", interrupt.plain);
+            assert!(interrupt.plain.contains("Stopped"), "{}", interrupt.plain);
+            assert!(interrupt.plain.contains("ctrl+c"), "{}", interrupt.plain);
+            assert!(
+                interrupt.plain.contains("completions.ts"),
+                "tiles must stay on screen:\n{}",
+                interrupt.plain
+            );
+            assert!(
+                !interrupt.plain.contains("/interrupt"),
+                "{}",
+                interrupt.plain
+            );
+            assert!(
+                !interrupt.plain.contains("Cortex CLI v1.0.0"),
+                "37 must not be a splash:\n{}",
+                interrupt.plain
+            );
+        }
+        // 38 compact reports the compaction, on the locked chrome.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let compacted = render_lock_scene("compact", size.0, size.1).expect("compact");
+            assert!(compacted.plain.contains("/compact"), "{}", compacted.plain);
+            assert!(
+                compacted.plain.contains("Thread compacted"),
+                "{}",
+                compacted.plain
+            );
+            assert!(compacted.plain.contains("86%"), "{}", compacted.plain);
+            assert!(compacted.plain.contains("12%"), "{}", compacted.plain);
+            assert!(
+                compacted.plain.contains("~/cortex-api"),
+                "{}",
+                compacted.plain
+            );
+        }
+        // 40 clear is the confirm dialog, not an empty splash.
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let clear = render_lock_scene("clear", size.0, size.1).expect("clear");
+            assert!(
+                clear.plain.contains("Start a new thread?"),
+                "{}",
+                clear.plain
+            );
+            assert!(clear.plain.contains("Clear thread"), "{}", clear.plain);
+            assert!(clear.plain.contains("Cancel"), "{}", clear.plain);
+            assert!(
+                !clear.plain.contains("Cortex CLI v1.0.0"),
+                "40 must not be a splash:\n{}",
+                clear.plain
+            );
+        }
         let empty = render_lock_scene("session_empty", 80, 24).expect("empty");
         assert!(empty.plain.contains("Cortex CLI v1.0.0"), "{}", empty.plain);
+    }
+
+    #[test]
+    fn tool_tile_dots_are_mint() {
+        // Every tool tile paints its `●` status dot mint, exactly like the
+        // locked Grep tile. Labels stay white.
+        let tiles = [
+            "tool_tiles",
+            "grep",
+            "read",
+            "plan",
+            "write",
+            "glob",
+            "edit",
+            "delete",
+            "list",
+            "fetch",
+            "mcp_call",
+            "task",
+            "diagnostics",
+            "shell",
+            "sudo",
+            "queue",
+            "stopped",
+            "interrupt",
+            "footer_max",
+            "permission",
+        ];
+        for id in tiles {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let minted = mint_painted_chars(&frame.ansi);
+                assert!(
+                    minted.contains('●'),
+                    "{id} must paint its tile dot mint at {size:?}; minted {minted:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -929,6 +1016,12 @@ mod tests {
         let plan = render_lock_scene("plan", 120, 40).expect("plan");
         assert!(plan.plain.contains("Redis-backed"));
         assert!(plan.plain.contains(" · Plan · ") || plan.plain.contains("Plan ·"));
+        let plan_n = render_lock_scene("plan", 40, 12).expect("plan narrow");
+        assert!(
+            plan_n.plain.contains("implement"),
+            "narrow plan must wrap the confirm label, never truncate it:\n{}",
+            plan_n.plain
+        );
 
         let resume = render_lock_scene("resume", 120, 40).expect("resume");
         assert!(resume.plain.contains("Sessions sync through Cortex Cloud"));

@@ -3,7 +3,7 @@
 //! These scenes share session chrome (prompt, composer, cwd+git footer) and
 //! Cortex product copy only.
 
-use cortex_core::style::{SELECTION_BG, SUCCESS, TEXT, TEXT_DIM};
+use cortex_core::style::{ERROR, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -359,6 +359,10 @@ fn board_permission(area: Rect, buf: &mut Buffer) {
         first_fitting_line("● Cortex wants to run", w),
         Style::default().fg(TEXT),
     );
+    if let Some(cell) = buf.cell_mut((area.x, y)) {
+        cell.set_style(Style::default().fg(SUCCESS));
+        cell.set_char('●');
+    }
     y += 1;
 
     fill_row(buf, area, y, COMMAND_BG);
@@ -481,31 +485,45 @@ fn board_plan(area: Rect, buf: &mut Buffer) {
     lines.push(Line::from(""));
     lines.push(white(first_fitting_line("Implement this plan?", w)));
 
-    let body_h = area.height.saturating_sub(4);
+    // The confirm label wraps onto a second bar row when narrow — copy is
+    // never mid-word truncated.
+    let yes_lines: Vec<String> = wrap_or_drop("> Yes, switch to Agent mode and implement", w)
+        .into_iter()
+        .take(2)
+        .collect();
+    let yes_rows = yes_lines.len().max(1) as u16;
+
+    let body_h = area.height.saturating_sub(3 + yes_rows);
     Paragraph::new(lines).render(Rect::new(area.x, area.y, area.width, body_h), buf);
 
-    let y = area.bottom().saturating_sub(4);
-    let yes = first_fitting_line("> Yes, switch to Agent mode and implement", w);
-    fill_row(buf, area, y, SELECTION_BG);
+    let no_y = area.bottom().saturating_sub(3);
+    let yes_y = no_y.saturating_sub(yes_rows);
+    for (i, part) in yes_lines.iter().enumerate() {
+        let y = yes_y + i as u16;
+        fill_row(buf, area, y, SELECTION_BG);
+        let x = if i == 0 { area.x } else { area.x + 2 };
+        buf.set_string(
+            x,
+            y,
+            first_fitting_line(part, w.saturating_sub(if i == 0 { 0 } else { 2 })),
+            Style::default()
+                .fg(TEXT)
+                .bg(SELECTION_BG)
+                .add_modifier(Modifier::BOLD),
+        );
+        if i == 0 {
+            mint_selection_caret(buf, area, y);
+        }
+    }
     buf.set_string(
         area.x,
-        y,
-        &yes,
-        Style::default()
-            .fg(TEXT)
-            .bg(SELECTION_BG)
-            .add_modifier(Modifier::BOLD),
-    );
-    mint_selection_caret(buf, area, y);
-    buf.set_string(
-        area.x,
-        y.saturating_add(1),
+        no_y,
         first_fitting_line("  No, keep planning — tell Cortex what to change", w),
         Style::default().fg(TEXT),
     );
     buf.set_string(
         area.x,
-        y.saturating_add(2),
+        no_y.saturating_add(1),
         first_fitting_line("↑↓ select · ↵ confirm · esc keep planning", w),
         Style::default().fg(TEXT_DIM),
     );
@@ -2278,47 +2296,103 @@ fn board_btw(area: Rect, buf: &mut Buffer) {
     );
 }
 
-fn board_stopped(area: Rect, buf: &mut Buffer) {
+/// Composer row with a block cursor ahead of the ghost, per the Designer
+/// boards for interrupt and compact: mint `>`, white cursor, dim ghost.
+fn paint_cursor_composer(area: Rect, buf: &mut Buffer, footer_right: &str) {
     let w = inner_width(area);
-    let mut lines = user_prompt_lines(w, area);
-    lines.push(Line::from(vec![
-        Span::styled("● ", Style::default().fg(SUCCESS)),
-        Span::styled("Read ", Style::default().fg(TEXT)),
-        Span::styled(
-            first_fitting_line(
-                "src/server/routes/completions.ts · 141 lines",
-                w.saturating_sub(7),
-            ),
+    let composer_y = area.bottom().saturating_sub(3);
+    buf.set_string(area.x, composer_y, "> ", Style::default().fg(SUCCESS));
+    buf.set_string(area.x + 2, composer_y, "█", Style::default().fg(TEXT));
+    let ghost = first_fitting_line("Plan, search, build anything", w.saturating_sub(4));
+    if !ghost.is_empty() {
+        buf.set_string(
+            area.x + 4,
+            composer_y,
+            &ghost,
             Style::default().fg(TEXT_DIM),
-        ),
-    ]));
-    if !compact(area) {
-        lines.push(Line::from(vec![
-            Span::styled("● ", Style::default().fg(SUCCESS)),
-            Span::styled("Read ", Style::default().fg(TEXT)),
-            Span::styled(
-                first_fitting_line("src/middleware/auth.ts · 68 lines", w.saturating_sub(7)),
-                Style::default().fg(TEXT_DIM),
-            ),
-        ]));
+        );
     }
-    lines.push(Line::from(vec![
-        Span::styled("x ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
-        Span::styled(
-            "Stopped",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-        ),
-    ]));
-    lines.push(dim(first_fitting_line("12s · 4.1k tokens · ctrl+c", w)));
-    paint_lines(
+    paint_hints_and_footer(
         area,
         buf,
-        lines,
-        &format!("{MODEL} · Agent · 94% context"),
-        "Plan, search, build anything",
+        "/ commands · @ files · ! shell · shift+tab modes",
+        footer_right,
     );
 }
 
+/// State 37 — the run was interrupted: prompt and tool tiles stay on screen,
+/// then `✗ Stopped`. Shared by the `interrupt` and `stopped` captures.
+fn board_stopped(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = Vec::new();
+    // Prompt per the Designer board: mint `>`, white copy on every line.
+    if compact(area) {
+        lines.push(Line::from(vec![
+            Span::styled("> ", Style::default().fg(SUCCESS)),
+            Span::styled(
+                first_fitting_line(USER_PROMPT, w.saturating_sub(2)),
+                Style::default().fg(TEXT),
+            ),
+        ]));
+    } else {
+        for (i, part) in wrap_or_drop(USER_PROMPT, w.saturating_sub(2))
+            .into_iter()
+            .enumerate()
+        {
+            if i == 0 {
+                lines.push(Line::from(vec![
+                    Span::styled("> ", Style::default().fg(SUCCESS)),
+                    Span::styled(part, Style::default().fg(TEXT)),
+                ]));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(part, Style::default().fg(TEXT)),
+                ]));
+            }
+        }
+    }
+    lines.push(Line::from(""));
+    let tiles = if compact(area) {
+        vec![("completions.ts", " · 141 lines")]
+    } else {
+        vec![
+            ("src/server/routes/completions.ts", " · 141 lines"),
+            ("src/middleware/auth.ts", " · 68 lines"),
+        ]
+    };
+    for (path, meta) in tiles {
+        lines.push(Line::from(vec![
+            Span::styled("● ", Style::default().fg(SUCCESS)),
+            Span::styled(
+                "Read ",
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                first_fitting_line(path, w.saturating_sub(20)),
+                Style::default().fg(TEXT),
+            ),
+            Span::styled(meta, Style::default().fg(TEXT_DIM)),
+        ]));
+    }
+    if !compact(area) {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("✗ ", Style::default().fg(ERROR)),
+        Span::styled(
+            "Stopped",
+            Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    lines.push(dim(first_fitting_line("12s · 4.1k tokens · ctrl+c", w)));
+    let body_h = area.height.saturating_sub(3);
+    Paragraph::new(lines).render(Rect::new(area.x, area.y, area.width, body_h), buf);
+    paint_cursor_composer(area, buf, &format!("{MODEL} · Agent · 94% context"));
+}
+
+/// State 38 — `/compact` result. Shared by the `compact` and `compacted`
+/// captures; 12% is the mint success stat on the Designer board.
 fn board_compacted(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = vec![
@@ -2326,6 +2400,7 @@ fn board_compacted(area: Rect, buf: &mut Buffer) {
             Span::styled("> ", Style::default().fg(SUCCESS)),
             Span::styled("/compact", Style::default().fg(TEXT)),
         ]),
+        Line::from(""),
         Line::from(Span::styled(
             first_fitting_line("Thread compacted", w),
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
@@ -2333,11 +2408,8 @@ fn board_compacted(area: Rect, buf: &mut Buffer) {
         Line::from(vec![
             Span::styled("Context  ", Style::default().fg(TEXT_DIM)),
             Span::styled("86%", Style::default().fg(TEXT)),
-            Span::styled("  →  ", Style::default().fg(TEXT)),
-            Span::styled(
-                "12%",
-                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled("  →  ", Style::default().fg(TEXT_DIM)),
+            Span::styled("12%", Style::default().fg(SUCCESS)),
             Span::styled(" used", Style::default().fg(TEXT_DIM)),
         ]),
         dim(first_fitting_line(
@@ -2346,19 +2418,16 @@ fn board_compacted(area: Rect, buf: &mut Buffer) {
         )),
     ];
     if compact(area) {
+        lines.remove(1);
         lines.pop();
         lines.push(dim(first_fitting_line(
             "Summary kept · files and todos are unchanged.",
             w,
         )));
     }
-    paint_lines(
-        area,
-        buf,
-        lines,
-        &format!("{MODEL} · Agent · 88% context"),
-        "Plan, search, build anything",
-    );
+    let body_h = area.height.saturating_sub(3);
+    Paragraph::new(lines).render(Rect::new(area.x, area.y, area.width, body_h), buf);
+    paint_cursor_composer(area, buf, &format!("{MODEL} · Agent · 88% context"));
 }
 
 fn board_write(area: Rect, buf: &mut Buffer) {

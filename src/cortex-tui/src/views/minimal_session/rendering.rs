@@ -168,7 +168,9 @@ pub fn render_tool_call(
             // Spinners stay gray — mint is reserved for markers and success.
             (Some(frame.to_string()), colors.text_dim)
         }
-        ToolStatus::Completed => (None, colors.text),
+        // Completed tiles carry the mint status dot, same as the locked Grep
+        // tile; the label stays white.
+        ToolStatus::Completed => (Some("●".to_string()), colors.accent),
         ToolStatus::Failed => (Some("●".to_string()), colors.error),
     };
 

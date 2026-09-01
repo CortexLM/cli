@@ -17,11 +17,11 @@ binary still reports the crate version.
 | `login_error.png` | Product-facing error |
 | `palette.png` | `/` home: twenty commands |
 | `palette_empty.png` | `/` filter with no matches |
-| `settings_hub.png` | `/settings` section hub |
+| `settings_hub.png` | `/settings` seven-row hub |
 | `settings_empty.png` | Settings filter with no matches |
-| `tool_tiles.png` | Read Write Edit Shell Grep Glob Delete List Fetch MCP Task |
+| `tool_tiles.png` | Grep tile (one card at a time) |
 | `diagnostics.png` | Diagnostics tile |
-| `multi_diff.png` | Multi-diff / `+diff` |
+| `multi_diff.png` | `/diff` files changed this turn |
 | `compact.png` | Compact mode |
 | `interrupt.png` | Interrupt / Esc |
 | `clear.png` | Clear (empty session again) |
@@ -59,3 +59,11 @@ binary still reports the crate version.
 | `compacted.png` | `/compact` |
 | `write.png` | Write new file excerpt |
 | `clear_confirm.png` | `/clear` confirm |
+| `grep.png` | Grep tile — one card, numbered hits |
+| `glob.png` | Glob tile — matching paths |
+| `delete.png` | Delete confirm radios |
+| `list.png` | List directory entries |
+| `fetch.png` | Fetch URL excerpt |
+| `mcp_call.png` | MCP tool call + table |
+| `task.png` | Task running |
+| `edit.png` | Edit tile +diff |

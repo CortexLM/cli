@@ -423,13 +423,61 @@ mod tests {
             }
         }
         // Diff additions really are green, not violet.
-        for id in ["footer_max", "write", "edit", "multi_diff"] {
+        for id in ["footer_max", "write", "edit", "multi_diff", "queue"] {
             let frame = render_lock_scene(id, 120, 40).expect(id);
             let painted = painted_chars(&frame.ansi, DIFF_GREEN_FG);
             assert!(
                 painted.contains('+'),
                 "{id} must paint its +diff green: {painted:?}"
             );
+        }
+    }
+
+    #[test]
+    fn every_edit_plus_count_is_green() {
+        // Rule from states 10 (Edit +9), 24 (queued Edit +58) and 30 (MAX
+        // footer +214): the `+N` of an Edit / Write / commit is the diff
+        // green at both sizes — never gray, violet or mint. Scan every scene
+        // for `+N` tokens on Edit, Write and Committed lines.
+        for id in lock_scene_ids() {
+            for size in [(40u16, 12u16), (120u16, 40u16)] {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let green = painted_chars(&frame.ansi, DIFF_GREEN_FG);
+                for line in frame.plain.lines() {
+                    if !(line.contains("Edit ")
+                        || line.contains("Write ")
+                        || line.contains("files ·"))
+                    {
+                        continue;
+                    }
+                    let mut rest = line;
+                    while let Some(at) = rest.find('+') {
+                        let digits: String = rest[at + 1..]
+                            .chars()
+                            .take_while(|c| c.is_ascii_digit())
+                            .collect();
+                        if !digits.is_empty() {
+                            let token = format!("+{digits}");
+                            assert!(
+                                green.contains(&token),
+                                "{id} paints `{token}` without the diff green at {size:?}: {line:?}"
+                            );
+                        }
+                        rest = &rest[at + 1..];
+                    }
+                }
+            }
+        }
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let queue = render_lock_scene("queue", size.0, size.1).expect("queue");
+            assert!(
+                painted_chars(&queue.ansi, DIFF_GREEN_FG).contains("+58"),
+                "queued Edit +58 must be green at {size:?}"
+            );
+            let edit = render_lock_scene("edit", size.0, size.1).expect("edit");
+            assert!(painted_chars(&edit.ansi, DIFF_GREEN_FG).contains("+9"));
+            let max = render_lock_scene("footer_max", size.0, size.1).expect("footer_max");
+            assert!(painted_chars(&max.ansi, DIFF_GREEN_FG).contains("+214"));
         }
     }
 

@@ -247,6 +247,32 @@ mod harness_snapshots {
     }
 
     #[test]
+    fn diff_stat_spans_paint_only_plus_counts_green() {
+        use crate::ui::colors::AdaptiveColors;
+        use crate::views::minimal_session::rendering::diff_stat_spans;
+
+        let colors = AdaptiveColors::default_dark();
+        let spans = diff_stat_spans("Edit src/a.ts · +58 -0", &colors);
+        let fg_of = |text: &str| {
+            spans
+                .iter()
+                .find(|s| s.content == text)
+                .unwrap_or_else(|| panic!("missing span {text:?}: {spans:?}"))
+                .style
+                .fg
+        };
+        assert_eq!(fg_of("+58"), Some(colors.diff_add));
+        assert_eq!(fg_of("-0"), Some(colors.text_dim));
+        assert_eq!(fg_of("Edit"), Some(colors.text_dim));
+        // A bare `+` or a word is never green.
+        let spans = diff_stat_spans("rate limits + 429 examples", &colors);
+        assert!(
+            spans.iter().all(|s| s.style.fg == Some(colors.text_dim)),
+            "{spans:?}"
+        );
+    }
+
+    #[test]
     fn snapshot_cancel_message() {
         let mut state = AppState::default();
         state.add_message(cortex_core::widgets::Message::user("list files"));

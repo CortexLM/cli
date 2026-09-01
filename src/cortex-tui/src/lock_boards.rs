@@ -1444,18 +1444,26 @@ fn board_queue(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = user_prompt_lines(w, area);
     // Narrow rows keep the whole thought: the path shortens rather than the
-    // diff stats falling off the end.
-    let edit = if compact(area) {
-        "Edit rateLimit.ts · +58 -0"
+    // diff stats falling off the end. The in-progress Edit paints its `+58`
+    // in the diff green, exactly like the Edit tile and the MAX footer.
+    let path = if compact(area) {
+        "rateLimit.ts"
     } else {
-        "Edit src/middleware/rateLimit.ts · +58 -0"
+        "src/middleware/rateLimit.ts"
     };
     lines.push(Line::from(vec![
         Span::styled("● ", Style::default().fg(SUCCESS)),
         Span::styled(
-            first_fitting_line(edit, w.saturating_sub(2)),
+            "Edit ",
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            first_fitting_line(path, w.saturating_sub(16)),
             Style::default().fg(TEXT),
         ),
+        Span::styled(" · ", Style::default().fg(TEXT_DIM)),
+        Span::styled("+58", Style::default().fg(DIFF_ADD)),
+        Span::styled(" -0", Style::default().fg(TEXT_DIM)),
     ]));
     lines.push(Line::from(vec![
         Span::styled("⁝ ", Style::default().fg(TEXT_DIM)),

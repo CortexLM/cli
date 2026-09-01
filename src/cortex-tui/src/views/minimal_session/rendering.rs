@@ -254,21 +254,45 @@ pub fn render_tool_call(
         }
     } else if let Some(ref result) = call.result {
         let summary = result.summary.trim();
-        let has_diff = summary.contains('+') || summary.contains('−') || summary.contains('-');
         for line in wrap_or_drop(summary, inner) {
-            lines.push(Line::from(Span::styled(
-                line,
-                Style::default().fg(if has_diff {
-                    colors.diff_add
-                } else {
-                    colors.text_dim
-                }),
-            )));
+            lines.push(Line::from(diff_stat_spans(&line, colors)));
         }
     }
 
     lines.push(Line::from(""));
     lines
+}
+
+/// Style a summary such as `Edit src/a.ts · +58 -0`: every `+N` token is the
+/// diff green, `-N` / `−N` tokens and the rest stay dim. Green never covers a
+/// deletion count or a word.
+pub fn diff_stat_spans(text: &str, colors: &AdaptiveColors) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let next_space = rest.find(' ').unwrap_or(rest.len());
+        let (token, tail) = rest.split_at(next_space);
+        let is_add = token.len() > 1
+            && token.starts_with('+')
+            && token[1..].chars().all(|c| c.is_ascii_digit());
+        spans.push(Span::styled(
+            token.to_string(),
+            Style::default().fg(if is_add {
+                colors.diff_add
+            } else {
+                colors.text_dim
+            }),
+        ));
+        let spaces_end = tail.find(|c: char| c != ' ').unwrap_or(tail.len());
+        if spaces_end > 0 {
+            spans.push(Span::styled(
+                tail[..spaces_end].to_string(),
+                Style::default().fg(colors.text_dim),
+            ));
+        }
+        rest = &tail[spaces_end..];
+    }
+    spans
 }
 
 /// Renders a subagent task with todos in Factory-style format

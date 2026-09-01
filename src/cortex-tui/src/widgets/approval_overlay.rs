@@ -486,22 +486,11 @@ impl ApprovalOverlay {
             let path_str = change.path.display().to_string();
             let summary = change.summary();
 
-            // Color code based on change type
-            let (_type_color, summary_style) = match change.change_type {
-                ChangeType::Add => (
-                    cortex_core::style::DIFF_ADD,
-                    Style::default()
-                        .fg(cortex_core::style::DIFF_ADD)
-                        .bg(SURFACE_0),
-                ),
-                ChangeType::Modify => (
-                    cortex_core::style::WARNING,
-                    Style::default().fg(TEXT_DIM).bg(SURFACE_0),
-                ),
-                ChangeType::Delete => (
-                    cortex_core::style::ERROR,
-                    Style::default().fg(cortex_core::style::ERROR).bg(SURFACE_0),
-                ),
+            // Deletions are red; every other summary is dim except its `+N`
+            // tokens, which are the diff green — never the `-N` beside them.
+            let base_style = match change.change_type {
+                ChangeType::Delete => Style::default().fg(cortex_core::style::ERROR).bg(SURFACE_0),
+                ChangeType::Add | ChangeType::Modify => Style::default().fg(TEXT_DIM).bg(SURFACE_0),
             };
 
             // Path
@@ -513,7 +502,26 @@ impl ApprovalOverlay {
             // Summary (e.g., "+15 -3")
             let summary_x = x + truncated_path.len() as u16 + 1;
             if summary_x + summary.len() as u16 <= x + width {
-                buf.set_string(summary_x, y, format!("({})", summary), summary_style);
+                let mut cx = summary_x;
+                buf.set_string(cx, y, "(", base_style);
+                cx += 1;
+                for token in summary.split(' ') {
+                    let is_add = token.len() > 1
+                        && token.starts_with('+')
+                        && token[1..].chars().all(|c| c.is_ascii_digit());
+                    let style = if is_add {
+                        Style::default()
+                            .fg(cortex_core::style::DIFF_ADD)
+                            .bg(SURFACE_0)
+                    } else {
+                        base_style
+                    };
+                    buf.set_string(cx, y, token, style);
+                    cx += token.chars().count() as u16;
+                    buf.set_string(cx, y, " ", base_style);
+                    cx += 1;
+                }
+                buf.set_string(cx.saturating_sub(1), y, ")", base_style);
             }
 
             y += 1;

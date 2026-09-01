@@ -1,4 +1,5 @@
 use super::types::AutocompleteTrigger;
+use crate::commands::PALETTE_HOME_LIMIT;
 
 /// An item in the autocomplete list
 #[derive(Debug, Clone)]
@@ -37,7 +38,7 @@ impl AutocompleteItem {
 }
 
 /// State for the autocomplete popup
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AutocompleteState {
     pub visible: bool,
     pub trigger: Option<AutocompleteTrigger>,
@@ -58,7 +59,7 @@ impl AutocompleteState {
             trigger_position: 0,
             items: Vec::new(),
             selected: 0,
-            max_visible: 10,
+            max_visible: PALETTE_HOME_LIMIT,
             scroll_offset: 0,
         }
     }
@@ -150,5 +151,11 @@ impl AutocompleteState {
         self.items = items;
         self.selected = 0;
         self.scroll_offset = 0;
+    }
+}
+
+impl Default for AutocompleteState {
+    fn default() -> Self {
+        Self::new()
     }
 }

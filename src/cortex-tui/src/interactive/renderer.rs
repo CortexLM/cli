@@ -125,7 +125,7 @@ impl<'a> Widget for InteractiveWidget<'a> {
         }
 
         // Draw only top border line
-        let border_style = Style::default().fg(CYAN_PRIMARY);
+        let border_style = Style::default().fg(TEXT_DIM);
         let border_line = "─".repeat(area.width as usize);
         buf.set_string(area.x, area.y, &border_line, border_style);
 
@@ -136,9 +136,7 @@ impl<'a> Widget for InteractiveWidget<'a> {
             area.x + 1,
             title_y,
             &title,
-            Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         );
 
         // Render tabs if present (on the same line as title, after it)
@@ -226,6 +224,14 @@ impl<'a> InteractiveWidget<'a> {
     /// Render the list items.
     fn render_items(&self, area: Rect, buf: &mut Buffer) {
         let visible_items = self.state.visible_items();
+        if visible_items.is_empty() {
+            Paragraph::new(Span::styled(
+                "No matching settings",
+                Style::default().fg(TEXT_MUTED),
+            ))
+            .render(area, buf);
+            return;
+        }
         let start = self.state.scroll_offset;
         let end = (start + area.height as usize).min(visible_items.len());
 

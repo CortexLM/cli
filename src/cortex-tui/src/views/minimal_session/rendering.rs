@@ -36,6 +36,7 @@ pub fn render_message_with_theme(
     width: u16,
     colors: &AdaptiveColors,
     markdown_theme: &MarkdownTheme,
+    compact: bool,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -145,8 +146,9 @@ pub fn render_message_with_theme(
         }
     }
 
-    // Add blank line after each message for spacing
-    lines.push(Line::from(""));
+    if !compact {
+        lines.push(Line::from(""));
+    }
 
     lines
 }
@@ -287,7 +289,6 @@ pub fn render_tool_call(
         }
     }
 
-    lines.push(Line::from("")); // Spacing
     lines
 }
 
@@ -427,15 +428,21 @@ pub fn generate_welcome_lines(
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "~/".to_string());
 
-    // Create welcome card using component
+    let version = if app_state.cli_version.is_empty() {
+        VERSION
+    } else {
+        app_state.cli_version.as_str()
+    };
     let welcome_card = WelcomeCard::new()
-        .version(VERSION)
+        .version(version)
         .text_color(colors.text)
         .dim_color(colors.text_dim)
         .border_color(colors.text_dim);
 
     lines.extend(welcome_card.to_lines(width));
-    lines.push(Line::from(""));
+    if !app_state.compact_mode {
+        lines.push(Line::from(""));
+    }
 
     let left_card = InfoCard::new()
         .add("Directory", &cwd)
@@ -505,6 +512,7 @@ pub fn generate_message_lines(
             width,
             colors,
             markdown_theme,
+            app_state.compact_mode,
         ));
     }
 
@@ -719,7 +727,11 @@ pub fn _render_motd(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, app_s
     );
 
     let welcome_card = WelcomeCard::new()
-        .version(VERSION)
+        .version(if app_state.cli_version.is_empty() {
+            VERSION
+        } else {
+            app_state.cli_version.as_str()
+        })
         .text_color(colors.text)
         .dim_color(colors.text_dim)
         .border_color(colors.text_dim);

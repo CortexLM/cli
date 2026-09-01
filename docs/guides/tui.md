@@ -151,3 +151,4 @@ surface provider, SDK or transport names in the UI. See
 - [Keyboard shortcuts](../reference/keyboard.md) — every binding, by context
 - [Themes](../customization/themes.md) — switching the colour scheme
 - [Sessions](sessions.md) — what happens to a conversation after you close it
+- [Visual lock captures](../media/tui-lock/README.md) — headless PNGs of splash, login, palette, and tiles

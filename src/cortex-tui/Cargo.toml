@@ -87,3 +87,7 @@ tempfile = { workspace = true }
 
 [lints]
 workspace = true
+
+[[bin]]
+name = "generate_tui_lock_screenshots"
+path = "src/bin/generate_tui_lock_screenshots.rs"

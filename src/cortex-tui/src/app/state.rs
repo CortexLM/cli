@@ -170,6 +170,8 @@ pub struct AppState {
     pub markdown_theme: MarkdownTheme,
     /// Compact display mode
     pub compact_mode: bool,
+    /// Version shown on the empty-session splash (`Cortex CLI v{cli_version}`).
+    pub cli_version: String,
     /// Debug mode enabled
     pub debug_mode: bool,
     /// Sandbox mode (restricted execution)
@@ -304,6 +306,7 @@ impl AppState {
             theme_colors: ThemeColors::dark(),
             markdown_theme: MarkdownTheme::default(),
             compact_mode: false,
+            cli_version: env!("CARGO_PKG_VERSION").to_string(),
             debug_mode: false,
             sandbox_mode: false,
             temperature: 0.7,

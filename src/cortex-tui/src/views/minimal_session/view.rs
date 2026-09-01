@@ -9,6 +9,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
 use crate::app::AppState;
+use crate::commands::PALETTE_HOME_LIMIT;
 use crate::ui::colors::AdaptiveColors;
 use crate::ui::consts::{CURSOR_BLINK_INTERVAL_MS, border};
 use crate::widgets::{HintContext, KeyHints, StatusIndicator};
@@ -69,9 +70,12 @@ impl<'a> MinimalSessionView<'a> {
             self.app_state,
         ));
 
-        // 2. Gap after welcome
-        all_lines.push(Line::from(""));
-        all_lines.push(Line::from(""));
+        if self.app_state.compact_mode {
+            all_lines.push(Line::from(""));
+        } else {
+            all_lines.push(Line::from(""));
+            all_lines.push(Line::from(""));
+        }
 
         // 3. Generate message lines
         all_lines.extend(generate_message_lines(
@@ -284,12 +288,13 @@ impl<'a> MinimalSessionView<'a> {
         let accent = self.colors.accent;
         let dim = self.colors.text_dim;
         let text = self.colors.text;
-        let border_style = Style::default().fg(accent);
+        let border_style = Style::default().fg(dim);
 
         // Calculate actual height based on items (top stays fixed, bottom varies)
         let visible_items = self.app_state.autocomplete.visible_items();
-        let item_count = visible_items.len().min(8) as u16;
-        let actual_height = item_count + 2; // items + top/bottom border
+        let max_items = area.height.saturating_sub(2) as usize;
+        let item_count = visible_items.len().min(max_items) as u16;
+        let actual_height = item_count + 2;
 
         // Draw top border with rounded corners
         if let Some(cell) = buf.cell_mut((area.x, area.y)) {
@@ -334,11 +339,21 @@ impl<'a> MinimalSessionView<'a> {
         let inner_y = area.y + 1;
         let inner_x = area.x + 2;
 
+        if visible_items.is_empty() {
+            buf.set_string(
+                inner_x,
+                inner_y,
+                "No matching commands",
+                Style::default().fg(dim),
+            );
+            return;
+        }
+
         for (i, item) in visible_items.iter().enumerate() {
-            if i >= 8 {
-                break; // Max 8 visible items
-            }
             let y = inner_y + i as u16;
+            if y >= area.y + area.height.saturating_sub(1) {
+                break;
+            }
 
             let is_selected = self.app_state.autocomplete.scroll_offset + i
                 == self.app_state.autocomplete.selected;
@@ -406,17 +421,39 @@ impl<'a> Widget for MinimalSessionView<'a> {
         let is_task_running = self.is_task_running();
 
         // Calculate fixed heights
-        let autocomplete_visible =
-            self.app_state.autocomplete.visible && self.app_state.autocomplete.has_items();
-        let autocomplete_height: u16 = if autocomplete_visible { 10 } else { 0 };
+        let autocomplete_visible = self.app_state.autocomplete.visible;
+        let ac_items = if autocomplete_visible {
+            self.app_state
+                .autocomplete
+                .visible_items()
+                .len()
+                .min(PALETTE_HOME_LIMIT)
+                .max(if self.app_state.autocomplete.has_items() {
+                    0
+                } else {
+                    1
+                })
+        } else {
+            0
+        };
+        let max_ac_height = area
+            .height
+            .saturating_sub(6)
+            .min((PALETTE_HOME_LIMIT as u16).saturating_add(2));
+        let autocomplete_height: u16 = if autocomplete_visible {
+            ((ac_items as u16).saturating_add(2))
+                .min(max_ac_height)
+                .max(3)
+        } else {
+            0
+        };
         let status_height: u16 = if is_task_running { 1 } else { 0 };
         let show_update_banner = self.app_state.should_show_update_banner();
         let update_banner_height: u16 = if show_update_banner { 1 } else { 0 };
         let input_height: u16 = 3;
         let hints_height: u16 = 1;
 
-        // Calculate welcome card heights from render_motd constants
-        let welcome_card_height = 11_u16;
+        let welcome_card_height = 1_u16;
         let info_cards_height = 4_u16;
         let welcome_total = welcome_card_height + 1 + info_cards_height; // +1 gap between cards
 

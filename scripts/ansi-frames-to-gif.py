@@ -328,6 +328,12 @@ def main() -> int:
         default=None,
         help="Keep the intermediate PNG frames in this directory",
     )
+    parser.add_argument(
+        "--png-only",
+        type=Path,
+        default=None,
+        help="Write named PNGs from manifest labels to this directory and skip the GIF",
+    )
     args = parser.parse_args()
 
     manifest_path = args.frames / "manifest.json"
@@ -353,9 +359,15 @@ def main() -> int:
 
     png_root = args.keep_pngs
     temp_dir = None
-    if png_root is None:
+    named_dir = args.png_only
+    if named_dir is not None:
+        named_dir.mkdir(parents=True, exist_ok=True)
+        png_root = named_dir
+    elif png_root is None:
         temp_dir = tempfile.TemporaryDirectory()
         png_root = Path(temp_dir.name)
+    else:
+        png_root.mkdir(parents=True, exist_ok=True)
     png_root.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -365,9 +377,19 @@ def main() -> int:
             grid = parse_ansi(ansi, width, height)
             check_glyph_coverage(grid, fonts)
             image = render_frame(grid, fonts, cell_w, cell_h, args.padding, baseline)
-            for _ in range(entry["hold"]):
-                image.save(png_root / f"{output_index:05d}.png")
+            if named_dir is not None:
+                label = entry.get("label") or Path(entry["file"]).stem
+                safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in label)
+                image.save(named_dir / f"{safe}.png")
                 output_index += 1
+            else:
+                for _ in range(entry["hold"]):
+                    image.save(png_root / f"{output_index:05d}.png")
+                    output_index += 1
+
+        if named_dir is not None:
+            print(f"Wrote {output_index} PNGs to {named_dir}")
+            return 0
 
         build_gif(png_root, args.output, fps, args.scale)
     finally:

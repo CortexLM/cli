@@ -18,7 +18,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
 use tokio::sync::mpsc;
 
-use cortex_core::style::{CYAN_PRIMARY, ERROR, TEXT, TEXT_DIM};
+use cortex_core::style::{CYAN_PRIMARY, ERROR, TEXT, TEXT_DIM, VOID};
 use cortex_login::{SecureAuthData, save_auth_with_fallback};
 use cortex_tui_components::spinner::SpinnerStyle;
 
@@ -122,6 +122,8 @@ pub struct LoginScreen {
     message: Option<String>,
     async_rx: Option<mpsc::Receiver<AsyncMessage>>,
     copied_notification: Option<Instant>,
+    /// Splash line version (`Cortex CLI v{version}`).
+    splash_version: String,
 }
 
 impl LoginScreen {
@@ -137,7 +139,50 @@ impl LoginScreen {
             message,
             async_rx: None,
             copied_notification: None,
+            splash_version: env!("CARGO_PKG_VERSION").to_string(),
         }
+    }
+
+    /// Override the splash version (lock captures pin `1.0.0`).
+    pub fn with_splash_version(mut self, version: impl Into<String>) -> Self {
+        self.splash_version = version.into();
+        self
+    }
+
+    /// Select-method screen with an optional product error under the radios.
+    pub fn lock_select(version: &str, error: Option<&str>) -> Self {
+        let mut screen =
+            Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
+        screen.state = LoginState::SelectMethod;
+        screen.error_message = error.map(str::to_string);
+        screen
+    }
+
+    /// Waiting-for-browser (loading) screen.
+    pub fn lock_waiting(version: &str, user_code: &str, verification_uri: &str) -> Self {
+        let mut screen =
+            Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
+        screen.state = LoginState::WaitingForAuth;
+        screen.user_code = Some(user_code.into());
+        screen.verification_uri = Some(verification_uri.into());
+        screen
+    }
+
+    /// Success screen (`Signed in.` mint).
+    pub fn lock_success(version: &str) -> Self {
+        let mut screen =
+            Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
+        screen.state = LoginState::Success;
+        screen
+    }
+
+    /// Failed screen (product-facing error, no mint).
+    pub fn lock_failed(version: &str, error: &str) -> Self {
+        let mut screen =
+            Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
+        screen.state = LoginState::Failed;
+        screen.error_message = Some(error.into());
+        screen
     }
 
     pub async fn run(&mut self) -> Result<LoginResult> {
@@ -248,9 +293,13 @@ impl LoginScreen {
         }
     }
 
-    fn render(&self, f: &mut ratatui::Frame) {
+    pub fn render(&self, f: &mut ratatui::Frame) {
         let area = f.area();
         f.render_widget(Clear, area);
+        f.render_widget(
+            ratatui::widgets::Block::default().style(Style::default().bg(VOID)),
+            area,
+        );
 
         match self.state {
             LoginState::SelectMethod => self.render_select_method(f, area),
@@ -262,7 +311,7 @@ impl LoginScreen {
     }
 
     fn render_select_method(&self, f: &mut ratatui::Frame, area: Rect) {
-        let version = env!("CARGO_PKG_VERSION");
+        let version = self.splash_version.as_str();
         let methods = LoginMethod::all();
         let rows = methods.len() as u16;
 
@@ -346,7 +395,7 @@ impl LoginScreen {
     }
 
     fn render_waiting(&self, f: &mut ratatui::Frame, area: Rect) {
-        let version = env!("CARGO_PKG_VERSION");
+        let version = self.splash_version.as_str();
         let breathing = SpinnerStyle::Breathing.frames();
         let spinner = breathing[(self.frame_count % breathing.len() as u64) as usize];
 

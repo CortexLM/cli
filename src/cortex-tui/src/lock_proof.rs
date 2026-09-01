@@ -821,6 +821,51 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_severity_words_carry_the_only_color() {
+        // 48 diagnostics: `error` is red and `warn` is amber — the message
+        // and the path stay gray/white.
+        const RED_FG: &str = "\x1b[38;2;255;107;107m";
+        const AMBER_FG: &str = "\x1b[38;2;255;200;87m";
+
+        /// Visible text right after `marker`, skipping SGR runs and spaces.
+        fn painted_after<'a>(ansi: &'a str, marker: &str) -> &'a str {
+            let at = ansi.find(marker).map(|i| i + marker.len()).unwrap_or(0);
+            let mut rest = &ansi[at..];
+            loop {
+                rest = rest.trim_start();
+                let Some(stripped) = rest.strip_prefix('\x1b') else {
+                    return rest;
+                };
+                let Some(end) = stripped.find('m') else {
+                    return rest;
+                };
+                rest = &stripped[end + 1..];
+            }
+        }
+
+        for size in [(40u16, 12u16), (120u16, 40u16)] {
+            let frame = render_lock_scene("diagnostics", size.0, size.1).expect("diagnostics");
+            assert!(frame.ansi.contains(RED_FG), "error must be red at {size:?}");
+            assert!(
+                frame.ansi.contains(AMBER_FG),
+                "warn must be amber at {size:?}"
+            );
+            assert!(
+                painted_after(&frame.ansi, RED_FG).starts_with("error"),
+                "red is reserved for the word `error` at {size:?}"
+            );
+            assert!(
+                painted_after(&frame.ansi, AMBER_FG).starts_with("warn"),
+                "amber is reserved for the word `warn` at {size:?}"
+            );
+            // One red run and one amber run — the color never bleeds into
+            // the message copy.
+            assert_eq!(frame.ansi.matches(RED_FG).count(), 1, "{size:?}");
+            assert_eq!(frame.ansi.matches(AMBER_FG).count(), 1, "{size:?}");
+        }
+    }
+
+    #[test]
     fn tool_tile_dots_are_mint() {
         // Every tool tile paints its `●` status dot mint, exactly like the
         // locked Grep tile. Labels stay white.
@@ -1012,6 +1057,16 @@ mod tests {
         assert!(perm.plain.contains("Edit command"));
         assert!(perm.plain.contains("Normal"));
         assert!(perm.plain.contains("tell Cortex"));
+
+        // At 40 columns option 2 wraps — `project` lands on its own line and
+        // is never dropped.
+        let perm_n = render_lock_scene("permission", 40, 12).expect("perm narrow");
+        assert!(
+            perm_n.plain.lines().any(|line| line.trim() == "project"),
+            "option copy must wrap, not truncate:\n{}",
+            perm_n.plain
+        );
+        assert!(perm_n.plain.contains("Edit command"), "{}", perm_n.plain);
 
         let plan = render_lock_scene("plan", 120, 40).expect("plan");
         assert!(plan.plain.contains("Redis-backed"));

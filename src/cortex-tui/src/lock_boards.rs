@@ -3,7 +3,7 @@
 //! These scenes share session chrome (prompt, composer, cwd+git footer) and
 //! Cortex product copy only.
 
-use cortex_core::style::{ERROR, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM};
+use cortex_core::style::{ERROR, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM, WARNING};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -391,28 +391,30 @@ fn board_permission(area: Rect, buf: &mut Buffer) {
         if y >= area.bottom().saturating_sub(3) {
             break;
         }
-        let text = if selected {
-            format!("> {label}")
-        } else {
-            format!("  {label}")
-        };
-        let shown = first_fitting_line(&text, w);
         if selected {
             fill_row(buf, area, y, SELECTION_BG);
             buf.set_string(
                 area.x,
                 y,
-                &shown,
+                first_fitting_line(&format!("> {label}"), w),
                 Style::default()
                     .fg(TEXT)
                     .bg(SELECTION_BG)
                     .add_modifier(Modifier::BOLD),
             );
             mint_selection_caret(buf, area, y);
+            y += 1;
         } else {
-            buf.set_string(area.x, y, &shown, Style::default().fg(TEXT));
+            // Option copy word-wraps at narrow widths — words are never
+            // dropped or truncated.
+            for part in wrap_or_drop(label, w.saturating_sub(2)) {
+                if y >= area.bottom().saturating_sub(3) {
+                    break;
+                }
+                buf.set_string(area.x + 2, y, &part, Style::default().fg(TEXT));
+                y += 1;
+            }
         }
-        y += 1;
     }
     y += 1;
     if y < area.bottom().saturating_sub(1) {
@@ -2904,11 +2906,9 @@ fn board_diagnostics(area: Rect, buf: &mut Buffer) {
     ]));
     let error_msg = "Property 'apiKey' does not exist on type 'FastifyRequest'.";
     let warn_msg = "'redis' is declared but its value is never used.";
+    // Severity words only carry color; message and path stay gray/white.
     lines.push(Line::from(vec![
-        Span::styled(
-            "  error ",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-        ),
+        Span::styled("  error ", Style::default().fg(ERROR)),
         Span::styled("L22  ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line(error_msg, w.saturating_sub(12)),
@@ -2916,7 +2916,7 @@ fn board_diagnostics(area: Rect, buf: &mut Buffer) {
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  warn  ", Style::default().fg(TEXT)),
+        Span::styled("  warn  ", Style::default().fg(WARNING)),
         Span::styled("L47  ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             first_fitting_line(warn_msg, w.saturating_sub(12)),

@@ -8,8 +8,9 @@ mod cortex;
 pub mod types;
 
 pub use code_agent::{
-    CodeAgentClient, CodeHost, CodeHostPairing, CodeSession, CodeTurnEvent, CodeTurnMode,
-    GUEST_TOKEN_PREFIX, GuestSession,
+    CodeAgentClient, CodeHost, CodeHostPairing, CodeMessage, CodeSession, CodeTurnContext,
+    CodeTurnEvent, CodeTurnMode, ComputerKind, CreateCodeSession, GUEST_TOKEN_PREFIX, GuestSession,
+    cached_code_session_id,
 };
 pub use cortex::{CortexClient, CortexModel, PricingInfo};
 pub use types::*;
@@ -49,6 +50,23 @@ pub trait ModelClient: Send + Sync {
 
     /// Send a completion request and get the full response (non-streaming).
     async fn complete_sync(&self, request: CompletionRequest) -> Result<CompletionResponse>;
+
+    /// Configure the next Code session turn (workspace / computer / mode).
+    fn configure_code_turn(&self, _ctx: CodeTurnContext) {}
+
+    /// Abort an in-flight Code turn (local SSE + best-effort API cancel).
+    async fn cancel_turn(&self) {}
+
+    /// Live Code session id, if one has been created.
+    async fn code_session_id(&self) -> Option<String> {
+        None
+    }
+
+    /// Clone this client when the implementation shares session state via `Arc`.
+    /// Used so the TUI can stream and cancel against the same Code session.
+    fn clone_box(&self) -> Option<Box<dyn ModelClient>> {
+        None
+    }
 }
 
 /// Get the Cortex auth token from environment or keyring.

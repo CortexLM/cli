@@ -20,6 +20,7 @@ Everything hangs off a single root, resolved as:
 ~/.cortex/
 ├── config.toml        Global configuration
 ├── sessions/          Session transcripts
+├── code-sessions.json Workspace → Code session id cache
 ├── agents/            Personal agents
 ├── skills/            Personal skills
 ├── plugins/           Installed plugins

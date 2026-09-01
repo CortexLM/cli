@@ -3,14 +3,12 @@
 //! Provides reusable card widgets for displaying welcome messages and user info.
 
 use crate::borders::ROUNDED_BORDER;
-use crate::mascot::MASCOT_MINIMAL_LINES;
-use cortex_core::style::{CYAN_PRIMARY, TEXT, TEXT_DIM};
+use cortex_core::style::{BORDER, TEXT, TEXT_DIM};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Widget};
-use unicode_width::UnicodeWidthStr;
 
 /// Trait for components that can generate scrollable lines.
 pub trait ToLines {
@@ -18,18 +16,7 @@ pub trait ToLines {
     fn to_lines(&self, width: u16) -> Vec<Line<'static>>;
 }
 
-/// A welcome card with mascot, greeting, and tips.
-///
-/// # Example
-/// ```rust,ignore
-/// use cortex_tui_components::welcome_card::WelcomeCard;
-///
-/// let card = WelcomeCard::new()
-///     .user_name("Mathis")
-///     .subtitle("Your AI-powered coding assistant.")
-///     .version("1.0.0")
-///     .tips(&["Send /help for commands", "Use Tab for autocomplete"]);
-/// ```
+/// Empty-session splash: one line, `Cortex CLI v{version}`. No mascot or logo.
 pub struct WelcomeCard<'a> {
     user_name: Option<&'a str>,
     subtitle: Option<&'a str>,
@@ -49,10 +36,10 @@ impl<'a> WelcomeCard<'a> {
             subtitle: None,
             version: None,
             tips: Vec::new(),
-            accent_color: CYAN_PRIMARY,
+            accent_color: TEXT,
             text_color: TEXT,
             dim_color: TEXT_DIM,
-            border_color: CYAN_PRIMARY,
+            border_color: BORDER,
         }
     }
 
@@ -106,10 +93,7 @@ impl<'a> WelcomeCard<'a> {
 
     /// Calculate the required height for this card.
     pub fn required_height(&self) -> u16 {
-        // Border top (1) + empty (1) + mascot (4) + empty (1) + tips + empty (1) + border bottom (1)
-        let base_height = 9_u16;
-        let tips_height = self.tips.len() as u16;
-        base_height + tips_height
+        1
     }
 }
 
@@ -121,204 +105,44 @@ impl Default for WelcomeCard<'_> {
 
 impl ToLines for WelcomeCard<'_> {
     fn to_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let w = (width as usize).max(40); // Adaptive width, minimum 40
-        let bs = Style::default().fg(self.border_color);
-        let inner = w - 2; // width between │ and │
-
-        let title = if let Some(v) = self.version {
-            format!(" Cortex CLI v{} ", v)
-        } else {
-            " Cortex CLI ".to_string()
-        };
-
-        let greeting = if let Some(name) = self.user_name {
-            format!("Welcome back {}!", name)
-        } else {
-            "Welcome!".to_string()
-        };
-        let subtitle = self.subtitle.unwrap_or("Your AI-powered coding assistant.");
-
-        let mut lines: Vec<Line<'static>> = Vec::new();
-
-        // Top border
-        let top = format!(
-            "╭─{}{}╮",
-            title,
-            "─".repeat(w.saturating_sub(title.width() + 3))
+        let _ = width;
+        let _ = (
+            self.user_name,
+            self.subtitle,
+            self.tips.len(),
+            self.accent_color,
+            self.dim_color,
+            self.border_color,
         );
-        lines.push(Line::from(Span::styled(top, bs)));
+        vec![Line::from(Span::styled(
+            splash_title(self.version),
+            Style::default()
+                .fg(self.text_color)
+                .add_modifier(Modifier::BOLD),
+        ))]
+    }
+}
 
-        // Empty line
-        lines.push(Line::from(vec![
-            Span::styled("│", bs),
-            Span::raw(" ".repeat(inner)),
-            Span::styled("│", bs),
-        ]));
-
-        // Mascot lines (4 lines)
-        for (i, m) in MASCOT_MINIMAL_LINES.iter().enumerate() {
-            let m_width = m.width();
-
-            let spans = match i {
-                0 => {
-                    let used = 1 + m_width + 2 + greeting.width();
-                    let pad = inner.saturating_sub(used);
-                    vec![
-                        Span::styled("│", bs),
-                        Span::raw(" "),
-                        Span::styled(m.to_string(), Style::default().fg(self.accent_color)),
-                        Span::raw("  "),
-                        Span::styled(
-                            greeting.clone(),
-                            Style::default()
-                                .fg(self.text_color)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw(" ".repeat(pad)),
-                        Span::styled("│", bs),
-                    ]
-                }
-                1 => {
-                    let used = 1 + m_width + 2 + subtitle.width();
-                    let pad = inner.saturating_sub(used);
-                    vec![
-                        Span::styled("│", bs),
-                        Span::raw(" "),
-                        Span::styled(m.to_string(), Style::default().fg(self.accent_color)),
-                        Span::raw("  "),
-                        Span::styled(subtitle.to_string(), Style::default().fg(self.dim_color)),
-                        Span::raw(" ".repeat(pad)),
-                        Span::styled("│", bs),
-                    ]
-                }
-                _ => {
-                    let used = 1 + m_width;
-                    let pad = inner.saturating_sub(used);
-                    vec![
-                        Span::styled("│", bs),
-                        Span::raw(" "),
-                        Span::styled(m.to_string(), Style::default().fg(self.accent_color)),
-                        Span::raw(" ".repeat(pad)),
-                        Span::styled("│", bs),
-                    ]
-                }
-            };
-            lines.push(Line::from(spans));
-        }
-
-        // Empty line
-        lines.push(Line::from(vec![
-            Span::styled("│", bs),
-            Span::raw(" ".repeat(inner)),
-            Span::styled("│", bs),
-        ]));
-
-        // Tips
-        for tip in &self.tips {
-            let tip_width = tip.width();
-            let pad = inner.saturating_sub(1 + tip_width);
-            lines.push(Line::from(vec![
-                Span::styled("│", bs),
-                Span::raw(" "),
-                Span::styled(tip.to_string(), Style::default().fg(self.dim_color)),
-                Span::raw(" ".repeat(pad)),
-                Span::styled("│", bs),
-            ]));
-        }
-
-        // Bottom border
-        lines.push(Line::from(Span::styled(
-            format!("╰{}╯", "─".repeat(w - 2)),
-            bs,
-        )));
-
-        lines
+fn splash_title(version: Option<&str>) -> String {
+    match version {
+        Some(v) => format!("Cortex CLI v{v}"),
+        None => "Cortex CLI".to_string(),
     }
 }
 
 impl Widget for WelcomeCard<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        if area.height < 8 || area.width < 40 {
+        if area.height == 0 || area.width == 0 {
             return;
         }
-
-        // Render border with title using custom border color
-        let title = if let Some(v) = self.version {
-            format!(" Cortex CLI v{} ", v)
-        } else {
-            " Cortex CLI ".to_string()
-        };
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_set(ROUNDED_BORDER)
-            .border_style(Style::default().fg(self.border_color))
-            .title(title)
-            .title_style(Style::default().fg(self.border_color));
-
-        let inner = block.inner(area);
-        block.render(area, buf);
-        let mut y = inner.y;
-
-        // Empty line
-        y += 1;
-
-        // Render mascot with greeting on the side
-        let greeting = if let Some(name) = self.user_name {
-            format!("Welcome back {}!", name)
-        } else {
-            "Welcome!".to_string()
-        };
-        let subtitle = self.subtitle.unwrap_or("Your AI-powered coding assistant.");
-
-        for (i, mascot_line) in MASCOT_MINIMAL_LINES.iter().enumerate() {
-            if y >= inner.y + inner.height {
-                break;
-            }
-
-            // Render mascot part
-            buf.set_string(
-                inner.x,
-                y,
-                *mascot_line,
-                Style::default().fg(self.accent_color),
-            );
-
-            // Render text next to mascot (lines 1 and 2 only)
-            let text_x = inner.x + 14; // After mascot width
-            match i {
-                0 => {
-                    // Greeting line
-                    buf.set_string(
-                        text_x,
-                        y,
-                        &greeting,
-                        Style::default()
-                            .fg(self.text_color)
-                            .add_modifier(Modifier::BOLD),
-                    );
-                }
-                1 => {
-                    // Subtitle line
-                    buf.set_string(text_x, y, subtitle, Style::default().fg(self.dim_color));
-                }
-                _ => {}
-            }
-
-            y += 1;
-        }
-
-        // Empty line
-        y += 1;
-
-        // Render tips
-        for tip in &self.tips {
-            if y >= inner.y + inner.height {
-                break;
-            }
-            buf.set_string(inner.x + 1, y, *tip, Style::default().fg(self.dim_color));
-            y += 1;
-        }
+        buf.set_string(
+            area.x,
+            area.y,
+            splash_title(self.version),
+            Style::default()
+                .fg(self.text_color)
+                .add_modifier(Modifier::BOLD),
+        );
     }
 }
 
@@ -331,7 +155,7 @@ impl Widget for WelcomeCard<'_> {
 /// let card = InfoCard::new()
 ///     .add("Directory", "~/projects")
 ///     .add("User", "user@email.com")
-///     .add("Model", "claude-3");
+///     .add("Model", "cortex-1-mini");
 /// ```
 pub struct InfoCard<'a> {
     items: Vec<(&'a str, String)>,
@@ -347,7 +171,7 @@ impl<'a> InfoCard<'a> {
             items: Vec::new(),
             dim_color: TEXT_DIM,
             text_color: TEXT,
-            border_color: CYAN_PRIMARY,
+            border_color: BORDER,
         }
     }
 
@@ -497,7 +321,7 @@ impl Widget for InfoCard<'_> {
 /// use cortex_tui_components::welcome_card::{InfoCardPair, InfoCard};
 ///
 /// let left = InfoCard::new().add("Dir", "~/projects").add("User", "me@email.com");
-/// let right = InfoCard::new().add("Model", "claude-3").add("Plan", "Pro");
+/// let right = InfoCard::new().add("Model", "cortex-1-mini").add("Plan", "Pro");
 ///
 /// InfoCardPair::new(left, right).render(area, buf);
 /// ```
@@ -627,8 +451,8 @@ mod tests {
 
     #[test]
     fn test_welcome_card_height() {
-        let card = WelcomeCard::new().tips(&["Tip 1", "Tip 2"]);
-        assert!(card.required_height() >= 10);
+        let card = WelcomeCard::new().version("1.0.0");
+        assert_eq!(card.required_height(), 1);
     }
 
     fn buffer_text(buf: &Buffer) -> String {
@@ -643,64 +467,62 @@ mod tests {
         out
     }
 
-    fn assert_contains_mascot(text: &str) {
-        for line in MASCOT_MINIMAL_LINES {
-            let needle = line.trim();
+    fn assert_no_mascot(text: &str) {
+        for needle in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█"]
+        {
             assert!(
-                text.contains(needle),
-                "missing mascot line {needle:?}:\n{text}"
+                !text.contains(needle),
+                "splash must not include mascot {needle:?}:\n{text}"
             );
         }
     }
 
     #[test]
-    fn welcome_card_to_lines_includes_mascot() {
-        let card = WelcomeCard::new()
-            .subtitle("Your AI-powered coding assistant.")
-            .tips(&[
-                "Send /help for available commands.",
-                "Use Tab for autocomplete. Press Esc to cancel.",
-            ]);
+    fn welcome_card_is_one_line_splash() {
+        let card = WelcomeCard::new().version("1.0.0");
         let text = card
             .to_lines(80)
             .into_iter()
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert_contains_mascot(&text);
-        assert!(text.contains("Welcome!"));
-        assert!(text.contains("Cortex CLI"));
+        assert_eq!(text.lines().filter(|l| !l.trim().is_empty()).count(), 1);
+        assert_eq!(text.trim(), "Cortex CLI v1.0.0");
+        assert_no_mascot(&text);
+        assert!(!text.contains("Welcome!"));
     }
 
     #[test]
-    fn welcome_card_widget_renders_mascot() {
+    fn welcome_card_widget_renders_one_line() {
         let mut buf = Buffer::empty(Rect::new(0, 0, 80, 16));
         WelcomeCard::new()
-            .subtitle("Your AI-powered coding assistant.")
-            .tips(&["Send /help for available commands."])
+            .version("1.0.0")
             .render(Rect::new(0, 0, 80, 16), &mut buf);
         let text = buffer_text(&buf);
-        assert_contains_mascot(&text);
-        assert!(text.contains("Welcome!"));
+        assert!(text.contains("Cortex CLI v1.0.0"));
+        assert_no_mascot(&text);
     }
 
     #[test]
-    fn welcome_card_narrow_and_wide_viewports_keep_the_mascot() {
+    fn welcome_card_narrow_and_wide_viewports_keep_the_splash() {
         for (width, height) in [(40, 12), (120, 40)] {
-            let card = WelcomeCard::new().tips(&["Send /help for available commands."]);
+            let card = WelcomeCard::new().version("1.0.0");
             let text = card
                 .to_lines(width)
                 .into_iter()
                 .map(|line| line.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
-            assert_contains_mascot(&text);
+            assert!(text.contains("Cortex CLI v1.0.0"));
+            assert_no_mascot(&text);
 
             let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
             WelcomeCard::new()
-                .tips(&["Send /help for available commands."])
+                .version("1.0.0")
                 .render(Rect::new(0, 0, width, height), &mut buf);
-            assert_contains_mascot(&buffer_text(&buf));
+            let rendered = buffer_text(&buf);
+            assert!(rendered.contains("Cortex CLI v1.0.0"));
+            assert_no_mascot(&rendered);
         }
     }
 }

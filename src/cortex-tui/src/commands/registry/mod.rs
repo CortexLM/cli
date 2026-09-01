@@ -151,6 +151,7 @@ mod tests {
         assert!(registry.exists("settings"));
         assert!(registry.exists("theme"));
         assert!(registry.exists("compact"));
+        assert!(registry.exists("interrupt"));
         assert!(registry.exists("init"));
         assert!(registry.exists("commands"));
         assert!(registry.exists("agents"));
@@ -184,8 +185,8 @@ mod tests {
         assert!(registry.exists("mention"));
         assert!(registry.exists("images"));
 
-        // Model (note: "model" command was removed, use "models" instead)
-        assert!(!registry.exists("model"));
+        // Model
+        assert!(registry.exists("model"));
         assert!(registry.exists("models"));
         assert!(registry.exists("approval"));
         assert!(registry.exists("sandbox"));

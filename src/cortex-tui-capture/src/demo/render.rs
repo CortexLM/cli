@@ -47,20 +47,13 @@ pub fn draw_scene(frame: &mut Frame, scene: &Scene) {
     draw_hints(frame, hints_area, scene);
 }
 
-/// Empty-session frame: the same `WelcomeCard` + info cards the live TUI paints
-/// via `generate_welcome_lines`, including `MASCOT_MINIMAL_LINES`.
+/// Empty-session frame: one-line splash plus directory / Computer cards.
 fn draw_welcome(frame: &mut Frame, area: Rect, scene: &Scene) {
     let welcome_card = WelcomeCard::new()
-        .subtitle("Your AI-powered coding assistant.")
         .version(env!("CARGO_PKG_VERSION"))
-        .tips(&[
-            "Send /help for available commands.",
-            "Use Tab for autocomplete. Press Esc to cancel.",
-        ])
-        .accent_color(CYAN_PRIMARY)
         .text_color(TEXT)
         .dim_color(TEXT_DIM)
-        .border_color(CYAN_PRIMARY);
+        .border_color(BORDER);
 
     let mut lines = welcome_card.to_lines(area.width);
     lines.push(Line::default());
@@ -70,14 +63,14 @@ fn draw_welcome(frame: &mut Frame, area: Rect, scene: &Scene) {
         .add("Endpoint", &scene.endpoint)
         .dim_color(TEXT_DIM)
         .text_color(TEXT)
-        .border_color(CYAN_PRIMARY);
+        .border_color(BORDER);
 
     let right_card = InfoCard::new()
         .add("Mode", &scene.mode)
-        .add("Autonomy", &scene.autonomy)
+        .add("Computer", &scene.computer)
         .dim_color(TEXT_DIM)
         .text_color(TEXT)
-        .border_color(CYAN_PRIMARY);
+        .border_color(BORDER);
 
     lines.extend(
         InfoCardPair::new(left_card, right_card)
@@ -128,7 +121,14 @@ fn draw_timeline(frame: &mut Frame, area: Rect, scene: &Scene) {
                         Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
                     ),
                     Span::styled("  ", Style::default()),
-                    Span::styled(row.summary.clone(), Style::default().fg(TEXT_DIM)),
+                    Span::styled(
+                        row.summary.clone(),
+                        Style::default().fg(if row.summary.contains('+') {
+                            CYAN_PRIMARY
+                        } else {
+                            TEXT_DIM
+                        }),
+                    ),
                 ]));
                 if let Some(result) = &row.result {
                     lines.push(Line::from(vec![

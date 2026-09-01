@@ -154,6 +154,26 @@ impl ProviderManager {
         self.client.take()
     }
 
+    /// Clone the live client when it shares session state, otherwise take it.
+    ///
+    /// Cloning keeps the original in the manager so cancel can abort the same
+    /// Code session the stream is using.
+    pub fn snapshot_client(&mut self) -> Option<Box<dyn ModelClient>> {
+        if let Some(ref client) = self.client
+            && let Some(cloned) = client.clone_box()
+        {
+            return Some(cloned);
+        }
+        self.client.take()
+    }
+
+    /// Abort an in-flight Code turn on the retained client.
+    pub async fn cancel_active_turn(&self) {
+        if let Some(ref client) = self.client {
+            client.cancel_turn().await;
+        }
+    }
+
     /// Restores a client to the manager.
     pub fn restore_client(&mut self, client: Box<dyn ModelClient>) {
         self.client = Some(client);

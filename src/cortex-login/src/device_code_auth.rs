@@ -13,7 +13,10 @@ use serde::Deserialize;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-use crate::{CredentialsStoreMode, DEFAULT_ISSUER, SecureAuthData, save_auth_with_fallback};
+use crate::{
+    CredentialsStoreMode, DEFAULT_ISSUER, DeviceTokenStatus, SecureAuthData, poll_device_token,
+    request_device_authorization, resolve_device_api_base, save_auth_with_fallback,
+};
 
 /// User-Agent string for HTTP requests
 const USER_AGENT: &str = concat!("cortex-cli/", env!("CARGO_PKG_VERSION"));
@@ -250,14 +253,15 @@ pub async fn run_device_code_login(opts: DeviceCodeOptions) -> Result<()> {
         "Starting device code authentication flow"
     );
 
-    // SECURITY: Validate issuer URL uses HTTPS
-    let issuer_url = url::Url::parse(&opts.issuer).context("invalid issuer URL")?;
-    if issuer_url.scheme() != "https" {
+    let api_base = resolve_device_api_base(&opts.issuer);
+    let issuer_url = url::Url::parse(&api_base).context("invalid API URL")?;
+    let host = issuer_url.host_str().unwrap_or_default();
+    if issuer_url.scheme() != "https" && host != "127.0.0.1" && host != "localhost" {
         error!(
             scheme = %issuer_url.scheme(),
-            "Issuer URL must use HTTPS for security"
+            "API URL must use HTTPS for security"
         );
-        anyhow::bail!("issuer URL must use HTTPS for security");
+        anyhow::bail!("API URL must use HTTPS for security");
     }
 
     // Create HTTP client with proper configuration
@@ -268,32 +272,40 @@ pub async fn run_device_code_login(opts: DeviceCodeOptions) -> Result<()> {
         .build()
         .context("Failed to create HTTP client")?;
 
-    // Connection warmup: Perform a lightweight request to establish the connection pool.
-    // This prevents "connection failed" errors on the first actual request.
-    let warmup_url = format!("{}/.well-known/openid-configuration", opts.issuer);
+    // Connection warmup against the coding API (device login lives there).
+    let warmup_url = format!("{}/v1/models", api_base);
     debug!(url = %warmup_url, "Performing connection warmup");
     let _ = client
         .get(&warmup_url)
         .timeout(Duration::from_secs(5))
         .send()
         .await;
-    // Ignore warmup errors - the server may not support this endpoint
 
-    // Step 1: Request device code with retry logic
-    let device_auth_url = format!("{}/auth/device/code", opts.issuer);
-
-    // Get device name from hostname
     let device_name = hostname::get().ok().and_then(|h| h.into_string().ok());
-    debug!(device_name = ?device_name, "Retrieved device hostname");
+    debug!(device_name = ?device_name, api_base = %api_base, "Requesting device authorization");
 
-    let device_code = request_device_code_with_retry(
-        &client,
-        &device_auth_url,
-        device_name.as_deref(),
-        &opts.scopes,
-        DEVICE_CODE_MAX_RETRIES,
-    )
-    .await?;
+    let mut last_err = None;
+    let mut device_code = None;
+    for attempt in 0..=DEVICE_CODE_MAX_RETRIES {
+        if attempt > 0 {
+            tokio::time::sleep(DEVICE_CODE_RETRY_DELAY).await;
+        }
+        match request_device_authorization(&client, &api_base, device_name.as_deref(), &opts.scopes)
+            .await
+        {
+            Ok(d) => {
+                device_code = Some(d);
+                break;
+            }
+            Err(e) => {
+                warn!(attempt = attempt + 1, error = %e, "Device authorization failed");
+                last_err = Some(e);
+            }
+        }
+    }
+    let device_code = device_code.ok_or_else(|| {
+        last_err.unwrap_or_else(|| anyhow::anyhow!("failed to request device code"))
+    })?;
 
     info!(
         user_code = %device_code.user_code,
@@ -340,9 +352,7 @@ pub async fn run_device_code_login(opts: DeviceCodeOptions) -> Result<()> {
 
     eprintln!("\nWaiting for authentication...");
 
-    // Step 3: Poll for token
-    let token_url = format!("{}/auth/device/token", opts.issuer);
-    let interval = Duration::from_secs(device_code.interval);
+    let mut interval = Duration::from_secs(device_code.interval.max(1));
     let expires_at = std::time::Instant::now() + Duration::from_secs(device_code.expires_in);
     let mut poll_count: u32 = 0;
 
@@ -358,157 +368,33 @@ pub async fn run_device_code_login(opts: DeviceCodeOptions) -> Result<()> {
         tokio::time::sleep(interval).await;
         poll_count += 1;
 
-        debug!(
-            poll_count = poll_count,
-            url = %token_url,
-            "Polling for token"
-        );
-
-        let response = match client
-            .post(&token_url)
-            .json(&serde_json::json!({
-                "device_code": device_code.device_code
-            }))
-            .send()
-            .await
-        {
-            Ok(resp) => resp,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    poll_count = poll_count,
-                    "Token poll request failed, will retry"
-                );
-                continue;
+        match poll_device_token(&client, &api_base, &device_code.device_code).await? {
+            DeviceTokenStatus::Pending {
+                interval: next_interval,
+            } => {
+                interval = Duration::from_secs(next_interval.max(1));
             }
-        };
-
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-
-        debug!(
-            status = %status,
-            body_len = body.len(),
-            poll_count = poll_count,
-            "Token poll response received"
-        );
-
-        if status.is_success() {
-            debug!(
-                body = %body,
-                "Parsing successful token response"
-            );
-
-            let token: TokenResponse = match serde_json::from_str(&body) {
-                Ok(t) => t,
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        body = %body,
-                        "Failed to parse token response JSON"
-                    );
-                    anyhow::bail!("failed to parse token response: {e}");
-                }
-            };
-
-            info!(
-                token_type = %token.token_type,
-                expires_in = ?token.expires_in,
-                has_refresh_token = token.refresh_token.is_some(),
-                scope = ?token.scope,
-                "Token received successfully"
-            );
-
-            // Calculate expiration
-            let expires_at = token
-                .expires_in
-                .map(|secs| chrono::Utc::now().timestamp() + secs as i64);
-
-            // Save auth data securely with automatic fallback
-            let auth_data =
-                SecureAuthData::with_oauth(token.access_token, token.refresh_token, expires_at);
-
-            match save_auth_with_fallback(&opts.cortex_home, &auth_data) {
-                Ok(mode) => {
-                    match mode {
-                        CredentialsStoreMode::Keyring => {
-                            info!("Authentication credentials saved to system keyring");
-                        }
-                        CredentialsStoreMode::EncryptedFile => {
-                            info!(
-                                "Authentication credentials saved to encrypted file (keyring unavailable)"
-                            );
-                        }
-                        CredentialsStoreMode::File => {
-                            info!("Authentication credentials saved to legacy file");
-                        }
+            DeviceTokenStatus::Expired => anyhow::bail!("device code expired"),
+            DeviceTokenStatus::Denied => anyhow::bail!("access denied by user"),
+            DeviceTokenStatus::Error(e) => anyhow::bail!("{e}"),
+            DeviceTokenStatus::Success(token) => {
+                let Some(access_token) = token.bearer().map(str::to_string) else {
+                    anyhow::bail!("device token response did not include an access token");
+                };
+                let expires_at = token
+                    .expires_in
+                    .map(|secs| chrono::Utc::now().timestamp() + secs as i64);
+                let auth_data =
+                    SecureAuthData::with_oauth(access_token, token.refresh_token, expires_at);
+                match save_auth_with_fallback(&opts.cortex_home, &auth_data) {
+                    Ok(mode) => {
+                        info!(storage = ?mode, "Authentication credentials saved");
+                        return Ok(());
                     }
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        "Failed to save authentication credentials"
-                    );
-                    return Err(e);
+                    Err(e) => return Err(e),
                 }
             }
         }
-
-        // Check for expected polling errors
-        if let Ok(error_resp) = serde_json::from_str::<TokenErrorResponse>(&body) {
-            match error_resp.error.as_str() {
-                "authorization_pending" => {
-                    debug!(
-                        poll_count = poll_count,
-                        "Authorization still pending, continuing to poll"
-                    );
-                    continue;
-                }
-                "slow_down" => {
-                    debug!(
-                        poll_count = poll_count,
-                        "Server requested slow down, adding extra delay"
-                    );
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
-                }
-                "expired_token" => {
-                    error!(
-                        poll_count = poll_count,
-                        "Device code expired according to server"
-                    );
-                    anyhow::bail!("device code expired");
-                }
-                "access_denied" => {
-                    error!(
-                        poll_count = poll_count,
-                        description = ?error_resp.error_description,
-                        "Access denied by user"
-                    );
-                    anyhow::bail!("access denied by user");
-                }
-                _ => {
-                    let desc = error_resp.error_description.clone().unwrap_or_default();
-                    error!(
-                        error_code = %error_resp.error,
-                        error_description = %desc,
-                        poll_count = poll_count,
-                        "Token exchange failed with error"
-                    );
-                    anyhow::bail!("token error: {} - {}", error_resp.error, desc);
-                }
-            }
-        }
-
-        // Unknown error - try to parse as JSON for better diagnostics
-        error!(
-            status = %status,
-            body = %body,
-            poll_count = poll_count,
-            "Unexpected token response (not a recognized error format)"
-        );
-        anyhow::bail!("unexpected token response: {status} - {body}");
     }
 }
 

@@ -86,6 +86,7 @@ fn default_multiplier() -> String {
 }
 
 /// Cortex Backend client.
+#[derive(Clone)]
 pub struct CortexClient {
     client: Client,
     base_url: String,
@@ -142,6 +143,23 @@ impl CortexClient {
         self.code_agent = CodeAgentClient::new(Some(self.base_url.clone()), Some(token.clone()));
         self.auth_token = Some(token);
         self
+    }
+
+    fn configure_from_request(&self, request: &CompletionRequest) {
+        let mut ctx = self.code_agent.turn_context();
+        if ctx.workspace.is_none() {
+            ctx.workspace = std::env::current_dir()
+                .ok()
+                .map(|p| p.display().to_string());
+        }
+        if ctx.turn_mode.is_none() {
+            ctx.turn_mode = Some(if request.tools.is_empty() {
+                CodeTurnMode::Chat
+            } else {
+                CodeTurnMode::Code
+            });
+        }
+        self.code_agent.set_turn_context(ctx);
     }
 
     /// Set API key (for custom providers using Responses API).
@@ -541,22 +559,35 @@ impl ModelClient for CortexClient {
     }
 
     async fn complete(&self, request: CompletionRequest) -> Result<ResponseStream> {
-        // Prefer the live Code agent session API (backend PR #58).
+        self.configure_from_request(&request);
         let message = CodeAgentClient::last_user_message(&request);
-        if !message.is_empty() {
-            let mode = if request.tools.is_empty() {
-                CodeTurnMode::Chat
-            } else {
-                CodeTurnMode::Code
-            };
-            match self.code_agent.stream_turn(&message, mode).await {
-                Ok(stream) => return Ok(stream),
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        "Code agent turn failed; trying legacy /v1/responses"
-                    );
+        if message.is_empty() {
+            return Err(CortexError::BackendError {
+                message: "Nothing to send.".into(),
+            });
+        }
+        let mode =
+            self.code_agent
+                .turn_context()
+                .turn_mode
+                .unwrap_or(if request.tools.is_empty() {
+                    CodeTurnMode::Chat
+                } else {
+                    CodeTurnMode::Code
+                });
+        match self.code_agent.stream_turn(&message, mode).await {
+            Ok(stream) => return Ok(stream),
+            Err(e) => {
+                // `/v1/responses` is 404 on the live API. Do not paper over a
+                // real Code-session error with a second broken route unless
+                // an operator explicitly opts in.
+                if std::env::var("CORTEX_LEGACY_RESPONSES").ok().as_deref() != Some("1") {
+                    return Err(e);
                 }
+                tracing::warn!(
+                    error = %e,
+                    "Code agent turn failed; CORTEX_LEGACY_RESPONSES=1, trying /v1/responses"
+                );
             }
         }
 
@@ -819,5 +850,21 @@ impl ModelClient for CortexClient {
         }
 
         Ok(response)
+    }
+
+    fn configure_code_turn(&self, ctx: super::CodeTurnContext) {
+        self.code_agent.set_turn_context(ctx);
+    }
+
+    async fn cancel_turn(&self) {
+        self.code_agent.cancel_in_flight().await;
+    }
+
+    fn clone_box(&self) -> Option<Box<dyn ModelClient>> {
+        Some(Box::new(self.clone()))
+    }
+
+    async fn code_session_id(&self) -> Option<String> {
+        self.code_agent.current_session_id().await
     }
 }

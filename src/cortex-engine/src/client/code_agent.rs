@@ -1,28 +1,30 @@
-//! Cortex Code agent API client (backend PR #58, now on main).
+//! Cortex Code agent API client.
 //!
-//! Live contract probed against `https://api.cortex.foundation`:
+//! Live contract probed against `https://api.cortex.foundation` (2026-08-30):
 //!
-//! - `POST /v1/auth/guest` — guest session cookie `cortex_gt`
-//! - `GET  /v1/me`
-//! - `GET  /v1/models` — `{ items: [{ slug, display_name, context_tokens, ... }] }`
-//! - `GET|POST /v1/code/sessions`
-//! - `POST /v1/code/sessions/{id}/turns` body `{ message: string, mode: "chat"|"code" }`
-//!   streams SSE: `reasoning_delta`, `reasoning_done`, `text_delta`,
-//!   `tool_start`, `tool_end`, `usage`, `done`
-//! - `GET|POST /v1/code/hosts` — local host pairing (`name` → pairing_code)
+//! - `POST /v1/auth/guest` — guest cookie `cortex_gt`
+//! - `POST /v1/auth/device` + `POST /v1/auth/device/token` — device login
+//! - `GET  /v1/me`, `GET /v1/models`
+//! - `GET|POST /v1/code/sessions` (`runtime`: `cloud` | `paired` | `connected`)
+//! - `GET  /v1/code/sessions/{id}/messages`
+//! - `POST /v1/code/sessions/{id}/turns` body `{ message, mode: "chat"|"code" }`
+//!   SSE: `reasoning_delta`, `reasoning_done`, `text_delta`, `tool_start`,
+//!   `tool_end`, `usage`, `done` (plus `cancelled` / `error` / `question` when sent)
+//! - `GET|POST /v1/code/hosts` — This PC pairing
 //!
-//! Device login: the CLI historically called `POST /auth/device/code`. That
-//! path is 404 on the live API. Guest session is the working unauthenticated
-//! adapter. TODO(backend): restore a CLI device-code grant on
-//! `POST /v1/auth/device/code` (or document WorkOS device authorization).
-//!
-//! Cancel: abort the local SSE request. The live API has no
-//! `POST .../cancel` route (404). TODO(backend): add an explicit cancel.
+//! Device login is implemented in `cortex-login` against `/v1/auth/device`.
+//! Cancel: abort the local SSE task. `POST .../cancel` is still 404 —
+//! TODO(backend): add an explicit cancel route.
+//! Cloud turns currently emit no VM `tool_start` events. This PC still
+//! registers a host and executes local tools when the SSE carries arguments.
 
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use eventsource_stream::Eventsource;
+use futures::Stream;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,92 @@ const GUEST_COOKIE_NAME: &str = "cortex_gt";
 
 /// Guest-cookie token prefix stored in the keyring / env.
 pub const GUEST_TOKEN_PREFIX: &str = "gt:";
+
+/// Where tools run for this CLI session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComputerKind {
+    /// Local workspace passed to the CLI (This PC).
+    #[default]
+    ThisPc,
+    /// Cloud runtime (Firecracker VM when the API provisions one).
+    Cloud,
+    /// SSH remote, when `CORTEX_SSH_HOST` is set.
+    Ssh,
+}
+
+impl ComputerKind {
+    /// Detect from the environment. A workspace path (cwd) means This PC
+    /// unless the operator forces cloud or sets an SSH target.
+    pub fn detect() -> Self {
+        if std::env::var("CORTEX_SSH_HOST")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .is_some()
+            || std::env::var("CORTEX_SSH_TARGET")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .is_some()
+        {
+            return Self::Ssh;
+        }
+        match std::env::var("CORTEX_COMPUTER")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "cloud" => Self::Cloud,
+            "ssh" => Self::Ssh,
+            _ => Self::ThisPc,
+        }
+    }
+
+    /// Product label for the TUI.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ThisPc => "This PC",
+            Self::Cloud => "Cloud",
+            Self::Ssh => "SSH",
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ThisPc => "this_pc",
+            Self::Cloud => "cloud",
+            Self::Ssh => "ssh",
+        }
+    }
+}
+
+/// Per-turn context the TUI sets before `complete()`.
+#[derive(Debug, Clone, Default)]
+pub struct CodeTurnContext {
+    pub workspace: Option<String>,
+    pub computer: ComputerKind,
+    pub turn_mode: Option<CodeTurnMode>,
+    pub ssh_target: Option<String>,
+}
+
+/// Fields accepted by `POST /v1/code/sessions`.
+#[derive(Debug, Clone, Default)]
+pub struct CreateCodeSession {
+    pub title: Option<String>,
+    pub runtime: Option<String>,
+    pub host_id: Option<String>,
+}
+
+/// A persisted Code session message (`GET .../messages`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeMessage {
+    pub id: String,
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub created_at: String,
+}
 
 /// Turn mode accepted by `POST /v1/code/sessions/{id}/turns`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +169,8 @@ pub struct CodeSession {
     pub title: String,
     #[serde(default)]
     pub created_at: String,
+    #[serde(default)]
+    pub host_id: String,
     #[serde(default)]
     pub stream: Option<CodeSessionStream>,
 }
@@ -159,6 +249,8 @@ pub enum CodeTurnEvent {
         tool_name: String,
         #[serde(default)]
         label: String,
+        #[serde(default)]
+        arguments: Option<serde_json::Value>,
     },
     #[serde(rename = "tool_end")]
     ToolEnd {
@@ -191,6 +283,25 @@ pub enum CodeTurnEvent {
         #[serde(default)]
         finish_reason: String,
     },
+    #[serde(rename = "cancelled")]
+    Cancelled {
+        #[serde(default)]
+        message_id: String,
+    },
+    #[serde(rename = "error")]
+    Error {
+        #[serde(default)]
+        message: String,
+        #[serde(default)]
+        detail: Option<String>,
+    },
+    #[serde(rename = "question")]
+    Question {
+        #[serde(default)]
+        invocation_id: String,
+        #[serde(default)]
+        questions: serde_json::Value,
+    },
     #[serde(other)]
     Unknown,
 }
@@ -204,6 +315,7 @@ pub struct CodeAgentClient {
     auth: Arc<Mutex<Option<String>>>,
     session_id: Arc<Mutex<Option<String>>>,
     cancel: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
+    turn_context: Arc<std::sync::Mutex<CodeTurnContext>>,
 }
 
 impl CodeAgentClient {
@@ -217,8 +329,23 @@ impl CodeAgentClient {
                 std::env::var("CORTEX_API_URL").unwrap_or_else(|_| DEFAULT_CORTEX_URL.to_string())
             }),
             auth: Arc::new(Mutex::new(auth)),
-            session_id: Arc::new(Mutex::new(None)),
+            session_id: Arc::new(Mutex::new(load_cached_session_id(
+                &std::env::current_dir()
+                    .ok()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default(),
+            ))),
             cancel: Arc::new(Mutex::new(None)),
+            turn_context: Arc::new(std::sync::Mutex::new(CodeTurnContext {
+                computer: ComputerKind::detect(),
+                ssh_target: std::env::var("CORTEX_SSH_HOST")
+                    .ok()
+                    .or_else(|| std::env::var("CORTEX_SSH_TARGET").ok()),
+                workspace: std::env::current_dir()
+                    .ok()
+                    .map(|p| p.display().to_string()),
+                turn_mode: None,
+            })),
         }
     }
 
@@ -298,6 +425,19 @@ impl CodeAgentClient {
         *self.session_id.lock().await = Some(id.into());
     }
 
+    pub fn set_turn_context(&self, ctx: CodeTurnContext) {
+        if let Ok(mut guard) = self.turn_context.lock() {
+            *guard = ctx;
+        }
+    }
+
+    pub fn turn_context(&self) -> CodeTurnContext {
+        self.turn_context
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default()
+    }
+
     /// List Code sessions.
     pub async fn list_sessions(&self) -> Result<Vec<CodeSession>> {
         self.ensure_auth().await?;
@@ -309,15 +449,36 @@ impl CodeAgentClient {
 
     /// Create a Code session. Optional title.
     pub async fn create_session(&self, title: Option<&str>) -> Result<CodeSession> {
+        self.create_session_with(CreateCodeSession {
+            title: title.map(str::to_string),
+            ..Default::default()
+        })
+        .await
+    }
+
+    /// Create a Code session with runtime / host pairing.
+    pub async fn create_session_with(&self, req: CreateCodeSession) -> Result<CodeSession> {
         self.ensure_auth().await?;
         let url = format!("{}/v1/code/sessions", self.base_url);
-        let body = match title {
-            Some(t) if !t.is_empty() => serde_json::json!({"title": t}),
-            _ => serde_json::json!({}),
-        };
-        let resp = self.authed_post(&url, &body).await?;
+        let mut body = serde_json::Map::new();
+        if let Some(t) = req.title.filter(|t| !t.is_empty()) {
+            body.insert("title".into(), serde_json::Value::String(t));
+        }
+        if let Some(runtime) = req.runtime.filter(|t| !t.is_empty()) {
+            body.insert("runtime".into(), serde_json::Value::String(runtime));
+        }
+        if let Some(host_id) = req.host_id.filter(|t| !t.is_empty()) {
+            body.insert("host_id".into(), serde_json::Value::String(host_id));
+        }
+        let resp = self
+            .authed_post(&url, &serde_json::Value::Object(body))
+            .await?;
         let session: CodeSession = parse_json(resp).await?;
         *self.session_id.lock().await = Some(session.id.clone());
+        persist_session_id(
+            self.turn_context().workspace.as_deref().unwrap_or(""),
+            &session.id,
+        );
         Ok(session)
     }
 
@@ -332,9 +493,52 @@ impl CodeAgentClient {
     /// Ensure a reusable session id exists.
     pub async fn ensure_session(&self) -> Result<String> {
         if let Some(id) = self.session_id.lock().await.clone() {
-            return Ok(id);
+            match self.get_session(&id).await {
+                Ok(_) => return Ok(id),
+                Err(_) => {
+                    tracing::debug!(id = %id, "Cached Code session is gone; creating a new one");
+                    *self.session_id.lock().await = None;
+                }
+            }
         }
-        Ok(self.create_session(None).await?.id)
+        let ctx = self.turn_context();
+        let mut req = CreateCodeSession::default();
+        match ctx.computer {
+            ComputerKind::ThisPc | ComputerKind::Ssh => {
+                let name = hostname::get()
+                    .ok()
+                    .and_then(|h| h.into_string().ok())
+                    .unwrap_or_else(|| "Cortex CLI".to_string());
+                match self.register_host(&name).await {
+                    Ok(pairing) => {
+                        req.host_id = Some(pairing.host.id);
+                        req.runtime = Some("paired".to_string());
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "This PC host registration failed; opening a cloud Code session"
+                        );
+                    }
+                }
+            }
+            ComputerKind::Cloud => {}
+        }
+        Ok(self.create_session_with(req).await?.id)
+    }
+
+    /// Transcript for a Code session (server-side persistence).
+    pub async fn list_messages(&self, session_id: &str) -> Result<Vec<CodeMessage>> {
+        self.ensure_auth().await?;
+        let url = format!("{}/v1/code/sessions/{session_id}/messages", self.base_url);
+        let resp = self.authed_get(&url).await?;
+        #[derive(Deserialize)]
+        struct List {
+            #[serde(default)]
+            items: Vec<CodeMessage>,
+        }
+        let list: List = parse_json(resp).await?;
+        Ok(list.items)
     }
 
     /// Register this CLI as a Code host (pairing).
@@ -349,17 +553,29 @@ impl CodeAgentClient {
 
     /// Cancel the in-flight turn by aborting the local SSE task.
     ///
-    /// TODO(backend): `POST /v1/code/sessions/{id}/cancel` is not implemented
-    /// (404). This is a CLI-side adapter.
+    /// Also POSTs `/v1/code/sessions/{id}/cancel` when a session exists.
+    /// The live API currently returns 404 for that route (TODO(backend)).
     pub async fn cancel_in_flight(&self) {
         if let Some(handle) = self.cancel.lock().await.take() {
             handle.abort();
+        }
+        let session_id = self.session_id.lock().await.clone();
+        let Some(session_id) = session_id else {
+            return;
+        };
+        let url = format!("{}/v1/code/sessions/{session_id}/cancel", self.base_url);
+        let body = serde_json::json!({});
+        match self.authed_post(&url, &body).await {
+            Ok(_) => tracing::debug!("Code session cancel accepted"),
+            Err(e) => tracing::debug!(error = %e, "Code session cancel route missing or failed"),
         }
     }
 
     /// Stream a turn against the Code agent API.
     pub async fn stream_turn(&self, message: &str, mode: CodeTurnMode) -> Result<ResponseStream> {
         self.ensure_auth().await?;
+        let ctx = self.turn_context();
+        let mode = ctx.turn_mode.unwrap_or(mode);
         let session_id = self.ensure_session().await?;
         let url = format!("{}/v1/code/sessions/{session_id}/turns", self.base_url);
         let body = serde_json::json!({
@@ -389,12 +605,17 @@ impl CodeAgentClient {
 
         let (tx, rx) = mpsc::channel::<Result<ResponseEvent>>(64);
         let stream = resp.bytes_stream().eventsource();
+        let execute_local = matches!(ctx.computer, ComputerKind::ThisPc | ComputerKind::Ssh);
         let task = tokio::spawn(async move {
-            pump_sse(stream, tx).await;
+            pump_sse(stream, tx, execute_local).await;
         });
-        *self.cancel.lock().await = Some(task.abort_handle());
+        let abort = task.abort_handle();
+        *self.cancel.lock().await = Some(abort.clone());
 
-        Ok(Box::pin(ReceiverStream::new(rx)))
+        Ok(Box::pin(AbortOnDropStream {
+            inner: ReceiverStream::new(rx),
+            abort,
+        }))
     }
 
     /// Last user text from a completion request (Code API takes a single message).
@@ -450,6 +671,76 @@ impl CodeAgentClient {
     }
 }
 
+struct AbortOnDropStream {
+    inner: ReceiverStream<Result<ResponseEvent>>,
+    abort: tokio::task::AbortHandle,
+}
+
+impl Stream for AbortOnDropStream {
+    type Item = Result<ResponseEvent>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.inner).poll_next(cx)
+    }
+}
+
+impl Drop for AbortOnDropStream {
+    fn drop(&mut self) {
+        self.abort.abort();
+    }
+}
+
+/// Cached Code session id for a workspace (`~/.cortex/code-sessions.json`).
+pub fn cached_code_session_id(workspace: &str) -> Option<String> {
+    load_cached_session_id(workspace)
+}
+
+fn persist_session_id(workspace: &str, session_id: &str) {
+    let Some(path) = code_session_cache_path() else {
+        return;
+    };
+    let mut map = load_session_cache();
+    map.insert(
+        workspace_key(workspace),
+        serde_json::Value::String(session_id.to_string()),
+    );
+    if let Ok(json) = serde_json::to_string_pretty(&map) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+fn load_cached_session_id(workspace: &str) -> Option<String> {
+    load_session_cache()
+        .get(&workspace_key(workspace))
+        .and_then(|v| v.as_str().map(str::to_string))
+}
+
+fn load_session_cache() -> serde_json::Map<String, serde_json::Value> {
+    let Some(path) = code_session_cache_path() else {
+        return serde_json::Map::new();
+    };
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn workspace_key(workspace: &str) -> String {
+    if workspace.is_empty() {
+        "_default".to_string()
+    } else {
+        workspace.to_string()
+    }
+}
+
+fn code_session_cache_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("CORTEX_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".cortex")))?;
+    let _ = std::fs::create_dir_all(&home);
+    Some(home.join("code-sessions.json"))
+}
+
 fn apply_auth(mut req: reqwest::RequestBuilder, auth: Option<&str>) -> reqwest::RequestBuilder {
     if let Some(token) = auth {
         if let Some(cookie) = token.strip_prefix(GUEST_TOKEN_PREFIX) {
@@ -489,7 +780,7 @@ fn map_api_error(status: reqwest::StatusCode, body: &str) -> CortexError {
     CortexError::BackendError { message }
 }
 
-async fn pump_sse<S>(stream: S, tx: mpsc::Sender<Result<ResponseEvent>>)
+async fn pump_sse<S>(stream: S, tx: mpsc::Sender<Result<ResponseEvent>>, execute_local: bool)
 where
     S: futures::Stream<
             Item = std::result::Result<
@@ -552,20 +843,33 @@ where
                 invocation_id,
                 tool_name,
                 label,
+                arguments,
             } => {
+                let has_explicit_args = arguments.as_ref().is_some_and(|v| {
+                    !v.is_null()
+                        && (v.get("command").is_some()
+                            || v.get("file_path").is_some()
+                            || v.get("path").is_some()
+                            || v.as_object().is_some_and(|o| o.len() > 1))
+                });
+                let args = match arguments {
+                    Some(v) if !v.is_null() => v,
+                    _ => serde_json::json!({"label": label}),
+                };
+                let remote = !(execute_local && has_explicit_args);
                 tool_calls.push(super::ToolCall {
                     id: invocation_id.clone(),
                     call_type: "function".to_string(),
                     function: super::FunctionCall {
                         name: tool_name.clone(),
-                        arguments: serde_json::json!({"label": label}).to_string(),
+                        arguments: args.to_string(),
                     },
                 });
                 Some(ResponseEvent::ToolCall(ToolCallEvent {
                     id: invocation_id,
                     name: tool_name,
-                    arguments: serde_json::json!({"label": label}).to_string(),
-                    remote: true,
+                    arguments: args.to_string(),
+                    remote,
                 }))
             }
             CodeTurnEvent::ToolEnd {
@@ -615,6 +919,29 @@ where
                     tool_calls: tool_calls.clone(),
                 }))
             }
+            CodeTurnEvent::Cancelled { .. } => Some(ResponseEvent::Error("Cancelled".into())),
+            CodeTurnEvent::Error { message, detail } => {
+                let raw = if message.is_empty() {
+                    detail.unwrap_or_default()
+                } else {
+                    message
+                };
+                let mapped = if raw.to_lowercase().contains("unavailable") || raw.is_empty() {
+                    "The coding service is temporarily unavailable".to_string()
+                } else {
+                    raw
+                };
+                Some(ResponseEvent::Error(mapped))
+            }
+            CodeTurnEvent::Question {
+                invocation_id,
+                questions,
+            } => Some(ResponseEvent::ToolCall(ToolCallEvent {
+                id: invocation_id,
+                name: "Questions".into(),
+                arguments: questions.to_string(),
+                remote: false,
+            })),
             CodeTurnEvent::ReasoningDone { .. } | CodeTurnEvent::Unknown => None,
         };
 
@@ -629,6 +956,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::StreamExt;
 
     #[test]
     fn parses_tool_start_event() {
@@ -665,5 +993,163 @@ mod tests {
     #[test]
     fn guest_token_prefix_is_stable() {
         assert_eq!(GUEST_TOKEN_PREFIX, "gt:");
+    }
+
+    #[test]
+    fn computer_kind_labels() {
+        assert_eq!(ComputerKind::ThisPc.label(), "This PC");
+        assert_eq!(ComputerKind::Cloud.label(), "Cloud");
+        assert_eq!(ComputerKind::Ssh.label(), "SSH");
+        assert_eq!(ComputerKind::ThisPc.as_str(), "this_pc");
+    }
+
+    #[test]
+    fn parses_tool_start_with_arguments() {
+        let raw = r#"{"type":"tool_start","invocation_id":"tci_2","tool_name":"Bash","arguments":{"command":"ls"}}"#;
+        let ev: CodeTurnEvent = serde_json::from_str(raw).unwrap();
+        match ev {
+            CodeTurnEvent::ToolStart {
+                tool_name,
+                arguments,
+                ..
+            } => {
+                assert_eq!(tool_name, "Bash");
+                assert_eq!(arguments.unwrap()["command"].as_str().unwrap(), "ls");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_cancelled_and_question() {
+        let cancelled: CodeTurnEvent =
+            serde_json::from_str(r#"{"type":"cancelled","message_id":"m"}"#).unwrap();
+        assert!(matches!(cancelled, CodeTurnEvent::Cancelled { .. }));
+        let q: CodeTurnEvent = serde_json::from_str(
+            r#"{"type":"question","invocation_id":"q1","questions":{"prompt":"Ship it?"}}"#,
+        )
+        .unwrap();
+        match q {
+            CodeTurnEvent::Question { invocation_id, .. } => assert_eq!(invocation_id, "q1"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn turn_mode_only_chat_or_code() {
+        assert_eq!(CodeTurnMode::Code.as_str(), "code");
+        assert_eq!(CodeTurnMode::Chat.as_str(), "chat");
+    }
+
+    #[test]
+    fn api_errors_are_product_facing() {
+        let err = map_api_error(reqwest::StatusCode::NOT_FOUND, r#"{"detail":"nope"}"#);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("temporarily unavailable"),
+            "expected product error, got {msg}"
+        );
+        assert!(!msg.to_lowercase().contains("reqwest"));
+        assert!(!msg.contains("nope"));
+    }
+
+    #[test]
+    fn persists_session_id_under_cortex_home() {
+        let dir = std::env::temp_dir().join(format!("cortex-sess-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let prev = std::env::var_os("CORTEX_HOME");
+        unsafe {
+            std::env::set_var("CORTEX_HOME", &dir);
+        }
+        persist_session_id("/tmp/demo-ws", "sess_abc");
+        assert_eq!(
+            cached_code_session_id("/tmp/demo-ws").as_deref(),
+            Some("sess_abc")
+        );
+        match prev {
+            Some(v) => unsafe { std::env::set_var("CORTEX_HOME", v) },
+            None => unsafe { std::env::remove_var("CORTEX_HOME") },
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn tool_start_without_args_is_display_only() {
+        let args = serde_json::json!({"label": "Ran Python"});
+        let has_exec_args = args.get("command").is_some()
+            || args.get("file_path").is_some()
+            || args.get("path").is_some()
+            || args
+                .as_object()
+                .is_some_and(|o| o.len() > 1 && !o.contains_key("label"));
+        assert!(!has_exec_args);
+    }
+
+    fn live_api_enabled() -> bool {
+        std::env::var("CORTEX_LIVE_API").ok().as_deref() == Some("1")
+    }
+
+    #[tokio::test]
+    #[ignore = "hits api.cortex.foundation; CORTEX_LIVE_API=1 cargo test -p cortex-engine -- --ignored"]
+    async fn live_guest_code_turn_streams_tokens() {
+        if !live_api_enabled() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("CORTEX_HOME", dir.path());
+        }
+        let client = CodeAgentClient::new(None, None);
+        let guest = client
+            .begin_guest_session()
+            .await
+            .expect("guest session against the live API");
+        assert_eq!(guest.kind, "guest");
+        assert!(guest.user_id.starts_with("usr_"));
+
+        client.set_turn_context(CodeTurnContext {
+            workspace: Some("/tmp".into()),
+            computer: ComputerKind::Cloud,
+            turn_mode: Some(CodeTurnMode::Chat),
+            ssh_target: None,
+        });
+
+        let mut stream = client
+            .stream_turn(
+                "Reply with the single word pong and nothing else.",
+                CodeTurnMode::Chat,
+            )
+            .await
+            .expect("Code session turn");
+        let mut text = String::new();
+        let mut done = false;
+        while let Some(ev) = stream.next().await {
+            match ev.expect("SSE event") {
+                ResponseEvent::Delta(d) => text.push_str(&d),
+                ResponseEvent::Done(_) => {
+                    done = true;
+                    break;
+                }
+                ResponseEvent::Error(e) => panic!("turn error: {e}"),
+                _ => {}
+            }
+        }
+        assert!(done, "expected a done event from the Code turn stream");
+        assert!(
+            text.to_lowercase().contains("pong"),
+            "expected streamed pong, got {text:?}"
+        );
+
+        let sid = client
+            .current_session_id()
+            .await
+            .expect("session id after turn");
+        let messages = client.list_messages(&sid).await.expect("transcript");
+        assert!(
+            messages.iter().any(|m| m.role == "user"),
+            "server transcript should persist the user message"
+        );
+
+        client.cancel_in_flight().await;
     }
 }

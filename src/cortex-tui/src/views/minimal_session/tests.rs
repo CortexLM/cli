@@ -46,13 +46,17 @@ mod harness_snapshots {
         assert!(!text.to_lowercase().contains("grok"));
         assert!(
             text.contains("Cortex CLI"),
-            "home session should render WelcomeCard: {text}"
+            "home session should render splash: {text}"
         );
-        for glyph in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█", "█    █"]
+        assert!(
+            !text.contains("Directory") && !text.contains("Computer"),
+            "home session must not show header cards: {text}"
+        );
+        for glyph in ["▄█▀▀▀▀█▄", "██ ▌  ▐ ██", "█▄▄▄▄▄▄█"]
         {
             assert!(
-                text.contains(glyph),
-                "home session missing mascot line {glyph:?}: {text}"
+                !text.contains(glyph),
+                "home session must not show mascot {glyph:?}: {text}"
             );
         }
     }
@@ -66,6 +70,43 @@ mod harness_snapshots {
         dump_snapshot("session", &text);
         assert!(text.contains("List the files") || text.contains("Hi"));
         assert!(!text.to_lowercase().contains("grok"));
+    }
+
+    #[test]
+    fn snapshot_tool_tiles_and_diagnostics() {
+        let mut state = AppState::default();
+        state.add_message(cortex_core::widgets::Message::user("run tools"));
+        let mut call = ToolCallDisplay::new(
+            "1".into(),
+            "Read".into(),
+            json!({"file_path": "src/auth.rs"}),
+            1,
+        );
+        call.set_status(ToolStatus::Completed);
+        call.set_result(ToolResultDisplay {
+            output: "pub fn sign_in() {}".into(),
+            success: true,
+            summary: "src/auth.rs".into(),
+        });
+        state.tool_calls.push(call);
+        let mut diag = ToolCallDisplay::new(
+            "12".into(),
+            "diagnostics".into(),
+            json!({"file": "a.rs"}),
+            2,
+        );
+        diag.set_status(ToolStatus::Completed);
+        state.tool_calls.push(diag);
+        let text = render(&state, 120, 40);
+        dump_snapshot("tool_tiles", &text);
+        assert!(text.contains("Read"), "missing Read: {text}");
+        assert!(text.contains("Diagnostics"), "missing Diagnostics: {text}");
+        assert!(!text.contains("L a.rs"), "{text}");
+        let narrow = render(&state, 40, 12);
+        assert!(
+            narrow.contains("Read") || narrow.contains("Diagnostics"),
+            "{narrow}"
+        );
     }
 
     #[test]
@@ -140,6 +181,50 @@ mod harness_snapshots {
     #[test]
     fn chat_message_helpers_still_work() {
         let _ = ChatMessage::user("x");
+    }
+
+    #[test]
+    fn snapshot_cancel_message() {
+        let mut state = AppState::default();
+        state.add_message(cortex_core::widgets::Message::user("list files"));
+        state.add_message(cortex_core::widgets::Message::system("Cancelled."));
+        let text = render(&state, 80, 24);
+        dump_snapshot("cancel", &text);
+        assert!(text.contains("Cancelled."), "cancel missing: {text}");
+        assert!(!text.to_lowercase().contains("grok"));
+    }
+
+    #[test]
+    fn snapshot_ask_questions() {
+        use crate::question::{Question, QuestionRequest, QuestionState, QuestionType};
+        use crate::views::question_prompt::QuestionPromptView;
+        use ratatui::widgets::Widget;
+
+        let request = QuestionRequest {
+            id: "q1".into(),
+            title: "Questions".into(),
+            description: Some("Need a decision before continuing.".into()),
+            questions: vec![Question {
+                id: "q1".into(),
+                question: "Ship the change?".into(),
+                question_type: QuestionType::Text,
+                options: vec![],
+                placeholder: None,
+                required: true,
+                allow_custom: true,
+            }],
+        };
+        let q_state = QuestionState::new(request);
+        let view = QuestionPromptView::new(&q_state);
+        let mut buf = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 80, 24));
+        view.render(ratatui::layout::Rect::new(0, 0, 80, 24), &mut buf);
+        let text = buffer_text(&buf);
+        dump_snapshot("ask", &text);
+        assert!(
+            text.contains("Ship the change?") || text.contains("Questions"),
+            "ask/questions missing: {text}"
+        );
+        assert!(!text.to_lowercase().contains("grok"));
     }
 }
 

@@ -160,6 +160,14 @@ pub enum ModalType {
     Tasks,
     /// Skills manager modal for listing and invoking skills
     Skills,
+    /// Agent / Plan / Ask mode picker
+    Mode,
+    /// Edit and command approval policy
+    Permissions,
+    /// Plan draft modal
+    Plan,
+    /// Reasoning effort picker
+    Effort,
 }
 
 impl ModalType {
@@ -187,6 +195,10 @@ impl ModalType {
             ModalType::Agents => "Agents",
             ModalType::Tasks => "Background Tasks",
             ModalType::Skills => "Skills",
+            ModalType::Mode => "Mode",
+            ModalType::Permissions => "Permissions",
+            ModalType::Plan => "Plan",
+            ModalType::Effort => "Effort",
         }
     }
 }
@@ -208,6 +220,8 @@ pub enum CommandResult {
     Quit,
     /// Command requests clearing the current view/session.
     Clear,
+    /// Command requests interrupting the in-flight turn.
+    Interrupt,
     /// Command requests opening a modal.
     OpenModal(ModalType),
     /// Command requests switching to a view.
@@ -236,6 +250,7 @@ impl CommandResult {
             CommandResult::Success
                 | CommandResult::Message(_)
                 | CommandResult::Clear
+                | CommandResult::Interrupt
                 | CommandResult::OpenModal(_)
                 | CommandResult::SwitchView(_)
                 | CommandResult::NewSession

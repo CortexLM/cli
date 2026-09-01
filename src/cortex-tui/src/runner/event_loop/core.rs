@@ -424,7 +424,13 @@ impl EventLoop {
             self.streaming_cancelled.store(true, Ordering::SeqCst);
             self.stream_controller.interrupt();
             self.app_state.stop_streaming();
-            self.add_system_message("Streaming cancelled.");
+            self.add_system_message("Cancelled.");
+
+            if let Some(pm) = self.provider_manager.clone() {
+                tokio::spawn(async move {
+                    pm.read().await.cancel_active_turn().await;
+                });
+            }
 
             // Close the channel first to unblock any pending sends
             // This ensures the HTTP connection is released when the stream is dropped

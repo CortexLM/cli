@@ -56,9 +56,10 @@ cortex --version
 cortex login
 ```
 
-This opens the Cortex sign-in flow at
-[auth.cortex.foundation](https://auth.cortex.foundation) in your browser. On
-success the session is written to your OS keyring, not to a file in the repo.
+This starts device login against
+[api.cortex.foundation](https://api.cortex.foundation) and opens the
+verification URL the API returns. On success the session is written to your OS
+keyring, not to a file in the repo.
 
 Other ways in, for machines without a browser:
 
@@ -90,7 +91,14 @@ cortex
 
 You get the session view from the recording on the [docs index](../README.md):
 a timeline, a composer at the bottom, and a status line showing the current mode
-and autonomy level. Type what you want changed and press `Enter`.
+and autonomy level. The welcome card shows the working directory and
+**Computer** (`This PC` when you started in a workspace, `Cloud` or `SSH` when
+those are configured). Type what you want changed and press `Enter`.
+
+Turns go to the Code session API (`POST /v1/code/sessions/{id}/turns`) with
+streaming tokens and first-class tool rows. Press `Esc` to cancel a turn that
+is going the wrong way. Plan and Spec modes lock mutating tools in the harness
+until you switch back to Build.
 
 ```
 > add a /healthz endpoint and cover it with a test
@@ -98,7 +106,7 @@ and autonomy level. Type what you want changed and press `Enter`.
 
 Cortex works through the request as a series of tool calls — searching, reading,
 editing and running commands — and each one appears in the timeline as it
-happens. Press `Esc` to interrupt a turn that is going the wrong way.
+happens.
 
 You can also seed the session with a prompt from the command line:
 

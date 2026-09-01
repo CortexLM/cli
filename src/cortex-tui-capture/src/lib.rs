@@ -124,6 +124,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn snapshot_empty_loading_error_success_surfaces() {
+        for (label, copy) in [
+            ("empty", "Cortex CLI v1.0.0"),
+            ("loading", "Waiting for browser authentication"),
+            ("error", "The coding service is temporarily unavailable"),
+            ("success", "Signed in."),
+        ] {
+            let config = CaptureConfig::new(80, 12);
+            let mut capture = FrameCapture::new(config);
+            let mut terminal = MockTerminal::with_size(80, 12).expect("mock terminal");
+            terminal
+                .draw(|frame| {
+                    let widget = Paragraph::new(copy);
+                    frame.render_widget(widget, frame.area());
+                })
+                .expect("draw");
+            capture.capture_ratatui(terminal.backend().buffer(), Some(label));
+            let frame = capture.latest_frame().expect("frame");
+            assert!(
+                frame.ascii_content.contains(copy),
+                "{label} snapshot missing copy:\n{}",
+                frame.ascii_content
+            );
+        }
+    }
+
+    #[test]
+    fn snapshot_splash_reflows_narrow_and_wide() {
+        use cortex_tui_components::welcome_card::{ToLines, WelcomeCard};
+        for (w, h) in [(40u16, 12u16), (120u16, 40u16)] {
+            let config = CaptureConfig::new(w, h);
+            let mut capture = FrameCapture::new(config);
+            let mut terminal = MockTerminal::with_size(w, h).expect("mock terminal");
+            terminal
+                .draw(|frame| {
+                    let lines = WelcomeCard::new().version("1.0.0").to_lines(w);
+                    frame.render_widget(Paragraph::new(lines), frame.area());
+                })
+                .expect("draw");
+            capture.capture_ratatui(terminal.backend().buffer(), Some("splash"));
+            let frame = capture.latest_frame().expect("frame");
+            assert!(
+                frame.ascii_content.contains("Cortex CLI v1.0.0"),
+                "splash missing at {w}x{h}:\n{}",
+                frame.ascii_content
+            );
+            assert!(!frame.ascii_content.contains("▄█▀▀▀▀█▄"));
+        }
+    }
+
+    #[test]
     fn snapshot_service_unavailable_surface() {
         let config = CaptureConfig::new(72, 10);
         let mut capture = FrameCapture::new(config);

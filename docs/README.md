@@ -68,6 +68,6 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
   is missing from a page, check `cortex <command> --help`, which is generated
   from the same definitions.
 - Cortex CLI talks to the Cortex API at
-  [api.cortex.foundation](https://api.cortex.foundation) and signs in through
-  [auth.cortex.foundation](https://auth.cortex.foundation). Releases are
+  [api.cortex.foundation](https://api.cortex.foundation) and signs in there
+  (`POST /v1/auth/device`). Releases are
   published to [software.cortex.foundation](https://software.cortex.foundation).

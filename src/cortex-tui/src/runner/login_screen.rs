@@ -13,13 +13,14 @@ use futures::StreamExt;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
 use tokio::sync::mpsc;
 
+use crate::ui::text_utils::{first_fitting_line, wrap_or_drop};
+use cortex_core::style::{CYAN_PRIMARY, ERROR, SELECTION_BG, TEXT, TEXT_DIM, VOID};
 use cortex_login::{SecureAuthData, save_auth_with_fallback};
-use cortex_tui_components::mascot::MASCOT_MINIMAL_LINES;
 use cortex_tui_components::spinner::SpinnerStyle;
 
 // ============================================================================
@@ -27,12 +28,9 @@ use cortex_tui_components::spinner::SpinnerStyle;
 // ============================================================================
 
 const API_BASE_URL: &str = "https://api.cortex.foundation";
-const AUTH_BASE_URL: &str = "https://auth.cortex.foundation";
 
-// Colors matching the original design
-const PRIMARY: Color = Color::Rgb(0x00, 0xFF, 0xA3);
-const DIM: Color = Color::Rgb(0x6b, 0x6b, 0x7b);
-const CYAN: Color = Color::Cyan;
+/// Highlight token (mint) — success accents only; selection is `SELECTION_BG`.
+const HIGHLIGHT: ratatui::style::Color = CYAN_PRIMARY;
 
 // ============================================================================
 // Login Screen State
@@ -49,33 +47,28 @@ pub enum LoginState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoginMethod {
-    CortexAccount,
+    Browser,
     ApiKey,
-    Exit,
 }
 
 impl LoginMethod {
     fn all() -> &'static [LoginMethod] {
-        &[
-            LoginMethod::CortexAccount,
-            LoginMethod::ApiKey,
-            LoginMethod::Exit,
-        ]
+        &[LoginMethod::Browser, LoginMethod::ApiKey]
     }
 
     fn label(&self) -> &'static str {
         match self {
-            LoginMethod::CortexAccount => "Cortex Foundation account",
-            LoginMethod::ApiKey => "API Key",
-            LoginMethod::Exit => "Exit",
+            LoginMethod::Browser => "Continue with browser",
+            LoginMethod::ApiKey => "Paste an API key",
         }
     }
 
     fn description(&self) -> &'static str {
         match self {
-            LoginMethod::CortexAccount => "Pro, Max, Scale, or Enterprise subscription",
-            LoginMethod::ApiKey => "For API access without subscription",
-            LoginMethod::Exit => "",
+            LoginMethod::Browser => {
+                "Opens cortex.foundation/cli/auth — token never hits the model."
+            }
+            LoginMethod::ApiKey => "Paste a key from your Cortex account.",
         }
     }
 }
@@ -121,6 +114,8 @@ pub struct LoginScreen {
     message: Option<String>,
     async_rx: Option<mpsc::Receiver<AsyncMessage>>,
     copied_notification: Option<Instant>,
+    /// Splash line version (`Cortex CLI v{version}`).
+    splash_version: String,
 }
 
 impl LoginScreen {
@@ -136,7 +131,50 @@ impl LoginScreen {
             message,
             async_rx: None,
             copied_notification: None,
+            splash_version: env!("CARGO_PKG_VERSION").to_string(),
         }
+    }
+
+    /// Override the splash version (lock captures pin `1.0.0`).
+    pub fn with_splash_version(mut self, version: impl Into<String>) -> Self {
+        self.splash_version = version.into();
+        self
+    }
+
+    /// Select-method screen with an optional product error under the radios.
+    pub fn lock_select(version: &str, error: Option<&str>) -> Self {
+        let mut screen =
+            Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
+        screen.state = LoginState::SelectMethod;
+        screen.error_message = error.map(str::to_string);
+        screen
+    }
+
+    /// Waiting-for-browser (loading) screen.
+    pub fn lock_waiting(version: &str, user_code: &str, verification_uri: &str) -> Self {
+        let mut screen =
+            Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
+        screen.state = LoginState::WaitingForAuth;
+        screen.user_code = Some(user_code.into());
+        screen.verification_uri = Some(verification_uri.into());
+        screen
+    }
+
+    /// Success screen (`Signed in.` mint).
+    pub fn lock_success(version: &str) -> Self {
+        let mut screen =
+            Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
+        screen.state = LoginState::Success;
+        screen
+    }
+
+    /// Failed screen (product-facing error, no mint).
+    pub fn lock_failed(version: &str, error: &str) -> Self {
+        let mut screen =
+            Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
+        screen.state = LoginState::Failed;
+        screen.error_message = Some(error.into());
+        screen
     }
 
     pub async fn run(&mut self) -> Result<LoginResult> {
@@ -247,127 +285,119 @@ impl LoginScreen {
         }
     }
 
-    fn render(&self, f: &mut ratatui::Frame) {
+    pub fn render(&self, f: &mut ratatui::Frame) {
         let area = f.area();
         f.render_widget(Clear, area);
+        f.render_widget(
+            ratatui::widgets::Block::default().style(Style::default().bg(VOID)),
+            area,
+        );
 
         match self.state {
             LoginState::SelectMethod => self.render_select_method(f, area),
             LoginState::WaitingForAuth => self.render_waiting(f, area),
-            _ => {}
+            LoginState::Success => self.render_success(f, area),
+            LoginState::Failed => self.render_failed(f, area),
+            LoginState::Exit => {}
         }
     }
 
     fn render_select_method(&self, f: &mut ratatui::Frame, area: Rect) {
-        let version = env!("CARGO_PKG_VERSION");
+        let version = self.splash_version.as_str();
+        let methods = LoginMethod::all();
+        let buf = f.buffer_mut();
+        let w = area.width.saturating_sub(1).max(1) as usize;
+        let mut y = area.y;
 
-        // Center the content
-        let content_width = 70.min(area.width.saturating_sub(4));
-        let content_height = 14;
-        let content_x = (area.width.saturating_sub(content_width)) / 2;
-        let content_y = (area.height.saturating_sub(content_height)) / 2;
-        let content_area = Rect::new(content_x, content_y, content_width, content_height);
+        buf.set_string(
+            area.x,
+            y,
+            first_fitting_line(&format!("Cortex CLI v{version}"), w),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        );
+        y += 2;
+        buf.set_string(
+            area.x,
+            y,
+            first_fitting_line("Sign in to Cortex", w),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        );
+        y += 2;
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1), // Separator
-                Constraint::Length(1), // Welcome message
-                Constraint::Length(1), // Description
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Select header
-                Constraint::Length(1), // Empty
-                Constraint::Length(3), // Method options
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Hints
-                Constraint::Length(1), // Error message (if any)
-            ])
-            .split(content_area);
-
-        // Line 1: Separator
-        let separator =
-            Paragraph::new("────────────────────────────────────────────────────────────")
-                .style(Style::default().fg(DIM));
-        f.render_widget(separator, chunks[0]);
-
-        // Line 2: Welcome message
-        let welcome = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "Welcome to Cortex CLI",
-                Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!(" v{}", version), Style::default().fg(DIM)),
-        ]));
-        f.render_widget(welcome, chunks[1]);
-
-        // Line 3: Description
-        let description =
-            Paragraph::new("Cortex can be used with your Cortex Foundation account or API key.")
-                .style(Style::default().fg(DIM));
-        f.render_widget(description, chunks[2]);
-
-        // Line 5: Select header
-        let header = Paragraph::new(" Select login method:");
-        f.render_widget(header, chunks[4]);
-
-        // Lines 7-9: Method options
-        let mut lines: Vec<Line> = Vec::new();
-        for (i, method) in LoginMethod::all().iter().enumerate() {
-            let is_selected = i == self.selected_method;
-            let prefix = if is_selected { " › " } else { "   " };
-
-            let mut spans = vec![
-                Span::styled(
-                    format!("{}{}. ", prefix, i + 1),
-                    Style::default().fg(if is_selected { PRIMARY } else { DIM }),
-                ),
-                Span::styled(
-                    method.label(),
-                    Style::default().fg(if is_selected { PRIMARY } else { Color::White }),
-                ),
-            ];
-
-            let desc = method.description();
-            if !desc.is_empty() {
-                spans.push(Span::styled(
-                    format!(" · {}", desc),
-                    Style::default().fg(DIM),
-                ));
+        for (i, method) in methods.iter().enumerate() {
+            if y >= area.bottom().saturating_sub(3) {
+                break;
             }
-
-            lines.push(Line::from(spans));
+            let is_selected = i == self.selected_method;
+            let radio = if is_selected { "●" } else { "○" };
+            let label = first_fitting_line(method.label(), w.saturating_sub(2));
+            if is_selected {
+                for x in area.x..area.right() {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_bg(SELECTION_BG);
+                        cell.set_fg(TEXT);
+                    }
+                }
+                buf.set_string(
+                    area.x,
+                    y,
+                    first_fitting_line(&format!("{radio} {label}"), w),
+                    Style::default()
+                        .fg(TEXT)
+                        .bg(SELECTION_BG)
+                        .add_modifier(Modifier::BOLD),
+                );
+            } else {
+                buf.set_string(
+                    area.x,
+                    y,
+                    first_fitting_line(&format!("{radio} {label}"), w),
+                    Style::default().fg(TEXT),
+                );
+            }
+            y += 1;
+            if is_selected {
+                for hint_line in wrap_or_drop(method.description(), w) {
+                    if y >= area.bottom().saturating_sub(3) {
+                        break;
+                    }
+                    buf.set_string(area.x, y, &hint_line, Style::default().fg(TEXT_DIM));
+                    y += 1;
+                }
+            }
         }
-        let options = Paragraph::new(lines);
-        f.render_widget(options, chunks[6]);
 
-        // Line 11: Hints
-        let hints = Paragraph::new("↑↓ to select · Enter to confirm · Ctrl+C to exit")
-            .style(Style::default().fg(DIM));
-        f.render_widget(hints, chunks[8]);
-
-        // Line 12: Error message (if any)
         if let Some(ref error) = self.error_message {
-            let error_msg =
-                Paragraph::new(format!("Error: {}", error)).style(Style::default().fg(Color::Red));
-            f.render_widget(error_msg, chunks[9]);
+            y += 1;
+            for err_line in wrap_or_drop(error, w) {
+                if y >= area.bottom().saturating_sub(2) {
+                    break;
+                }
+                buf.set_string(area.x, y, &err_line, Style::default().fg(ERROR));
+                y += 1;
+            }
         }
+
+        buf.set_string(
+            area.x,
+            area.bottom().saturating_sub(2),
+            first_fitting_line("↑↓ select · ↵ continue · esc quit", w),
+            Style::default().fg(TEXT_DIM),
+        );
     }
 
     fn render_waiting(&self, f: &mut ratatui::Frame, area: Rect) {
-        let version = env!("CARGO_PKG_VERSION");
+        let version = self.splash_version.as_str();
         let breathing = SpinnerStyle::Breathing.frames();
         let spinner = breathing[(self.frame_count % breathing.len() as u64) as usize];
 
-        // Build direct auth URL
-        let direct_url = if let Some(ref code) = self.user_code {
-            format!("{}/device?code={}", AUTH_BASE_URL, code)
-        } else {
-            format!("{}/device", AUTH_BASE_URL)
-        };
+        let direct_url = self
+            .verification_uri
+            .clone()
+            .unwrap_or_else(|| "https://api.cortex.foundation".to_string());
 
-        // Center the content
-        let content_width = 70.min(area.width.saturating_sub(4));
-        let content_height = 14;
+        let content_width = 70.min(area.width.saturating_sub(4)).max(20);
+        let content_height = 10;
         let content_x = (area.width.saturating_sub(content_width)) / 2;
         let content_y = (area.height.saturating_sub(content_height)) / 2;
         let content_area = Rect::new(content_x, content_y, content_width, content_height);
@@ -375,85 +405,116 @@ impl LoginScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // Welcome message
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Mascot top
-                Constraint::Length(1), // Mascot + waiting message
-                Constraint::Length(1), // Mascot bottom
-                Constraint::Length(1), // Mascot legs
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Browser message
-                Constraint::Length(1), // URL
-                Constraint::Length(1), // Empty
-                Constraint::Length(1), // Hints
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
             ])
             .split(content_area);
 
-        // Line 1: Welcome message
-        let welcome = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "Welcome to Cortex CLI",
-                Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!(" v{}", version), Style::default().fg(DIM)),
-        ]));
-        f.render_widget(welcome, chunks[0]);
+        let splash = Paragraph::new(format!("Cortex CLI v{version}"))
+            .style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD));
+        f.render_widget(splash, chunks[0]);
 
-        // Lines 3-6: official welcome mascot (`MASCOT_MINIMAL_LINES`).
-        f.render_widget(
-            Paragraph::new(MASCOT_MINIMAL_LINES[0]).style(Style::default().fg(PRIMARY)),
-            chunks[2],
-        );
-        f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(MASCOT_MINIMAL_LINES[1], Style::default().fg(PRIMARY)),
-                Span::styled(
-                    format!(" Waiting for browser authentication  {spinner}"),
-                    Style::default().fg(PRIMARY),
-                ),
-            ])),
-            chunks[3],
-        );
-        f.render_widget(
-            Paragraph::new(MASCOT_MINIMAL_LINES[2]).style(Style::default().fg(PRIMARY)),
-            chunks[4],
-        );
-        f.render_widget(
-            Paragraph::new(MASCOT_MINIMAL_LINES[3]).style(Style::default().fg(PRIMARY)),
-            chunks[5],
-        );
+        let waiting_text = if area.width < 50 {
+            format!("{spinner} Waiting for browser")
+        } else {
+            format!("{spinner} Waiting for browser authentication")
+        };
+        let waiting = Paragraph::new(first_fitting_line(&waiting_text, content_width as usize))
+            .style(Style::default().fg(TEXT));
+        f.render_widget(waiting, chunks[2]);
 
-        // Line 8: Browser message
+        if let Some(code) = &self.user_code {
+            let code_line =
+                Paragraph::new(format!("Code: {code}")).style(Style::default().fg(TEXT));
+            f.render_widget(code_line, chunks[3]);
+        }
+
         let copy_hint = if self.copied_notification.is_some() {
-            "(✓ Copied!)"
+            "(copied)"
         } else {
             "(c to copy)"
         };
-        let browser_msg = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "Browser didn't open? Click the URL below ",
-                Style::default().fg(DIM),
-            ),
-            Span::styled(copy_hint, Style::default().fg(DIM)),
-        ]));
-        f.render_widget(browser_msg, chunks[7]);
+        let browser_msg = if area.width < 50 {
+            first_fitting_line(copy_hint, content_width as usize)
+        } else {
+            first_fitting_line(
+                &format!("Browser didn't open? Open the URL below {copy_hint}"),
+                content_width as usize,
+            )
+        };
+        f.render_widget(
+            Paragraph::new(browser_msg).style(Style::default().fg(TEXT_DIM)),
+            chunks[4],
+        );
 
-        // Line 9: URL
-        let url_line = Paragraph::new(&*direct_url).style(Style::default().fg(CYAN));
-        f.render_widget(url_line, chunks[8]);
+        let url_line = Paragraph::new(first_fitting_line(&direct_url, content_width as usize))
+            .style(Style::default().fg(TEXT));
+        f.render_widget(url_line, chunks[5]);
 
-        // Line 11: Hints
         let hints =
-            Paragraph::new("Esc to go back · Ctrl+C to exit").style(Style::default().fg(DIM));
-        f.render_widget(hints, chunks[10]);
+            Paragraph::new("Esc to go back · Ctrl+C to exit").style(Style::default().fg(TEXT_DIM));
+        f.render_widget(hints, chunks[7]);
     }
 
-    fn get_direct_url(&self) -> String {
-        if let Some(ref code) = self.user_code {
-            format!("{}/device?code={}", AUTH_BASE_URL, code)
-        } else {
-            format!("{}/device", AUTH_BASE_URL)
+    fn render_success(&self, f: &mut ratatui::Frame, area: Rect) {
+        let msg = Paragraph::new("Signed in.")
+            .style(Style::default().fg(HIGHLIGHT).add_modifier(Modifier::BOLD));
+        f.render_widget(msg, centered_line(area, 20, 1));
+    }
+
+    fn render_failed(&self, f: &mut ratatui::Frame, area: Rect) {
+        let msg = self
+            .error_message
+            .clone()
+            .unwrap_or_else(|| "Sign-in failed.".to_string());
+        let width = area.width.saturating_sub(2).max(1) as usize;
+        let mut lines: Vec<Line> = wrap_or_drop(&msg, width)
+            .into_iter()
+            .map(|line| Line::from(Span::styled(line, Style::default().fg(ERROR))))
+            .collect();
+        if let Some(hint) = wrap_or_drop("↑↓ select · esc close", width)
+            .into_iter()
+            .next()
+        {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                hint,
+                Style::default().fg(TEXT_DIM),
+            )));
         }
+        f.render_widget(
+            Paragraph::new(lines.clone()),
+            centered_line(
+                area,
+                area.width.saturating_sub(2).max(1),
+                (lines.len() as u16).min(area.height).max(1),
+            ),
+        );
+    }
+}
+
+fn centered_line(area: Rect, width: u16, height: u16) -> Rect {
+    let w = width.min(area.width);
+    let h = height.min(area.height);
+    Rect::new(
+        area.x + (area.width.saturating_sub(w)) / 2,
+        area.y + (area.height.saturating_sub(h)) / 2,
+        w,
+        h,
+    )
+}
+
+impl LoginScreen {
+    fn get_direct_url(&self) -> String {
+        self.verification_uri
+            .clone()
+            .unwrap_or_else(|| "https://api.cortex.foundation".to_string())
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Option<LoginResult> {
@@ -496,10 +557,7 @@ impl LoginScreen {
                 self.selected_method = 1;
                 return self.select_method();
             }
-            KeyCode::Char('3') => {
-                self.selected_method = 2;
-                return self.select_method();
-            }
+            KeyCode::Char('3') | KeyCode::Char('4') => {}
             KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
                 return Some(LoginResult::Exit);
             }
@@ -510,12 +568,11 @@ impl LoginScreen {
 
     fn select_method(&mut self) -> Option<LoginResult> {
         match LoginMethod::all()[self.selected_method] {
-            LoginMethod::CortexAccount => {
+            LoginMethod::Browser => {
                 self.start_device_code_flow();
                 None
             }
             LoginMethod::ApiKey => Some(LoginResult::ContinueWithApiKey),
-            LoginMethod::Exit => Some(LoginResult::Exit),
         }
     }
 
@@ -562,6 +619,37 @@ impl LoginScreen {
         });
     }
 
+    #[allow(dead_code)]
+    fn start_guest_session(&mut self) {
+        self.state = LoginState::WaitingForAuth;
+        self.error_message = None;
+        self.user_code = None;
+        self.verification_uri = None;
+        let tx = self.create_async_channel();
+        let cortex_home = self.cortex_home.clone();
+        tokio::spawn(async move {
+            let client = match cortex_engine::create_default_client() {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = tx.send(AsyncMessage::DeviceCodeError(e.to_string())).await;
+                    return;
+                }
+            };
+            match begin_guest_session(&client, &cortex_home).await {
+                Ok(()) => {
+                    let _ = tx.send(AsyncMessage::TokenReceived).await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(AsyncMessage::DeviceCodeError(format!(
+                            "Guest session failed: {e}"
+                        )))
+                        .await;
+                }
+            }
+        });
+    }
+
     fn create_async_channel(&mut self) -> mpsc::Sender<AsyncMessage> {
         let (tx, rx) = mpsc::channel(16);
         self.async_rx = Some(rx);
@@ -573,15 +661,13 @@ impl LoginScreen {
             AsyncMessage::DeviceCodeReceived {
                 user_code,
                 device_code,
-                verification_uri: _,
+                verification_uri,
             } => {
                 tracing::info!("Device code received: {}", user_code);
-                let auth_url = format!("{}/device", AUTH_BASE_URL);
                 self.user_code = Some(user_code.clone());
-                self.verification_uri = Some(auth_url.clone());
+                self.verification_uri = Some(verification_uri.clone());
 
-                // Open browser
-                let link_url = format!("{}?code={}", auth_url, user_code);
+                let link_url = verification_uri;
                 tracing::debug!("Opening browser to: {}", link_url);
                 #[cfg(target_os = "macos")]
                 {
@@ -639,6 +725,7 @@ impl LoginScreen {
 // ============================================================================
 
 async fn request_device_code_async(cortex_home: PathBuf, tx: mpsc::Sender<AsyncMessage>) {
+    let _ = cortex_home;
     let client = match cortex_engine::create_default_client() {
         Ok(c) => c,
         Err(e) => {
@@ -647,91 +734,32 @@ async fn request_device_code_async(cortex_home: PathBuf, tx: mpsc::Sender<AsyncM
         }
     };
 
+    let api_base = cortex_login::resolve_device_api_base(API_BASE_URL);
     let device_name = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_else(|_| "Cortex CLI".to_string());
-    let payload = serde_json::json!({
-        "device_name": device_name,
-        "scopes": ["chat", "models"]
-    });
+    let scopes = vec!["openid".to_string(), "profile".to_string()];
 
-    // Live API: /auth/device/code is 404. Try /v1 first, then legacy, then guest.
-    let mut last_status = reqwest::StatusCode::NOT_FOUND;
-    let mut last_body = String::new();
-    let mut response = None;
-    for path in ["/v1/auth/device/code", "/auth/device/code"] {
-        match client
-            .post(format!("{API_BASE_URL}{path}"))
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(r) if r.status().is_success() => {
-                response = Some(r);
-                break;
-            }
-            Ok(r) => {
-                last_status = r.status();
-                last_body = r.text().await.unwrap_or_default();
-            }
-            Err(e) => {
-                let _ = tx
-                    .send(AsyncMessage::DeviceCodeError(format!("Network error: {e}")))
-                    .await;
-                return;
-            }
-        }
-    }
-
-    let Some(response) = response else {
-        if last_status.as_u16() == 404 {
-            match begin_guest_session(&client, &cortex_home).await {
-                Ok(()) => {
-                    let _ = tx.send(AsyncMessage::TokenReceived).await;
-                    return;
-                }
-                Err(e) => {
-                    let _ = tx
-                        .send(AsyncMessage::DeviceCodeError(format!(
-                            "Device login is not available. Guest session failed: {e}"
-                        )))
-                        .await;
-                    return;
-                }
-            }
-        }
-        let error = if last_status.as_u16() == 403 {
-            "Cannot connect to Cortex API. Service may be unavailable.".to_string()
-        } else if last_status.as_u16() == 429 {
-            "Too many login attempts. Please wait.".to_string()
-        } else {
-            format!("API error ({}): {}", last_status, last_body)
-        };
-        let _ = tx.send(AsyncMessage::DeviceCodeError(error)).await;
-        return;
-    };
-
-    #[derive(serde::Deserialize)]
-    struct DeviceCodeResponse {
-        user_code: String,
-        device_code: String,
-        verification_uri: String,
-    }
-
-    match response.json::<DeviceCodeResponse>().await {
+    match cortex_login::request_device_authorization(
+        &client,
+        &api_base,
+        Some(&device_name),
+        &scopes,
+    )
+    .await
+    {
         Ok(data) => {
+            let verification_uri = data.open_url().to_string();
             let _ = tx
                 .send(AsyncMessage::DeviceCodeReceived {
                     user_code: data.user_code,
                     device_code: data.device_code,
-                    verification_uri: data.verification_uri,
+                    verification_uri,
                 })
                 .await;
         }
         Err(e) => {
-            let _ = tx
-                .send(AsyncMessage::DeviceCodeError(format!("Parse error: {}", e)))
-                .await;
+            let _ = tx.send(AsyncMessage::DeviceCodeError(e.to_string())).await;
         }
     }
 }
@@ -752,115 +780,68 @@ async fn poll_for_token_async(
         }
     };
 
-    let interval = Duration::from_secs(5);
-    let max_attempts = 180; // 15 minutes total
+    let api_base = cortex_login::resolve_device_api_base(API_BASE_URL);
+    let mut interval = Duration::from_secs(5);
+    let max_attempts = 180;
 
     for attempt in 0..max_attempts {
         tokio::time::sleep(interval).await;
-
-        // Check if the receiver was dropped (user cancelled)
-        // This is a cheap check that allows us to exit early
         if tx.is_closed() {
             tracing::debug!("Token polling cancelled (receiver dropped)");
             return;
         }
-
         tracing::trace!(
             "Polling for token (attempt {}/{})",
             attempt + 1,
             max_attempts
         );
 
-        let response = match client
-            .post(format!("{}/auth/device/token", API_BASE_URL))
-            .json(&serde_json::json!({ "device_code": device_code }))
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::debug!("Token poll request failed: {}", e);
-                continue;
+        match cortex_login::poll_device_token(&client, &api_base, &device_code).await {
+            Ok(cortex_login::DeviceTokenStatus::Pending { interval: next }) => {
+                interval = Duration::from_secs(next.max(1));
             }
-        };
-
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-
-        if status.is_success() {
-            tracing::debug!("Token response received (success)");
-
-            #[derive(serde::Deserialize)]
-            struct TokenResponse {
-                access_token: String,
-                refresh_token: String,
-            }
-
-            if let Ok(token) = serde_json::from_str::<TokenResponse>(&body) {
-                let expires_at = chrono::Utc::now().timestamp() + 3600;
-                let auth_data = SecureAuthData::with_oauth(
-                    token.access_token,
-                    Some(token.refresh_token),
-                    Some(expires_at),
-                );
-
+            Ok(cortex_login::DeviceTokenStatus::Success(token)) => {
+                let Some(access) = token.bearer().map(str::to_string) else {
+                    continue;
+                };
+                let expires_at = token
+                    .expires_in
+                    .map(|secs| chrono::Utc::now().timestamp() + secs as i64)
+                    .or(Some(chrono::Utc::now().timestamp() + 3600));
+                let auth_data = SecureAuthData::with_oauth(access, token.refresh_token, expires_at);
                 match save_auth_with_fallback(&cortex_home, &auth_data) {
                     Ok(mode) => {
                         tracing::info!("Auth credentials saved using {:?} storage", mode);
-                        // Send the success message - this is the critical moment
-                        if let Err(e) = tx.send(AsyncMessage::TokenReceived).await {
-                            tracing::error!("Failed to send TokenReceived message: {}", e);
-                        } else {
-                            tracing::debug!("TokenReceived message sent successfully");
-                        }
+                        let _ = tx.send(AsyncMessage::TokenReceived).await;
                         return;
                     }
                     Err(e) => {
-                        tracing::error!("Failed to save auth credentials: {}", e);
                         let _ = tx
                             .send(AsyncMessage::TokenError(format!(
-                                "Failed to save credentials: {}",
-                                e
+                                "Failed to save credentials: {e}"
                             )))
                             .await;
                         return;
                     }
                 }
-            } else {
-                tracing::warn!("Failed to parse token response");
             }
-            continue;
-        }
-
-        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&body)
-            && let Some(err) = error.get("error").and_then(|e| e.as_str())
-        {
-            match err {
-                "authorization_pending" => {
-                    tracing::trace!("Authorization pending...");
-                    continue;
-                }
-                "slow_down" => {
-                    tracing::debug!("Server requested slow down");
-                    continue;
-                }
-                "expired_token" => {
-                    tracing::warn!("Device code expired");
-                    let _ = tx
-                        .send(AsyncMessage::TokenError("Device code expired".to_string()))
-                        .await;
-                    return;
-                }
-                "access_denied" => {
-                    tracing::warn!("Access denied by user");
-                    let _ = tx
-                        .send(AsyncMessage::TokenError("Access denied".to_string()))
-                        .await;
-                    return;
-                }
-                _ => {
-                    tracing::debug!("Unknown error response: {}", err);
-                }
+            Ok(cortex_login::DeviceTokenStatus::Expired) => {
+                let _ = tx
+                    .send(AsyncMessage::TokenError("Device code expired".to_string()))
+                    .await;
+                return;
+            }
+            Ok(cortex_login::DeviceTokenStatus::Denied) => {
+                let _ = tx
+                    .send(AsyncMessage::TokenError("Access denied".to_string()))
+                    .await;
+                return;
+            }
+            Ok(cortex_login::DeviceTokenStatus::Error(e)) => {
+                tracing::debug!("Token poll error: {e}");
+            }
+            Err(e) => {
+                tracing::debug!("Token poll request failed: {e}");
             }
         }
     }
@@ -873,10 +854,7 @@ async fn poll_for_token_async(
         .await;
 }
 
-/// Start a guest session when device login is not on the live API.
-///
-/// TODO(backend): `POST /v1/auth/device/code` is not implemented (404).
-/// Guest uses `POST /v1/auth/guest` and stores `cortex_gt` as `gt:<cookie>`.
+/// Guest session via `POST /v1/auth/guest`. Stores `cortex_gt` as `gt:<cookie>`.
 async fn begin_guest_session(client: &reqwest::Client, cortex_home: &Path) -> anyhow::Result<()> {
     let resp = client
         .post(format!("{API_BASE_URL}/v1/auth/guest"))
@@ -936,8 +914,23 @@ mod tests {
             let _ = std::fs::create_dir_all(&dir);
             let _ = std::fs::write(std::path::Path::new(&dir).join("auth.txt"), &text);
         }
-        assert!(text.contains("Welcome to Cortex CLI"), "{text}");
-        assert!(text.contains("Cortex Foundation account"), "{text}");
+        assert!(text.contains("Cortex CLI"), "{text}");
+        assert!(text.contains("Continue with browser"), "{text}");
+        assert!(text.contains("Paste an API key"), "{text}");
+        assert!(!text.contains("Guest"), "{text}");
+        assert!(!text.contains("Exit"), "{text}");
+        assert!(text.contains("Sign in to Cortex"), "{text}");
+        assert!(text.contains("●"), "{text}");
+        assert!(text.contains("○"), "{text}");
+        assert!(
+            text.contains("cortex.foundation/cli/auth") || text.contains("foundation"),
+            "{text}"
+        );
+        assert!(
+            text.contains("↵ continue") || text.contains("continue"),
+            "{text}"
+        );
+        assert!(!text.contains("▄█▀▀▀▀█▄"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));
     }
 
@@ -946,6 +939,7 @@ mod tests {
         let mut screen = LoginScreen::new(PathBuf::from("/tmp"), None);
         screen.state = LoginState::WaitingForAuth;
         screen.user_code = Some("ABCD-1234".into());
+        screen.verification_uri = Some("https://example.invalid/device?user_code=ABCD-1234".into());
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).expect("test backend");
         terminal.draw(|f| screen.render(f)).expect("draw");
@@ -963,13 +957,8 @@ mod tests {
                 || waiting.contains("Cortex"),
             "{waiting}"
         );
-        for glyph in MASCOT_MINIMAL_LINES {
-            let needle = glyph.trim();
-            assert!(
-                waiting.contains(needle),
-                "login waiting screen missing mascot line {needle:?}: {waiting}"
-            );
-        }
+        assert!(waiting.contains("Waiting"), "{waiting}");
+        assert!(!waiting.contains("▄█▀▀▀▀█▄"), "{waiting}");
 
         screen.state = LoginState::SelectMethod;
         screen.error_message = Some("The coding service is temporarily unavailable".into());
@@ -977,5 +966,35 @@ mod tests {
         let err = buffer_text(&terminal);
         assert!(err.contains("temporarily unavailable"), "{err}");
         assert!(!err.to_lowercase().contains("grok"));
+    }
+
+    #[test]
+    fn snapshot_auth_success_and_failed() {
+        let mut screen = LoginScreen::new(PathBuf::from("/tmp"), None);
+        screen.state = LoginState::Success;
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal.draw(|f| screen.render(f)).expect("draw");
+        let ok = buffer_text(&terminal);
+        assert!(ok.contains("Signed in."), "{ok}");
+
+        screen.state = LoginState::Failed;
+        screen.error_message = Some("The coding service is temporarily unavailable".into());
+        terminal.draw(|f| screen.render(f)).expect("draw");
+        let fail = buffer_text(&terminal);
+        assert!(fail.contains("temporarily unavailable"), "{fail}");
+    }
+
+    #[test]
+    fn snapshot_auth_narrow_and_wide() {
+        let screen = LoginScreen::new(PathBuf::from("/tmp"), None);
+        for (w, h) in [(40, 12), (120, 40)] {
+            let backend = TestBackend::new(w, h);
+            let mut terminal = Terminal::new(backend).expect("test backend");
+            terminal.draw(|f| screen.render(f)).expect("draw");
+            let text = buffer_text(&terminal);
+            assert!(text.contains("Cortex CLI"), "{text}");
+            assert!(!text.trim().is_empty());
+        }
     }
 }

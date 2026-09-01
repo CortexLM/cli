@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## Unreleased
+
+### Added
+- Code session turns against `POST /v1/code/sessions/{id}/turns` (streaming tokens, tool rows, Plan/Spec harness locks)
+- Device login against `POST /v1/auth/device` on `api.cortex.foundation` (no silent guest substitution)
+- This PC / Cloud / SSH computer label on the welcome card
+- Workspace Code session id cache (`~/.cortex/code-sessions.json`)
+- Guest session as an explicit TUI login choice
+
+### Fixed
+- Cancel aborts the local SSE stream and best-effort POSTs cancel (API route is still 404)
+- Task without a live ModelClient reports failure instead of a fake success
+- Remote tool rows keep their label instead of dropping arguments
+
+### Changed
+- Sign-in docs point at `api.cortex.foundation` device login
+- Stream timeouts use the product-facing coding-service error
+
+---
+
 ## 0.0.5
 
 ### Added

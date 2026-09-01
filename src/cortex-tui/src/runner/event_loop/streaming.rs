@@ -142,7 +142,7 @@ impl EventLoop {
             let model = pm.current_model().to_string();
             let max_tokens = pm.config().max_tokens;
             let temperature = pm.config().temperature;
-            let client = pm.take_client();
+            let client = pm.snapshot_client();
 
             (model, max_tokens, temperature, client)
         };
@@ -151,6 +151,26 @@ impl EventLoop {
             self.add_system_message("Failed to get provider client. Try again.");
             self.app_state.stop_streaming();
             return Ok(());
+        }
+
+        if let Some(ref c) = client {
+            let computer = cortex_engine::client::ComputerKind::detect();
+            let turn_mode = if self.app_state.is_plan_mode() || self.app_state.is_spec_mode() {
+                cortex_engine::harness::enter_spec_mode();
+                cortex_engine::client::CodeTurnMode::Chat
+            } else {
+                cortex_engine::client::CodeTurnMode::Code
+            };
+            c.configure_code_turn(cortex_engine::client::CodeTurnContext {
+                workspace: std::env::current_dir()
+                    .ok()
+                    .map(|p| p.display().to_string()),
+                computer,
+                turn_mode: Some(turn_mode),
+                ssh_target: std::env::var("CORTEX_SSH_HOST")
+                    .ok()
+                    .or_else(|| std::env::var("CORTEX_SSH_TARGET").ok()),
+            });
         }
 
         // Create channel for streaming events
@@ -213,7 +233,7 @@ impl EventLoop {
                         }
                     } => {
                         let _ = tx
-                            .send(StreamEvent::Error("Cancelled by user".to_string()))
+                            .send(StreamEvent::Error("Cancelled.".to_string()))
                             .await;
                         break;
                     }
@@ -251,7 +271,8 @@ impl EventLoop {
                                 break;
                             }
                             Ok(Some(Ok(ResponseEvent::ToolCall(tool_call)))) => {
-                                // Parse arguments from JSON string
+                                // Always send a first-class tool row (label + args).
+                                // `remote: true` skips local re-exec in handle_stream_tool_call.
                                 let mut arguments = serde_json::from_str(&tool_call.arguments)
                                     .unwrap_or_else(|_| {
                                         serde_json::json!({"raw": tool_call.arguments})
@@ -261,19 +282,7 @@ impl EventLoop {
                                 {
                                     obj.insert("remote".into(), serde_json::json!(true));
                                 }
-                                if tool_call.remote {
-                                    // Cloud-executed tools: first-class row only, no local re-exec.
-                                    if tx
-                                        .send(StreamEvent::ToolCallStart {
-                                            id: tool_call.id.clone(),
-                                            name: tool_call.name.clone(),
-                                        })
-                                        .await
-                                        .is_err()
-                                    {
-                                        break;
-                                    }
-                                } else if tx
+                                if tx
                                     .send(StreamEvent::ToolCall {
                                         id: tool_call.id.clone(),
                                         name: tool_call.name.clone(),
@@ -282,7 +291,7 @@ impl EventLoop {
                                     .await
                                     .is_err()
                                 {
-                                    break; // Receiver dropped
+                                    break;
                                 }
                             }
                             Ok(Some(Ok(ResponseEvent::ToolResult { id, success, output }))) => {
@@ -316,7 +325,9 @@ impl EventLoop {
                             Err(_) => {
                                 // Timeout
                                 let _ = tx
-                                    .send(StreamEvent::Error("The provider appears to be overloaded or your internet connection/proxy is experiencing issues communicating with it.".to_string()))
+                                    .send(StreamEvent::Error(
+                                        "The coding service is temporarily unavailable".to_string(),
+                                    ))
                                     .await;
                                 break;
                             }
@@ -457,6 +468,18 @@ impl EventLoop {
             }
         }
 
+        if let Some(ref mut session) = self.cortex_session
+            && session.meta.code_session_id.is_none()
+        {
+            let cwd = session.meta.cwd.clone();
+            if let Some(id) = cortex_engine::client::cached_code_session_id(&cwd) {
+                session.meta.code_session_id = Some(id);
+                if let Err(e) = session.save() {
+                    tracing::debug!(error = %e, "Could not persist Code session id");
+                }
+            }
+        }
+
         self.stream_controller.reset();
         self.streaming_rx = None;
         self.streaming_task = None;
@@ -499,6 +522,17 @@ impl EventLoop {
     async fn handle_stream_error(&mut self, e: String) {
         self.stream_controller.set_error(e.clone());
         self.app_state.stop_streaming();
+
+        if e.eq_ignore_ascii_case("cancelled")
+            || e.eq_ignore_ascii_case("cancelled.")
+            || e.to_lowercase().contains("cancelled by user")
+        {
+            self.add_system_message("Cancelled.");
+            self.stream_controller.reset();
+            self.streaming_rx = None;
+            self.streaming_task = None;
+            return;
+        }
 
         // Check if this is an authentication error - trigger login flow
         let error_lower = e.to_lowercase();
@@ -788,7 +822,7 @@ impl EventLoop {
             let model = pm.current_model().to_string();
             let max_tokens = pm.config().max_tokens;
             let temperature = pm.config().temperature;
-            let client = pm.take_client();
+            let client = pm.snapshot_client();
 
             (model, max_tokens, temperature, client)
         };
@@ -796,6 +830,25 @@ impl EventLoop {
         if client.is_none() {
             self.app_state.stop_streaming();
             return Ok(());
+        }
+
+        if let Some(ref c) = client {
+            let computer = cortex_engine::client::ComputerKind::detect();
+            let turn_mode = if self.app_state.is_plan_mode() || self.app_state.is_spec_mode() {
+                cortex_engine::client::CodeTurnMode::Chat
+            } else {
+                cortex_engine::client::CodeTurnMode::Code
+            };
+            c.configure_code_turn(cortex_engine::client::CodeTurnContext {
+                workspace: std::env::current_dir()
+                    .ok()
+                    .map(|p| p.display().to_string()),
+                computer,
+                turn_mode: Some(turn_mode),
+                ssh_target: std::env::var("CORTEX_SSH_HOST")
+                    .ok()
+                    .or_else(|| std::env::var("CORTEX_SSH_TARGET").ok()),
+            });
         }
 
         // Create channel for streaming events
@@ -853,7 +906,7 @@ impl EventLoop {
                         }
                     } => {
                         let _ = tx
-                            .send(StreamEvent::Error("Cancelled by user".to_string()))
+                            .send(StreamEvent::Error("Cancelled.".to_string()))
                             .await;
                         break;
                     }
@@ -900,19 +953,15 @@ impl EventLoop {
                                 {
                                     obj.insert("remote".into(), serde_json::json!(true));
                                 }
-                                let event = if tool_call.remote {
-                                    StreamEvent::ToolCallStart {
-                                        id: tool_call.id.clone(),
-                                        name: tool_call.name.clone(),
-                                    }
-                                } else {
-                                    StreamEvent::ToolCall {
+                                if tx
+                                    .send(StreamEvent::ToolCall {
                                         id: tool_call.id.clone(),
                                         name: tool_call.name.clone(),
                                         arguments,
-                                    }
-                                };
-                                if tx.send(event).await.is_err() {
+                                    })
+                                    .await
+                                    .is_err()
+                                {
                                     break;
                                 }
                             }
@@ -945,7 +994,10 @@ impl EventLoop {
                             }
                             Err(_) => {
                                 let _ = tx
-                                    .send(StreamEvent::Error("The provider appears to be overloaded or your internet connection/proxy is experiencing issues communicating with it.".to_string()))
+                                    .send(StreamEvent::Error(
+                                        "The coding service is temporarily unavailable"
+                                            .to_string(),
+                                    ))
                                     .await;
                                 break;
                             }

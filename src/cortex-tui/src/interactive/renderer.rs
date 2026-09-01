@@ -1,7 +1,9 @@
 //! Renderer for interactive selection in the input area.
 
 use super::state::{InlineFormState, InteractiveItem, InteractiveState};
-use cortex_core::style::{CYAN_PRIMARY, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{
+    CYAN_PRIMARY, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use cortex_tui_components::borders::ROUNDED_BORDER;
 use ratatui::{
     buffer::Buffer,
@@ -125,7 +127,7 @@ impl<'a> Widget for InteractiveWidget<'a> {
         }
 
         // Draw only top border line
-        let border_style = Style::default().fg(CYAN_PRIMARY);
+        let border_style = Style::default().fg(TEXT_DIM);
         let border_line = "─".repeat(area.width as usize);
         buf.set_string(area.x, area.y, &border_line, border_style);
 
@@ -136,9 +138,7 @@ impl<'a> Widget for InteractiveWidget<'a> {
             area.x + 1,
             title_y,
             &title,
-            Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         );
 
         // Render tabs if present (on the same line as title, after it)
@@ -226,6 +226,14 @@ impl<'a> InteractiveWidget<'a> {
     /// Render the list items.
     fn render_items(&self, area: Rect, buf: &mut Buffer) {
         let visible_items = self.state.visible_items();
+        if visible_items.is_empty() {
+            Paragraph::new(Span::styled(
+                "No matching settings",
+                Style::default().fg(TEXT_MUTED),
+            ))
+            .render(area, buf);
+            return;
+        }
         let start = self.state.scroll_offset;
         let end = (start + area.height as usize).min(visible_items.len());
 
@@ -284,44 +292,32 @@ impl<'a> InteractiveWidget<'a> {
         is_hovered: bool,
         is_checked: bool,
     ) {
-        // Show hover highlight with subtle background
+        // Selected row: dark mint-tinted bar, white text — never inverted mint.
+        let selected_bar = is_selected && !item.disabled && !item.is_separator;
         let (fg, bg) = if item.disabled {
             (TEXT_MUTED, Color::Reset)
-        } else if is_selected {
-            (CYAN_PRIMARY, Color::Reset)
+        } else if selected_bar {
+            (TEXT, SELECTION_BG)
         } else if is_hovered {
-            // Subtle hover highlight - use dim background
             (TEXT, Color::Rgb(40, 44, 52))
         } else {
             (TEXT, Color::Reset)
         };
 
-        // Apply background for hover effect
-        if is_hovered && !item.disabled && !item.is_separator {
+        if (selected_bar || (is_hovered && !item.disabled && !item.is_separator))
+            && bg != Color::Reset
+        {
             for dx in 0..area.width {
                 if let Some(cell) = buf.cell_mut((area.x + dx, area.y)) {
                     cell.set_bg(bg);
+                    if selected_bar {
+                        cell.set_fg(TEXT);
+                    }
                 }
             }
         }
 
         let mut x = area.x + 1;
-
-        // Selection indicator (not shown for separators)
-        let indicator = if is_selected && !item.is_separator {
-            ">"
-        } else {
-            " "
-        };
-        buf.set_string(
-            x,
-            area.y,
-            indicator,
-            Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
-        );
-        x += 2;
 
         // Checkbox (multi-select)
         if self.state.multi_select {
@@ -345,75 +341,75 @@ impl<'a> InteractiveWidget<'a> {
 
         // Label - bold for separators (category headers)
         let label_style = if item.is_separator {
+            Style::default().fg(TEXT_DIM).add_modifier(Modifier::BOLD)
+        } else if selected_bar {
             Style::default()
-                .fg(CYAN_PRIMARY)
+                .fg(TEXT)
+                .bg(SELECTION_BG)
                 .add_modifier(Modifier::BOLD)
-        } else if is_selected {
-            Style::default().fg(fg).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(fg)
         };
 
         let max_label_len = (area.width as usize).saturating_sub((x - area.x) as usize + 2);
-        let label = if item.label.len() > max_label_len {
-            format!("{}...", &item.label[..max_label_len.saturating_sub(3)])
-        } else {
-            item.label.clone()
-        };
+        let label = crate::ui::text_utils::first_fitting_line(&item.label, max_label_len);
         buf.set_string(x, area.y, &label, label_style);
-        x += label.len() as u16;
+        x += label.chars().count() as u16;
 
-        // Description (if room)
+        // Description right-aligned when it fits beside the label.
         if let Some(ref desc) = item.description {
-            let desc_x = x + 2;
-            let remaining = (area.x + area.width).saturating_sub(desc_x);
-            if remaining > 10 {
-                let desc_text = if desc.len() > remaining as usize {
-                    let max_desc = (remaining as usize).saturating_sub(5);
-                    let truncated = &desc[..desc.floor_char_boundary(max_desc)];
-                    format!("({}...)", truncated)
-                } else {
-                    format!("({})", desc)
-                };
-                buf.set_string(desc_x, area.y, &desc_text, Style::default().fg(TEXT_DIM));
+            let remaining = (area.x + area.width).saturating_sub(x + 2) as usize;
+            let desc_text = crate::ui::text_utils::first_fitting_line(desc, remaining);
+            if !desc_text.is_empty() {
+                let desc_w = desc_text.chars().count() as u16;
+                let desc_x = area.x + area.width.saturating_sub(desc_w + 1);
+                if desc_x > x + 1 {
+                    let desc_style = if selected_bar {
+                        Style::default().fg(TEXT).bg(SELECTION_BG)
+                    } else {
+                        Style::default().fg(TEXT_DIM)
+                    };
+                    buf.set_string(desc_x, area.y, &desc_text, desc_style);
+                }
             }
         }
     }
 
     /// Render the key hints at the bottom.
     fn render_hints(&self, area: Rect, buf: &mut Buffer) {
-        let mut hints = vec![("↑↓", "navigate"), ("Enter", "select")];
+        let hint_text = if let Some(ref custom) = self.state.hints {
+            custom
+                .iter()
+                .map(|(key, action)| format!("{key} {action}"))
+                .collect::<Vec<_>>()
+                .join(" · ")
+        } else {
+            let mut hints = vec![("↑↓", "navigate"), ("Enter", "select")];
 
-        if self.state.multi_select {
-            hints.insert(1, ("Space", "toggle"));
-        }
-
-        if self.state.searchable {
-            hints.push(("Type", "search"));
-        }
-
-        hints.push(("Esc", "cancel"));
-
-        // Use standard TEXT_DIM color for hints
-        let hint_color = TEXT_DIM;
-
-        let mut spans = Vec::new();
-        for (i, (key, action)) in hints.iter().enumerate() {
-            if i > 0 {
-                spans.push(Span::styled("  ", Style::default()));
+            if self.state.multi_select {
+                hints.insert(1, ("Space", "toggle"));
             }
-            spans.push(Span::styled(
-                format!("[{}]", key),
-                Style::default().fg(hint_color),
-            ));
-            spans.push(Span::styled(
-                format!(" {}", action),
-                Style::default().fg(hint_color),
-            ));
-        }
 
-        let hints_line = Line::from(spans);
-        Paragraph::new(hints_line).render(area, buf);
+            if self.state.searchable {
+                hints.push(("Type", "search"));
+            }
+
+            hints.push(("Esc", "cancel"));
+            hints
+                .iter()
+                .map(|(key, action)| format!("[{key}] {action}"))
+                .collect::<Vec<_>>()
+                .join("  ")
+        };
+
+        let hint_color = TEXT_DIM;
+        let shown = crate::ui::text_utils::first_fitting_line(
+            &hint_text,
+            area.width.saturating_sub(1) as usize,
+        );
+        if !shown.is_empty() {
+            Paragraph::new(Span::styled(shown, Style::default().fg(hint_color))).render(area, buf);
+        }
     }
 
     /// Render inline form for configuration within the panel.

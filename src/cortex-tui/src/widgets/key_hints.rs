@@ -8,6 +8,7 @@ use crate::permissions::PermissionMode;
 use crate::ui::colors::AdaptiveColors;
 use crate::ui::text_utils::{
     AdaptiveHint, HintDisplayMode, MIN_TERMINAL_WIDTH, calculate_hint_display_mode,
+    first_fitting_line,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::Widget;
@@ -97,6 +98,12 @@ pub struct KeyHints {
     model_name: Option<String>,
     /// Thinking budget level (e.g., "medium", "high")
     thinking_budget: Option<String>,
+    /// Workspace label for the session footer (`~/cli`).
+    footer_cwd: Option<String>,
+    git_branch: Option<String>,
+    git_dirty: bool,
+    agent_mode: Option<String>,
+    context_percent: Option<u8>,
 }
 
 impl KeyHints {
@@ -109,6 +116,11 @@ impl KeyHints {
             permission_mode: None,
             model_name: None,
             thinking_budget: None,
+            footer_cwd: None,
+            git_branch: None,
+            git_dirty: false,
+            agent_mode: None,
+            context_percent: None,
         }
     }
 
@@ -148,6 +160,23 @@ impl KeyHints {
     /// Sets the thinking budget level to display
     pub fn with_thinking_budget(mut self, budget: impl Into<String>) -> Self {
         self.thinking_budget = Some(budget.into());
+        self
+    }
+
+    /// Session footer: cwd + git on the left, model · mode · context on the right.
+    pub fn with_session_footer(
+        mut self,
+        cwd: impl Into<String>,
+        git_branch: impl Into<String>,
+        git_dirty: bool,
+        agent_mode: impl Into<String>,
+        context_percent: u8,
+    ) -> Self {
+        self.footer_cwd = Some(cwd.into());
+        self.git_branch = Some(git_branch.into());
+        self.git_dirty = git_dirty;
+        self.agent_mode = Some(agent_mode.into());
+        self.context_percent = Some(context_percent);
         self
     }
 
@@ -242,6 +271,11 @@ fn abbreviate_hint_desc(description: &str) -> &'static str {
 impl Widget for KeyHints {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.height == 0 || area.width == 0 {
+            return;
+        }
+
+        if self.footer_cwd.is_some() {
+            render_session_footer(&self, area, buf);
             return;
         }
 
@@ -387,6 +421,77 @@ impl Widget for KeyHints {
 
         let render_width = remaining_width.min(rendered_width);
         buf.set_line(x, area.y, &line, render_width as u16);
+    }
+}
+
+fn render_session_footer(hints: &KeyHints, area: Rect, buf: &mut Buffer) {
+    let width = area.width as usize;
+    let cwd = hints.footer_cwd.as_deref().unwrap_or("");
+    let branch = hints.git_branch.as_deref().unwrap_or("");
+    let dirty = if hints.git_dirty { "*" } else { "" };
+    let left_full = if branch.is_empty() {
+        cwd.to_string()
+    } else {
+        format!("{cwd} {branch}{dirty}")
+    };
+    let left_cwd = cwd.to_string();
+
+    let model = hints
+        .model_name
+        .as_deref()
+        .map(|m| m.rsplit('/').next().unwrap_or(m).to_string())
+        .unwrap_or_default();
+    let mode = hints.agent_mode.clone().unwrap_or_else(|| "Agent".into());
+    let pct = hints.context_percent.unwrap_or(100);
+    let right_full = format!("{model} · {mode} · {pct}% context");
+    let right_mid = format!("{model} · {mode}");
+    let right_model = model.clone();
+
+    let left_opts = [left_full.as_str(), left_cwd.as_str(), ""];
+    let right_opts = [
+        right_full.as_str(),
+        right_mid.as_str(),
+        right_model.as_str(),
+        "",
+    ];
+
+    let mut chosen_left = "";
+    let mut chosen_right = "";
+    'pick: for left in left_opts {
+        for right in right_opts {
+            let need = if left.is_empty() {
+                right.chars().count()
+            } else if right.is_empty() {
+                left.chars().count()
+            } else {
+                left.chars().count() + 1 + right.chars().count()
+            };
+            if need <= width {
+                chosen_left = left;
+                chosen_right = right;
+                break 'pick;
+            }
+        }
+    }
+
+    if !chosen_left.is_empty() {
+        let text = first_fitting_line(chosen_left, width);
+        buf.set_string(
+            area.x,
+            area.y,
+            &text,
+            Style::default().fg(hints.colors.text_dim),
+        );
+    }
+    if !chosen_right.is_empty() {
+        let text = first_fitting_line(chosen_right, width);
+        let x = area
+            .right()
+            .saturating_sub(text.chars().count() as u16)
+            .max(area.x);
+        if chosen_left.is_empty() || x > area.x + chosen_left.chars().count() as u16 {
+            buf.set_string(x, area.y, &text, Style::default().fg(hints.colors.text_dim));
+        }
     }
 }
 

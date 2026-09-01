@@ -41,8 +41,8 @@ One binary gives you:
   hooks and WebAssembly plugins.
 
 Cortex CLI talks to the Cortex API at
-[api.cortex.foundation](https://api.cortex.foundation) and signs in through
-[auth.cortex.foundation](https://auth.cortex.foundation). Credentials are stored
+[api.cortex.foundation](https://api.cortex.foundation) and signs in there with
+device login (`POST /v1/auth/device`). Credentials are stored
 in your OS keyring.
 
 ## Install

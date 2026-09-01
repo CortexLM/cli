@@ -78,6 +78,9 @@ pub const INFO: Color = Color::Rgb(72, 202, 228); // #48CAE4
 /// Highlight - bright electric blue for emphasis
 pub const HIGHLIGHT: Color = Color::Rgb(125, 249, 255); // #7DF9FF
 
+/// Selected-row background - dark mint-tinted navy, never inverted mint
+pub const SELECTION_BG: Color = Color::Rgb(26, 51, 48); // #1A3330
+
 // ============================================================
 // BORDER COLORS
 // ============================================================

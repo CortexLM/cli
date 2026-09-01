@@ -2,7 +2,9 @@
 
 Every interactive run is a session: the transcript, the tool calls and the
 context Cortex built up along the way. Sessions are written to disk as you go,
-so you can close the terminal and pick the work back up later.
+so you can close the terminal and pick the work back up later. The CLI also
+reuses the server-side Code session id for the current workspace
+(`~/.cortex/code-sessions.json`) so turns continue the same coding session.
 
 Where they are stored is covered in
 [Data locations](../configuration/data-locations.md).

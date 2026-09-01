@@ -566,11 +566,54 @@ impl EventLoop {
                 return false;
             }
             InteractiveAction::ToggleSetting => {
-                if item_id.starts_with("__cat_") {
-                    self.reopen_settings_menu();
+                if item_id == "__hub__" || item_id.starts_with("__cat_") {
+                    let interactive = crate::interactive::builders::build_settings_hub(Some(
+                        self.app_state.terminal_size.1,
+                    ));
+                    self.app_state.enter_interactive_mode(interactive);
+                    return true;
+                }
+                if let Some(section) = item_id.strip_prefix("__section_") {
+                    let snapshot = self.settings_snapshot();
+                    let interactive = crate::interactive::builders::build_settings_section(
+                        snapshot,
+                        Some(self.app_state.terminal_size.1),
+                        section,
+                    );
+                    self.app_state.enter_interactive_mode(interactive);
                     return true;
                 }
                 match item_id.as_str() {
+                    "model" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("Model");
+                        return false;
+                    }
+                    "mode" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("Mode: Agent · Plan · Ask");
+                        return false;
+                    }
+                    "permissions" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("Permissions");
+                        return false;
+                    }
+                    "mcp" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("MCP");
+                        return false;
+                    }
+                    "config" => {
+                        self.app_state.exit_interactive_mode();
+                        self.app_state.toasts.info("Config");
+                        return false;
+                    }
+                    "usage" => {
+                        self.app_state.exit_interactive_mode();
+                        self.add_system_message("Usage");
+                        return false;
+                    }
                     "compact" => {
                         self.app_state.compact_mode = !self.app_state.compact_mode;
                     }
@@ -595,17 +638,8 @@ impl EventLoop {
         false
     }
 
-    /// Re-opens the settings menu with current state.
-    fn reopen_settings_menu(&mut self) {
-        use crate::interactive::builders::{SettingsSnapshot, build_settings_selector};
-
-        let current_selected = self
-            .app_state
-            .get_interactive_state()
-            .map(|s| s.selected)
-            .unwrap_or(0);
-
-        let snapshot = SettingsSnapshot {
+    fn settings_snapshot(&self) -> crate::interactive::builders::SettingsSnapshot {
+        crate::interactive::builders::SettingsSnapshot {
             compact_mode: self.app_state.compact_mode,
             timestamps: self.app_state.timestamps_enabled,
             line_numbers: self.app_state.line_numbers_enabled,
@@ -630,9 +664,33 @@ impl EventLoop {
             session_history: self.app_state.session_history_enabled,
             telemetry: self.app_state.telemetry_enabled,
             analytics: self.app_state.analytics_enabled,
-        };
+        }
+    }
+
+    /// Re-opens the settings menu with current state.
+    fn reopen_settings_menu(&mut self) {
+        let current_title = self
+            .app_state
+            .get_interactive_state()
+            .map(|s| s.title.clone())
+            .unwrap_or_else(|| "Settings".to_string());
+        let current_selected = self
+            .app_state
+            .get_interactive_state()
+            .map(|s| s.selected)
+            .unwrap_or(0);
+
+        let snapshot = self.settings_snapshot();
         let terminal_height = self.app_state.terminal_size.1;
-        let mut interactive = build_settings_selector(snapshot, Some(terminal_height));
+        let mut interactive = if let Some(section) = current_title.strip_prefix("Settings · ") {
+            crate::interactive::builders::build_settings_section(
+                snapshot,
+                Some(terminal_height),
+                &section.to_lowercase(),
+            )
+        } else {
+            crate::interactive::builders::build_settings_hub(Some(terminal_height))
+        };
 
         if current_selected < interactive.items.len() {
             interactive.selected = current_selected;

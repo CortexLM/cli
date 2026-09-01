@@ -94,6 +94,8 @@ pub struct Scene {
     pub workspace: String,
     /// API host the session is bound to.
     pub endpoint: String,
+    /// Where tools run (`This PC`, `Cloud`, `SSH`).
+    pub computer: String,
     /// Operation mode indicator (`BUILD`, `PLAN`, `SPEC`).
     pub mode: String,
     /// Permission mode label (`yolo`, `low`, `medium`, `high`).
@@ -114,6 +116,7 @@ impl Scene {
         Self {
             workspace: "~/code/acme-api".to_string(),
             endpoint: "api.cortex.foundation".to_string(),
+            computer: "This PC".to_string(),
             mode: "BUILD".to_string(),
             autonomy: "medium".to_string(),
             blocks: Vec::new(),

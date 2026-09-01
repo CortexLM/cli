@@ -518,9 +518,12 @@ fn board_plan(area: Rect, buf: &mut Buffer) {
         }
     }
     buf.set_string(
-        area.x,
+        area.x + 2,
         no_y,
-        first_fitting_line("  No, keep planning — tell Cortex what to change", w),
+        first_fitting_line(
+            "No, keep planning — tell Cortex what to change",
+            w.saturating_sub(2),
+        ),
         Style::default().fg(TEXT),
     );
     buf.set_string(
@@ -2765,7 +2768,7 @@ fn board_list(area: Rect, buf: &mut Buffer) {
         lines.push(white(format!("  {name}")));
     }
     lines.push(Line::from(Span::styled(
-        first_fitting_line("  internal/", w),
+        format!("  {}", first_fitting_line("internal/", w.saturating_sub(2))),
         Style::default().fg(TEXT),
     )));
     paint_lines(
@@ -2832,7 +2835,7 @@ fn board_mcp_call(area: Rect, buf: &mut Buffer) {
             Style::default().fg(TEXT),
         ),
     ]));
-    lines.push(dim(first_fitting_line("  team=API  state=started", w)));
+    lines.push(dim("  team=API  state=started"));
     let rows = [
         ("  API-184  Rate limit 429 body", "  In Progress  you"),
         ("  API-191  Sliding window spike", "  In Progress  you"),

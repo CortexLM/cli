@@ -29,3 +29,13 @@ binary still reports the crate version.
 | `session_loading.png` | Loading / streaming |
 | `session_error.png` | Error |
 | `session_success.png` | Success |
+| `shell.png` | Live Shell tile |
+| `permission.png` | Permission prompt |
+| `plan.png` | Plan confirmation |
+| `streaming.png` | Assistant stream + fence |
+| `resume.png` | `/resume` session list |
+| `mcp.png` | `/mcp` servers |
+| `usage.png` | `/usage` bars |
+| `quota.png` | Agent quota exhausted |
+| `sandbox.png` | `/sandbox` |
+| `cloud.png` | Cloud handoff |

@@ -368,9 +368,6 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies]
-wee_alloc = "0.4"
-
 [profile.release]
 opt-level = "s"
 lto = true

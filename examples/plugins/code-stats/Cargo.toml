@@ -8,11 +8,11 @@ authors = ["Cortex Team <team@cortex.foundation>"]
 license = "Apache-2.0"
 # Build for WASM target: cargo build --target wasm32-wasi --release
 
+# Standalone crate; not a workspace member of the Cortex CLI repo.
+[workspace]
+
 [lib]
 crate-type = ["cdylib"]
-
-[dependencies]
-wee_alloc = "0.4"
 
 [profile.release]
 opt-level = "s"

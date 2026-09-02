@@ -56,21 +56,21 @@
 //! use cortex_plugin_sdk::*;
 //!
 //! // Plugin initialization
-//! #[no_mangle]
+//! #[unsafe(no_mangle)]
 //! pub extern "C" fn init() -> i32 {
 //!     log_info("Plugin initialized!");
 //!     0 // Return 0 for success
 //! }
 //!
 //! // Plugin shutdown
-//! #[no_mangle]
+//! #[unsafe(no_mangle)]
 //! pub extern "C" fn shutdown() -> i32 {
 //!     log_info("Plugin shutting down");
 //!     0
 //! }
 //!
 //! // Command handler
-//! #[no_mangle]
+//! #[unsafe(no_mangle)]
 //! pub extern "C" fn cmd_awesome() -> i32 {
 //!     log_info("Awesome command executed!");
 //!     0
@@ -159,7 +159,7 @@ pub const RUST_TEMPLATE: &str = r#"//! {{plugin_name}} - A Cortex plugin
 // ============================================================================
 
 #[link(wasm_import_module = "cortex")]
-extern "C" {
+unsafe extern "C" {
     /// Log a message at the specified level.
     /// level: 0=trace, 1=debug, 2=info, 3=warn, 4=error
     fn log(level: i32, msg_ptr: i32, msg_len: i32);
@@ -197,14 +197,14 @@ fn log_error(msg: &str) { log_message(4, msg); }
 // ============================================================================
 
 /// Called when the plugin is initialized.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn init() -> i32 {
     log_info("{{plugin_name}} initialized");
     0 // Return 0 for success
 }
 
 /// Called when the plugin is shutting down.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn shutdown() -> i32 {
     log_info("{{plugin_name}} shutting down");
     0
@@ -215,7 +215,7 @@ pub extern "C" fn shutdown() -> i32 {
 // ============================================================================
 
 /// Handler for the /{{command_name}} command.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn cmd_{{command_name_snake}}() -> i32 {
     log_info("{{command_name}} command executed");
     0
@@ -226,7 +226,7 @@ pub extern "C" fn cmd_{{command_name_snake}}() -> i32 {
 // ============================================================================
 
 // /// Called before a tool is executed.
-// #[no_mangle]
+// #[unsafe(no_mangle)]
 // pub extern "C" fn hook_tool_execute_before() -> i32 {
 //     log_debug("Tool execute before hook triggered");
 //     0 // 0 = continue, 1 = skip, 2 = abort
@@ -653,7 +653,7 @@ pub const RUST_ADVANCED_TEMPLATE: &str = r#"//! {{plugin_name}} - Advanced Corte
 // ============================================================================
 
 #[link(wasm_import_module = "cortex")]
-extern "C" {
+unsafe extern "C" {
     fn log(level: i32, msg_ptr: i32, msg_len: i32);
     fn get_context() -> i64;
     fn register_widget(region: i32, widget_type_ptr: i32, widget_type_len: i32) -> i32;
@@ -760,7 +760,7 @@ fn show_notification(level: ToastLevel, message: &str, duration_ms: i32) {
 // Plugin lifecycle
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn init() -> i32 {
     log_info("{{plugin_name}} initializing...");
     
@@ -778,7 +778,7 @@ pub extern "C" fn init() -> i32 {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn shutdown() -> i32 {
     log_info("{{plugin_name}} shutting down");
     0
@@ -788,7 +788,7 @@ pub extern "C" fn shutdown() -> i32 {
 // Command handlers
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn cmd_{{command_name_snake}}() -> i32 {
     log_info("{{command_name}} command executed");
     show_notification(ToastLevel::Info, "Command executed!", 2000);
@@ -800,7 +800,7 @@ pub extern "C" fn cmd_{{command_name_snake}}() -> i32 {
 // ============================================================================
 
 /// UI render hook - customize component rendering
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn hook_ui_render() -> i32 {
     // Return 0 to continue with normal rendering
     // Modifications are passed through the output buffer
@@ -808,20 +808,20 @@ pub extern "C" fn hook_ui_render() -> i32 {
 }
 
 /// Animation frame hook - called every frame for animations
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn hook_animation_frame(_frame: u64, _delta_us: u64) -> i32 {
     // Return 1 to request another frame, 0 to stop
     0
 }
 
 /// Focus change hook
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn hook_focus_change(_focused: i32) -> i32 {
     0
 }
 
 /// TUI event handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn hook_tui_event() -> i32 {
     0
 }
@@ -830,7 +830,7 @@ pub extern "C" fn hook_tui_event() -> i32 {
 // Custom action handlers
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn action_{{plugin_id_snake}}_action() -> i32 {
     log_info("Custom action triggered via keybinding");
     show_notification(ToastLevel::Success, "Action executed!", 1500);

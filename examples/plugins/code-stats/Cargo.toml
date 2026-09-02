@@ -11,6 +11,9 @@ license = "Apache-2.0"
 [lib]
 crate-type = ["cdylib"]
 
+# Standalone package: not a workspace member of the Cortex CLI tree.
+[workspace]
+
 [profile.release]
 opt-level = "s"
 lto = true

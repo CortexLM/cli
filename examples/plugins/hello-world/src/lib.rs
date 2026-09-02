@@ -12,7 +12,7 @@
 // ============================================================================
 
 #[link(wasm_import_module = "cortex")]
-extern "C" {
+unsafe extern "C" {
     /// Log a message at the specified level.
     /// level: 0=trace, 1=debug, 2=info, 3=warn, 4=error
     fn log(level: i32, msg_ptr: i32, msg_len: i32);
@@ -119,7 +119,7 @@ fn show_notification(level: ToastLevel, message: &str, duration_ms: i32) {
 /// # Returns
 /// - `0` on success
 /// - Non-zero on failure (plugin will not be activated)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn init() -> i32 {
     log_info("Hello World plugin initializing...");
 
@@ -146,7 +146,7 @@ pub extern "C" fn init() -> i32 {
 /// # Returns
 /// - `0` on success
 /// - Non-zero on failure (logged but doesn't prevent unloading)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn shutdown() -> i32 {
     log_info("Hello World plugin shutting down");
     0 // Success
@@ -166,7 +166,7 @@ pub extern "C" fn shutdown() -> i32 {
 /// # Returns
 /// - `0` on success
 /// - Non-zero on failure
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn cmd_hello() -> i32 {
     log_info("Hello command executed");
 
@@ -201,7 +201,7 @@ pub extern "C" fn cmd_hello() -> i32 {
 /// - `0` to continue with tool execution
 /// - `1` to skip this tool execution
 /// - `2` to abort the entire operation
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn hook_tool_execute_before() -> i32 {
     log_debug("Tool execution intercepted by hello-world plugin");
 

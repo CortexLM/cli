@@ -119,7 +119,7 @@ Replace `src/lib.rs` with:
 
 // Host function imports
 #[link(wasm_import_module = "cortex")]
-extern "C" {
+unsafe extern "C" {
     /// Log a message at the specified level
     /// level: 0=trace, 1=debug, 2=info, 3=warn, 4=error
     fn log(level: i32, msg_ptr: i32, msg_len: i32);
@@ -146,14 +146,14 @@ fn log_debug(msg: &str) {
 // ============================================================================
 
 /// Called when the plugin is initialized
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn init() -> i32 {
     log_info("Hello Plugin initialized!");
     0 // Return 0 for success
 }
 
 /// Called when the plugin is shutting down
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn shutdown() -> i32 {
     log_info("Hello Plugin shutting down");
     0
@@ -165,7 +165,7 @@ pub extern "C" fn shutdown() -> i32 {
 
 /// Handler for the /hello command
 /// Function name format: cmd_<command_name_with_underscores>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn cmd_hello() -> i32 {
     log_info("Hello, World!");
     0
@@ -284,7 +284,7 @@ fn log_debug(msg: &str) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn cmd_hello() -> i32 {
     log_debug("cmd_hello called");
     // ... rest of function
@@ -393,9 +393,9 @@ timeout_ms = 30000  # Longer timeout for debugging
    - Rust: `fn cmd_my_command()`
    - Replace hyphens with underscores
 
-2. Check `#[no_mangle]` attribute:
+2. Check `#[unsafe(no_mangle)]` attribute:
    ```rust
-   #[no_mangle]
+   #[unsafe(no_mangle)]
    pub extern "C" fn cmd_hello() -> i32 {
        // ...
    }
@@ -467,7 +467,7 @@ timeout_ms = 30000  # Longer timeout for debugging
 **Solutions**:
 1. Log at the start and end of each exported function so a panic is easier to locate:
    ```rust
-   #[no_mangle]
+   #[unsafe(no_mangle)]
    pub extern "C" fn cmd_hello() -> i32 {
        log_debug("Starting cmd_hello");
        // Your code here

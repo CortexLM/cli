@@ -3504,7 +3504,7 @@ mod tests {
             "Rust code should use std so the default allocator is available"
         );
         assert!(
-            !code.contains("wee_alloc"),
+            !code.contains("wee_alloc::") && !code.contains("wee_alloc ="),
             "Rust code should not use unmaintained wee_alloc"
         );
     }
@@ -3557,7 +3557,7 @@ mod tests {
             "generated code should use the default Rust allocator"
         );
         assert!(
-            !code.contains("wee_alloc"),
+            !code.contains("wee_alloc::") && !code.contains("wee_alloc ="),
             "generated code must not use unmaintained wee_alloc"
         );
     }

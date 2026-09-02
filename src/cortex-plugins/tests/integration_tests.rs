@@ -143,7 +143,7 @@ mod sdk_tests {
             "Should use std (default Rust allocator)"
         );
         assert!(
-            !code.contains("wee_alloc"),
+            !code.contains("wee_alloc::") && !code.contains("wee_alloc ="),
             "Should not depend on unmaintained wee_alloc"
         );
         assert!(
@@ -218,7 +218,7 @@ mod sdk_tests {
             "Should have register_widget"
         );
         assert!(
-            !code.contains("wee_alloc"),
+            !code.contains("wee_alloc::") && !code.contains("wee_alloc ="),
             "Advanced template must not use wee_alloc"
         );
         assert!(

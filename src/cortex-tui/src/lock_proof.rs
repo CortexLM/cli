@@ -884,6 +884,77 @@ mod tests {
     }
 
     #[test]
+    fn past_turn_and_composer_carets_are_white_never_cyan() {
+        // Cyan belongs to the focused selection's caret alone. The `>` of a
+        // past user turn (on the gray bar) and the `>` of the composer (between
+        // the hairlines) are white in every scene at both sizes — never
+        // `#7DD3FC`, never dim.
+        for id in lock_scene_ids() {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let buf = &frame.buffer;
+                for y in 0..buf.area.height {
+                    let cell = &buf[(0, y)];
+                    if cell.symbol() != ">" {
+                        continue;
+                    }
+                    let bg = cell.style().bg;
+                    if bg == Some(SELECTION_BG) {
+                        // A selection caret: cyan, checked elsewhere.
+                        continue;
+                    }
+                    assert_eq!(
+                        cell.style().fg,
+                        Some(TEXT),
+                        "{id} row {y} caret must be white at {size:?} (bg {bg:?}):\n{}",
+                        row_text(buf, y)
+                    );
+                }
+            }
+        }
+        // The scene QA called out — a historical turn on its bar plus a typed
+        // composer — has no focused selection, so it paints no cyan at all.
+        for id in ["footer_max", "typing"] {
+            let frame = render_lock_scene(id, 120, 40).expect(id);
+            assert!(
+                painted_chars(&frame.ansi, CYAN_FG).trim().is_empty(),
+                "{id} paints cyan: {:?}",
+                painted_chars(&frame.ansi, CYAN_FG)
+            );
+        }
+    }
+
+    #[test]
+    fn completed_turns_do_not_get_a_fake_check() {
+        // A finished assistant turn is gray/white copy — green stays on real
+        // `✓` tool success and `+diff`. No scene invents a `✓` on a reply.
+        for size in SIZES {
+            let frame = render_lock_scene("session_success", size.0, size.1).expect("success");
+            // The reply may wrap at 40 columns; it is plain copy either way.
+            assert!(
+                frame.plain.contains("Signed in.") && frame.plain.contains("consistent."),
+                "{}",
+                frame.plain
+            );
+            assert!(
+                !frame.plain.contains('✓'),
+                "no fake check on a completed turn at {size:?}:\n{}",
+                frame.plain
+            );
+            assert!(
+                painted_chars(&frame.ansi, GREEN_FG).trim().is_empty(),
+                "session_success paints green at {size:?}"
+            );
+            let stream = render_lock_scene("streaming", size.0, size.1).expect("streaming");
+            assert!(
+                !stream.plain.contains('✓'),
+                "no fake check on the streamed reply at {size:?}:\n{}",
+                stream.plain
+            );
+        }
+    }
+
+    #[test]
     fn footer_is_model_left_hint_right_and_gray() {
         for id in lock_scene_ids() {
             if LOGIN_SCENES.contains(id) {

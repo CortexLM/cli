@@ -1266,11 +1266,13 @@ fn board_shell(area: Rect, buf: &mut Buffer) {
         Style::default().fg(TEXT_DIM),
     )));
     if !compact(area) {
+        // npm's own output keeps its indentation — its `>` is tool output,
+        // not a caret, so it never sits in column 0.
         for line in [
             "  > cortex-api@2.4.1 test",
             "  > vitest run --reporter=verbose \"rateLimit\"",
         ] {
-            lines.push(dim(first_fitting_line(line, w)));
+            lines.push(dim(fit_line(line, w)));
         }
         // `✓` is the green; the test names stay dim.
         lines.push(Line::from(vec![

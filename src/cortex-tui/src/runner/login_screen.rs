@@ -143,12 +143,21 @@ impl LoginScreen {
         self
     }
 
-    /// Select-method screen with an optional product error under the radios.
+    /// Select-method screen with option 1 focused and an optional product
+    /// error under the options.
     pub fn lock_select(version: &str, error: Option<&str>) -> Self {
+        Self::lock_select_option(version, error, 0)
+    }
+
+    /// Select-method screen with the option at `selected` (0-based, clamped
+    /// to the available methods) focused — the `>` caret and the gray bar
+    /// move with it.
+    pub fn lock_select_option(version: &str, error: Option<&str>, selected: usize) -> Self {
         let mut screen =
             Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
         screen.state = LoginState::SelectMethod;
         screen.error_message = error.map(str::to_string);
+        screen.selected_method = selected.min(LoginMethod::all().len() - 1);
         screen
     }
 
@@ -1019,6 +1028,33 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn lock_select_option_moves_the_caret_and_bar() {
+        for (selected, focused, other) in [
+            (0usize, "> 1 Continue with browser", "· 2 Paste an API key"),
+            (1, "> 2 Paste an API key", "· 1 Continue with browser"),
+            // Out-of-range indices clamp to the last option.
+            (7, "> 2 Paste an API key", "· 1 Continue with browser"),
+        ] {
+            let screen = LoginScreen::lock_select_option("1.0.0", None, selected);
+            let backend = TestBackend::new(80, 24);
+            let mut terminal = Terminal::new(backend).expect("test backend");
+            terminal.draw(|f| screen.render(f)).expect("draw");
+            let text = buffer_text(&terminal);
+            assert!(text.contains(focused), "{selected}:\n{text}");
+            assert!(text.contains(other), "{selected}:\n{text}");
+            let buf = terminal.backend().buffer();
+            let row = (0..24u16)
+                .find(|y| buf[(0, *y)].symbol() == ">")
+                .expect("focused row");
+            assert_eq!(buf[(0, row)].style().fg, Some(ACCENT));
+            assert_eq!(buf[(4, row)].style().bg, Some(SELECTION_BG));
+        }
+        // `lock_select` is option 1.
+        let screen = LoginScreen::lock_select("1.0.0", None);
+        assert_eq!(screen.selected_method, 0);
     }
 
     #[test]

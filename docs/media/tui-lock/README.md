@@ -42,7 +42,7 @@ binary still reports the crate version.
 | `permissions.png` | `/permissions` approval policy picker |
 | `working.png` | Working spinner + elapsed / tokens |
 | `read.png` | Read tile — numbered excerpt |
-| `login_select.png` | Numbered sign-in picker, cyan `> 1` on the gray bar |
+| `login_select.png` | Sign-in picker with the selection moved to option 2 (`> 2 Paste an API key`) |
 | `login_waiting.png` | Loading / waiting for browser auth |
 | `login_success.png` | `✓ Signed in.` |
 | `login_error.png` | Product-facing error |
@@ -80,7 +80,7 @@ binary still reports the crate version.
 | `bash.png` | Bash mode |
 | `config.png` | `/config` tree |
 | `footer_max.png` | MAX footer after push |
-| `login.png` | Sign in — numbered options, descriptions under titles |
+| `login.png` | Sign in — numbered options, option 1 (`> 1 Continue with browser`) focused |
 | `thinking.png` | Thinking (muted gold) + reasoning |
 | `todos.png` | Working 1/5 checklist |
 | `question.png` | Clarifying question |

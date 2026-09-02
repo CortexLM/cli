@@ -177,9 +177,13 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
             // through.
             frame.render_widget(Clear, area);
             match id {
-                // The sign-in picker is the real login screen, not a board.
-                "login" | "login_select" => {
-                    LoginScreen::lock_select(LOCK_SPLASH_VERSION, None).render(frame)
+                // The sign-in picker is the real login screen, not a board:
+                // `login` focuses option 1 (Continue with browser),
+                // `login_select` shows the selection moved to option 2
+                // (Paste an API key).
+                "login" => LoginScreen::lock_select(LOCK_SPLASH_VERSION, None).render(frame),
+                "login_select" => {
+                    LoginScreen::lock_select_option(LOCK_SPLASH_VERSION, None, 1).render(frame)
                 }
                 "login_waiting" => LoginScreen::lock_waiting(
                     LOCK_SPLASH_VERSION,
@@ -1392,13 +1396,13 @@ mod tests {
     #[test]
     fn distinct_states_render_distinct_frames() {
         // Only the documented aliases may capture the same board; every other
-        // state is its own frame at both sizes.
-        let aliases: [&[&str]; 5] = [
+        // state is its own frame at both sizes (`login` and `login_select`
+        // differ by the focused option).
+        let aliases: [&[&str]; 4] = [
             &["clear", "clear_confirm"],
             &["compact", "compacted"],
             &["grep", "tool_tiles"],
             &["interrupt", "stopped"],
-            &["login", "login_select"],
         ];
         for size in SIZES {
             let mut seen: std::collections::HashMap<String, &str> = Default::default();
@@ -1599,11 +1603,14 @@ mod tests {
 
     #[test]
     fn login_is_a_numbered_picker_with_live_sub_states() {
+        // `login_select` is the picker with the selection moved to option 2:
+        // the cyan `>` and the gray bar sit on `Paste an API key`, option 1
+        // falls back to the dim middot.
         let select = render_lock_scene("login_select", 120, 40).expect("select");
         assert!(select.plain.contains("Welcome to Cortex CLI!"));
         assert!(select.plain.contains("How would you like to log in?"));
-        assert!(select.plain.contains("> 1 Continue with browser"));
-        assert!(select.plain.contains("· 2 Paste an API key"));
+        assert!(select.plain.contains("· 1 Continue with browser"));
+        assert!(select.plain.contains("> 2 Paste an API key"));
         assert!(select.plain.contains("cortex.foundation/cli/auth"));
         assert!(select.plain.contains("↵ confirm"));
         assert!(!select.plain.contains("Guest"));
@@ -1612,12 +1619,40 @@ mod tests {
         assert_eq!(select.plain.matches("Continue with browser").count(), 1);
         assert_no_junk(&select.plain);
 
+        // `login` keeps option 1 focused, so the two captures differ only by
+        // where the caret and the bar sit.
+        let login = render_lock_scene("login", 120, 40).expect("login");
+        assert!(login.plain.contains("> 1 Continue with browser"));
+        assert!(login.plain.contains("· 2 Paste an API key"));
+        assert_ne!(login.plain, select.plain);
+        for (frame, focused) in [(&login, "1 Continue"), (&select, "2 Paste")] {
+            let buf = &frame.buffer;
+            let row = (0..40u16)
+                .find(|y| buf[(0, *y)].symbol() == ">")
+                .expect("focused row");
+            assert!(
+                row_text(buf, row).contains(focused),
+                "{focused}:\n{}",
+                frame.plain
+            );
+            assert_eq!(buf[(0, row)].style().fg, Some(ACCENT));
+            for x in 0..120u16 {
+                assert_eq!(buf[(x, row)].style().bg, Some(SELECTION_BG), "col {x}");
+                assert_eq!(buf[(x, row + 1)].style().bg, Some(SELECTION_BG), "col {x}");
+            }
+            let other = (0..40u16)
+                .find(|y| buf[(0, *y)].symbol() == "·")
+                .expect("unfocused row");
+            assert_eq!(buf[(4, other)].style().fg, Some(TEXT));
+            assert_eq!(buf[(4, other)].style().bg, Some(Color::Reset));
+        }
+
         let narrow = render_lock_scene("login_select", 40, 12).expect("narrow");
         for needle in [
             "Welcome to Cortex CLI!",
-            "> 1 Continue with browser",
+            "· 1 Continue with browser",
             "Opens cortex.foundation/cli/auth",
-            "· 2 Paste an API key",
+            "> 2 Paste an API key",
             "Enter your key to authenticate",
             "↑↓ select · ↵ confirm · esc quit",
         ] {

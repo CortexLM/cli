@@ -148,6 +148,14 @@ mod sdk_tests {
             "Should have global allocator"
         );
         assert!(
+            code.contains("BumpAlloc"),
+            "Should use the in-tree bump allocator"
+        );
+        assert!(
+            !code.contains("wee_alloc"),
+            "Must not depend on unmaintained wee_alloc"
+        );
+        assert!(
             code.contains("pub extern \"C\" fn init()"),
             "Should have init"
         );

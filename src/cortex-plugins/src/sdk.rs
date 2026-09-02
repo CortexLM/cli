@@ -246,11 +246,61 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 }
 
 // ============================================================================
-// Global allocator (required for alloc)
+// Global allocator (required for alloc in no_std WASM)
 // ============================================================================
+// The plugin runtime does not link WASI, so `std`'s allocator cannot be used.
+
+use core::alloc::{GlobalAlloc, Layout};
+use core::cell::UnsafeCell;
+use core::ptr::null_mut;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+const HEAP_LEN: usize = 256 * 1024;
+
+struct BumpHeap {
+    buf: UnsafeCell<[u8; HEAP_LEN]>,
+}
+
+// SAFETY: access is serialized through HEAP_POS.
+unsafe impl Sync for BumpHeap {}
+
+struct BumpAlloc;
+
+static HEAP: BumpHeap = BumpHeap {
+    buf: UnsafeCell::new([0; HEAP_LEN]),
+};
+static HEAP_POS: AtomicUsize = AtomicUsize::new(0);
+
+unsafe impl GlobalAlloc for BumpAlloc {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let size = layout.size().max(1);
+        let align = layout.align().max(1);
+        let mut pos = HEAP_POS.load(Ordering::Relaxed);
+        loop {
+            let aligned = pos.checked_add(align - 1).map(|p| p & !(align - 1));
+            let Some(aligned) = aligned else {
+                return null_mut();
+            };
+            let Some(next) = aligned.checked_add(size) else {
+                return null_mut();
+            };
+            if next > HEAP_LEN {
+                return null_mut();
+            }
+            match HEAP_POS.compare_exchange_weak(pos, next, Ordering::SeqCst, Ordering::Relaxed) {
+                Ok(_) => {
+                    return unsafe { (*HEAP.buf.get()).as_mut_ptr().add(aligned) };
+                }
+                Err(actual) => pos = actual,
+            }
+        }
+    }
+
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+}
 
 #[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+static ALLOC: BumpAlloc = BumpAlloc;
 "#;
 
 /// Cargo.toml template for a plugin.
@@ -263,9 +313,6 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
-
-[dependencies]
-wee_alloc = "0.4"
 
 [profile.release]
 opt-level = "s"
@@ -883,11 +930,61 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 // ============================================================================
-// Global allocator
+// Global allocator (required for alloc in no_std WASM)
 // ============================================================================
+// The plugin runtime does not link WASI, so `std`'s allocator cannot be used.
+
+use core::alloc::{GlobalAlloc, Layout};
+use core::cell::UnsafeCell;
+use core::ptr::null_mut;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+const HEAP_LEN: usize = 256 * 1024;
+
+struct BumpHeap {
+    buf: UnsafeCell<[u8; HEAP_LEN]>,
+}
+
+// SAFETY: access is serialized through HEAP_POS.
+unsafe impl Sync for BumpHeap {}
+
+struct BumpAlloc;
+
+static HEAP: BumpHeap = BumpHeap {
+    buf: UnsafeCell::new([0; HEAP_LEN]),
+};
+static HEAP_POS: AtomicUsize = AtomicUsize::new(0);
+
+unsafe impl GlobalAlloc for BumpAlloc {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let size = layout.size().max(1);
+        let align = layout.align().max(1);
+        let mut pos = HEAP_POS.load(Ordering::Relaxed);
+        loop {
+            let aligned = pos.checked_add(align - 1).map(|p| p & !(align - 1));
+            let Some(aligned) = aligned else {
+                return null_mut();
+            };
+            let Some(next) = aligned.checked_add(size) else {
+                return null_mut();
+            };
+            if next > HEAP_LEN {
+                return null_mut();
+            }
+            match HEAP_POS.compare_exchange_weak(pos, next, Ordering::SeqCst, Ordering::Relaxed) {
+                Ok(_) => {
+                    return unsafe { (*HEAP.buf.get()).as_mut_ptr().add(aligned) };
+                }
+                Err(actual) => pos = actual,
+            }
+        }
+    }
+
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+}
 
 #[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+static ALLOC: BumpAlloc = BumpAlloc;
 "#;
 
 // ============================================================================

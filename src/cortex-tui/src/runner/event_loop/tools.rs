@@ -36,6 +36,7 @@ impl EventLoop {
         let tool_tx = self.tool_event_tx.clone();
         let id = tool_call_id.clone();
         let name = tool_name.clone();
+        let mcp_manager = self.mcp_manager.clone();
 
         // Spawn background task for tool execution
         let task = tokio::spawn(async move {
@@ -50,8 +51,26 @@ impl EventLoop {
                 })
                 .await;
 
-            // Execute the tool
-            let result = registry.execute(&name, args).await;
+            let result = if cortex_engine::mcp::parse_qualified_name(&name).is_some() {
+                match mcp_manager.call_tool(&name, Some(args)).await {
+                    Ok(call) => {
+                        let text = call
+                            .content
+                            .iter()
+                            .filter_map(|c| c.as_text())
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        if call.is_error() {
+                            Err(cortex_engine::CortexError::mcp(name.clone(), text))
+                        } else {
+                            Ok(cortex_engine::tools::ToolResult::success(text))
+                        }
+                    }
+                    Err(e) => Err(cortex_engine::CortexError::mcp(name.clone(), e.to_string())),
+                }
+            } else {
+                registry.execute(&name, args).await
+            };
             let duration = started_at.elapsed();
 
             match result {
@@ -71,7 +90,7 @@ impl EventLoop {
                         .send(ToolEvent::Failed {
                             id,
                             name,
-                            error: e.to_string(),
+                            error: e.user_friendly_message(),
                             duration,
                         })
                         .await;
@@ -505,6 +524,15 @@ impl EventLoop {
 
         self.app_state
             .update_tool_result(&id, error.clone(), false, format!("Error: {}", error));
+
+        if error.contains("Sandbox denied") {
+            self.add_system_message(&format!(
+                "{} {}",
+                crate::ui::consts::STOPPED_MARK,
+                crate::ui::consts::SANDBOX_DENIED_TITLE
+            ));
+            self.add_system_message(&error);
+        }
 
         // If this is a Task tool, update subagent status to Failed
         if name == "Task" || name == "task" {

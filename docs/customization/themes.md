@@ -38,19 +38,19 @@ For reference — these are the colours the demo recording on the
 
 | Role | Colour |
 |------|--------|
-| Selection accent (`>` caret + focused label only) | `#A78BFA` |
+| Selection accent (`>` caret + focused label; focused composer `>`) | `#A78BFA` |
 | Background | terminal default (`Color::Reset` — never painted) |
 | Charcoal panel (tips / info) | `#141414` |
 | Past user turn bar | `#1C1C1C` |
 | Selection bar | `#262626` (violet caret + label, dim description, never inverted — never a violet wash) |
 | Hairline (above / below the prompt, around search fields) | `#3A3A3A` |
 | Focused border | `#525252` (gray — the accent never outlines a box) |
-| Text | `#FFFFFF` |
+| Text | `#F5F5F5` |
 | Dim text (placeholders, hints, descriptions) | `#6B7280` |
 | Muted text | `#4B5563` |
 | Success `✓` and diff additions `+N` | `#4ADE80` (the only green) |
 | Warning (`warn` in diagnostics) | `#FFC857` |
-| Error (`error` in diagnostics) | `#FF6B6B` |
+| Error (`error`, `× Stopped`, quota, failed MCP `x`) | `#F87171` |
 | Thinking status | `#C9A95C` (the only gold) |
 
 The footer is gray: the model on the left (`Cortex Mini 1 · Agent · 92%

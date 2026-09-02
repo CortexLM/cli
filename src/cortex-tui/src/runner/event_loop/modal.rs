@@ -497,6 +497,13 @@ impl EventLoop {
                 }
 
                 self.app_state.mcp_servers.push(server_info);
+                let config = stored_server.to_engine_config();
+                let manager = self.mcp_manager.clone();
+                let connect_name = name.clone();
+                tokio::spawn(async move {
+                    manager.add_server(config).await;
+                    let _ = manager.connect(&connect_name).await;
+                });
                 self.app_state
                     .toasts
                     .success(format!("Added stdio MCP server: {}", name));
@@ -631,6 +638,13 @@ impl EventLoop {
                 self.reopen_settings_menu();
                 return true;
             }
+            InteractiveAction::McpServerAction => {
+                return self.handle_mcp_selector_item(&item_id).await;
+            }
+            InteractiveAction::Custom(ref custom) if custom.starts_with("mcp:") => {
+                let server = custom.trim_start_matches("mcp:").to_string();
+                return self.handle_mcp_server_action(&server, &item_id).await;
+            }
             _ => {
                 tracing::debug!("Unhandled interactive action: {:?}", action);
             }
@@ -697,6 +711,103 @@ impl EventLoop {
         }
 
         self.app_state.enter_interactive_mode(interactive);
+    }
+
+    async fn handle_mcp_selector_item(&mut self, item_id: &str) -> bool {
+        match item_id {
+            "__add__" => {
+                let form = crate::interactive::builders::build_mcp_add_server_form();
+                self.app_state.active_modal = Some(crate::app::ActiveModal::Form(form));
+                true
+            }
+            "__tools__" => {
+                let manager = self.mcp_manager.clone();
+                let tools = manager.list_all_tools().await;
+                if tools.is_empty() {
+                    self.add_system_message("No MCP tools connected.");
+                } else {
+                    let mut lines: Vec<String> = tools.keys().cloned().collect();
+                    lines.sort();
+                    self.add_system_message(&format!(
+                        "MCP tools ({})\n{}",
+                        lines.len(),
+                        lines.join("\n")
+                    ));
+                }
+                false
+            }
+            "__reload__" => {
+                let manager = self.mcp_manager.clone();
+                tokio::spawn(async move {
+                    let names = manager.server_names().await;
+                    for name in names {
+                        let _ = manager.disconnect(&name).await;
+                        let _ = manager.connect(&name).await;
+                    }
+                });
+                self.app_state.toasts.info("Reloading MCP servers…");
+                self.reopen_mcp_panel();
+                true
+            }
+            name => {
+                if let Some(server) = self
+                    .app_state
+                    .mcp_servers
+                    .iter()
+                    .find(|s| s.name == name)
+                    .cloned()
+                {
+                    let interactive =
+                        crate::interactive::builders::build_mcp_server_actions(&server);
+                    self.app_state.enter_interactive_mode(interactive);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    async fn handle_mcp_server_action(&mut self, server: &str, action: &str) -> bool {
+        let manager = self.mcp_manager.clone();
+        let name = server.to_string();
+        match action {
+            "start" | "restart" => {
+                if action == "restart" {
+                    self.mcp_stopping.insert(name.clone());
+                    let _ = manager.disconnect(&name).await;
+                }
+                if let Some(s) = self
+                    .app_state
+                    .mcp_servers
+                    .iter_mut()
+                    .find(|s| s.name == name)
+                {
+                    s.status = crate::modal::mcp_manager::McpStatus::Starting;
+                }
+                tokio::spawn(async move {
+                    let _ = manager.connect(&name).await;
+                });
+                self.reopen_mcp_panel();
+                true
+            }
+            "stop" => {
+                self.mcp_stopping.insert(name.clone());
+                tokio::spawn(async move {
+                    let _ = manager.disconnect(&name).await;
+                });
+                self.reopen_mcp_panel();
+                true
+            }
+            "remove" => {
+                self.mcp_stopping.insert(name.clone());
+                let _ = manager.remove_server(&name).await;
+                self.app_state.mcp_servers.retain(|s| s.name != name);
+                self.reopen_mcp_panel();
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Process pending actions from the card handler.

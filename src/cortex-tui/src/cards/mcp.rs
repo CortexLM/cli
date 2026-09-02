@@ -9,7 +9,9 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::Widget;
 
-use cortex_core::style::{CYAN_PRIMARY, ORANGE, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{
+    CYAN_PRIMARY, ORANGE, RED, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 
 use crate::cards::{CancellationEvent, CardAction, CardResult, CardView};
 use crate::widgets::{SelectionItem, SelectionList, SelectionResult};
@@ -38,14 +40,14 @@ impl McpStatus {
             McpStatus::Running => "●",
             McpStatus::Stopped => "○",
             McpStatus::Starting => "◐",
-            McpStatus::Error => "✗",
+            McpStatus::Error => "x",
         }
     }
 
     /// Returns the color for this status.
     pub fn color(&self) -> ratatui::style::Color {
         match self {
-            McpStatus::Running => CYAN_PRIMARY,
+            McpStatus::Running => SUCCESS,
             McpStatus::Stopped => TEXT_MUTED,
             McpStatus::Starting => ORANGE,
             McpStatus::Error => RED,
@@ -601,7 +603,7 @@ mod tests {
         assert_eq!(McpStatus::Running.symbol(), "●");
         assert_eq!(McpStatus::Stopped.symbol(), "○");
         assert_eq!(McpStatus::Starting.symbol(), "◐");
-        assert_eq!(McpStatus::Error.symbol(), "✗");
+        assert_eq!(McpStatus::Error.symbol(), "x");
     }
 
     #[test]

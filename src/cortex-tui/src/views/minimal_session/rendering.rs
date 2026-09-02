@@ -77,16 +77,20 @@ pub fn render_message_with_theme(
                 || msg.content.contains("failed")
                 || msg.content.contains("Invalid")
                 || msg.content.contains("limit")
+                || msg.content.contains("Stopped")
+                || msg.content.contains("quota exhausted")
+                || msg.content.contains("Sandbox denied")
+                || msg.content.contains("dropped")
                 || msg.content.starts_with("Error:")
                 || msg.content.contains("provider appears to be overloaded")
                 || msg.content.contains("internet connection")
                 || msg.content.contains("proxy is experiencing issues");
 
-            // No prefix for any system messages - use error color for errors, muted for info
+            // Errors in lock red; other system copy stays dim gray.
             let text_color = if is_error {
                 colors.error
             } else {
-                colors.text_muted
+                colors.text_dim
             };
 
             // Calculate available width for text (no prefix)

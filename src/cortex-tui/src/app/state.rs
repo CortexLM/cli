@@ -246,6 +246,8 @@ pub struct AppState {
     pub update_status: UpdateStatus,
     /// Cached update info when an update is available
     pub update_info: Option<cortex_update::UpdateInfo>,
+    /// Agent quota is exhausted — follow-ups stay in the composer until it resets.
+    pub quota_held: bool,
 }
 
 impl AppState {
@@ -355,6 +357,7 @@ impl AppState {
             org_name: None,
             update_status: UpdateStatus::default(),
             update_info: None,
+            quota_held: false,
         }
     }
 

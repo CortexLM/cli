@@ -37,6 +37,21 @@ pub const CARD_PADDING: u16 = 1;
 pub const SERVICE_UNAVAILABLE_NEXT_STEP: &str =
     "Try again in a moment — your work so far is saved in this session.";
 
+/// Interrupt / stopped title painted in error red (`× Stopped`).
+pub const STOPPED_MARK: &str = "×";
+pub const STOPPED_TITLE: &str = "Stopped";
+
+/// Quota-exhausted title painted in error red.
+pub const QUOTA_EXHAUSTED: &str = "Agent quota exhausted";
+
+/// Composer placeholder while agent quota is held.
+pub const PLACEHOLDER_QUOTA: &str = "Add a follow-up — held until quota resets";
+/// Narrow (40-column) form of the quota placeholder.
+pub const PLACEHOLDER_QUOTA_NARROW: &str = "Follow-up — held until quota resets";
+
+/// Sandbox deny title painted in error red.
+pub const SANDBOX_DENIED_TITLE: &str = "Sandbox denied";
+
 /// Border characters (Unicode box drawing) — square corners only; the
 /// locked chrome never draws rounded frames.
 pub mod border {

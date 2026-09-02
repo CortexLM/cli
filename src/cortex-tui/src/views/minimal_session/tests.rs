@@ -251,6 +251,7 @@ mod harness_snapshots {
                 .expect("composer");
             assert_eq!(buf[(0, composer_y - 1)].symbol(), "─");
             assert_eq!(buf[(0, composer_y - 1)].style().fg, Some(HAIRLINE));
+            assert_eq!(buf[(0, composer_y)].style().fg, Some(ACCENT));
             assert_eq!(buf[(0, composer_y + 1)].symbol(), "─");
             checked = true;
             break;
@@ -260,7 +261,7 @@ mod harness_snapshots {
 
     #[test]
     fn composer_is_hairline_framed_and_turns_sit_on_the_gray_bar() {
-        use cortex_core::style::{HAIRLINE, TEXT, TEXT_DIM, USER_TURN_BG};
+        use cortex_core::style::{ACCENT, HAIRLINE, TEXT, TEXT_DIM, USER_TURN_BG};
 
         let mut state = AppState::default();
         state.footer_cwd = "~/cortex-api".into();
@@ -301,7 +302,7 @@ mod harness_snapshots {
             assert!(rows[prompt - 1].chars().all(|c| c == '─'), "{text}");
             assert!(rows[prompt + 1].chars().all(|c| c == '─'), "{text}");
             assert_eq!(buf[(0, prompt as u16 - 1)].style().fg, Some(HAIRLINE));
-            assert_eq!(buf[(0, prompt as u16)].style().fg, Some(TEXT));
+            assert_eq!(buf[(0, prompt as u16)].style().fg, Some(ACCENT));
             assert_eq!(buf[(2, prompt as u16)].style().fg, Some(TEXT_DIM));
             assert!(rows[prompt].contains('█'), "{text}");
             // The composer follows the transcript instead of hugging the footer.
@@ -355,10 +356,10 @@ mod harness_snapshots {
     fn snapshot_cancel_message() {
         let mut state = AppState::default();
         state.add_message(cortex_core::widgets::Message::user("list files"));
-        state.add_message(cortex_core::widgets::Message::system("Cancelled."));
+        state.add_message(cortex_core::widgets::Message::system("× Stopped"));
         let text = render(&state, 80, 24);
         dump_snapshot("cancel", &text);
-        assert!(text.contains("Cancelled."), "cancel missing: {text}");
+        assert!(text.contains("Stopped"), "stop missing: {text}");
         assert!(!text.to_lowercase().contains("grok"));
     }
 

@@ -124,6 +124,8 @@ pub fn lock_scene_ids() -> &'static [&'static str] {
         "md_mixed",
         "diff_hunk",
         "diff_word",
+        "sandbox_deny",
+        "mcp_drop",
     ]
 }
 
@@ -532,6 +534,8 @@ mod tests {
     const GREEN_FG: &str = "38;2;74;222;128";
     /// Selection violet `#A78BFA` as an SGR foreground.
     const ACCENT_FG: &str = "38;2;167;139;250";
+    /// Error red `#F87171` as an SGR foreground.
+    const ERROR_FG: &str = "38;2;248;113;113";
 
     fn row_text(buf: &Buffer, y: u16) -> String {
         (0..buf.area.width)
@@ -597,6 +601,8 @@ mod tests {
         "md_mixed",
         "diff_hunk",
         "diff_word",
+        "sandbox_deny",
+        "mcp_drop",
     ];
 
     /// Scenes whose Edit tile carries a unified diff: red on `-` rows and
@@ -660,6 +666,8 @@ mod tests {
         "session_loading",
         "session_error",
         "session_success",
+        "sandbox_deny",
+        "mcp_drop",
     ];
 
     /// Scenes with a focused selection row.
@@ -700,33 +708,37 @@ mod tests {
     ];
 
     #[test]
-    fn violet_is_reserved_for_the_focused_selection() {
-        // The one accent: a violet cell is always on the dark gray selection
-        // bar, and every scene with a selection paints its `>` caret violet.
+    fn violet_is_reserved_for_selection_and_focused_composer() {
+        // Violet is the focused composer `>` (between hairlines) and the
+        // focused picker `>` + label on the gray selection bar. Past user
+        // `>` stays white.
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                for (x, y, cell) in cells(&frame.buffer) {
-                    if cell.style().fg == Some(ACCENT) && cell.symbol() != " " {
-                        assert_eq!(
-                            cell.style().bg,
-                            Some(SELECTION_BG),
-                            "{id} paints violet {:?} off the selection bar at {size:?} ({x},{y}):\n{}",
-                            cell.symbol(),
-                            frame.plain
-                        );
+                let buf = &frame.buffer;
+                for (x, y, cell) in cells(buf) {
+                    if cell.style().fg != Some(ACCENT) || cell.symbol() == " " {
+                        continue;
                     }
+                    let on_bar = cell.style().bg == Some(SELECTION_BG);
+                    let composer_caret = cell.symbol() == ">"
+                        && y > 0
+                        && y + 1 < buf.area.height
+                        && is_hairline_row(buf, y - 1)
+                        && is_hairline_row(buf, y + 1)
+                        && cell.style().bg != Some(USER_TURN_BG);
+                    assert!(
+                        on_bar || composer_caret,
+                        "{id} paints violet {:?} off the selection bar and composer at {size:?} ({x},{y}):\n{}",
+                        cell.symbol(),
+                        frame.plain
+                    );
                 }
                 let violet = painted_chars(&frame.ansi, ACCENT_FG);
-                if SELECTION_SCENES.contains(id) {
+                if SELECTION_SCENES.contains(id) || COMPOSER_SCENES.contains(id) {
                     assert!(
                         violet.contains('>'),
-                        "{id} must paint its selection caret violet at {size:?}: {violet:?}"
-                    );
-                } else {
-                    assert!(
-                        violet.trim().is_empty(),
-                        "{id} has no focused selection yet paints violet at {size:?}: {violet:?}"
+                        "{id} must paint a violet `>` at {size:?}: {violet:?}"
                     );
                 }
             }
@@ -910,7 +922,18 @@ mod tests {
                         _ => {}
                     }
                 }
-                let error_scene = matches!(*id, "diagnostics" | "session_error" | "login_error");
+                let error_scene = matches!(
+                    *id,
+                    "diagnostics"
+                        | "session_error"
+                        | "login_error"
+                        | "interrupt"
+                        | "stopped"
+                        | "quota"
+                        | "mcp"
+                        | "mcp_drop"
+                        | "sandbox_deny"
+                );
                 if DIFF_SCENES.contains(id) {
                     // Red is the diff's `-` rows (or the removed token), never
                     // a context or `+` row.
@@ -1001,8 +1024,8 @@ mod tests {
                         frame.plain
                     );
                 };
-                // The `>` and the block cursor are white; a placeholder is dim.
-                assert_eq!(buf[(0, y)].style().fg, Some(TEXT), "{id} at {size:?}");
+                // The focused composer `>` is violet; a placeholder is dim.
+                assert_eq!(buf[(0, y)].style().fg, Some(ACCENT), "{id} at {size:?}");
                 let row = row_text(buf, y);
                 assert!(
                     row.contains('█'),
@@ -1078,11 +1101,9 @@ mod tests {
     }
 
     #[test]
-    fn past_turn_and_composer_carets_are_white_never_violet() {
-        // Violet belongs to the focused selection's caret alone. The `>` of a
-        // past user turn (on the gray bar) and the `>` of the composer (between
-        // the hairlines) are white in every scene at both sizes — never
-        // `#A78BFA`, never dim.
+    fn past_user_caret_is_white_focused_composer_is_violet() {
+        // Past user `>` (on the gray bar) is never accented. The focused
+        // composer `>` (between hairlines) is violet `#A78BFA`.
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -1094,28 +1115,45 @@ mod tests {
                     }
                     let bg = cell.style().bg;
                     if bg == Some(SELECTION_BG) {
-                        // A selection caret: violet, checked elsewhere.
+                        assert_eq!(cell.style().fg, Some(ACCENT), "{id} row {y} at {size:?}");
                         continue;
                     }
-                    assert_eq!(
-                        cell.style().fg,
-                        Some(TEXT),
-                        "{id} row {y} caret must be white at {size:?} (bg {bg:?}):\n{}",
-                        row_text(buf, y)
-                    );
+                    if bg == Some(USER_TURN_BG) {
+                        assert_eq!(
+                            cell.style().fg,
+                            Some(TEXT),
+                            "{id} past-turn caret must be white at {size:?}:\n{}",
+                            row_text(buf, y)
+                        );
+                        continue;
+                    }
+                    if y > 0
+                        && y + 1 < buf.area.height
+                        && is_hairline_row(buf, y - 1)
+                        && is_hairline_row(buf, y + 1)
+                    {
+                        assert_eq!(
+                            cell.style().fg,
+                            Some(ACCENT),
+                            "{id} composer caret must be violet at {size:?}:\n{}",
+                            row_text(buf, y)
+                        );
+                    }
                 }
             }
         }
-        // The scene QA called out — a historical turn on its bar plus a typed
-        // composer — has no focused selection, so it paints no violet at all.
-        for id in ["footer_max", "typing"] {
-            let frame = render_lock_scene(id, 120, 40).expect(id);
-            assert!(
-                painted_chars(&frame.ansi, ACCENT_FG).trim().is_empty(),
-                "{id} paints violet: {:?}",
-                painted_chars(&frame.ansi, ACCENT_FG)
-            );
-        }
+        // A typed composer still accents only the caret, not the typed copy.
+        let typing = render_lock_scene("typing", 120, 40).expect("typing");
+        let violet = painted_chars(&typing.ansi, ACCENT_FG);
+        assert!(
+            violet.contains('>'),
+            "typing composer `>` must be violet: {violet:?}"
+        );
+        let footer_max = render_lock_scene("footer_max", 120, 40).expect("footer_max");
+        assert!(
+            painted_chars(&footer_max.ansi, ACCENT_FG).contains('>'),
+            "footer_max composer `>` must be violet"
+        );
     }
 
     #[test]
@@ -2535,10 +2573,10 @@ mod tests {
             }
         }
         // 37 interrupt keeps the prompt and tool tiles on screen, then shows
-        // `✗ Stopped` — never a lone `/interrupt` line or a bare splash.
+        // `× Stopped` in error red — never a lone `/interrupt` line or a bare splash.
         for size in SIZES {
             let interrupt = render_lock_scene("interrupt", size.0, size.1).expect("interrupt");
-            assert!(interrupt.plain.contains("✗"), "{}", interrupt.plain);
+            assert!(interrupt.plain.contains("×"), "{}", interrupt.plain);
             assert!(interrupt.plain.contains("Stopped"), "{}", interrupt.plain);
             assert!(interrupt.plain.contains("ctrl+c"), "{}", interrupt.plain);
             assert!(
@@ -2555,6 +2593,11 @@ mod tests {
                 !interrupt.plain.contains("Cortex CLI v1.0.0"),
                 "37 must not be a splash:\n{}",
                 interrupt.plain
+            );
+            let red = painted_chars(&interrupt.ansi, ERROR_FG);
+            assert!(
+                red.contains("Stopped"),
+                "interrupt Stopped must be error red at {size:?}: {red:?}"
             );
         }
         // 38 compact reports the compaction, on the gray chrome.
@@ -2849,6 +2892,18 @@ mod tests {
         assert!(mcp.plain.contains("failed"));
         assert!(mcp.plain.contains("mcp.json"));
         assert!(mcp.plain.contains("✓ github"));
+        assert!(
+            painted_chars(&mcp.ansi, ERROR_FG).contains('x'),
+            "failed MCP x must be error red: {:?}",
+            painted_chars(&mcp.ansi, ERROR_FG)
+        );
+
+        let quota = render_lock_scene("quota", 120, 40).expect("quota");
+        assert!(
+            painted_chars(&quota.ansi, ERROR_FG).contains("Agent quota exhausted"),
+            "quota title must be error red: {:?}",
+            painted_chars(&quota.ansi, ERROR_FG)
+        );
     }
 
     #[test]
@@ -3003,6 +3058,11 @@ mod tests {
                 "clear_confirm",
                 &["Start a new thread?", "Clear thread", "Cancel"],
             ),
+            (
+                "sandbox_deny",
+                &["Sandbox denied", "blocked by the workspace sandbox"],
+            ),
+            ("mcp_drop", &["github", "dropped", "connection lost"]),
         ];
         for size in SIZES {
             for (id, needles) in always {

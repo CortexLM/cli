@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Changed
+- Focused composer `>` is violet `#A78BFA`; past user `>` stays white. Interrupt `× Stopped`, quota title, failed MCP `x`, and sandbox deny paint error red `#F87171`. Primary copy is `#F5F5F5`. MCP connect/drop and sandbox deny are live, not painted-only.
 - Gray chrome with one accent, replacing the violet wash: the background is still never painted (`Color::Reset`), structure comes from gray — hairlines `#3A3A3A`, filled charcoal panels `#141414`, dim `#6B7280` secondary copy, white primary copy — and the Cortex violet `#A78BFA` appears only on the focused selection (the `>` caret and the selected label on the dark gray `#262626` bar; the bar is never a violet wash). Green `#4ADE80` covers `✓` success and `+N` diff additions; red and amber stay on diagnostics; the Thinking status is a muted gold. The `#221A38` wash and the interim cyan `#7DD3FC` highlight are banned everywhere
 - The composer is the Devin-style bar in every session, working and queue state: a full-width thin gray hairline above the `> ` prompt and another below it, dim placeholder, white block cursor; it follows the transcript until the transcript fills the screen
 - Past user turns sit on a full-width, slightly lighter gray bar behind `> prompt text`

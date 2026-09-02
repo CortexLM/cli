@@ -165,6 +165,14 @@ pub struct EventLoop {
 
     /// TUI capture manager for debugging (enabled via CORTEX_TUI_CAPTURE=1).
     pub(super) tui_capture: TuiCapture,
+
+    /// Live MCP connection manager (connect, mcp_call, drop).
+    pub(super) mcp_manager: std::sync::Arc<cortex_engine::mcp::McpConnectionManager>,
+    /// Lifecycle events from the MCP manager.
+    pub(super) mcp_event_rx:
+        Option<tokio::sync::mpsc::UnboundedReceiver<cortex_engine::mcp::McpLifecycleEvent>>,
+    /// Servers the user is stopping (disconnect is not a drop).
+    pub(super) mcp_stopping: std::collections::HashSet<String>,
 }
 
 impl EventLoop {
@@ -172,6 +180,11 @@ impl EventLoop {
     pub fn new(app_state: AppState) -> Self {
         // Create channel for tool execution events
         let (tool_event_tx, tool_event_rx) = mpsc::channel::<ToolEvent>(100);
+        let (mcp_event_tx, mcp_event_rx) =
+            tokio::sync::mpsc::unbounded_channel::<cortex_engine::mcp::McpLifecycleEvent>();
+        let mcp_manager = std::sync::Arc::new(
+            cortex_engine::mcp::McpConnectionManager::with_event_sender(mcp_event_tx),
+        );
 
         // Initialize TUI capture with terminal size from app state
         let (width, height) = app_state.terminal_size;
@@ -211,6 +224,9 @@ impl EventLoop {
             is_continuation: false,
             _undo_stack: Vec::new(),
             tui_capture,
+            mcp_manager,
+            mcp_event_rx: Some(mcp_event_rx),
+            mcp_stopping: std::collections::HashSet::new(),
         }
     }
 
@@ -360,9 +376,20 @@ impl EventLoop {
                     }
                 } => {
                     self.handle_tool_event(tool_event).await;
-                    // Re-render after tool event to show status update
                     if let Err(e) = self.render(terminal) {
                         tracing::error!("Error rendering after tool event: {}", e);
+                    }
+                }
+
+                Some(mcp_event) = async {
+                    match self.mcp_event_rx.as_mut() {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    self.handle_mcp_event(mcp_event);
+                    if let Err(e) = self.render(terminal) {
+                        tracing::error!("Error rendering after MCP event: {}", e);
                     }
                 }
             }
@@ -424,7 +451,7 @@ impl EventLoop {
             self.streaming_cancelled.store(true, Ordering::SeqCst);
             self.stream_controller.interrupt();
             self.app_state.stop_streaming();
-            self.add_system_message("Cancelled.");
+            self.mark_turn_stopped();
 
             if let Some(pm) = self.provider_manager.clone() {
                 tokio::spawn(async move {
@@ -518,6 +545,93 @@ impl EventLoop {
     pub(super) fn add_system_message(&mut self, content: &str) {
         let message = cortex_core::widgets::Message::system(content);
         self.app_state.add_message(message);
+    }
+
+    /// Record a user interrupt: `× Stopped` in error red, dim elapsed meta.
+    pub(super) fn mark_turn_stopped(&mut self) {
+        let already = self
+            .app_state
+            .messages
+            .last()
+            .is_some_and(|m| m.content.contains(crate::ui::consts::STOPPED_TITLE));
+        if already {
+            return;
+        }
+        let secs = self.app_state.streaming.prompt_elapsed_seconds();
+        self.add_system_message(&format!(
+            "{} {}",
+            crate::ui::consts::STOPPED_MARK,
+            crate::ui::consts::STOPPED_TITLE
+        ));
+        self.add_system_message(&format!("{secs}s · ctrl+c"));
+    }
+
+    /// Apply an MCP lifecycle event to the session list and transcript.
+    pub(super) fn handle_mcp_event(&mut self, event: cortex_engine::mcp::McpLifecycleEvent) {
+        use crate::modal::mcp_manager::McpStatus;
+        use cortex_engine::mcp::McpLifecycleEvent;
+        match event {
+            McpLifecycleEvent::ServerAdded { name } => {
+                if !self.app_state.mcp_servers.iter().any(|s| s.name == name) {
+                    self.app_state
+                        .mcp_servers
+                        .push(crate::modal::mcp_manager::McpServerInfo {
+                            name,
+                            status: McpStatus::Stopped,
+                            tool_count: 0,
+                            error: None,
+                            requires_auth: false,
+                        });
+                }
+            }
+            McpLifecycleEvent::ServerConnected {
+                name, tool_count, ..
+            } => {
+                if let Some(server) = self
+                    .app_state
+                    .mcp_servers
+                    .iter_mut()
+                    .find(|s| s.name == name)
+                {
+                    server.status = McpStatus::Running;
+                    server.tool_count = tool_count;
+                    server.error = None;
+                }
+            }
+            McpLifecycleEvent::ServerDisconnected { name } => {
+                let user_stop = self.mcp_stopping.remove(&name);
+                if let Some(server) = self
+                    .app_state
+                    .mcp_servers
+                    .iter_mut()
+                    .find(|s| s.name == name)
+                {
+                    if user_stop {
+                        server.status = McpStatus::Stopped;
+                        server.error = None;
+                    } else {
+                        server.status = McpStatus::Error;
+                        server.error = Some("connection lost".into());
+                        self.add_system_message(&format!("x {name} dropped"));
+                    }
+                }
+            }
+            McpLifecycleEvent::ServerRemoved { name } => {
+                self.app_state.mcp_servers.retain(|s| s.name != name);
+            }
+            McpLifecycleEvent::ConnectionFailed { name, error } => {
+                if let Some(server) = self
+                    .app_state
+                    .mcp_servers
+                    .iter_mut()
+                    .find(|s| s.name == name)
+                {
+                    server.status = McpStatus::Error;
+                    server.error = Some(error.clone());
+                }
+                self.add_system_message(&format!("x {name} failed"));
+            }
+        }
     }
 
     /// Returns the current action context based on app state.
@@ -724,15 +838,13 @@ pub fn open_browser_url(url: &str) -> Result<()> {
 }
 
 impl EventLoop {
-    /// Loads MCP server configurations from storage.
+    /// Loads MCP server configurations from storage and starts enabled ones.
     pub fn load_mcp_servers(&mut self) {
         match crate::mcp_storage::McpStorage::new() {
             Ok(storage) => match storage.list_servers() {
                 Ok(stored_servers) => {
+                    let mut configs = Vec::new();
                     for stored in stored_servers {
-                        // Convert StoredMcpServer to McpServerInfo for display
-                        // Note: All servers start as Stopped regardless of enabled flag
-                        // They need to be explicitly started to become Running
                         let server_info = crate::modal::mcp_manager::McpServerInfo {
                             name: stored.name.clone(),
                             status: crate::modal::mcp_manager::McpStatus::Stopped,
@@ -741,7 +853,6 @@ impl EventLoop {
                             requires_auth: stored.api_key_env_var.is_some(),
                         };
 
-                        // Only add if not already present
                         if !self
                             .app_state
                             .mcp_servers
@@ -750,6 +861,9 @@ impl EventLoop {
                         {
                             self.app_state.mcp_servers.push(server_info);
                         }
+                        if stored.enabled {
+                            configs.push(stored.to_engine_config());
+                        }
                     }
                     if !self.app_state.mcp_servers.is_empty() {
                         tracing::info!(
@@ -757,6 +871,17 @@ impl EventLoop {
                             self.app_state.mcp_servers.len()
                         );
                     }
+                    let manager = self.mcp_manager.clone();
+                    tokio::spawn(async move {
+                        for config in configs {
+                            let auto = config.auto_start;
+                            let name = config.name.clone();
+                            manager.add_server(config).await;
+                            if auto && let Err(e) = manager.connect(&name).await {
+                                tracing::warn!("MCP connect {name}: {e}");
+                            }
+                        }
+                    });
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load MCP servers from storage: {}", e);

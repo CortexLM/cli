@@ -65,8 +65,8 @@ pub const SURFACE_3: Color = Color::Rgb(51, 51, 51); // #333333
 // TEXT COLORS
 // ============================================================
 
-/// Primary text - white
-pub const TEXT: Color = Color::Rgb(255, 255, 255); // #FFFFFF
+/// Primary text — off-white lock copy
+pub const TEXT: Color = Color::Rgb(245, 245, 245); // #F5F5F5
 
 /// Dimmed text - secondary copy, placeholders, hints, descriptions
 pub const TEXT_DIM: Color = Color::Rgb(107, 114, 128); // #6B7280
@@ -90,8 +90,8 @@ pub const SUCCESS: Color = DIFF_ADD; // #4ADE80
 /// Warning - amber, diagnostics only (`warn`)
 pub const WARNING: Color = Color::Rgb(255, 200, 87); // #FFC857
 
-/// Error - red, diagnostics only (`error`, `✗ Stopped`)
-pub const ERROR: Color = Color::Rgb(255, 107, 107); // #FF6B6B
+/// Error - red (`error`, `× Stopped`, quota, failed MCP `x`)
+pub const ERROR: Color = Color::Rgb(248, 113, 113); // #F87171
 
 /// Thinking status - muted gold, nothing else uses it
 pub const THINKING: Color = Color::Rgb(201, 169, 92); // #C9A95C
@@ -341,7 +341,7 @@ impl CortexStyle {
         Style::default().fg(ACCENT).bg(SELECTION_BG)
     }
 
-    /// Error style: coral red text for error messages
+    /// Error style: lock red text for error messages
     #[inline]
     pub fn error() -> Style {
         Style::default().fg(ERROR)

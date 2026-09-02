@@ -122,7 +122,7 @@ impl AdaptiveColors {
 
         Self {
             accent: cortex_core::style::ACCENT,
-            text: Color::Rgb(0xFF, 0xFF, 0xFF),
+            text: cortex_core::style::TEXT,
             text_dim: Color::Rgb(text_dim_rgb.0, text_dim_rgb.1, text_dim_rgb.2),
             text_muted: Color::Rgb(text_muted_rgb.0, text_muted_rgb.1, text_muted_rgb.2),
             user_bg: Color::Rgb(user_bg_rgb.0, user_bg_rgb.1, user_bg_rgb.2),
@@ -172,7 +172,7 @@ impl AdaptiveColors {
     pub fn default_dark() -> Self {
         Self {
             accent: cortex_core::style::ACCENT,          // #A78BFA violet
-            text: cortex_core::style::TEXT,              // #FFFFFF
+            text: cortex_core::style::TEXT,              // #F5F5F5
             text_dim: cortex_core::style::TEXT_DIM,      // #6B7280
             text_muted: cortex_core::style::TEXT_MUTED,  // #4B5563
             user_bg: cortex_core::style::USER_TURN_BG,   // #1C1C1C
@@ -180,7 +180,7 @@ impl AdaptiveColors {
             border: cortex_core::style::HAIRLINE,        // #3A3A3A
             success: cortex_core::style::SUCCESS,        // #4ADE80
             diff_add: cortex_core::style::DIFF_ADD,      // #4ADE80
-            error: cortex_core::style::ERROR,            // #FF6B6B
+            error: cortex_core::style::ERROR,            // #F87171
             warning: cortex_core::style::WARNING,        // #FFC857
             thinking: cortex_core::style::THINKING,      // #C9A95C
             selection: cortex_core::style::SELECTION_BG, // #262626

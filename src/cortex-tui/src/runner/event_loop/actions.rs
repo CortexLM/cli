@@ -56,6 +56,8 @@ impl EventLoop {
                         self.cancel_streaming();
                     } else if let Some(ref bridge) = self.session_bridge {
                         bridge.interrupt().await?;
+                        self.app_state.stop_streaming();
+                        self.mark_turn_stopped();
                     }
                 }
             }

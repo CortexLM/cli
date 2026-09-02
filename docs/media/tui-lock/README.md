@@ -1,14 +1,14 @@
 # Cortex CLI visual lock captures
 
 Headless `MockTerminal` renders of the session, login, slash palette, and
-settings hub on the locked violet chrome. Regenerated with
+settings hub on the gray chrome. Regenerated with
 `./scripts/render-tui-lock.sh`.
 
 Each scene is captured at **40×12** (narrow) and **120×40** (wide), twice:
 
 - `40x12/`, `120x40/` — raw terminal pixels. The background is the host
-  terminal's (`Color::Reset`, black by default); nothing paints a navy wash
-  and no rounded frame is drawn — the TUI bleeds to the terminal edges.
+  terminal's (`Color::Reset`, black by default); nothing paints a wash and no
+  rounded frame is drawn — the TUI bleeds to the terminal edges.
 - `macos/40x12/`, `macos/120x40/` — the same captures composited into the
   designer macOS chrome template: Sequoia ray wallpaper, menu bar, and a
   Terminal.app window (traffic lights, `cortex-api — cortex — W×H` proxy
@@ -19,28 +19,34 @@ Each scene is captured at **40×12** (narrow) and **120×40** (wide), twice:
   pixel-exact. Nothing is re-typed, and the rounded corners belong to the
   macOS window chrome only.
 
-Chrome rules: `#A78BFA` violet for the `>` prompt, selection caret, `●` tile
-dots and `✓` checks; selected rows are light text on the dark `#221A38` bar
-(never inverted); green appears only on `+N` diff additions.
+Chrome rules: structure is gray — `#3A3A3A` hairlines above and below the
+`> ` composer and around search fields, `#141414` charcoal panels for tips,
+`#1C1C1C` bars behind past user turns, `#6B7280` secondary copy, white
+primary copy. The one accent is cyan `#7DD3FC`, on the focused selection only
+(the `>` caret and the selected label on the `#262626` bar, never inverted);
+unselected rows lead with a dim middot. Green `#4ADE80` appears only on `✓`
+and `+N` diff additions, red / amber only on diagnostics, and the Thinking
+status is the muted gold `#C9A95C`. The footer is the model on the left and
+one shortcut hint on the right, all gray.
 
 Splash copy in these frames is the lock line `Cortex CLI v1.0.0`. The shipped
 binary still reports the crate version.
 
 | File | Surface |
 |------|---------|
-| `splash.png` | Empty session chrome: cwd, `> cortex`, version, composer |
+| `splash.png` | Empty session chrome: cwd, `> cortex`, version, hairline composer |
 | `typing.png` | Prompt typed in the composer, block cursor |
-| `model_compact.png` | `/model` compact picker |
-| `model_full.png` | `/model` full picker with effort + billing note |
+| `model_compact.png` | `/model` compact picker, hairline search field |
+| `model_full.png` | `/model` full picker: search field, descriptions, effort, billing note |
 | `mode.png` | `/mode` Agent / Plan / Ask radios |
 | `permissions.png` | `/permissions` approval policy picker |
 | `working.png` | Working spinner + elapsed / tokens |
 | `read.png` | Read tile — numbered excerpt |
-| `login_select.png` | Aligned radios, dark selection bar on the chosen row |
+| `login_select.png` | Numbered sign-in picker, cyan `> 1` on the gray bar |
 | `login_waiting.png` | Loading / waiting for browser auth |
-| `login_success.png` | `Signed in.` |
+| `login_success.png` | `✓ Signed in.` |
 | `login_error.png` | Product-facing error |
-| `palette.png` | `/` home: twenty commands |
+| `palette.png` | `/` typed in the composer, twenty aligned commands |
 | `palette_empty.png` | `/` filter with no matches |
 | `settings_hub.png` | `/settings` seven-row hub |
 | `settings_empty.png` | Settings filter with no matches |
@@ -70,12 +76,12 @@ binary still reports the crate version.
 | `queue.png` | Follow-up queue |
 | `jobs.png` | `/jobs` agents |
 | `help.png` | `/help` two-column commands |
-| `first_run.png` | First-run tips |
+| `first_run.png` | First-run tips on the charcoal panel |
 | `bash.png` | Bash mode |
 | `config.png` | `/config` tree |
 | `footer_max.png` | MAX footer after push |
-| `login.png` | Sign in — two radios, hint under browser |
-| `thinking.png` | Thinking spinner + reasoning |
+| `login.png` | Sign in — numbered options, descriptions under titles |
+| `thinking.png` | Thinking (muted gold) + reasoning |
 | `todos.png` | Working 1/5 checklist |
 | `question.png` | Clarifying question |
 | `skills.png` | `/skills` picker |

@@ -21,7 +21,8 @@ use crate::ui::text_utils::{
     first_fitting_line, fit_line, trim_dangling_separator, wrap_keep_indent, wrap_or_drop,
 };
 
-const USER_PROMPT: &str = "Add rate limiting to POST /v1/completions – 60 req/min per API key, sliding window, Redis-backed, with tests";
+/// Prompt typed in the README hero GIF and the typing lock board.
+pub const USER_PROMPT: &str = "Add rate limiting to POST /v1/completions – 60 req/min per API key, sliding window, Redis-backed, with tests";
 const CWD: &str = "~/cortex-api";
 const GIT: &str = "main*";
 /// English product name — the TUI never shows the served `cortex-1-mini` slug.
@@ -817,15 +818,39 @@ fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
 // ---------------------------------------------------------------------------
 
 fn board_splash(area: Rect, buf: &mut Buffer) {
-    let y = paint_launch_header(area, buf, true);
-    paint_composer(area, buf, y, Composer::Ghost(GHOST_IDLE));
-    paint_footer(area, buf, &format!("{MODEL} · Agent · 100% context"));
+    paint_hero(area, buf, HeroScene::Splash);
 }
 
 fn board_typing(area: Rect, buf: &mut Buffer) {
-    let y = paint_launch_header(area, buf, true);
-    paint_composer(area, buf, y, Composer::Typed(USER_PROMPT));
-    paint_footer(area, buf, &format!("{MODEL} · Agent · 100% context"));
+    paint_hero(area, buf, HeroScene::Typing(USER_PROMPT));
+}
+
+/// README hero beat: signed splash, in-progress typing, or the working lock.
+#[derive(Debug, Clone, Copy)]
+pub enum HeroScene<'a> {
+    /// Dual-hairline splash with the idle placeholder.
+    Splash,
+    /// Splash chrome with `text` in the composer (partial or full prompt).
+    Typing(&'a str),
+    /// Submitted prompt plus the working indicator.
+    Working,
+}
+
+/// Paint one README-hero / lock frame from the signed chrome.
+pub fn paint_hero(area: Rect, buf: &mut Buffer, scene: HeroScene<'_>) {
+    match scene {
+        HeroScene::Splash => {
+            let y = paint_launch_header(area, buf, true);
+            paint_composer(area, buf, y, Composer::Ghost(GHOST_IDLE));
+            paint_footer(area, buf, &format!("{MODEL} · Agent · 100% context"));
+        }
+        HeroScene::Typing(text) => {
+            let y = paint_launch_header(area, buf, true);
+            paint_composer(area, buf, y, Composer::Typed(text));
+            paint_footer(area, buf, &format!("{MODEL} · Agent · 100% context"));
+        }
+        HeroScene::Working => board_working(area, buf),
+    }
 }
 
 const PALETTE_ROWS: &[(&str, &str)] = &[

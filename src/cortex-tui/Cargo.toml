@@ -94,3 +94,7 @@ workspace = true
 [[bin]]
 name = "generate_tui_lock_screenshots"
 path = "src/bin/generate_tui_lock_screenshots.rs"
+
+[[bin]]
+name = "generate_tui_demo"
+path = "src/bin/generate_tui_demo.rs"

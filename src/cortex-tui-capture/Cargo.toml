@@ -15,10 +15,6 @@ doctest = false
 name = "generate_tui_screenshots"
 path = "src/bin/generate_tui_screenshots.rs"
 
-[[bin]]
-name = "generate_tui_demo"
-path = "src/bin/generate_tui_demo.rs"
-
 [dependencies]
 # TUI dependencies
 ratatui = { workspace = true }
@@ -30,7 +26,7 @@ cortex-tui-core = { workspace = true }
 # Product theme, so the recorded demo tracks the real TUI palette
 cortex-core = { workspace = true }
 
-# Same welcome card / mascot the live TUI mounts, so the GIF cannot drift
+# Welcome-card helpers used by capture snapshot tests
 cortex-tui-components = { workspace = true }
 
 # Async runtime

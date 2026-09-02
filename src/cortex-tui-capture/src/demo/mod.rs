@@ -1,33 +1,20 @@
-//! Headless recording of the Cortex Code session view.
+//! Frame I/O for the README hero recording.
 //!
-//! This module renders the storyboard in [`script`] through [`MockTerminal`],
-//! producing one ANSI frame per step plus a manifest describing frame timing.
-//! `scripts/render-demo-gif.sh` turns those frames into `docs/media/intro.gif`.
-//!
-//! Recording headlessly is deliberate: the demo has to be reproducible on a
-//! machine that cannot start a real terminal or sign in to the coding service.
-
-mod render;
-pub mod scene;
-pub mod script;
+//! Scene painting lives in `cortex-tui::readme_hero` so the GIF is the signed
+//! lock TUI (dual hairline, violet `>`, splash → typing → working). This
+//! module owns the manifest format `scripts/ansi-frames-to-gif.py` consumes.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{CaptureConfig, StyleRendering};
-use crate::mock_terminal::MockTerminal;
 use crate::types::{CaptureError, CaptureResult};
-
-pub use render::draw_scene;
-pub use scene::{Scene, Status, TimelineBlock, ToolRow, ToolState};
-pub use script::{Beat, DEMO_PROMPT, storyboard, total_frames};
 
 /// Default recording width in terminal columns.
 pub const DEFAULT_WIDTH: u16 = 120;
 
-/// Default recording height in terminal rows.
-pub const DEFAULT_HEIGHT: u16 = 32;
+/// Default recording height in terminal rows (README GIF is 120×40).
+pub const DEFAULT_HEIGHT: u16 = 40;
 
 /// Default playback rate of the generated GIF.
 pub const DEFAULT_FPS: u32 = 12;
@@ -174,207 +161,56 @@ impl DemoRecording {
     }
 }
 
-/// Render the storyboard into an in-memory recording.
-pub fn record(config: &DemoConfig) -> CaptureResult<DemoRecording> {
-    let capture_config = CaptureConfig::minimal(config.width, config.height)
-        .with_style_rendering(StyleRendering::Ansi)
-        .trim_whitespace(false)
-        .with_cursor(false);
-
-    let mut terminal = MockTerminal::from_config(capture_config.clone())
-        .map_err(|err| CaptureError::RenderError(err.to_string()))?;
-
-    let beats = storyboard();
-    let mut frames = Vec::with_capacity(beats.len());
-
-    for (index, beat) in beats.iter().enumerate() {
-        let scene = beat.scene.clone();
-        terminal
-            .draw(|frame| draw_scene(frame, &scene))
-            .map_err(|err| CaptureError::RenderError(err.to_string()))?;
-
-        let snapshot = terminal.snapshot();
-        frames.push(DemoFrame {
-            index,
-            label: beat.label.clone(),
-            hold: beat.hold,
-            ansi: snapshot.to_ansi(&capture_config),
-            plain: snapshot.to_ascii(&capture_config),
-        });
-    }
-
-    Ok(DemoRecording {
-        width: config.width,
-        height: config.height,
-        fps: config.fps,
-        frames,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn recording() -> DemoRecording {
-        record(&DemoConfig::default()).expect("recording the demo storyboard")
-    }
-
-    #[test]
-    fn recording_produces_one_frame_per_beat() {
-        let recording = recording();
-        assert_eq!(recording.frames.len(), storyboard().len());
-        assert!(!recording.frames.is_empty());
-    }
-
-    #[test]
-    fn recording_loops_between_eight_and_fifteen_seconds() {
-        let recording = recording();
-        let seconds = recording.duration_secs();
-        assert!(
-            (8.0..=15.0).contains(&seconds),
-            "demo loop is {seconds:.1}s, expected 8-15s"
-        );
-    }
-
-    #[test]
-    fn first_frame_shows_the_welcome_card() {
-        let recording = recording();
-        let first = &recording.frames[0];
-        assert!(
-            first.plain.contains("Cortex CLI"),
-            "welcome frame missing the product name:\n{}",
-            first.plain
-        );
-        assert!(
-            first.plain.contains("api.cortex.foundation"),
-            "welcome frame missing the public endpoint:\n{}",
-            first.plain
-        );
-        assert!(
-            !first.plain.contains("▄█▀▀▀▀█▄"),
-            "welcome frame must not show a mascot:\n{}",
-            first.plain
-        );
-        assert!(
-            first.plain.contains("This PC"),
-            "welcome frame missing Computer:\n{}",
-            first.plain
-        );
-    }
-
-    #[test]
-    fn welcome_beats_keep_the_one_line_splash() {
-        let recording = recording();
-        for frame in recording
-            .frames
-            .iter()
-            .filter(|frame| frame.label == "welcome")
-        {
-            assert!(
-                frame.plain.contains("Cortex CLI"),
-                "welcome beat {} lost the splash:\n{}",
-                frame.index,
-                frame.plain
-            );
-            assert!(
-                !frame.plain.contains("▄█▀▀▀▀█▄"),
-                "welcome beat {} showed a mascot:\n{}",
-                frame.index,
-                frame.plain
-            );
+    fn sample_recording() -> DemoRecording {
+        DemoRecording {
+            width: 8,
+            height: 2,
+            fps: 12,
+            frames: vec![DemoFrame {
+                index: 0,
+                label: "splash".into(),
+                hold: 2,
+                ansi: "splash-ansi".into(),
+                plain: "splash".into(),
+            }],
         }
     }
 
     #[test]
-    fn recording_shows_a_prompt_tool_rows_and_a_reply() {
-        let recording = recording();
-        let last = recording.frames.last().expect("frames");
-
-        // The whole turn has to still be on screen at the end of the loop, so
-        // the banner reads as a complete story when it stops moving.
-        assert!(
-            last.plain.contains(DEMO_PROMPT),
-            "final frame scrolled the prompt away:\n{}",
-            last.plain
-        );
-        for tool in ["Grep", "Read", "Write", "Edit", "Shell"] {
-            assert!(
-                recording
-                    .frames
-                    .iter()
-                    .any(|frame| frame.plain.contains(tool)),
-                "no frame contains the '{tool}' tool row"
-            );
-        }
-        assert!(
-            last.plain.contains("test result: ok."),
-            "final frame missing the test result:\n{}",
-            last.plain
-        );
-    }
-
-    #[test]
-    fn frames_are_the_configured_terminal_size() {
-        let recording = recording();
-        for frame in &recording.frames {
-            let lines: Vec<&str> = frame.plain.lines().collect();
-            assert_eq!(lines.len(), usize::from(recording.height));
-            for line in lines {
-                assert_eq!(line.chars().count(), usize::from(recording.width));
-            }
-        }
-    }
-
-    #[test]
-    fn frames_carry_colour() {
-        let recording = recording();
-        // The recording is only useful as a GIF if the palette survives:
-        // the dim gray `#6B7280` of the chrome must reach the first frame,
-        // and the retired cyan highlight must not.
-        assert!(
-            recording.frames[0].ansi.contains("\x1b[38;2;107;114;128m"),
-            "expected the chrome gray in the first frame"
-        );
-        assert!(
-            !recording.frames[0].ansi.contains("\x1b[38;2;125;211;252m"),
-            "the cyan highlight is gone"
-        );
-    }
-
-    #[test]
-    fn recording_never_names_a_provider_or_transport() {
-        let recording = recording();
-        for frame in &recording.frames {
-            let lower = frame.plain.to_lowercase();
-            for banned in ["grok", "openai", "anthropic", "reqwest"] {
-                assert!(
-                    !lower.contains(banned),
-                    "frame {} leaks '{banned}'",
-                    frame.index
-                );
-            }
-        }
+    fn default_tty_is_one_hundred_twenty_by_forty() {
+        let config = DemoConfig::default();
+        assert_eq!(config.width, 120);
+        assert_eq!(config.height, 40);
     }
 
     #[test]
     fn manifest_matches_the_frames() {
-        let recording = recording();
+        let recording = sample_recording();
         let manifest = recording.manifest();
-        assert_eq!(manifest.frames.len(), recording.frames.len());
-        assert_eq!(manifest.total_frames, recording.total_frames());
+        assert_eq!(manifest.frames.len(), 1);
+        assert_eq!(manifest.total_frames, 2);
         assert_eq!(manifest.frames[0].file, "frame_0000.ans");
+        assert_eq!(manifest.frames[0].label, "splash");
     }
 
     #[test]
     fn write_to_dir_emits_frames_and_manifest() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let recording = recording();
+        let recording = sample_recording();
         let written = recording
             .write_to_dir(dir.path())
             .expect("writing the recording");
 
-        assert_eq!(written.len(), recording.frames.len() + 1);
+        assert_eq!(written.len(), 2);
         assert!(dir.path().join("manifest.json").is_file());
         assert!(dir.path().join("frame_0000.ans").is_file());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("frame_0000.ans")).expect("frame"),
+            "splash-ansi"
+        );
     }
 }

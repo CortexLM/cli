@@ -164,8 +164,8 @@ The banner above is generated from this repository, not captured by hand:
 ./scripts/render-demo-gif.sh
 ```
 
-That records the session view headlessly through `cortex-tui-capture` and
-rasterises the frames into `docs/media/intro.gif`.
+That records the signed lock TUI (splash → typing → working) headlessly
+through `generate_tui_demo` and rasterises the frames into `docs/media/intro.gif`.
 
 ## Release and CI secrets
 

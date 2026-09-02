@@ -102,6 +102,7 @@ pub mod runner;
 // Visual-lock PNG / ANSI captures
 pub mod lock_boards;
 pub mod lock_proof;
+pub mod readme_hero;
 
 // Backtracking system for conversation history navigation
 pub mod backtrack;

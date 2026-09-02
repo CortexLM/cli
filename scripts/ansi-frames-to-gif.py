@@ -379,7 +379,7 @@ def main() -> int:
     if not manifest_path.is_file():
         raise SystemExit(
             f"No manifest at {manifest_path}. Run:\n"
-            "  cargo run -p cortex-tui-capture --bin generate_tui_demo"
+            "  cargo run -p cortex-tui --bin generate_tui_demo"
         )
 
     manifest = json.loads(manifest_path.read_text())

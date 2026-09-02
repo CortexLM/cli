@@ -1,20 +1,21 @@
-//! Renders the Cortex Code session demo to ANSI frames.
+//! Renders the README hero from the signed lock chrome to ANSI frames.
 //!
-//! The frames are the input to `scripts/render-demo-gif.sh`, which produces the
-//! README banner at `docs/media/intro.gif`.
+//! The frames are the input to `scripts/render-demo-gif.sh`, which produces
+//! `docs/media/intro.gif` (splash → typing the rate-limit prompt → working).
 //!
 //! ```bash
-//! cargo run -p cortex-tui-capture --bin generate_tui_demo -- --output target/tui-demo
+//! cargo run -p cortex-tui --bin generate_tui_demo -- --output target/tui-demo
 //! ```
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use cortex_tui_capture::demo::{self, DemoConfig};
+use cortex_tui::readme_hero::{self, HERO_HEIGHT, HERO_WIDTH};
+use cortex_tui_capture::DemoConfig;
 
 fn print_help() {
     println!(
-        r#"Cortex Code demo recorder - render the session view to ANSI frames
+        r#"Cortex CLI demo recorder - render the signed lock TUI to ANSI frames
 
 USAGE:
     generate_tui_demo [OPTIONS]
@@ -26,16 +27,20 @@ OPTIONS:
         --fps <FPS>       Playback rate recorded in the manifest (default: {default_fps})
     -h, --help            Show this help message
 "#,
-        default_dir = demo::DEFAULT_OUTPUT_DIR,
-        default_width = demo::DEFAULT_WIDTH,
-        default_height = demo::DEFAULT_HEIGHT,
-        default_fps = demo::DEFAULT_FPS,
+        default_dir = cortex_tui_capture::demo::DEFAULT_OUTPUT_DIR,
+        default_width = HERO_WIDTH,
+        default_height = HERO_HEIGHT,
+        default_fps = cortex_tui_capture::demo::DEFAULT_FPS,
     );
 }
 
 fn parse_args() -> Result<Option<DemoConfig>, String> {
     let args: Vec<String> = std::env::args().collect();
-    let mut config = DemoConfig::default();
+    let mut config = DemoConfig {
+        width: HERO_WIDTH,
+        height: HERO_HEIGHT,
+        ..DemoConfig::default()
+    };
 
     let mut i = 1;
     while i < args.len() {
@@ -81,7 +86,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let recording = match demo::record(&config) {
+    let recording = match readme_hero::record(&config) {
         Ok(recording) => recording,
         Err(err) => {
             eprintln!("Failed to render the demo: {err}");

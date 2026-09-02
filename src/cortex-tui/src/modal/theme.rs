@@ -4,7 +4,9 @@
 //! Supports live preview: as the user navigates up/down, the entire TUI updates
 //! to show the selected theme's colors before confirming with Enter.
 
-use cortex_core::style::{CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, ThemeColors};
+use cortex_core::style::{
+    ACCENT, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, ThemeColors,
+};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -137,7 +139,7 @@ impl ThemeSelectorModal {
         let is_current = theme.id == self.current_theme;
 
         let (bg, fg, marker_fg) = if is_selected {
-            (SELECTION_BG, TEXT, CYAN_PRIMARY)
+            (SELECTION_BG, ACCENT, ACCENT)
         } else {
             (
                 SURFACE_0,

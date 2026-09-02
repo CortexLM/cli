@@ -410,7 +410,7 @@ impl McpCard {
         // Cursor
         let cursor_x = area.x + 1 + name.len() as u16;
         if cursor_x < area.x + area.width - 1 {
-            buf[(cursor_x, input_y)].set_bg(CYAN_PRIMARY);
+            buf[(cursor_x, input_y)].set_bg(TEXT);
             buf[(cursor_x, input_y)].set_fg(Color::Rgb(20, 20, 23));
         }
 

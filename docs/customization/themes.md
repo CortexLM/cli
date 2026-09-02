@@ -5,7 +5,7 @@ text, tool rows, borders, status and accents.
 
 | Theme id | Name | Description |
 |----------|------|-------------|
-| `dark` | Dark | The default. Host terminal background with violet accents. |
+| `dark` | Dark | The default. Gray chrome on the host terminal background; cyan marks the focused selection. |
 | `light` | Light | Light background with dark text. |
 | `ocean_dark` | Ocean Dark | Deep blue and cyan. Also accepted as `ocean`. |
 | `monokai` | Monokai | Classic code-editor colours. |
@@ -38,25 +38,23 @@ For reference — these are the colours the demo recording on the
 
 | Role | Colour |
 |------|--------|
-| Primary accent | `#A78BFA` |
-| Secondary accent | `#C4B5FD` |
-| Links | `#8B5CF6` |
+| Selection accent (`>` caret + focused label only) | `#7DD3FC` |
 | Background | terminal default (`Color::Reset` — never painted) |
-| Surfaces | `#141417`, `#1C1C20`, `#26262B`, `#32323A` |
-| Selection bar | `#221A38` (light text, never inverted) |
+| Charcoal panel (tips / info) | `#141414` |
+| Past user turn bar | `#1C1C1C` |
+| Selection bar | `#262626` (cyan caret + label, dim description, never inverted) |
+| Hairline (above / below the prompt, around search fields) | `#3A3A3A` |
+| Focused border | `#525252` (gray — cyan never outlines a box) |
 | Text | `#FFFFFF` |
-| Dim text | `#829AB1` |
-| Muted text | `#486581` |
-| Border | `#2A2A32` |
-| Focused border | `#A78BFA` |
-| Success | `#A78BFA` |
-| Diff additions | `#4ADE80` (the only green in the chrome) |
-| Warning | `#FFC857` |
-| Error | `#FF6B6B` |
-| Info | `#48CAE4` |
+| Dim text (placeholders, hints, descriptions) | `#6B7280` |
+| Muted text | `#4B5563` |
+| Success `✓` and diff additions `+N` | `#4ADE80` (the only green) |
+| Warning (`warn` in diagnostics) | `#FFC857` |
+| Error (`error` in diagnostics) | `#FF6B6B` |
+| Thinking status | `#C9A95C` (the only gold) |
 
-Operation modes have their own accent: Build `#A78BFA`, Plan `#FFC857`, Spec
-`#8B5CF6`.
+The footer is gray: the model on the left (`Cortex Mini 1 · Agent · 92%
+context`), one shortcut hint on the right (`shift+tab to cycle modes`).
 
 ## Related display settings
 

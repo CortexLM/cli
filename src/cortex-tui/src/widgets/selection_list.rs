@@ -31,9 +31,7 @@
 //! frame.render_widget(&list, area);
 //! ```
 
-use cortex_core::style::{
-    CYAN_PRIMARY, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
-};
+use cortex_core::style::{ACCENT, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -523,14 +521,15 @@ impl SelectionList {
         width: u16,
         buf: &mut Buffer,
     ) {
-        // Determine styles based on selection and disabled state. Selected
-        // rows are light text on the dark violet bar — never inverted.
+        // Determine styles based on selection and disabled state. The
+        // selected row is the one cyan accent — caret and label — on the dark
+        // gray bar, never inverted; other rows stay white.
         let (bg, fg, prefix_fg) = if is_selected {
-            (SELECTION_BG, TEXT, CYAN_PRIMARY)
+            (SELECTION_BG, ACCENT, ACCENT)
         } else if item.disabled {
             (SURFACE_0, TEXT_MUTED, TEXT_MUTED)
         } else {
-            (SURFACE_0, TEXT, CYAN_PRIMARY)
+            (SURFACE_0, TEXT, TEXT_DIM)
         };
 
         // Clear the line
@@ -648,12 +647,7 @@ impl SelectionList {
         let x = area.x + 1;
 
         // Search icon
-        buf.set_string(
-            x,
-            area.y,
-            "/",
-            Style::default().fg(CYAN_PRIMARY).bg(SURFACE_1),
-        );
+        buf.set_string(x, area.y, "/", Style::default().fg(TEXT_DIM).bg(SURFACE_1));
 
         // Search query or placeholder (truncate to fit available width)
         let max_query_width = (area.width as usize).saturating_sub(15);
@@ -680,8 +674,8 @@ impl SelectionList {
         // Cursor
         let cursor_x = x + 2 + self.search_query.len() as u16;
         if cursor_x < area.right().saturating_sub(1) {
-            buf[(cursor_x, area.y)].set_bg(CYAN_PRIMARY);
-            buf[(cursor_x, area.y)].set_fg(Color::Rgb(20, 20, 23));
+            buf[(cursor_x, area.y)].set_bg(TEXT);
+            buf[(cursor_x, area.y)].set_fg(Color::Rgb(20, 20, 20));
         }
 
         // Result count on the right

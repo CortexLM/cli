@@ -328,11 +328,16 @@ mod tests {
     #[test]
     fn frames_carry_colour() {
         let recording = recording();
-        // The recording is only useful as a GIF if the palette survives.
-        // The product accent is the locked violet #A78BFA.
+        // The recording is only useful as a GIF if the palette survives:
+        // the dim gray `#6B7280` of the chrome must reach the first frame,
+        // and the retired violet accent must not.
         assert!(
-            recording.frames[0].ansi.contains("\x1b[38;2;167;139;250m"),
-            "expected the product accent colour in the first frame"
+            recording.frames[0].ansi.contains("\x1b[38;2;107;114;128m"),
+            "expected the chrome gray in the first frame"
+        );
+        assert!(
+            !recording.frames[0].ansi.contains("\x1b[38;2;167;139;250m"),
+            "the violet accent is gone"
         );
     }
 

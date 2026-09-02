@@ -8,7 +8,8 @@ use super::types::{AddHttpServerFocus, AddStdioServerFocus, McpMode, McpStatus};
 use crate::modal::render_search_bar;
 use crate::widgets::action_bar::ActionBar;
 use cortex_core::style::{
-    BORDER, CYAN_PRIMARY, ERROR, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, WARNING,
+    ACCENT, BORDER, BORDER_FOCUS, CYAN_PRIMARY, ERROR, SUCCESS, SURFACE_1, TEXT, TEXT_DIM,
+    TEXT_MUTED, WARNING,
 };
 use ratatui::{
     buffer::Buffer,
@@ -26,7 +27,7 @@ impl McpManagerModal {
         let block = Block::default()
             .title(" MCP Servers ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(CYAN_PRIMARY))
+            .border_style(Style::default().fg(BORDER_FOCUS))
             .style(Style::default().bg(SURFACE_1));
 
         let inner = block.inner(area);
@@ -110,8 +111,7 @@ impl McpManagerModal {
 
             // Selection indicator
             let selector = if is_selected { " > " } else { "   " };
-            let selector_style =
-                Style::default().fg(if is_selected { CYAN_PRIMARY } else { TEXT_DIM });
+            let selector_style = Style::default().fg(if is_selected { ACCENT } else { TEXT_DIM });
             buf.set_string(area.x, y, selector, selector_style);
 
             // Status icon with color
@@ -181,7 +181,7 @@ impl McpManagerModal {
             let block = Block::default()
                 .title(" Add MCP Server - Choose Source ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(CYAN_PRIMARY))
+                .border_style(Style::default().fg(BORDER_FOCUS))
                 .style(Style::default().bg(SURFACE_1));
 
             let inner = block.inner(area);
@@ -202,7 +202,7 @@ impl McpManagerModal {
                 let is_selected = selected == i;
                 let selector = if is_selected { " > " } else { "   " };
                 let selector_style =
-                    Style::default().fg(if is_selected { CYAN_PRIMARY } else { TEXT_DIM });
+                    Style::default().fg(if is_selected { ACCENT } else { TEXT_DIM });
                 buf.set_string(inner.x, y, selector, selector_style);
 
                 let name_style = if is_selected {
@@ -244,7 +244,7 @@ impl McpManagerModal {
             let block = Block::default()
                 .title(" Add MCP Server - Choose Transport ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(CYAN_PRIMARY))
+                .border_style(Style::default().fg(BORDER_FOCUS))
                 .style(Style::default().bg(SURFACE_1));
 
             let inner = block.inner(area);
@@ -265,7 +265,7 @@ impl McpManagerModal {
                 let is_selected = selected == i;
                 let selector = if is_selected { " > " } else { "   " };
                 let selector_style =
-                    Style::default().fg(if is_selected { CYAN_PRIMARY } else { TEXT_DIM });
+                    Style::default().fg(if is_selected { ACCENT } else { TEXT_DIM });
                 buf.set_string(inner.x, y, selector, selector_style);
 
                 let name_style = if is_selected {
@@ -309,7 +309,7 @@ impl McpManagerModal {
             let block = Block::default()
                 .title(" Add MCP Server ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(CYAN_PRIMARY))
+                .border_style(Style::default().fg(BORDER_FOCUS))
                 .style(Style::default().bg(SURFACE_1));
 
             let inner = block.inner(area);
@@ -424,7 +424,7 @@ impl McpManagerModal {
             let block = Block::default()
                 .title(" Add MCP Server - HTTP ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(CYAN_PRIMARY))
+                .border_style(Style::default().fg(BORDER_FOCUS))
                 .style(Style::default().bg(SURFACE_1));
 
             let inner = block.inner(area);
@@ -516,7 +516,7 @@ impl McpManagerModal {
             let block = Block::default()
                 .title(" Add MCP Server - Registry ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(CYAN_PRIMARY))
+                .border_style(Style::default().fg(BORDER_FOCUS))
                 .style(Style::default().bg(SURFACE_1));
 
             let inner = block.inner(area);
@@ -581,7 +581,7 @@ impl McpManagerModal {
                 // Selection indicator
                 let selector = if is_selected { " > " } else { "   " };
                 let selector_style =
-                    Style::default().fg(if is_selected { CYAN_PRIMARY } else { TEXT_DIM });
+                    Style::default().fg(if is_selected { ACCENT } else { TEXT_DIM });
                 buf.set_string(list_area.x, y, selector, selector_style);
 
                 // Server name
@@ -695,7 +695,7 @@ impl McpManagerModal {
             let block = Block::default()
                 .title(format!(" API Key for {} ", server_name))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(CYAN_PRIMARY))
+                .border_style(Style::default().fg(BORDER_FOCUS))
                 .style(Style::default().bg(SURFACE_1));
 
             let inner = block.inner(area);

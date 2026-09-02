@@ -5,7 +5,7 @@
 //! with section headers for easy navigation.
 
 use cortex_core::style::{
-    BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
+    ACCENT, BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
@@ -405,9 +405,9 @@ impl CommandsModal {
     ) {
         // Determine styles
         let (bg, fg, prefix_fg) = if is_selected {
-            (SELECTION_BG, TEXT, CYAN_PRIMARY)
+            (SELECTION_BG, ACCENT, ACCENT)
         } else {
-            (SURFACE_0, TEXT, CYAN_PRIMARY)
+            (SURFACE_0, TEXT, TEXT_DIM)
         };
 
         // Clear the line with background

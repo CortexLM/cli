@@ -15,9 +15,7 @@
 //! ```
 
 use crate::backtrack::{BacktrackState, MessageRole, MessageSnapshot};
-use cortex_core::style::{
-    CYAN_PRIMARY, PINK, PURPLE, SURFACE_1, SURFACE_2, TEXT, TEXT_DIM, TEXT_MUTED,
-};
+use cortex_core::style::{ACCENT, HAIRLINE, SELECTION_BG, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph, Widget};
 
@@ -96,7 +94,7 @@ impl<'a> BacktrackOverlay<'a> {
         buf: &mut Buffer,
     ) {
         // Background
-        let bg = if is_selected { SURFACE_2 } else { SURFACE_1 };
+        let bg = if is_selected { SELECTION_BG } else { SURFACE_1 };
         for x in area.x..area.x + area.width {
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_bg(bg);
@@ -107,7 +105,7 @@ impl<'a> BacktrackOverlay<'a> {
 
         // Selection indicator
         if is_selected {
-            let indicator_style = Style::default().fg(CYAN_PRIMARY).bg(bg).bold();
+            let indicator_style = Style::default().fg(ACCENT).bg(bg).bold();
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_char('>').set_style(indicator_style);
             }
@@ -132,9 +130,9 @@ impl<'a> BacktrackOverlay<'a> {
         let icon = Self::role_icon(snapshot.role);
         let icon_style = Style::default()
             .fg(if snapshot.role == MessageRole::User {
-                PINK
+                TEXT
             } else {
-                PURPLE
+                TEXT_DIM
             })
             .bg(bg);
         for ch in icon.chars() {
@@ -151,8 +149,9 @@ impl<'a> BacktrackOverlay<'a> {
         // Content preview
         let max_content_width = (area.width as usize).saturating_sub((x - area.x) as usize + 12);
         let content_preview = Self::truncate_content(&snapshot.content, max_content_width);
+        // The selected snapshot is the cyan accent on the gray bar.
         let content_style = if is_selected {
-            Style::default().fg(TEXT).bg(bg).bold()
+            Style::default().fg(ACCENT).bg(bg).bold()
         } else {
             Style::default().fg(TEXT).bg(bg)
         };
@@ -198,10 +197,10 @@ impl Widget for BacktrackOverlay<'_> {
 
         let block = Block::default()
             .title(title)
-            .title_style(Style::default().fg(CYAN_PRIMARY).bold())
+            .title_style(Style::default().fg(TEXT).bold())
             .title_bottom(Line::from(footer).centered())
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(CYAN_PRIMARY))
+            .border_style(Style::default().fg(HAIRLINE))
             .padding(Padding::horizontal(1));
 
         let inner = block.inner(overlay_area);

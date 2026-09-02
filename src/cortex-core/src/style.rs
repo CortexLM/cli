@@ -17,8 +17,10 @@ use ratatui::style::{Color, Modifier, Style};
 /// Primary accent - cyan for the focused selection (`>` caret + label)
 pub const ACCENT: Color = Color::Rgb(125, 211, 252); // #7DD3FC
 
-/// Legacy name for the primary accent
-pub const CYAN_PRIMARY: Color = ACCENT;
+/// Legacy brand slot. Widgets that once painted titles, icons and cursors in
+/// the brand colour now get a light gray, so cyan stays on the focused
+/// selection only — use `ACCENT` for that.
+pub const CYAN_PRIMARY: Color = SKY_BLUE;
 
 /// Soft emphasis - light gray for secondary emphasis (legacy name)
 pub const SKY_BLUE: Color = Color::Rgb(212, 212, 216); // #D4D4D8
@@ -188,7 +190,7 @@ impl ThemeColors {
     /// Gray-chrome theme - the default Cortex theme (legacy fn name)
     pub fn ocean_cyan() -> Self {
         Self {
-            primary: CYAN_PRIMARY,
+            primary: ACCENT,
             secondary: SKY_BLUE,
             accent: ELECTRIC_BLUE,
             background: VOID,
@@ -603,7 +605,7 @@ mod tests {
     #[test]
     fn test_theme_colors() {
         let theme = ThemeColors::ocean_cyan();
-        assert_eq!(theme.primary, CYAN_PRIMARY);
+        assert_eq!(theme.primary, ACCENT);
         assert_eq!(theme.secondary, SKY_BLUE);
         assert_eq!(theme.accent, ELECTRIC_BLUE);
         assert_eq!(theme.background, VOID);

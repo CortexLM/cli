@@ -3,8 +3,7 @@
 //! The rendering widget for the command palette.
 
 use cortex_core::style::{
-    BORDER, BORDER_FOCUS, CYAN_PRIMARY, SELECTION_BG, SKY_BLUE, SURFACE_0, SURFACE_2, TEXT,
-    TEXT_DIM, TEXT_MUTED,
+    ACCENT, BORDER, BORDER_FOCUS, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::Widget;
@@ -96,12 +95,7 @@ impl<'a> CommandPalette<'a> {
         let input_width = area.width.saturating_sub(4) as usize;
 
         // Prompt
-        buf.set_string(
-            area.x + 2,
-            y,
-            "> ",
-            Style::default().fg(CYAN_PRIMARY).bg(SURFACE_0),
-        );
+        buf.set_string(area.x + 2, y, "> ", Style::default().fg(TEXT).bg(SURFACE_0));
 
         // Query text (truncated if needed)
         let query_display: String = self
@@ -129,7 +123,7 @@ impl<'a> CommandPalette<'a> {
         if cursor_x < area.x + area.width - 2
             && let Some(cell) = buf.cell_mut((cursor_x, y))
         {
-            cell.set_style(Style::default().fg(Color::Rgb(20, 20, 23)).bg(CYAN_PRIMARY));
+            cell.set_style(Style::default().fg(Color::Rgb(20, 20, 20)).bg(TEXT));
         }
 
         // Hint on right
@@ -247,9 +241,10 @@ impl<'a> CommandPalette<'a> {
         selected: bool,
         buf: &mut Buffer,
     ) {
-        // Selected rows: light text on the dark violet bar — never inverted.
+        // Selected rows: the cyan accent on the dark gray bar — never
+        // inverted.
         let style = if selected {
-            Style::default().fg(TEXT).bg(SELECTION_BG)
+            Style::default().fg(ACCENT).bg(SELECTION_BG)
         } else {
             Style::default().fg(TEXT).bg(SURFACE_0)
         };
@@ -280,7 +275,7 @@ impl<'a> CommandPalette<'a> {
         // Detail/description
         if let Some(detail) = item.detail_text() {
             let detail_style = if selected {
-                Style::default().fg(SURFACE_2).bg(CYAN_PRIMARY)
+                Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
             } else {
                 Style::default().fg(TEXT_DIM).bg(SURFACE_0)
             };
@@ -296,9 +291,9 @@ impl<'a> CommandPalette<'a> {
         // Shortcut
         if let Some(shortcut) = item.shortcut() {
             let shortcut_style = if selected {
-                Style::default().fg(SKY_BLUE).bg(CYAN_PRIMARY)
+                Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
             } else {
-                Style::default().fg(SKY_BLUE).bg(SURFACE_0)
+                Style::default().fg(TEXT_DIM).bg(SURFACE_0)
             };
 
             let shortcut_x = x + width.saturating_sub(shortcut.len() as u16 + 1);

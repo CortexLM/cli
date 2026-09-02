@@ -6,7 +6,7 @@
 
 use crate::app::{AppState, ApprovalState};
 use cortex_core::style::{
-    BLUE, BORDER, GREEN, ORANGE, PINK, RED, SURFACE_1, TEXT, TEXT_DIM, YELLOW,
+    BLUE, BORDER, BORDER_FOCUS, GREEN, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
@@ -68,7 +68,7 @@ impl<'a> ApprovalView<'a> {
     /// Renders the title section.
     fn render_title(&self, area: Rect, buf: &mut Buffer) {
         let title = Paragraph::new("Tool Approval Required")
-            .style(Style::default().fg(ORANGE).add_modifier(Modifier::BOLD))
+            .style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD))
             .alignment(Alignment::Center);
         title.render(area, buf);
     }
@@ -76,7 +76,7 @@ impl<'a> ApprovalView<'a> {
     /// Renders the tool name section.
     fn render_tool_name(&self, area: Rect, buf: &mut Buffer, tool_name: &str) {
         let label_style = Style::default().fg(TEXT_DIM);
-        let tool_style = Style::default().fg(PINK).add_modifier(Modifier::BOLD);
+        let tool_style = Style::default().fg(TEXT).add_modifier(Modifier::BOLD);
 
         let line = Line::from(vec![
             Span::styled("Tool: ", label_style),
@@ -173,10 +173,12 @@ impl<'a> ApprovalView<'a> {
 
     /// Renders the action hints at the bottom.
     fn render_actions(&self, area: Rect, buf: &mut Buffer) {
-        let approve_style = Style::default().fg(PINK);
-        let reject_style = Style::default().fg(RED);
-        let option_style = Style::default().fg(BLUE);
-        let key_style = Style::default().fg(YELLOW).add_modifier(Modifier::BOLD);
+        // Action rows are gray: keys white, labels dim. Red and amber stay
+        // on diagnostics.
+        let approve_style = Style::default().fg(TEXT_DIM);
+        let reject_style = Style::default().fg(TEXT_DIM);
+        let option_style = Style::default().fg(TEXT_DIM);
+        let key_style = Style::default().fg(TEXT).add_modifier(Modifier::BOLD);
         let dim_style = Style::default().fg(TEXT_DIM);
 
         let line = Line::from(vec![
@@ -242,7 +244,7 @@ impl Widget for ApprovalView<'_> {
         // Render modal border
         let modal_block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(PINK))
+            .border_style(Style::default().fg(BORDER_FOCUS))
             .style(Style::default().bg(SURFACE_1));
         let inner_area = modal_block.inner(modal_area);
         modal_block.render(modal_area, buf);
@@ -457,12 +459,14 @@ fn syntax_highlight_json(json: &str) -> Vec<Line<'static>> {
 /// Determines the style for a JSON value based on its type.
 fn determine_value_style(value: &str) -> Style {
     let trimmed = value.trim();
+    // JSON is content, not chrome: booleans and numbers bold white, null
+    // muted, strings white.
     if trimmed == "true" || trimmed == "false" {
-        Style::default().fg(ORANGE) // Boolean
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD) // Boolean
     } else if trimmed == "null" {
-        Style::default().fg(RED) // Null
+        Style::default().fg(TEXT_MUTED) // Null
     } else if trimmed.parse::<f64>().is_ok() {
-        Style::default().fg(YELLOW) // Number
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD) // Number
     } else {
         Style::default().fg(TEXT) // String or other
     }
@@ -620,21 +624,22 @@ mod tests {
     fn test_determine_value_style() {
         // Boolean
         let style = determine_value_style("true");
-        assert_eq!(style.fg, Some(ORANGE));
+        assert_eq!(style.fg, Some(TEXT));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
 
         let style = determine_value_style("false");
-        assert_eq!(style.fg, Some(ORANGE));
+        assert_eq!(style.fg, Some(TEXT));
 
         // Null
         let style = determine_value_style("null");
-        assert_eq!(style.fg, Some(RED));
+        assert_eq!(style.fg, Some(TEXT_MUTED));
 
         // Number
         let style = determine_value_style("42");
-        assert_eq!(style.fg, Some(YELLOW));
+        assert_eq!(style.fg, Some(TEXT));
 
         let style = determine_value_style("3.14");
-        assert_eq!(style.fg, Some(YELLOW));
+        assert_eq!(style.fg, Some(TEXT));
     }
 
     #[test]

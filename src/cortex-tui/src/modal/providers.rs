@@ -3,7 +3,7 @@
 //! This modal displays available AI providers and allows the user to select one.
 
 use cortex_core::style::{
-    CYAN_PRIMARY, ERROR, SELECTION_BG, SUCCESS, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
+    ACCENT, ERROR, SELECTION_BG, SUCCESS, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
@@ -222,9 +222,9 @@ impl ProvidersModal {
     ) {
         // Determine styles based on selection
         let (bg, fg, icon_fg) = if is_selected {
-            (SELECTION_BG, TEXT, CYAN_PRIMARY)
+            (SELECTION_BG, ACCENT, ACCENT)
         } else {
-            (SURFACE_0, TEXT, CYAN_PRIMARY)
+            (SURFACE_0, TEXT, TEXT_DIM)
         };
 
         // Clear the line with background

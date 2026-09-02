@@ -17,7 +17,7 @@
 //! ```
 
 use crate::app::{AutocompleteItem, AutocompleteState, AutocompleteTrigger};
-use cortex_core::style::{CYAN_PRIMARY, SURFACE_1, SURFACE_2, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{ACCENT, HAIRLINE, SELECTION_BG, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
 use ratatui::prelude::*;
 use ratatui::widgets::{
     Block, Borders, Clear, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget,
@@ -110,7 +110,7 @@ impl<'a> AutocompletePopup<'a> {
         buf: &mut Buffer,
     ) {
         // Background
-        let bg = if is_selected { SURFACE_2 } else { SURFACE_1 };
+        let bg = if is_selected { SELECTION_BG } else { SURFACE_1 };
         for x in area.x..area.x + area.width {
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_bg(bg);
@@ -121,7 +121,7 @@ impl<'a> AutocompletePopup<'a> {
 
         // Icon
         if item.icon != '\0' {
-            let icon_style = Style::default().fg(CYAN_PRIMARY).bg(bg);
+            let icon_style = Style::default().fg(TEXT_DIM).bg(bg);
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_char(item.icon).set_style(icon_style);
             }
@@ -129,9 +129,10 @@ impl<'a> AutocompletePopup<'a> {
         }
 
         // Label
+        // The selected label is the cyan accent on the gray bar.
         let label_style = if is_selected {
             Style::default()
-                .fg(CYAN_PRIMARY)
+                .fg(ACCENT)
                 .bg(bg)
                 .add_modifier(Modifier::BOLD)
         } else {
@@ -177,7 +178,7 @@ impl<'a> AutocompletePopup<'a> {
 
         // Selection indicator
         if is_selected {
-            let indicator_style = Style::default().fg(CYAN_PRIMARY).bg(bg);
+            let indicator_style = Style::default().fg(ACCENT).bg(bg);
             if let Some(cell) = buf.cell_mut((area.x, area.y)) {
                 cell.set_char('>').set_style(indicator_style);
             }
@@ -215,17 +216,13 @@ impl Widget for AutocompletePopup<'_> {
         // Clear the background
         Clear.render(popup_area, buf);
 
-        // Draw border with rounded corners
+        // Draw the border — square corners, hairline gray.
         let title = self.get_title();
         let block = Block::default()
             .title(title)
-            .title_style(
-                Style::default()
-                    .fg(CYAN_PRIMARY)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .title_style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(CYAN_PRIMARY));
+            .border_style(Style::default().fg(HAIRLINE));
 
         let inner = block.inner(popup_area);
         block.render(popup_area, buf);

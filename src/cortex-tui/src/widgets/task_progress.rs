@@ -336,7 +336,7 @@ impl<'a> TaskProgressWidget<'a> {
         let block = Block::default()
             .title(Span::styled(
                 " Current Task ",
-                Style::default().fg(colors.accent).bold(),
+                Style::default().fg(colors.text).bold(),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(colors.border));
@@ -350,7 +350,10 @@ impl<'a> TaskProgressWidget<'a> {
 
             let lines = vec![
                 Line::from(vec![
-                    Span::styled(format!("{} ", spinner), Style::default().fg(colors.accent)),
+                    Span::styled(
+                        format!("{} ", spinner),
+                        Style::default().fg(colors.text_dim),
+                    ),
                     Span::raw(&task.description),
                 ]),
                 Line::from(vec![Span::styled(
@@ -392,7 +395,10 @@ impl<'a> TaskProgressWidget<'a> {
 
             let lines = vec![
                 Line::from(vec![
-                    Span::styled(format!("{} ", spinner), Style::default().fg(colors.accent)),
+                    Span::styled(
+                        format!("{} ", spinner),
+                        Style::default().fg(colors.text_dim),
+                    ),
                     Span::styled(
                         &tool.name,
                         Style::default()
@@ -429,7 +435,7 @@ impl<'a> TaskProgressWidget<'a> {
         let block = Block::default()
             .title(Span::styled(
                 " Todo List ",
-                Style::default().fg(colors.accent).bold(),
+                Style::default().fg(colors.text).bold(),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(colors.border));
@@ -479,7 +485,7 @@ impl<'a> TaskProgressWidget<'a> {
             let block = Block::default()
                 .title(Span::styled(
                     " Progress ",
-                    Style::default().fg(colors.accent).bold(),
+                    Style::default().fg(colors.text).bold(),
                 ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(colors.border));
@@ -495,7 +501,7 @@ impl<'a> TaskProgressWidget<'a> {
             let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
             let line = Line::from(vec![
-                Span::styled(bar, Style::default().fg(colors.accent)),
+                Span::styled(bar, Style::default().fg(colors.text)),
                 Span::styled(format!(" {:3}%", percent), Style::default().fg(colors.text)),
             ]);
 
@@ -713,7 +719,10 @@ impl Widget for ParallelTaskProgressWidget<'_> {
 
             // First line: spinner + description
             let line1 = Line::from(vec![
-                Span::styled(format!("{} ", spinner), Style::default().fg(colors.accent)),
+                Span::styled(
+                    format!("{} ", spinner),
+                    Style::default().fg(colors.text_dim),
+                ),
                 Span::raw(truncate(&task.description, chunk.width as usize - 4)),
             ]);
             buf.set_line(chunk.x, chunk.y, &line1, chunk.width);

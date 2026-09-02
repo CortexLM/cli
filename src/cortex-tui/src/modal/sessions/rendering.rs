@@ -5,7 +5,8 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use cortex_core::style::{
-    BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, YELLOW,
+    ACCENT, BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+    YELLOW,
 };
 
 use super::session_action::SessionAction;
@@ -65,7 +66,7 @@ pub fn render_search_bar(search_query: &str, area: Rect, buf: &mut Buffer) {
     // Cursor
     let cursor_x = input_x + search_query.len().min(max_input_width) as u16;
     if cursor_x < area.right().saturating_sub(2) {
-        buf[(cursor_x, area.y)].set_bg(CYAN_PRIMARY);
+        buf[(cursor_x, area.y)].set_bg(TEXT);
         buf[(cursor_x, area.y)].set_fg(Color::Rgb(20, 20, 23));
     }
 
@@ -81,11 +82,11 @@ pub fn render_search_bar(search_query: &str, area: Rect, buf: &mut Buffer) {
 
 /// Render a single session row.
 pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, buf: &mut Buffer) {
-    // Selected rows: light text on the dark violet bar — never inverted.
+    // Selected rows: the cyan accent on the dark gray bar — never inverted.
     let (bg, fg, prefix_fg) = if is_selected {
-        (SELECTION_BG, TEXT, CYAN_PRIMARY)
+        (SELECTION_BG, ACCENT, ACCENT)
     } else {
-        (SURFACE_0, TEXT, CYAN_PRIMARY)
+        (SURFACE_0, TEXT, TEXT_DIM)
     };
 
     // Clear the row

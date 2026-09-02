@@ -508,7 +508,7 @@ impl HelpCard {
         if self.search_active {
             let cursor_x = x + 2 + self.search_query.len() as u16;
             if cursor_x < area.right().saturating_sub(1) {
-                buf[(cursor_x, area.y)].set_bg(CYAN_PRIMARY);
+                buf[(cursor_x, area.y)].set_bg(TEXT);
                 buf[(cursor_x, area.y)].set_fg(SURFACE_0);
             }
         }

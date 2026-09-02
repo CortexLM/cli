@@ -29,7 +29,7 @@
 
 use std::path::PathBuf;
 
-use cortex_core::style::{CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{ACCENT, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED};
 #[cfg(test)]
 use crossterm::event::KeyModifiers;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -446,8 +446,8 @@ impl ApprovalOverlay {
         let cmd_display = format!("$ {}", cmd_str);
         let truncated = Self::truncate_str(&cmd_display, width as usize);
 
-        // "$" prefix in cyan
-        buf.set_string(x, y, "$", Style::default().fg(CYAN_PRIMARY).bg(SURFACE_0));
+        // "$" prefix, dim
+        buf.set_string(x, y, "$", Style::default().fg(TEXT_DIM).bg(SURFACE_0));
         // Command in bright text
         buf.set_string(
             x + 2,
@@ -540,7 +540,7 @@ impl ApprovalOverlay {
 
             let is_selected = self.list.selected_index() == Some(idx);
 
-            // Clear line: selected rows use the dark violet bar, never an
+            // Clear line: the selected row is the dark gray bar, never an
             // inverted accent fill.
             for col in area.x..area.right() {
                 buf[(col, y)].set_bg(if is_selected { SELECTION_BG } else { SURFACE_0 });
@@ -548,20 +548,21 @@ impl ApprovalOverlay {
 
             let mut col = area.x;
 
-            // Selection indicator
-            let prefix = if is_selected { ">" } else { " " };
+            // Selection indicator: cyan `>` on the focused row, a dim middot
+            // on the others.
+            let prefix = if is_selected { ">" } else { "·" };
             let prefix_style = if is_selected {
-                Style::default().fg(CYAN_PRIMARY).bg(SELECTION_BG)
+                Style::default().fg(ACCENT).bg(SELECTION_BG)
             } else {
-                Style::default().fg(CYAN_PRIMARY).bg(SURFACE_0)
+                Style::default().fg(TEXT_DIM).bg(SURFACE_0)
             };
             buf.set_string(col, y, prefix, prefix_style);
             col += 2;
 
-            // Option label
+            // Option label: the cyan accent when focused, white otherwise.
             let label_style = if is_selected {
                 Style::default()
-                    .fg(TEXT)
+                    .fg(ACCENT)
                     .bg(SELECTION_BG)
                     .add_modifier(Modifier::BOLD)
             } else {

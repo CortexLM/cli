@@ -102,7 +102,7 @@ mod harness_snapshots {
         assert!(text.contains("Read"), "missing Read: {text}");
         assert!(
             text.contains("●"),
-            "completed tiles carry the violet status dot: {text}"
+            "completed tiles carry the white status dot: {text}"
         );
         assert!(text.contains("Diagnostics"), "missing Diagnostics: {text}");
         assert!(!text.contains("L a.rs"), "{text}");

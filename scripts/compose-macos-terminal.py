@@ -10,7 +10,7 @@ pixels are only ever scaled uniformly; no terminal text is invented. The
 rounded corners belong to the macOS window; the TUI itself stays frameless.
 
 Placement — TUI pixels are never resampled, so every locked colour (the
-`#4ADE80` of a `+58`, the `#A78BFA` of a `>`) survives exactly:
+`#4ADE80` of a `+58`, the `#7DD3FC` of a selected `>`) survives exactly:
 - 120x40 captures are pasted 1:1 into the content rect (the chrome renders at
   2.5x so the 912px-tall capture fits), left-anchored; the remaining cells
   stay black, like any terminal background.

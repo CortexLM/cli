@@ -1,7 +1,7 @@
 //! Help browser widget rendering.
 
 use cortex_core::style::{
-    BORDER, BORDER_FOCUS, CYAN_PRIMARY, ELECTRIC_BLUE, SELECTION_BG, SURFACE_1, TEXT, TEXT_DIM,
+    ACCENT, BORDER, BORDER_FOCUS, ELECTRIC_BLUE, SELECTION_BG, SURFACE_1, TEXT, TEXT_DIM,
     TEXT_MUTED,
 };
 use ratatui::prelude::*;
@@ -94,9 +94,7 @@ impl<'a> HelpBrowser<'a> {
             title_x,
             area.y,
             title,
-            Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         );
 
         // Close button
@@ -130,10 +128,12 @@ impl<'a> HelpBrowser<'a> {
             let is_selected = i == self.state.selected_section;
             let prefix = if is_selected { "> " } else { "  " };
 
+            // The focused section is the cyan accent on the gray bar; the
+            // remembered one stays white, the rest dim.
             let style = if is_selected && is_focused {
-                Style::default().fg(TEXT).bg(SELECTION_BG)
+                Style::default().fg(ACCENT).bg(SELECTION_BG)
             } else if is_selected {
-                Style::default().fg(CYAN_PRIMARY)
+                Style::default().fg(TEXT)
             } else {
                 Style::default().fg(TEXT_DIM)
             };
@@ -185,9 +185,7 @@ impl<'a> HelpBrowser<'a> {
             HelpContent::Title(text) => {
                 vec![StyledLine::new(
                     text.clone(),
-                    Style::default()
-                        .fg(CYAN_PRIMARY)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
                 )]
             }
             HelpContent::Paragraph(text) => wrap_text(text, width as usize)

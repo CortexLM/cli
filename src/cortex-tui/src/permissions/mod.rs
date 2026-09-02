@@ -43,16 +43,15 @@ impl PermissionMode {
     }
 
     /// Returns the display color for this permission mode.
+    ///
+    /// The chrome is gray: only the allow-all mode carries the diagnostic
+    /// red, because it disables every approval.
     pub fn display_color(&self) -> Color {
         match self {
-            // Red for dangerous YOLO mode
-            PermissionMode::Yolo => Color::Rgb(0xFF, 0x60, 0x60),
-            // Yellow for low caution
-            PermissionMode::Low => Color::Rgb(0xFF, 0xD7, 0x00),
-            // Orange for medium caution
-            PermissionMode::Medium => Color::Rgb(0xFF, 0xA5, 0x00),
-            // Green for high security
-            PermissionMode::High => Color::Rgb(0x50, 0xFA, 0x7B),
+            PermissionMode::Yolo => cortex_core::style::ERROR,
+            PermissionMode::Low => cortex_core::style::TEXT_DIM,
+            PermissionMode::Medium => cortex_core::style::TEXT,
+            PermissionMode::High => cortex_core::style::TEXT,
         }
     }
 
@@ -218,21 +217,22 @@ mod tests {
 
     #[test]
     fn test_permission_mode_display_color() {
+        // Allow-all is the one red badge; the rest stay gray.
         assert_eq!(
             PermissionMode::Yolo.display_color(),
-            Color::Rgb(0xFF, 0x60, 0x60)
+            cortex_core::style::ERROR
         );
         assert_eq!(
             PermissionMode::Low.display_color(),
-            Color::Rgb(0xFF, 0xD7, 0x00)
+            cortex_core::style::TEXT_DIM
         );
         assert_eq!(
             PermissionMode::Medium.display_color(),
-            Color::Rgb(0xFF, 0xA5, 0x00)
+            cortex_core::style::TEXT
         );
         assert_eq!(
             PermissionMode::High.display_color(),
-            Color::Rgb(0x50, 0xFA, 0x7B)
+            cortex_core::style::TEXT
         );
     }
 

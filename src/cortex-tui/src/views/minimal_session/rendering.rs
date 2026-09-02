@@ -53,8 +53,7 @@ pub fn render_message_with_theme(
 
             // Create renderer with width and theme
             let content_width = width.saturating_sub(4); // Leave margin
-            let renderer =
-                MarkdownRenderer::with_theme(markdown_theme.clone()).with_width(content_width);
+            let renderer = MarkdownRenderer::cortex(markdown_theme.clone(), content_width);
 
             // Render markdown content
             let mut rendered_lines = renderer.render(&msg.content);
@@ -208,6 +207,21 @@ pub fn render_tool_call(
             .fg(colors.text)
             .add_modifier(Modifier::BOLD),
     ));
+    // A diff result carries its `+N -N` stat on the tile header: the `+N`
+    // is the diff green, the `-N` stays dim.
+    if let Some(result) = call.result.as_ref() {
+        if crate::views::diff::looks_like_diff(&result.output) {
+            let (adds, dels) = crate::views::diff::count_changes(&result.output);
+            header_spans.push(Span::styled(
+                format!(" +{adds}"),
+                Style::default().fg(colors.diff_add),
+            ));
+            header_spans.push(Span::styled(
+                format!(" -{dels}"),
+                Style::default().fg(colors.text_dim),
+            ));
+        }
+    }
     lines.push(Line::from(header_spans));
 
     if call.status == ToolStatus::Running && call.result.is_none() && !call.live_output.is_empty() {
@@ -227,35 +241,33 @@ pub fn render_tool_call(
         .map(|r| r.output.as_str())
         .unwrap_or("");
     if !body.is_empty() {
-        let max_body = if width < 50 { 4 } else { 8 };
-        let mut emitted = 0usize;
-        for raw in body.lines() {
-            if emitted >= max_body {
-                break;
-            }
-            let is_add = raw.starts_with('+') && !raw.starts_with("+++");
-            let is_del = raw.starts_with('-') && !raw.starts_with("---");
-            // Diff additions are the only green in the chrome.
-            let color = if is_add {
-                colors.diff_add
-            } else if is_del {
-                colors.error
-            } else {
-                colors.text_dim
-            };
-            let wrapped = wrap_or_drop(raw, inner);
-            if wrapped.is_empty() {
-                continue;
-            }
-            for wrapped_line in wrapped {
+        let max_body = if width < 50 { 6 } else { 14 };
+        if crate::views::diff::looks_like_diff(body) {
+            // An Edit / Write result that is a unified diff renders as a
+            // reviewer's hunk: dim gutter, white context, red `-`, green `+`,
+            // and word-level colour on a changed line.
+            let rendered = crate::views::diff::render_unified_diff(body, width, colors);
+            lines.extend(rendered.into_iter().take(max_body));
+        } else {
+            let mut emitted = 0usize;
+            for raw in body.lines() {
                 if emitted >= max_body {
                     break;
                 }
-                lines.push(Line::from(Span::styled(
-                    wrapped_line,
-                    Style::default().fg(color),
-                )));
-                emitted += 1;
+                let wrapped = wrap_or_drop(raw, inner);
+                if wrapped.is_empty() {
+                    continue;
+                }
+                for wrapped_line in wrapped {
+                    if emitted >= max_body {
+                        break;
+                    }
+                    lines.push(Line::from(Span::styled(
+                        wrapped_line,
+                        Style::default().fg(colors.text_dim),
+                    )));
+                    emitted += 1;
+                }
             }
         }
     } else if let Some(ref result) = call.result {
@@ -635,7 +647,7 @@ pub fn render_text_content_with_theme(
     use cortex_core::markdown::MarkdownRenderer;
 
     let content_width = width.saturating_sub(4);
-    let renderer = MarkdownRenderer::with_theme(markdown_theme.clone()).with_width(content_width);
+    let renderer = MarkdownRenderer::cortex(markdown_theme.clone(), content_width);
 
     // No cursor for finalized content
     renderer.render(content)
@@ -652,7 +664,7 @@ pub fn render_streaming_content_with_theme(
     use cortex_core::markdown::MarkdownRenderer;
 
     let content_width = width.saturating_sub(4);
-    let renderer = MarkdownRenderer::with_theme(markdown_theme.clone()).with_width(content_width);
+    let renderer = MarkdownRenderer::cortex(markdown_theme.clone(), content_width);
     let mut rendered_lines = renderer.render(content);
 
     // Add streaming cursor to the last line

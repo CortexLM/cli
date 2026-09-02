@@ -72,6 +72,9 @@ arboard = { workspace = true }
 # File search and fuzzy matching
 walkdir = { workspace = true }
 
+# Word-level diffs for Edit tiles
+similar = { workspace = true }
+
 # External editor
 which = { workspace = true }
 

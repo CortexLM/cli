@@ -116,6 +116,14 @@ pub fn lock_scene_ids() -> &'static [&'static str] {
         "mcp_call",
         "task",
         "edit",
+        // Auto-formatted replies: every one of these renders through the live
+        // session view and the real `MarkdownRenderer` / diff renderer.
+        "md_table",
+        "md_fence",
+        "md_list",
+        "md_mixed",
+        "diff_hunk",
+        "diff_word",
     ]
 }
 
@@ -229,6 +237,12 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
                 "session_loading" => draw_session(frame, loading_session_state()),
                 "session_error" => draw_session(frame, error_session_state()),
                 "session_success" => draw_session(frame, success_session_state()),
+                "md_table" => draw_session(frame, reply_state(MD_TABLE_PROMPT, MD_TABLE)),
+                "md_fence" => draw_session(frame, reply_state(MD_FENCE_PROMPT, MD_FENCE)),
+                "md_list" => draw_session(frame, reply_state(MD_LIST_PROMPT, MD_LIST)),
+                "md_mixed" => draw_session(frame, reply_state(MD_MIXED_PROMPT, MD_MIXED)),
+                "diff_hunk" => draw_session(frame, edit_state(DIFF_HUNK, 5, 1)),
+                "diff_word" => draw_session(frame, edit_state(DIFF_WORD, 1, 1)),
                 board if crate::lock_boards::is_lock_board(board) => {
                     crate::lock_boards::render_lock_board(board, area, frame.buffer_mut());
                 }
@@ -294,6 +308,133 @@ fn success_session_state() -> AppState {
     state.add_message(Message::assistant(
         "Signed in. Auth module looks consistent.",
     ));
+    state
+}
+
+// ---------------------------------------------------------------------------
+// Auto-formatted reply fixtures
+// ---------------------------------------------------------------------------
+
+const MD_TABLE_PROMPT: &str = "Compare the three models for this project";
+/// A reply with a real markdown table: header + 3 rows.
+const MD_TABLE: &str = r#"Here is how the three models compare for the rate-limiter work:
+
+| Model | Effort | Billing |
+|---|---|---|
+| Mini 1 | Medium | per request |
+| Cortex 1 | High | per request |
+| Max 1 | MAX | per token |
+
+Mini 1 is the default; switch with /model when a change needs deeper reasoning."#;
+
+const MD_FENCE_PROMPT: &str = "Show me the middleware you wrote";
+/// A reply with a fenced TypeScript block (raw string: the fence keeps its
+/// indentation).
+const MD_FENCE: &str = r#"The limiter is a sliding window over a Redis sorted set:
+
+```ts
+export async function rateLimit(key: string, limit = 60) {
+  const now = Date.now();
+  await redis.zadd(key, now, String(now));
+  await redis.zremrangebyscore(key, 0, now - 60_000);
+  const count = await redis.zcard(key); // requests in the window
+  return count <= limit;
+}
+```
+
+It fails open when Redis is unreachable and logs a warning instead."#;
+
+const MD_LIST_PROMPT: &str = "What is the plan?";
+/// A reply with a nested bullet list and a task list in one turn.
+const MD_LIST: &str = r#"Two parts, then the checklist:
+
+- Redis client
+  - one shared connection per process
+  - fail open when Redis is unreachable
+- Middleware
+  - sliding window per API key
+  - 429 with Retry-After
+
+Checklist:
+
+- [x] Add the Redis client singleton
+- [x] Write the rateLimit middleware
+- [ ] Wire it into POST /v1/completions
+- [ ] Integration tests with ioredis-mock"#;
+
+const MD_MIXED_PROMPT: &str = "Summarize what changed";
+/// Heading + bullets + table + fence in one reply — the auto-format proof.
+const MD_MIXED: &str = r#"## Rate limiting — what changed
+
+- 60 req/min per API key, sliding window
+- Fails open if Redis is unreachable, with a warning
+
+| Route | Limit | Window |
+|---|---|---|
+| POST /v1/completions | 60 | 60s |
+| POST /v1/embeddings | 120 | 60s |
+
+```ts
+export const limiter = rateLimit({ limit: 60, windowSec: 60 });
+app.post("/v1/completions", { preHandler: [requireApiKey, limiter] });
+```
+
+Run `npm test -- rateLimit` to see the 429 path covered."#;
+
+/// Edit result: a unified hunk with context, deletions and additions.
+const DIFF_HUNK: &str = r#"@@ -20,6 +20,10 @@
+ import Redis from "ioredis";
+ import type { FastifyRequest } from "fastify";
+-const limit = 30;
++const limit = 60;
++const windowSec = 60;
+ 
+ export function rateLimit(opts: RateLimitOpts) {
+-  const redis = new Redis();
++  const redis = new Redis(process.env.REDIS_URL);
++  const key = `rl:${opts.keyOf(req)}`;
++  await redis.zremrangebyscore(key, 0, now - windowSec * 1000);
+   return async (req: FastifyRequest, reply: FastifyReply) => {"#;
+
+/// Edit result: one changed line, so only the mutated token is coloured.
+const DIFF_WORD: &str = r#"@@ -21,3 +21,3 @@
+ import Redis from "ioredis";
+-const limit = 30;
++const limit = 60;
+ export function rateLimit(opts: RateLimitOpts) {"#;
+
+/// A finished turn: the user's prompt on its bar, then `reply` rendered by
+/// the real markdown renderer.
+fn reply_state(prompt: &str, reply: &str) -> AppState {
+    let mut state = lock_app();
+    state.context_percent = 91;
+    state.add_message(Message::user(prompt));
+    state.add_message(Message::assistant(reply));
+    state
+}
+
+/// A finished Edit tile whose result is a unified diff.
+fn edit_state(diff: &str, adds: usize, dels: usize) -> AppState {
+    use crate::views::tool_call::{ToolCallDisplay, ToolResultDisplay, ToolStatus};
+
+    let mut state = lock_app();
+    state.context_percent = 92;
+    state.add_message(Message::user(
+        "Raise the limit to 60 and read the Redis URL from the environment",
+    ));
+    let mut call = ToolCallDisplay::new(
+        "edit_1".into(),
+        "Edit".into(),
+        serde_json::json!({"file_path": "src/middleware/rateLimit.ts"}),
+        1,
+    );
+    call.set_status(ToolStatus::Completed);
+    call.set_result(ToolResultDisplay {
+        output: diff.to_string(),
+        success: true,
+        summary: format!("src/middleware/rateLimit.ts · +{adds} -{dels}"),
+    });
+    state.tool_calls.push(call);
     state
 }
 
@@ -450,7 +591,32 @@ mod tests {
         "session_loading",
         "session_error",
         "session_success",
+        "md_table",
+        "md_fence",
+        "md_list",
+        "md_mixed",
+        "diff_hunk",
+        "diff_word",
     ];
+
+    /// Scenes whose Edit tile carries a unified diff: red on `-` rows and
+    /// green on `+` rows are the diff, not diagnostics.
+    const DIFF_SCENES: &[&str] = &["diff_hunk", "diff_word"];
+
+    /// Scenes whose reply carries a fenced code block with its `│` gutter.
+    const FENCE_SCENES: &[&str] = &["md_fence", "md_mixed"];
+
+    /// The marker of a diff row once its gutter (spaces and line numbers) is
+    /// stripped: `+`, `-`, or none.
+    fn diff_marker(row: &str) -> Option<char> {
+        let rest = row
+            .trim_start()
+            .trim_start_matches(|c: char| c.is_ascii_digit() || c == ' ');
+        match rest.chars().next() {
+            Some(c @ ('+' | '-')) if rest.chars().nth(1) == Some(' ') => Some(c),
+            _ => None,
+        }
+    }
 
     /// Scenes that begin with a past user turn (`> …` on the gray bar).
     const TURN_SCENES: &[&str] = &[
@@ -629,8 +795,13 @@ mod tests {
                 for (x, y, cell) in cells(&frame.buffer) {
                     if cell.style().fg == Some(SUCCESS) || cell.style().fg == Some(DIFF_ADD) {
                         let symbol = cell.symbol();
+                        // In a diff, the whole `+` row (or the inserted token)
+                        // is the diff green.
+                        let on_addition_row = DIFF_SCENES.contains(id)
+                            && diff_marker(&row_text(&frame.buffer, y)) == Some('+');
                         assert!(
-                            symbol == "✓"
+                            on_addition_row
+                                || symbol == "✓"
                                 || symbol == "+"
                                 || symbol == " "
                                 || symbol.chars().all(|c| c.is_ascii_digit()),
@@ -740,10 +911,25 @@ mod tests {
                     }
                 }
                 let error_scene = matches!(*id, "diagnostics" | "session_error" | "login_error");
-                assert!(
-                    error_scene || red.trim().is_empty(),
-                    "{id} paints red outside diagnostics at {size:?}: {red:?}"
-                );
+                if DIFF_SCENES.contains(id) {
+                    // Red is the diff's `-` rows (or the removed token), never
+                    // a context or `+` row.
+                    for (_, y, cell) in cells(&frame.buffer) {
+                        if cell.style().fg == Some(ERROR) && cell.symbol() != " " {
+                            assert_eq!(
+                                diff_marker(&row_text(&frame.buffer, y)),
+                                Some('-'),
+                                "{id} paints red off a deletion row at {size:?}:\n{}",
+                                row_text(&frame.buffer, y)
+                            );
+                        }
+                    }
+                } else {
+                    assert!(
+                        error_scene || red.trim().is_empty(),
+                        "{id} paints red outside diagnostics at {size:?}: {red:?}"
+                    );
+                }
                 assert!(
                     *id == "diagnostics" || amber.trim().is_empty(),
                     "{id} paints amber outside diagnostics at {size:?}: {amber:?}"
@@ -960,6 +1146,315 @@ mod tests {
                 stream.plain
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Auto-formatted replies
+    // -----------------------------------------------------------------------
+
+    const BOX_GLYPHS: [char; 9] = ['┌', '┐', '└', '┘', '┼', '┬', '┴', '├', '┤'];
+
+    #[test]
+    fn md_table_is_a_gray_plus_ascii_grid() {
+        for size in SIZES {
+            let frame = render_lock_scene("md_table", size.0, size.1).expect("md_table");
+            let buf = &frame.buffer;
+            // `+---+` rules, `|` separators — and never Unicode box drawing.
+            let rule = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).trim_start().starts_with("+-"))
+                .unwrap_or_else(|| panic!("no plus rule at {size:?}:\n{}", frame.plain));
+            let rule_text = row_text(buf, rule);
+            assert!(rule_text.contains("-+-"), "junctions are `+`: {rule_text}");
+            assert!(
+                frame.plain.contains("| Cortex 1 | High   | per request |"),
+                "{}",
+                frame.plain
+            );
+            for glyph in BOX_GLYPHS {
+                assert!(
+                    !frame.plain.contains(glyph),
+                    "md_table draws {glyph} at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
+            // Borders are the hairline gray, cells white, header bold white.
+            let x = rule_text.find('+').expect("corner") as u16;
+            assert_eq!(buf[(x, rule)].style().fg, Some(HAIRLINE), "{size:?}");
+            let row = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).contains("| Cortex 1"))
+                .expect("data row");
+            let text_x = row_text(buf, row).find('C').expect("cell") as u16;
+            assert_eq!(buf[(text_x, row)].style().fg, Some(TEXT));
+            let bar_x = row_text(buf, row).find('|').expect("separator") as u16;
+            assert_eq!(buf[(bar_x, row)].style().fg, Some(HAIRLINE));
+            // The table paints no background of its own (the user turn above
+            // it keeps its bar).
+            for x in 0..buf.area.width {
+                assert!(
+                    matches!(buf[(x, row)].style().bg, None | Some(Color::Reset)),
+                    "the table paints a background at {size:?} col {x}"
+                );
+            }
+        }
+        let wide = render_lock_scene("md_table", 120, 40).expect("md_table");
+        let header = (0..40u16)
+            .find(|y| row_text(&wide.buffer, *y).contains("| Model"))
+            .expect("header row");
+        let m = row_text(&wide.buffer, header).find('M').unwrap() as u16;
+        assert!(
+            wide.buffer[(m, header)]
+                .style()
+                .add_modifier
+                .contains(ratatui::style::Modifier::BOLD),
+            "header is bold"
+        );
+        // Header + 3 rows.
+        let rows = wide
+            .plain
+            .lines()
+            .filter(|l| l.trim_start().starts_with("| "))
+            .count();
+        assert_eq!(rows, 4, "{}", wide.plain);
+    }
+
+    #[test]
+    fn md_fence_has_lang_tag_line_numbers_and_hairlines() {
+        for size in SIZES {
+            let frame = render_lock_scene("md_fence", size.0, size.1).expect("md_fence");
+            let buf = &frame.buffer;
+            // A dim line-number gutter on every code row, the closing
+            // hairline under the last one.
+            let last = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).starts_with("7 │ }"))
+                .unwrap_or_else(|| panic!("no numbered code at {size:?}:\n{}", frame.plain));
+            assert_eq!(buf[(0, last)].style().fg, Some(HAIRLINE), "gutter is gray");
+            assert!(
+                row_text(buf, last + 1).trim_end().chars().all(|c| c == '─'),
+                "closing hairline at {size:?}:\n{}",
+                frame.plain
+            );
+            assert_eq!(buf[(0, last + 1)].style().fg, Some(HAIRLINE));
+            // No box: the fence has no side borders or corners.
+            for glyph in BOX_GLYPHS {
+                assert!(!frame.plain.contains(glyph), "{size:?}:\n{}", frame.plain);
+            }
+        }
+        let wide = render_lock_scene("md_fence", 120, 40).expect("md_fence");
+        let buf = &wide.buffer;
+        // The opening hairline carries the language tag.
+        let top = (0..40u16)
+            .find(|y| row_text(buf, *y).starts_with("─ ts ─"))
+            .unwrap_or_else(|| panic!("no tagged hairline:\n{}", wide.plain));
+        assert_eq!(buf[(0, top)].style().fg, Some(HAIRLINE));
+        assert_eq!(buf[(2, top)].style().fg, Some(TEXT_DIM), "lang tag is dim");
+        // Numbered, indented code with bold keywords; indentation survives.
+        assert!(wide.plain.contains("1 │ export async function rateLimit"));
+        assert!(wide.plain.contains("2 │   const now = Date.now();"));
+        let code = top + 1;
+        let e = row_text(buf, code).find("export").unwrap() as u16;
+        assert!(
+            buf[(e, code)]
+                .style()
+                .add_modifier
+                .contains(ratatui::style::Modifier::BOLD),
+            "keywords are bold"
+        );
+        assert_eq!(buf[(e, code)].style().fg, Some(TEXT));
+        // The fence introduces no colour of its own.
+        for y in top..=top + 8 {
+            for x in 0..120u16 {
+                if let Some(Color::Rgb(r, g, b)) = buf[(x, y)].style().fg {
+                    let spread = r.max(g).max(b) - r.min(g).min(b);
+                    assert!(spread <= 25, "fence paints a colour at ({x},{y})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn md_list_nests_bullets_and_checks_tasks() {
+        let wide = render_lock_scene("md_list", 120, 40).expect("md_list");
+        for needle in [
+            "• Redis client",
+            "  ◦ one shared connection per process",
+            "• Middleware",
+            "  ◦ sliding window per API key",
+            "✓ Add the Redis client singleton",
+            "○ Wire it into POST /v1/completions",
+        ] {
+            assert!(
+                wide.plain.contains(needle),
+                "missing {needle}:\n{}",
+                wide.plain
+            );
+        }
+        assert!(!wide.plain.contains("[x]") && !wide.plain.contains("[ ]"));
+        // `✓` is the only green; bullets and `○` are dim.
+        let green = painted_chars(&wide.ansi, GREEN_FG);
+        assert_eq!(green.trim(), "✓ ✓", "{green:?}");
+        let buf = &wide.buffer;
+        let bullet = (0..40u16)
+            .find(|y| row_text(buf, *y).starts_with("• Redis client"))
+            .expect("bullet");
+        assert_eq!(buf[(0, bullet)].style().fg, Some(TEXT_DIM));
+        assert_eq!(buf[(2, bullet)].style().fg, Some(TEXT));
+        let narrow = render_lock_scene("md_list", 40, 12).expect("md_list narrow");
+        assert!(
+            narrow.plain.contains("✓ Add the Redis client singleton"),
+            "{}",
+            narrow.plain
+        );
+        assert!(narrow.plain.contains("○ Wire it into"), "{}", narrow.plain);
+    }
+
+    #[test]
+    fn md_mixed_is_the_auto_format_proof() {
+        let wide = render_lock_scene("md_mixed", 120, 40).expect("md_mixed");
+        let buf = &wide.buffer;
+        // Heading (bold white, no `##`), bullets, a plus-ASCII table, a
+        // tagged fence and a code chip — in one reply.
+        let heading = (0..40u16)
+            .find(|y| row_text(buf, *y).starts_with("Rate limiting — what changed"))
+            .unwrap_or_else(|| panic!("no heading:\n{}", wide.plain));
+        assert!(
+            buf[(0, heading)]
+                .style()
+                .add_modifier
+                .contains(ratatui::style::Modifier::BOLD)
+        );
+        assert!(!wide.plain.contains("##"));
+        for needle in [
+            "• 60 req/min per API key, sliding window",
+            "+----------------------+-------+--------+",
+            "| POST /v1/completions | 60    | 60s    |",
+            "─ ts ─",
+            "1 │ export const limiter = rateLimit(",
+            "Run npm test -- rateLimit",
+        ] {
+            assert!(
+                wide.plain.contains(needle),
+                "missing {needle}:\n{}",
+                wide.plain
+            );
+        }
+        for glyph in BOX_GLYPHS {
+            assert!(!wide.plain.contains(glyph), "{}", wide.plain);
+        }
+        let narrow = render_lock_scene("md_mixed", 40, 12).expect("md_mixed narrow");
+        assert!(narrow.plain.contains("─ ts ─"), "{}", narrow.plain);
+        assert!(
+            narrow.plain.contains("1 │ export const"),
+            "{}",
+            narrow.plain
+        );
+    }
+
+    #[test]
+    fn diff_hunk_has_gutter_context_deletions_and_additions() {
+        for size in SIZES {
+            let frame = render_lock_scene("diff_hunk", size.0, size.1).expect("diff_hunk");
+            for needle in [
+                "● Edit src/middleware/rateLimit.ts +5 -2",
+                "@@ -20,6 +20,10 @@",
+                "20 20   import Redis",
+                "22    - const limit = 30;",
+                "   22 + const limit = 60;",
+                "   23 + const windowSec = 60;",
+            ] {
+                assert!(
+                    frame.plain.contains(needle),
+                    "diff_hunk missing `{needle}` at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
+            let buf = &frame.buffer;
+            let minus = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).contains("- const limit = 30;"))
+                .expect("deletion row");
+            let plus = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).contains("+ const windowSec"))
+                .expect("addition row");
+            let ctx = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).contains("20 20   import"))
+                .expect("context row");
+            // Gutter numbers dim; context white; a whole added line green; a
+            // deleted line's marker red.
+            assert_eq!(buf[(0, ctx)].style().fg, Some(TEXT_DIM));
+            let imp = row_text(buf, ctx).find("import").unwrap() as u16;
+            assert_eq!(buf[(imp, ctx)].style().fg, Some(TEXT));
+            let m = row_text(buf, minus).find('-').unwrap() as u16;
+            assert_eq!(buf[(m, minus)].style().fg, Some(ERROR));
+            let p = row_text(buf, plus).find('+').unwrap() as u16;
+            assert_eq!(buf[(p, plus)].style().fg, Some(DIFF_ADD));
+            let w = row_text(buf, plus).find("windowSec").unwrap() as u16;
+            assert_eq!(buf[(w, plus)].style().fg, Some(DIFF_ADD));
+        }
+        // The stat on the tile: `+5` green, `-2` dim.
+        let wide = render_lock_scene("diff_hunk", 120, 40).expect("diff_hunk");
+        assert!(painted_chars(&wide.ansi, GREEN_FG).contains("+5"));
+        assert!(
+            wide.plain.contains("26 29     return async"),
+            "{}",
+            wide.plain
+        );
+    }
+
+    #[test]
+    fn diff_word_tints_only_the_mutated_token() {
+        for size in SIZES {
+            let frame = render_lock_scene("diff_word", size.0, size.1).expect("diff_word");
+            let buf = &frame.buffer;
+            let minus = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).contains("- const limit = 30;"))
+                .unwrap_or_else(|| panic!("no deletion at {size:?}:\n{}", frame.plain));
+            let plus = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).contains("+ const limit = 60;"))
+                .expect("addition");
+            let col = |y: u16, token: &str| row_text(buf, y).find(token).unwrap() as u16;
+            // `const` and `limit` stay dim on both rows; only `30;` is red and
+            // only `60;` is green.
+            assert_eq!(buf[(col(minus, "const"), minus)].style().fg, Some(TEXT_DIM));
+            assert_eq!(buf[(col(minus, "limit"), minus)].style().fg, Some(TEXT_DIM));
+            assert_eq!(buf[(col(minus, "30;"), minus)].style().fg, Some(ERROR));
+            assert_eq!(buf[(col(plus, "const"), plus)].style().fg, Some(TEXT_DIM));
+            assert_eq!(buf[(col(plus, "60;"), plus)].style().fg, Some(DIFF_ADD));
+            // Markers carry the colour; nothing carries a tinted background.
+            assert_eq!(buf[(col(minus, "-"), minus)].style().fg, Some(ERROR));
+            assert_eq!(buf[(col(plus, "+"), plus)].style().fg, Some(DIFF_ADD));
+            assert_eq!(
+                painted_chars(&frame.ansi, "38;2;255;107;107").trim(),
+                "- 30;",
+                "red is the marker and the removed token only at {size:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_call_issue_list_is_a_plus_ascii_table() {
+        for size in SIZES {
+            let frame = render_lock_scene("mcp_call", size.0, size.1).expect("mcp_call");
+            assert!(
+                frame.plain.contains("+---------+"),
+                "mcp_call table rule at {size:?}:\n{}",
+                frame.plain
+            );
+            assert!(frame.plain.contains("| Issue   |"), "{}", frame.plain);
+            assert!(frame.plain.contains("| API-184 |"), "{}", frame.plain);
+            for glyph in BOX_GLYPHS {
+                assert!(!frame.plain.contains(glyph), "{}", frame.plain);
+            }
+        }
+        let wide = render_lock_scene("mcp_call", 120, 40).expect("mcp_call");
+        assert!(
+            wide.plain.contains("| In Progress | you      |"),
+            "{}",
+            wide.plain
+        );
+        assert!(
+            wide.plain.contains("| API-172 | Retry-After on 429"),
+            "{}",
+            wide.plain
+        );
     }
 
     #[test]
@@ -1309,7 +1804,8 @@ mod tests {
         );
         let mcp = render_lock_scene("mcp_call", 120, 40).expect("mcp_call");
         assert!(
-            mcp.plain.contains("429 body    In Progress"),
+            mcp.plain
+                .contains("| API-184 | Rate limit 429 body  | In Progress | you      |"),
             "{}",
             mcp.plain
         );
@@ -1535,6 +2031,9 @@ mod tests {
                     }
                     if glyph == '│' && *id == "config" {
                         continue; // the config tree branches
+                    }
+                    if glyph == '│' && FENCE_SCENES.contains(id) {
+                        continue; // the fence's line-number gutter
                     }
                     assert!(
                         !frame.plain.contains(glyph),
@@ -1925,6 +2424,8 @@ mod tests {
             "interrupt",
             "footer_max",
             "permission",
+            "diff_hunk",
+            "diff_word",
         ];
         for id in tiles {
             for size in SIZES {

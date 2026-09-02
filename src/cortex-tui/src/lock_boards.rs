@@ -6,6 +6,7 @@
 //! selection; green covers `✓` and `+diff`; red and amber stay on
 //! diagnostics; the Thinking status is the muted gold.
 
+use cortex_core::markdown::{TableBuilder, render_table};
 use cortex_core::style::{
     ACCENT, DIFF_ADD, ERROR, HAIRLINE, PANEL_BG, SELECTION_BG, SUCCESS, SURFACE_2, TEXT, TEXT_DIM,
     THINKING, USER_TURN_BG, WARNING,
@@ -3630,21 +3631,46 @@ fn board_mcp_call(area: Rect, buf: &mut Buffer) {
         ),
     ]));
     lines.push(dim("  team=API  state=started"));
-    let rows = [
-        ("  API-184  Rate limit 429 body", "In Progress  you"),
-        ("  API-191  Sliding window spike", "In Progress  you"),
+    // The issue list is a real table — the same plus-ASCII grid the markdown
+    // renderer draws: gray `+---+` borders, bold white header, white cells.
+    // At 40 columns the assignee column gives way so the ids stay whole.
+    let mut table = TableBuilder::new();
+    let headers: &[&str] = if compact(area) {
+        &["Issue", "Title", "State"]
+    } else {
+        &["Issue", "Title", "State", "Assignee"]
+    };
+    table.start_header();
+    for header in headers {
+        table.add_cell(header.to_string());
+    }
+    table.end_header();
+    let issues = [
+        ("API-184", "Rate limit 429 body", "In Progress", "you"),
+        ("API-191", "Sliding window spike", "In Progress", "you"),
+        ("API-172", "Retry-After on 429", "Todo", "mathis"),
     ];
-    for (item, status) in rows {
-        // Issue rows keep their indentation and column gaps; the status
-        // column is dropped at 40 columns rather than smashed into the title.
-        let item_fit = fit_line(item, w);
-        let mut spans = vec![Span::styled(item_fit.clone(), Style::default().fg(TEXT))];
-        if item_fit.chars().count() + 4 + status.chars().count() <= w {
-            spans.push(Span::styled(
-                format!("    {status}"),
-                Style::default().fg(TEXT_DIM),
-            ));
+    for (id, title, state, who) in issues {
+        let mut cells: Vec<&str> = vec![id, title, state];
+        if !compact(area) {
+            cells.push(who);
         }
+        for cell in cells {
+            table.add_cell(cell.to_string());
+        }
+        table.end_row();
+    }
+    let mut table = table.build();
+    table.calculate_column_widths(w.saturating_sub(2) as u16);
+    for row in render_table(
+        &table,
+        HAIRLINE,
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        Style::default().fg(TEXT),
+        w.saturating_sub(2) as u16,
+    ) {
+        let mut spans = vec![Span::raw("  ")];
+        spans.extend(row.spans);
         lines.push(Line::from(spans));
     }
     paint_session(

@@ -66,6 +66,14 @@ and `+N` diff additions, red / amber only on diagnostics, and the Thinking
 status is the muted gold `#C9A95C`. The footer is the model on the left and
 one shortcut hint on the right, all gray.
 
+Replies auto-format through the real `MarkdownRenderer`: markdown tables are
+the gray plus-ASCII grid (`+---+`, `|` — never Unicode box drawing), fenced
+code sits between two hairlines with its language tag, a dim line-number
+gutter and monochrome (bold-keyword) highlighting, nested bullets indent
+(`•` / `◦`), and task items render as `✓` / `○`. Edit tiles show unified
+hunks with a dim old/new gutter, white context, red `-`, green `+`, and
+word-level colour on a changed line.
+
 Splash copy in these frames is the lock line `Cortex CLI v1.0.0`. The shipped
 binary still reports the crate version.
 
@@ -132,9 +140,15 @@ binary still reports the crate version.
 | `delete.png` | Delete confirm radios |
 | `list.png` | List directory entries |
 | `fetch.png` | Fetch URL excerpt |
-| `mcp_call.png` | MCP tool call + table |
+| `mcp_call.png` | MCP tool call + issue list as a `+---+` plus-ASCII table |
 | `task.png` | Task running |
 | `edit.png` | Edit tile +diff |
+| `md_table.png` | Reply with a markdown table: gray `+---+` plus-ASCII grid, header + 3 rows |
+| `md_fence.png` | Reply with a fenced TypeScript block: `─ ts ─` hairline, line numbers, bold keywords, closing hairline |
+| `md_list.png` | Reply with a nested bullet list (`•` / `◦`) and a `✓` / `○` task list |
+| `md_mixed.png` | Heading + bullets + table + fence in one reply — the auto-format proof |
+| `diff_hunk.png` | Edit tile + unified hunk: dim gutter, white context, red `-`, green `+` |
+| `diff_word.png` | Edit tile, one changed line: only the mutated token is coloured |
 EOF
 
 echo "Wrote $output_dir"

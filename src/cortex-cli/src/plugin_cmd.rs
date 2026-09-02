@@ -77,13 +77,9 @@ timeout_ms = 30000    # 30 seconds
 const RUST_TEMPLATE: &str = r#"//! {{plugin_name}} - A Cortex plugin
 //!
 //! Build with: cargo build --target wasm32-wasi --release
-
-#![no_std]
-
-extern crate alloc;
-
-use alloc::string::String;
-use alloc::vec::Vec;
+//!
+//! Uses the default Rust allocator. Do not add wee_alloc (unmaintained:
+//! RUSTSEC-2022-0054 / GHSA-rc23-xxgq-x27g).
 
 // ============================================================================
 // Host function imports
@@ -147,22 +143,6 @@ pub extern "C" fn cmd_{{command_name_snake}}() -> i32 {
     log_info("{{command_name}} command executed");
     0
 }
-
-// ============================================================================
-// Panic handler (required for no_std)
-// ============================================================================
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
-// ============================================================================
-// Global allocator (required for alloc)
-// ============================================================================
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 "#;
 
 /// Advanced Rust template with TUI hooks.
@@ -175,14 +155,9 @@ const RUST_ADVANCED_TEMPLATE: &str = r#"//! {{plugin_name}} - Advanced Cortex Pl
 //! - Event handling
 //!
 //! Build with: cargo build --target wasm32-wasi --release
-
-#![no_std]
-
-extern crate alloc;
-
-use alloc::string::String;
-use alloc::vec::Vec;
-use alloc::vec;
+//!
+//! Uses the default Rust allocator. Do not add wee_alloc (unmaintained:
+//! RUSTSEC-2022-0054 / GHSA-rc23-xxgq-x27g).
 
 // ============================================================================
 // Host function imports
@@ -354,22 +329,6 @@ pub extern "C" fn action_{{plugin_id_snake}}_action() -> i32 {
     show_notification(ToastLevel::Success, "Action executed!", 1500);
     0
 }
-
-// ============================================================================
-// Panic handler
-// ============================================================================
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
-// ============================================================================
-// Global allocator
-// ============================================================================
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 "#;
 
 /// Cargo.toml template for plugins.
@@ -382,9 +341,6 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
-
-[dependencies]
-wee_alloc = "0.4"
 
 [profile.release]
 opt-level = "s"
@@ -3544,12 +3500,12 @@ mod tests {
         let code = generate_rust_code("Test Plugin", "test-cmd");
 
         assert!(
-            code.contains("#![no_std]"),
-            "Rust code should have no_std attribute"
+            !code.contains("#![no_std]"),
+            "Rust code should use std so the default allocator is available"
         );
         assert!(
-            code.contains("extern crate alloc"),
-            "Rust code should have alloc extern"
+            !code.contains("wee_alloc"),
+            "Rust code should not use unmaintained wee_alloc"
         );
     }
 
@@ -3589,24 +3545,21 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_rust_code_has_panic_handler() {
+    fn test_generate_rust_code_uses_default_allocator() {
         let code = generate_rust_code("Plugin", "cmd");
 
         assert!(
-            code.contains("#[panic_handler]"),
-            "Rust code should have panic handler"
+            !code.contains("#[panic_handler]"),
+            "std provides the panic handler; generated code should not define one"
         );
-    }
-
-    #[test]
-    fn test_generate_rust_code_has_global_allocator() {
-        let code = generate_rust_code("Plugin", "cmd");
-
         assert!(
-            code.contains("#[global_allocator]"),
-            "Rust code should have global allocator"
+            !code.contains("#[global_allocator]"),
+            "generated code should use the default Rust allocator"
         );
-        assert!(code.contains("wee_alloc"), "Rust code should use wee_alloc");
+        assert!(
+            !code.contains("wee_alloc"),
+            "generated code must not use unmaintained wee_alloc"
+        );
     }
 
     #[test]
@@ -3652,12 +3605,12 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_cargo_toml_has_wee_alloc_dependency() {
+    fn test_generate_cargo_toml_has_no_wee_alloc_dependency() {
         let cargo = generate_cargo_toml("plugin");
 
         assert!(
-            cargo.contains("wee_alloc"),
-            "Cargo.toml should have wee_alloc dependency"
+            !cargo.contains("wee_alloc"),
+            "Cargo.toml must not depend on unmaintained wee_alloc"
         );
     }
 

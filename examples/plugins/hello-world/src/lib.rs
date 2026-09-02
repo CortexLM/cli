@@ -7,13 +7,6 @@
 //!
 //! Build with: cargo build --target wasm32-wasi --release
 
-#![no_std]
-
-extern crate alloc;
-
-use alloc::format;
-use alloc::string::String;
-
 // ============================================================================
 // Host function imports from the "cortex" module
 // ============================================================================
@@ -224,34 +217,3 @@ pub extern "C" fn hook_tool_execute_before() -> i32 {
 
     0 // Continue with tool execution
 }
-
-// ============================================================================
-// Panic handler (required for #![no_std])
-// ============================================================================
-
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    // Attempt to log panic information before halting
-    if let Some(location) = info.location() {
-        let file = location.file();
-        let line = location.line();
-        // We can't easily format strings in no_std without allocating,
-        // so we log a generic message
-        let _ = (file, line); // Suppress unused warnings
-        log_message(4, "PANIC: hello-world plugin encountered a fatal error");
-    } else {
-        log_message(4, "PANIC: hello-world plugin panicked at unknown location");
-    }
-
-    // Enter infinite loop as required by panic handler
-    loop {
-        core::hint::spin_loop();
-    }
-}
-
-// ============================================================================
-// Global allocator (required for alloc crate)
-// ============================================================================
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

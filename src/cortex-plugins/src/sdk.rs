@@ -150,13 +150,9 @@ timeout_ms = 30000    # 30 seconds
 pub const RUST_TEMPLATE: &str = r#"//! {{plugin_name}} - A Cortex plugin
 //!
 //! Build with: cargo build --target wasm32-wasi --release
-
-#![no_std]
-
-extern crate alloc;
-
-use alloc::string::String;
-use alloc::vec::Vec;
+//!
+//! Uses the default Rust allocator. Do not add wee_alloc (unmaintained:
+//! RUSTSEC-2022-0054 / GHSA-rc23-xxgq-x27g).
 
 // ============================================================================
 // Host function imports
@@ -235,22 +231,6 @@ pub extern "C" fn cmd_{{command_name_snake}}() -> i32 {
 //     log_debug("Tool execute before hook triggered");
 //     0 // 0 = continue, 1 = skip, 2 = abort
 // }
-
-// ============================================================================
-// Panic handler (required for no_std)
-// ============================================================================
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
-// ============================================================================
-// Global allocator (required for alloc)
-// ============================================================================
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 "#;
 
 /// Cargo.toml template for a plugin.
@@ -263,9 +243,6 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
-
-[dependencies]
-wee_alloc = "0.4"
 
 [profile.release]
 opt-level = "s"
@@ -667,14 +644,9 @@ pub const RUST_ADVANCED_TEMPLATE: &str = r#"//! {{plugin_name}} - Advanced Corte
 //! - Event handling
 //!
 //! Build with: cargo build --target wasm32-wasi --release
-
-#![no_std]
-
-extern crate alloc;
-
-use alloc::string::String;
-use alloc::vec::Vec;
-use alloc::vec;
+//!
+//! Uses the default Rust allocator. Do not add wee_alloc (unmaintained:
+//! RUSTSEC-2022-0054 / GHSA-rc23-xxgq-x27g).
 
 // ============================================================================
 // Host function imports
@@ -864,30 +836,6 @@ pub extern "C" fn action_{{plugin_id_snake}}_action() -> i32 {
     show_notification(ToastLevel::Success, "Action executed!", 1500);
     0
 }
-
-// ============================================================================
-// Panic handler
-// ============================================================================
-
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    // Try to log panic info
-    if let Some(location) = info.location() {
-        let file = location.file();
-        let line = location.line();
-        log_error("PANIC occurred");
-        let _ = file;
-        let _ = line;
-    }
-    loop {}
-}
-
-// ============================================================================
-// Global allocator
-// ============================================================================
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 "#;
 
 // ============================================================================

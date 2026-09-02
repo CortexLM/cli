@@ -71,14 +71,13 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies]
-wee_alloc = "0.4"
-
 [profile.release]
 opt-level = "s"      # Optimize for size
 lto = true           # Link-time optimization
 strip = true         # Strip symbols
 ```
+
+Use the default Rust allocator. Do not add `wee_alloc` — it is unmaintained (`RUSTSEC-2022-0054`).
 
 ### Step 4: Create the Plugin Manifest
 
@@ -117,10 +116,6 @@ Replace `src/lib.rs` with:
 
 ```rust
 //! Hello Plugin - A simple Cortex plugin example
-
-#![no_std]
-
-extern crate alloc;
 
 // Host function imports
 #[link(wasm_import_module = "cortex")]
@@ -175,22 +170,6 @@ pub extern "C" fn cmd_hello() -> i32 {
     log_info("Hello, World!");
     0
 }
-
-// ============================================================================
-// Required: Panic Handler
-// ============================================================================
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
-// ============================================================================
-// Required: Global Allocator
-// ============================================================================
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 ```
 
 ### Step 6: Create .gitignore
@@ -439,7 +418,7 @@ timeout_ms = 30000  # Longer timeout for debugging
    ```
 
 2. Optimize allocations:
-   - Use `wee_alloc` (small allocator)
+   - Use the default Rust allocator (do not add `wee_alloc`; it is unmaintained)
    - Avoid large static allocations
    - Free memory when possible
 
@@ -486,29 +465,18 @@ timeout_ms = 30000  # Longer timeout for debugging
 **Symptoms**: No output, plugin seems to do nothing
 
 **Solutions**:
-1. Add panic handler with logging:
-   ```rust
-   #[panic_handler]
-   fn panic(info: &core::panic::PanicInfo) -> ! {
-       // Can't log here in no_std, but at least won't crash silently
-       loop {}
-   }
-   ```
-
-2. Wrap operations in error handling:
+1. Log at the start and end of each exported function so a panic is easier to locate:
    ```rust
    #[no_mangle]
    pub extern "C" fn cmd_hello() -> i32 {
        log_debug("Starting cmd_hello");
-       
        // Your code here
-       
        log_debug("Finished cmd_hello");
        0
    }
    ```
 
-3. Check Cortex logs for errors:
+2. Check Cortex logs for errors:
    ```bash
    RUST_LOG=debug cortex
    ```

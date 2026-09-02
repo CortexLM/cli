@@ -136,16 +136,19 @@ mod sdk_tests {
     fn test_rust_code_generation() {
         let code = generate_rust_code("Test Plugin", "test-cmd");
 
-        // Check for required components
-        assert!(code.contains("#![no_std]"), "Should have no_std");
-        assert!(code.contains("extern crate alloc"), "Should have alloc");
+        // Check for required components. Plugins use std + the default allocator;
+        // wee_alloc is unmaintained (RUSTSEC-2022-0054 / GHSA-rc23-xxgq-x27g).
         assert!(
-            code.contains("#[panic_handler]"),
-            "Should have panic handler"
+            !code.contains("#![no_std]"),
+            "Should use std (default Rust allocator)"
         );
         assert!(
-            code.contains("#[global_allocator]"),
-            "Should have global allocator"
+            !code.contains("wee_alloc"),
+            "Should not depend on unmaintained wee_alloc"
+        );
+        assert!(
+            !code.contains("#[global_allocator]"),
+            "Should not install a custom global allocator"
         );
         assert!(
             code.contains("pub extern \"C\" fn init()"),
@@ -184,6 +187,25 @@ mod sdk_tests {
 
         // Check release profile
         assert!(cargo.contains("lto = true"), "Should have LTO enabled");
+
+        assert!(
+            !cargo.contains("wee_alloc"),
+            "Generated Cargo.toml must not depend on unmaintained wee_alloc"
+        );
+    }
+
+    #[test]
+    fn example_plugin_manifests_do_not_depend_on_wee_alloc() {
+        let hello = include_str!("../../../examples/plugins/hello-world/Cargo.toml");
+        let stats = include_str!("../../../examples/plugins/code-stats/Cargo.toml");
+        assert!(
+            !hello.contains("wee_alloc"),
+            "hello-world example must not depend on wee_alloc"
+        );
+        assert!(
+            !stats.contains("wee_alloc"),
+            "code-stats example must not depend on wee_alloc"
+        );
     }
 
     #[test]
@@ -194,6 +216,10 @@ mod sdk_tests {
         assert!(
             code.contains("register_widget"),
             "Should have register_widget"
+        );
+        assert!(
+            !code.contains("wee_alloc"),
+            "Advanced template must not use wee_alloc"
         );
         assert!(
             code.contains("register_keybinding"),

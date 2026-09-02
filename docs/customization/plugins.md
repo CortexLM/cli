@@ -368,13 +368,12 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies]
-wee_alloc = "0.4"
-
 [profile.release]
 opt-level = "s"
 lto = true
 ```
+
+Plugins use the default Rust allocator. Do not add `wee_alloc` — it is unmaintained (`RUSTSEC-2022-0054`).
 
 ### 3. Create plugin.toml
 

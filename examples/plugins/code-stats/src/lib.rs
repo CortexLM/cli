@@ -8,13 +8,7 @@
 //!
 //! Build with: cargo build --target wasm32-wasi --release
 
-#![no_std]
-
-extern crate alloc;
-
-use alloc::format;
-use alloc::string::String;
-use core::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // Host function imports from the "cortex" module
@@ -396,7 +390,11 @@ pub extern "C" fn cmd_stats_export() -> i32 {
         log_debug("Statistics export event emitted");
     }
 
-    show_notification(ToastLevel::Success, "Statistics exported to event stream", 3000);
+    show_notification(
+        ToastLevel::Success,
+        "Statistics exported to event stream",
+        3000,
+    );
 
     0 // Success
 }
@@ -558,32 +556,3 @@ pub extern "C" fn api_get_stats_json() -> i64 {
     let json = get_stats_json();
     json.len() as i64
 }
-
-// ============================================================================
-// Panic handler (required for #![no_std])
-// ============================================================================
-
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    // Attempt to log panic information before halting
-    if let Some(location) = info.location() {
-        let file = location.file();
-        let line = location.line();
-        let _ = (file, line); // Suppress unused warnings
-        log_message(4, "PANIC: code-stats plugin encountered a fatal error");
-    } else {
-        log_message(4, "PANIC: code-stats plugin panicked at unknown location");
-    }
-
-    // Enter infinite loop as required by panic handler
-    loop {
-        core::hint::spin_loop();
-    }
-}
-
-// ============================================================================
-// Global allocator (required for alloc crate)
-// ============================================================================
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

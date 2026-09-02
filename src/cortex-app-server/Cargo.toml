@@ -61,7 +61,7 @@ dirs = "5"
 fs2 = "0.4"  # File locking for concurrent access
 
 # Authentication
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 
 # File watching
 notify = "6"

@@ -7,7 +7,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::markdown::inline::{render_blockquote_prefix, render_hr};
 use crate::markdown::list::ListContext;
-use crate::markdown::table::{TableBuilder, render_table_simple};
+use crate::markdown::table::{TableBuilder, render_table};
 
 use super::helpers::{get_bullet, heading_level_to_u8};
 use super::state::RenderState;
@@ -42,21 +42,33 @@ impl<'a> RenderState<'a> {
     }
 
     pub(super) fn start_list(&mut self, start: Option<u64>) {
-        // Add blank line before top-level lists
-        if self.list_stack.is_empty() {
-            self.add_blank_line_if_needed();
-        }
+        let depth = match self.list_stack.last() {
+            // A nested list: the parent item's own text goes out first, on
+            // its own row, and the children indent one level under it.
+            Some(parent) => {
+                let depth = parent.depth + 1;
+                self.flush_list_item();
+                depth
+            }
+            None => {
+                // Add blank line before top-level lists
+                self.add_blank_line_if_needed();
+                0
+            }
+        };
 
-        let ctx = match start {
+        let mut ctx = match start {
             Some(n) => ListContext::new_ordered(n),
             None => ListContext::new_unordered(),
         };
+        ctx.depth = depth;
         self.list_stack.push(ctx);
     }
 
     pub(super) fn start_item(&mut self) {
         self.current_list_item.clear();
         self.current_task_marker = None;
+        self.list_item_emitted = false;
     }
 
     pub(super) fn start_blockquote(&mut self) {
@@ -146,9 +158,10 @@ impl<'a> RenderState<'a> {
     pub(super) fn end_code_block(&mut self) {
         self.in_code_block = false;
 
-        // Render the code block
+        // Render the code block: a hairline carrying the language tag, the
+        // (highlighted, numbered) lines, a closing hairline.
         let code_lines = if let Some(ref code_renderer) = self.renderer.code_renderer {
-            code_renderer.render(
+            code_renderer.render_fenced(
                 &self.code_buffer,
                 self.code_language.as_deref(),
                 self.renderer.width,
@@ -178,16 +191,34 @@ impl<'a> RenderState<'a> {
         self.list_stack.pop();
         if self.list_stack.is_empty() {
             self.needs_newline = true;
+        } else {
+            // Back in the parent item, whose row went out when this nested
+            // list started.
+            self.list_item_emitted = true;
         }
     }
 
     pub(super) fn end_item(&mut self) {
+        self.flush_list_item();
+        self.list_item_emitted = false;
+    }
+
+    /// Emit the pending list item as `indent marker content`, once.
+    fn flush_list_item(&mut self) {
+        if self.list_item_emitted {
+            return;
+        }
+        self.list_item_emitted = true;
         if let Some(ctx) = self.list_stack.last_mut() {
             let theme = &self.renderer.theme;
 
             // Build the marker
             let (marker, marker_style) = if let Some(checked) = self.current_task_marker {
-                let marker = if checked { "[x] " } else { "[ ] " };
+                let marker = if checked {
+                    crate::markdown::list::TASK_CHECKED_MARKER
+                } else {
+                    crate::markdown::list::TASK_UNCHECKED_MARKER
+                };
                 let style = if checked {
                     theme.task_checked
                 } else {
@@ -270,10 +301,11 @@ impl<'a> RenderState<'a> {
             let mut table = builder.build();
             table.calculate_column_widths(self.renderer.width);
 
-            // Use simple ASCII table format without outer borders
-            // Headers use table_header_text style for colored/bold headers
-            let table_lines = render_table_simple(
+            // The full plus-ASCII grid: gray `+---+` borders, bold white
+            // header, white cells — never loose column text.
+            let table_lines = render_table(
                 &table,
+                self.renderer.theme.table_border,
                 self.renderer.theme.table_header_text,
                 self.renderer.theme.table_cell_text,
                 self.renderer.width,
@@ -556,41 +588,37 @@ impl<'a> RenderState<'a> {
         }
     }
 
-    /// Render a simple code block without syntax highlighting.
+    /// Render a simple code block without syntax highlighting: the same
+    /// hairline-with-language-tag above and hairline below as the highlighted
+    /// path, plain text in between.
     pub(super) fn render_simple_code_block(&self) -> Vec<Line<'static>> {
         let style = self.renderer.theme.code_block_text;
         let border_style = Style::default().fg(self.renderer.theme.code_block_border);
+        let width = self.renderer.width.max(4) as usize;
 
         let mut lines = Vec::new();
 
-        // Top border with optional language tag
-        let top_border = if let Some(ref lang) = self.code_language {
-            format!(
-                "{} {} {}",
-                "```",
-                lang,
-                "─".repeat(self.renderer.width.saturating_sub(lang.width() as u16 + 5) as usize)
-            )
-        } else {
-            format!(
-                "```{}",
-                "─".repeat(self.renderer.width.saturating_sub(3) as usize)
-            )
-        };
-        lines.push(Line::from(Span::styled(top_border, border_style)));
+        // Top hairline with optional language tag: `─ ts ────…`
+        let mut top = vec![Span::styled("─", border_style)];
+        let mut used = 1;
+        if let Some(ref lang) = self.code_language {
+            let tag = format!(" {lang} ");
+            used += tag.width();
+            top.push(Span::styled(tag, self.renderer.theme.code_lang_tag));
+        }
+        top.push(Span::styled(
+            "─".repeat(width.saturating_sub(used)),
+            border_style,
+        ));
+        lines.push(Line::from(top));
 
         // Code content
         for code_line in self.code_buffer.lines() {
             lines.push(Line::from(Span::styled(code_line.to_string(), style)));
         }
 
-        // Handle trailing newline - no action needed
-
-        // Bottom border
-        lines.push(Line::from(Span::styled(
-            "─".repeat(self.renderer.width as usize),
-            border_style,
-        )));
+        // Closing hairline
+        lines.push(Line::from(Span::styled("─".repeat(width), border_style)));
 
         lines
     }

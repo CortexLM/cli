@@ -123,6 +123,62 @@ impl CodeBlockRenderer {
         self
     }
 
+    /// Renders a fenced code block the way a reply shows it: a hairline
+    /// carrying the language tag, the highlighted lines with a dim
+    /// line-number gutter, and a closing hairline. No side borders, no
+    /// background wash — the rules are the same gray as the composer's.
+    ///
+    /// ```text
+    /// ─ ts ─────────────────────────────────
+    /// 1 │ export async function rateLimit()
+    /// 2 │   const now = Date.now();
+    /// ──────────────────────────────────────
+    /// ```
+    pub fn render_fenced(
+        &self,
+        code: &str,
+        language: Option<&str>,
+        max_width: u16,
+    ) -> Vec<Line<'static>> {
+        let border_style = Style::default().fg(self.border_color);
+        let width = max_width.max(4) as usize;
+
+        let mut highlighted_lines =
+            highlight_code(&self.highlighter, code, language, self.text_style);
+        if self.show_line_numbers {
+            highlighted_lines =
+                render_with_line_numbers(highlighted_lines, Style::default().fg(self.border_color));
+        }
+
+        let mut lines = Vec::with_capacity(highlighted_lines.len() + 2);
+
+        // Top hairline with the language tag: `─ ts ────…`
+        let mut top = vec![Span::styled(border::HORIZONTAL.to_string(), border_style)];
+        let mut used = 1;
+        if let Some(lang) = language {
+            let tag = format!(" {lang} ");
+            used += tag.chars().count();
+            top.push(Span::styled(tag, self.lang_tag_style));
+        }
+        top.push(Span::styled(
+            border::HORIZONTAL
+                .to_string()
+                .repeat(width.saturating_sub(used)),
+            border_style,
+        ));
+        lines.push(Line::from(top));
+
+        lines.extend(highlighted_lines.into_iter().map(Line::from));
+
+        // Closing hairline.
+        lines.push(Line::from(Span::styled(
+            border::HORIZONTAL.to_string().repeat(width),
+            border_style,
+        )));
+
+        lines
+    }
+
     /// Renders a code block with borders.
     ///
     /// The output format is:
@@ -418,11 +474,157 @@ fn highlight_code(
         }
     }
 
-    // Fallback: render as plain text with the fallback style
+    // Fallback: a lexical pass — keywords bold, strings and comments dim —
+    // so a fence whose grammar is not registered still reads as code
+    // without inventing any colour.
     code_lines
         .into_iter()
-        .map(|line| vec![Span::styled(line.to_string(), fallback_style)])
+        .map(|line| lexical_highlight_line(line, fallback_style))
         .collect()
+}
+
+/// Keywords shared by the C-family / TypeScript / Rust / Python / Go fences
+/// the fallback pass recognises.
+const FALLBACK_KEYWORDS: &[&str] = &[
+    "abstract",
+    "as",
+    "async",
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "def",
+    "default",
+    "defer",
+    "del",
+    "do",
+    "elif",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "finally",
+    "fn",
+    "for",
+    "from",
+    "func",
+    "function",
+    "go",
+    "if",
+    "impl",
+    "implements",
+    "import",
+    "in",
+    "interface",
+    "is",
+    "lambda",
+    "let",
+    "match",
+    "mod",
+    "mut",
+    "new",
+    "not",
+    "of",
+    "or",
+    "package",
+    "pass",
+    "pub",
+    "raise",
+    "readonly",
+    "return",
+    "self",
+    "static",
+    "struct",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "trait",
+    "try",
+    "type",
+    "typeof",
+    "use",
+    "var",
+    "void",
+    "where",
+    "while",
+    "with",
+    "yield",
+];
+
+/// Split one source line into spans: keywords bold, string literals and
+/// `//` / `#` comments dim, everything else in `base`.
+fn lexical_highlight_line(line: &str, base: Style) -> Vec<Span<'static>> {
+    let dim = base.add_modifier(Modifier::DIM);
+    let bold = base.add_modifier(Modifier::BOLD);
+    let chars: Vec<char> = line.chars().collect();
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut plain = String::new();
+    let mut i = 0;
+
+    let flush = |plain: &mut String, spans: &mut Vec<Span<'static>>| {
+        if !plain.is_empty() {
+            spans.push(Span::styled(std::mem::take(plain), base));
+        }
+    };
+
+    while i < chars.len() {
+        let c = chars[i];
+        // Comments run to the end of the line: `//`, or `#` at the start of
+        // a token (Python / shell).
+        let comment = (c == '/' && chars.get(i + 1) == Some(&'/'))
+            || (c == '#' && (i == 0 || chars[i - 1].is_whitespace()));
+        if comment {
+            flush(&mut plain, &mut spans);
+            spans.push(Span::styled(chars[i..].iter().collect::<String>(), dim));
+            return spans;
+        }
+        // String literals.
+        if c == '"' || c == '\'' || c == '`' {
+            flush(&mut plain, &mut spans);
+            let quote = c;
+            let start = i;
+            i += 1;
+            while i < chars.len() && chars[i] != quote {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    i += 1;
+                }
+                i += 1;
+            }
+            let end = (i + 1).min(chars.len());
+            spans.push(Span::styled(
+                chars[start..end].iter().collect::<String>(),
+                dim,
+            ));
+            i = end;
+            continue;
+        }
+        // Identifiers and keywords.
+        if c.is_alphabetic() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let word: String = chars[start..i].iter().collect();
+            if FALLBACK_KEYWORDS.contains(&word.as_str()) {
+                flush(&mut plain, &mut spans);
+                spans.push(Span::styled(word, bold));
+            } else {
+                plain.push_str(&word);
+            }
+            continue;
+        }
+        plain.push(c);
+        i += 1;
+    }
+    flush(&mut plain, &mut spans);
+    if spans.is_empty() {
+        spans.push(Span::styled(String::new(), base));
+    }
+    spans
 }
 
 /// Splits highlighted spans into lines.

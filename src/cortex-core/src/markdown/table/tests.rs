@@ -238,17 +238,19 @@ mod tests {
 
     #[test]
     fn test_border_characters() {
-        assert_eq!(border::TOP_LEFT, '┌');
-        assert_eq!(border::TOP_RIGHT, '┐');
-        assert_eq!(border::BOTTOM_LEFT, '└');
-        assert_eq!(border::BOTTOM_RIGHT, '┘');
-        assert_eq!(border::HORIZONTAL, '─');
-        assert_eq!(border::VERTICAL, '│');
-        assert_eq!(border::CROSS, '┼');
-        assert_eq!(border::T_DOWN, '┬');
-        assert_eq!(border::T_UP, '┴');
-        assert_eq!(border::T_RIGHT, '├');
-        assert_eq!(border::T_LEFT, '┤');
+        // Plus-ASCII grid: every corner and junction is `+`, rules are `-`,
+        // separators `|` — never Unicode box drawing.
+        assert_eq!(border::TOP_LEFT, '+');
+        assert_eq!(border::TOP_RIGHT, '+');
+        assert_eq!(border::BOTTOM_LEFT, '+');
+        assert_eq!(border::BOTTOM_RIGHT, '+');
+        assert_eq!(border::HORIZONTAL, '-');
+        assert_eq!(border::VERTICAL, '|');
+        assert_eq!(border::CROSS, '+');
+        assert_eq!(border::T_DOWN, '+');
+        assert_eq!(border::T_UP, '+');
+        assert_eq!(border::T_RIGHT, '+');
+        assert_eq!(border::T_LEFT, '+');
     }
 
     #[test]

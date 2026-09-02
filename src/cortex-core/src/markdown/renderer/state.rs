@@ -103,6 +103,10 @@ pub(super) struct RenderState<'a> {
     pub(super) current_list_item: Vec<Span<'static>>,
     /// Task marker for current item.
     pub(super) current_task_marker: Option<bool>,
+    /// True once the pending list item's row has been emitted — a parent
+    /// item is flushed when its nested list starts, so its `end_item` must
+    /// not emit a second, empty row.
+    pub(super) list_item_emitted: bool,
 }
 
 impl<'a> RenderState<'a> {
@@ -128,6 +132,7 @@ impl<'a> RenderState<'a> {
             current_link_url: None,
             current_list_item: Vec::new(),
             current_task_marker: None,
+            list_item_emitted: false,
         }
     }
 

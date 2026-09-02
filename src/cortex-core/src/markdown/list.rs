@@ -73,12 +73,18 @@ fn format_unordered_marker(depth: usize) -> String {
     format!("{} ", get_bullet(depth))
 }
 
-/// Format a task marker
+/// Checked task marker — the green `✓`, the only green in a reply.
+pub const TASK_CHECKED_MARKER: &str = "✓ ";
+/// Unchecked task marker — a dim `○`.
+pub const TASK_UNCHECKED_MARKER: &str = "○ ";
+
+/// Format a task marker: `- [x]` renders as `✓`, `- [ ]` as `○`, the way
+/// the todo tiles do.
 fn format_task_marker(checked: bool) -> String {
     if checked {
-        "[x] ".to_string()
+        TASK_CHECKED_MARKER.to_string()
     } else {
-        "[ ] ".to_string()
+        TASK_UNCHECKED_MARKER.to_string()
     }
 }
 
@@ -381,8 +387,8 @@ impl Default for ListContext {
 /// * `ctx` - The list context (tracks depth, numbering, etc.)
 /// * `bullet_style` - Style for unordered list bullets
 /// * `number_style` - Style for ordered list numbers
-/// * `task_checked_style` - Style for checked task markers `[x]`
-/// * `task_unchecked_style` - Style for unchecked task markers `[ ]`
+/// * `task_checked_style` - Style for checked task markers `✓`
+/// * `task_unchecked_style` - Style for unchecked task markers `○`
 /// * `text_style` - Style for the item content text
 ///
 /// # Returns
@@ -569,8 +575,8 @@ mod tests {
 
     #[test]
     fn test_format_task_marker() {
-        assert_eq!(format_task_marker(true), "[x] ");
-        assert_eq!(format_task_marker(false), "[ ] ");
+        assert_eq!(format_task_marker(true), "✓ ");
+        assert_eq!(format_task_marker(false), "○ ");
     }
 
     #[test]
@@ -836,8 +842,8 @@ mod tests {
         let checked_line: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         let unchecked_line: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
 
-        assert!(checked_line.contains("[x]"));
-        assert!(unchecked_line.contains("[ ]"));
+        assert!(checked_line.contains('✓'));
+        assert!(unchecked_line.contains('○'));
     }
 
     #[test]
@@ -867,9 +873,9 @@ mod tests {
         let child1: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
         let child2: String = lines[2].spans.iter().map(|s| s.content.as_ref()).collect();
 
-        assert!(parent.contains("[ ]"));
-        assert!(child1.contains("[x]"));
-        assert!(child2.contains("[ ]"));
+        assert!(parent.contains('○'));
+        assert!(child1.contains('✓'));
+        assert!(child2.contains('○'));
     }
 
     #[test]

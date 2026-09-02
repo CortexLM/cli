@@ -284,8 +284,42 @@ mod tests {
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.to_string()))
             .collect();
-        assert!(content.contains("[x]") || content.contains("Completed"));
-        assert!(content.contains("[ ]") || content.contains("Pending"));
+        // `- [x]` renders as the green `✓`, `- [ ]` as a dim `○`.
+        assert!(content.contains("✓ Completed task"), "{content}");
+        assert!(content.contains("○ Pending task"), "{content}");
+        assert!(
+            !content.contains("[x]") && !content.contains("[ ]"),
+            "{content}"
+        );
+    }
+
+    #[test]
+    fn nested_lists_keep_the_parent_text_and_indent_children() {
+        let renderer = MarkdownRenderer::new();
+        let md = "- Redis client\n  - shared connection\n  - fail open\n- Middleware\n  - sliding window";
+        let lines = renderer.render(md);
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| l.to_string())
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        // Parent rows keep their text and come first; children indent one
+        // level under them with the next bullet glyph.
+        assert_eq!(text[0], "• Redis client", "{text:?}");
+        assert!(
+            text[1].starts_with("  ") && text[1].ends_with("shared connection"),
+            "{text:?}"
+        );
+        assert!(
+            text[2].starts_with("  ") && text[2].ends_with("fail open"),
+            "{text:?}"
+        );
+        assert_eq!(text[3], "• Middleware", "{text:?}");
+        assert!(
+            text[4].starts_with("  ") && text[4].ends_with("sliding window"),
+            "{text:?}"
+        );
+        assert_eq!(text.len(), 5, "no empty bullets: {text:?}");
     }
 
     #[test]
@@ -294,6 +328,86 @@ mod tests {
         let md = "- [x] Done\n- Regular item\n- [ ] Todo";
         let lines = renderer.render(md);
         assert!(lines.len() >= 3);
+    }
+
+    #[test]
+    fn cortex_renderer_fences_are_hairlines_with_lang_tag_and_line_numbers() {
+        use crate::style::{HAIRLINE, TEXT_DIM};
+        use ratatui::style::Modifier;
+
+        let renderer = MarkdownRenderer::cortex(MarkdownTheme::default(), 60);
+        let md = "Here:\n\n```ts\nexport async function rateLimit(key: string) {\n  const now = Date.now();\n}\n```\n";
+        let lines = renderer.render(md);
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        // A hairline carrying the language tag, then numbered code, then a
+        // closing hairline — no side borders, no box.
+        let top = text
+            .iter()
+            .position(|l| l.starts_with("─ ts ─"))
+            .unwrap_or_else(|| panic!("no tagged hairline: {text:?}"));
+        assert_eq!(text[top].chars().count(), 60, "{text:?}");
+        assert!(
+            text[top + 1].starts_with("1 │ export async function"),
+            "{text:?}"
+        );
+        assert!(text[top + 2].starts_with("2 │   const now"), "{text:?}");
+        assert!(text[top + 3].starts_with("3 │ }"), "{text:?}");
+        assert!(text[top + 4].chars().all(|c| c == '─'), "{text:?}");
+        assert!(
+            !text.iter().any(|l| l.contains('┌') || l.contains('┐')),
+            "{text:?}"
+        );
+
+        // The rule and the gutter are the hairline gray, the tag dim.
+        let top_line = &lines[top];
+        assert_eq!(top_line.spans[0].style.fg, Some(HAIRLINE));
+        assert_eq!(top_line.spans[1].content.as_ref(), " ts ");
+        assert_eq!(top_line.spans[1].style.fg, Some(TEXT_DIM));
+        assert_eq!(lines[top + 1].spans[0].style.fg, Some(HAIRLINE));
+
+        // Keywords come out bold; nothing in the fence carries a colour other
+        // than white / gray.
+        let code_line = &lines[top + 1];
+        let export = code_line
+            .spans
+            .iter()
+            .find(|s| s.content.as_ref() == "export")
+            .unwrap_or_else(|| panic!("no export span: {:?}", code_line.spans));
+        assert!(export.style.add_modifier.contains(Modifier::BOLD));
+        for span in lines.iter().flat_map(|l| l.spans.iter()) {
+            assert!(
+                is_chrome_gray(span.style.fg),
+                "fence paints a colour: {span:?}"
+            );
+        }
+    }
+
+    /// White or one of the chrome grays (`#6B7280` dim included) — never a
+    /// saturated colour.
+    fn is_chrome_gray(color: Option<ratatui::style::Color>) -> bool {
+        match color {
+            Some(ratatui::style::Color::Rgb(r, g, b)) => {
+                let hi = r.max(g).max(b);
+                let lo = r.min(g).min(b);
+                hi - lo <= 25
+            }
+            _ => true,
+        }
+    }
+
+    #[test]
+    fn cortex_renderer_still_highlights_registered_grammars_in_gray() {
+        let renderer = MarkdownRenderer::cortex(MarkdownTheme::default(), 60);
+        let lines = renderer.render("```bash\nif [ -f x ]; then echo \"hi\"; fi\n```\n");
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        assert!(text[0].starts_with("─ bash ─"), "{text:?}");
+        assert!(text[1].starts_with("1 │ if"), "{text:?}");
+        for span in lines.iter().flat_map(|l| l.spans.iter()) {
+            assert!(
+                is_chrome_gray(span.style.fg),
+                "tree-sitter paints a colour: {span:?}"
+            );
+        }
     }
 
     // ============================================================
@@ -306,6 +420,33 @@ mod tests {
         let md = "| A | B |\n|---|---|\n| 1 | 2 |";
         let lines = renderer.render(md);
         assert!(!lines.is_empty());
+        // Markdown tables render as the full plus-ASCII grid: a `+---+` rule
+        // on top, under the header and at the bottom, `|` separators, and no
+        // Unicode box drawing anywhere.
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        assert_eq!(text.len(), 5, "{text:?}");
+        assert!(
+            text[0].starts_with("+-") && text[0].ends_with('+'),
+            "{text:?}"
+        );
+        assert!(
+            text[1].starts_with("| A") && text[1].contains("| B"),
+            "{text:?}"
+        );
+        assert!(text[2].contains("-+-"), "{text:?}");
+        assert!(
+            text[4].starts_with("+-") && text[4].ends_with('+'),
+            "{text:?}"
+        );
+        for glyph in ['┌', '┐', '└', '┘', '─', '│', '┼', '┬', '┴', '├', '┤'] {
+            assert!(
+                !text.iter().any(|l| l.contains(glyph)),
+                "tables never use box drawing: {text:?}"
+            );
+        }
+        // Borders carry the theme's gray, cells the white text.
+        let border = lines[0].spans[0].style.fg;
+        assert_eq!(border, Some(renderer.theme().table_border));
     }
 
     #[test]

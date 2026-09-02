@@ -9,7 +9,7 @@ use super::border;
 use super::types::{Alignment, CELL_PADDING, Table, TableCell};
 use super::utils::{align_text, truncate_with_ellipsis};
 
-/// Renders a table to Lines with full ASCII borders.
+/// Renders a table to Lines with the full plus-ASCII grid (`+---+`, `|`).
 ///
 /// # Arguments
 /// * `table` - The table to render
@@ -49,7 +49,7 @@ pub fn render_table(
 
     let mut lines = Vec::new();
 
-    // Top border: ┌──────┬──────┐
+    // Top border: +------+------+
     lines.push(render_horizontal_line(
         widths,
         border::TOP_LEFT,
@@ -68,7 +68,7 @@ pub fn render_table(
             border_style,
         ));
 
-        // Header separator: ├──────┼──────┤
+        // Header separator: +------+------+
         lines.push(render_horizontal_line(
             widths,
             border::T_RIGHT,
@@ -89,7 +89,7 @@ pub fn render_table(
         ));
     }
 
-    // Bottom border: └──────┴──────┘
+    // Bottom border: +------+------+
     lines.push(render_horizontal_line(
         widths,
         border::BOTTOM_LEFT,

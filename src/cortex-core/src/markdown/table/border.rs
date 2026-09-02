@@ -1,24 +1,36 @@
-//! ASCII box-drawing border characters for table rendering.
+//! Plus-ASCII border characters for table rendering.
+//!
+//! Markdown tables render with the classic `+---+` grid — `+` at every
+//! corner and junction, `-` rules, `|` column separators — never Unicode box
+//! drawing:
+//!
+//! ```text
+//! +------------+----------+--------------+
+//! | Model      | Effort   | Billing      |
+//! +------------+----------+--------------+
+//! | Mini 1     | Medium   | per request  |
+//! +------------+----------+--------------+
+//! ```
 
-/// Top-left corner: ┌
-pub const TOP_LEFT: char = '\u{250C}';
-/// Top-right corner: ┐
-pub const TOP_RIGHT: char = '\u{2510}';
-/// Bottom-left corner: └
-pub const BOTTOM_LEFT: char = '\u{2514}';
-/// Bottom-right corner: ┘
-pub const BOTTOM_RIGHT: char = '\u{2518}';
-/// Horizontal line: ─
-pub const HORIZONTAL: char = '\u{2500}';
-/// Vertical line: │
-pub const VERTICAL: char = '\u{2502}';
-/// Cross intersection: ┼
-pub const CROSS: char = '\u{253C}';
-/// T-down (top tee): ┬
-pub const T_DOWN: char = '\u{252C}';
-/// T-up (bottom tee): ┴
-pub const T_UP: char = '\u{2534}';
-/// T-right (left tee): ├
-pub const T_RIGHT: char = '\u{251C}';
-/// T-left (right tee): ┤
-pub const T_LEFT: char = '\u{2524}';
+/// Top-left corner: +
+pub const TOP_LEFT: char = '+';
+/// Top-right corner: +
+pub const TOP_RIGHT: char = '+';
+/// Bottom-left corner: +
+pub const BOTTOM_LEFT: char = '+';
+/// Bottom-right corner: +
+pub const BOTTOM_RIGHT: char = '+';
+/// Horizontal rule: -
+pub const HORIZONTAL: char = '-';
+/// Vertical separator: |
+pub const VERTICAL: char = '|';
+/// Cross junction: +
+pub const CROSS: char = '+';
+/// Top junction: +
+pub const T_DOWN: char = '+';
+/// Bottom junction: +
+pub const T_UP: char = '+';
+/// Left junction: +
+pub const T_RIGHT: char = '+';
+/// Right junction: +
+pub const T_LEFT: char = '+';

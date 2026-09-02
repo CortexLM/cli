@@ -1,7 +1,5 @@
 //! Main MinimalSessionView struct and Widget implementation.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -15,25 +13,38 @@ use crate::app::AppState;
 use crate::commands::PALETTE_HOME_LIMIT;
 use crate::ui::colors::AdaptiveColors;
 use crate::widgets::{HintContext, KeyHints, StatusIndicator};
-use cortex_core::style::SELECTION_BG;
 
 // Re-export for convenience
 pub use cortex_core::widgets::Message as ChatMessage;
 
+/// Rows the composer occupies: hairline, `> ` prompt, hairline.
+pub const COMPOSER_ROWS: u16 = 3;
+
+/// Composer placeholder while idle.
+pub const PLACEHOLDER_IDLE: &str = "Plan, search, build anything";
+/// Composer placeholder while a run is live — stdin stays alive and a
+/// submitted follow-up is queued.
+pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up ↵ to queue";
+
 /// Minimalist session view for the chat interface.
 ///
-/// The view is frameless: content, composer and hints sit directly on the
-/// host terminal background and bleed to the terminal edges.
+/// The view is frameless: content, composer and footer sit directly on the
+/// host terminal background and bleed to the terminal edges. The composer is
+/// the Devin-style bar — a full-width gray hairline above the `> ` prompt and
+/// another below it — and follows the transcript until the transcript fills
+/// the screen, after which it stays pinned above the footer.
 ///
 /// Layout:
 /// ```text
-/// > You: Hello, how are you?
+/// ▏> Hello, how are you?            ← past user turn on its gray bar
 ///
-/// Assistant: I'm doing well! How can I help you today?
+/// I'm doing well! How can I help you today?
 ///
-/// ⠹ Working · 12s · esc to interrupt
-/// > _
-/// Enter submit · Ctrl+K palette · Ctrl+M model · ? help
+/// ⠇ Working · 12s · esc to interrupt
+/// ────────────────────────────────────
+/// > Add a follow-up ↵ to queue █
+/// ────────────────────────────────────
+/// Cortex Mini 1 · Agent · 92% context      shift+tab to cycle modes
 /// ```
 pub struct MinimalSessionView<'a> {
     /// Reference to the application state
@@ -51,35 +62,45 @@ impl<'a> MinimalSessionView<'a> {
         }
     }
 
-    /// Renders all scrollable content (welcome cards + messages) as unified lines.
-    /// Returns the actual content height rendered (for dynamic input positioning).
-    fn render_scrollable_content(&self, area: Rect, buf: &mut Buffer, _welcome_height: u16) -> u16 {
-        if area.is_empty() || area.height == 0 {
-            return 0;
-        }
-
+    /// All scrollable content (welcome header + messages) as unified lines.
+    fn content_lines(&self, width: u16, height: u16) -> Vec<Line<'static>> {
         let mut all_lines: Vec<Line<'static>> = Vec::new();
 
-        // 1. Generate welcome card lines (same visual style as render_motd)
-        all_lines.extend(generate_welcome_lines(
-            area.width,
-            &self.colors,
-            self.app_state,
-        ));
+        all_lines.extend(generate_welcome_lines(width, &self.colors, self.app_state));
 
-        if self.app_state.compact_mode {
+        let message_lines = generate_message_lines(width, &self.colors, self.app_state);
+        if !message_lines.is_empty() {
             all_lines.push(Line::from(""));
-        } else {
-            all_lines.push(Line::from(""));
+            // Short terminals keep one blank row under the header, tall ones
+            // two.
+            if !self.app_state.compact_mode && height >= 20 {
+                all_lines.push(Line::from(""));
+            }
+            all_lines.extend(message_lines);
+        }
+        // One blank row between the transcript and the composer hairline —
+        // a transcript that already ends blank does not add another.
+        let ends_blank = all_lines
+            .last()
+            .map(|line| line.to_string().trim().is_empty())
+            .unwrap_or(false);
+        if !ends_blank {
             all_lines.push(Line::from(""));
         }
+        all_lines
+    }
 
-        // 3. Generate message lines
-        all_lines.extend(generate_message_lines(
-            area.width,
-            &self.colors,
-            self.app_state,
-        ));
+    /// Renders the scrollable content into `area`, newest lines at the
+    /// bottom, honouring the chat scroll offset.
+    fn render_scrollable_content(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        all_lines: Vec<Line<'static>>,
+    ) {
+        if area.is_empty() || area.height == 0 {
+            return;
+        }
 
         let total_lines = all_lines.len();
         let visible_lines = area.height as usize;
@@ -119,91 +140,83 @@ impl<'a> MinimalSessionView<'a> {
         if !self.app_state.is_chat_at_bottom() && total_lines > visible_lines {
             render_scroll_to_bottom_hint(area, buf, &self.colors);
         }
-
-        // Return actual content height (capped at area height)
-        (total_lines as u16).min(area.height)
     }
 
-    /// Renders the input area.
+    /// Paints one full-width hairline on row `y`.
+    fn hairline(&self, area: Rect, y: u16, buf: &mut Buffer) {
+        if y >= area.bottom() {
+            return;
+        }
+        let rule = "─".repeat(area.width as usize);
+        buf.set_string(area.x, y, rule, Style::default().fg(self.colors.border));
+    }
+
+    /// Renders the composer: hairline, `> ` prompt, hairline. `area` is
+    /// `COMPOSER_ROWS` tall.
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
-        if area.is_empty() || area.height < 1 {
+        if area.is_empty() || area.height < COMPOSER_ROWS {
             return;
         }
 
-        let _ = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
+        self.hairline(area, area.y, buf);
+        self.hairline(area, area.y + 2, buf);
 
+        let content_y = area.y + 1;
+        let content_width = area.width.max(1);
+        let input_text = self.app_state.input.text();
+
+        // The pending badge sits at the right edge of the prompt row.
         let queue_count = self.app_state.queued_count();
+        let mut badge_cols = 0u16;
         if queue_count > 0 {
             let indicator = format!("[{} pending]", queue_count);
             let indicator_x = area.right().saturating_sub(indicator.len() as u16);
-            if indicator_x > area.x {
+            if indicator_x > area.x + 4 {
                 buf.set_string(
                     indicator_x,
-                    area.y,
+                    content_y,
                     &indicator,
-                    Style::default().fg(self.colors.warning),
+                    Style::default().fg(self.colors.text_dim),
                 );
+                badge_cols = indicator.len() as u16 + 1;
             }
         }
+        let text_budget = content_width.saturating_sub(3 + badge_cols) as usize;
 
-        let input_text = self.app_state.input.text();
-
-        // Simple unboxed prompt. Ghost when idle; block cursor.
-        let content_x = area.x;
-        let content_y = area.y;
-        let content_width = area.width.max(1);
-
-        let prompt_span = Span::styled("> ", Style::default().fg(self.colors.accent));
-        let mut spans = vec![prompt_span];
+        // White `>`; dim placeholder while idle; white copy and block cursor.
+        let mut spans = vec![Span::styled("> ", Style::default().fg(self.colors.text))];
         if input_text.is_empty() {
-            // While a run is live the composer invites a queued follow-up —
-            // stdin stays alive.
             let ghost_copy = if self.is_task_running() {
-                "Add a follow-up ↵ to queue"
+                PLACEHOLDER_RUNNING
             } else {
-                "Plan, search, build anything"
+                PLACEHOLDER_IDLE
             };
-            let ghost = crate::ui::text_utils::first_fitting_line(
-                ghost_copy,
-                content_width.saturating_sub(2) as usize,
-            );
+            let ghost = crate::ui::text_utils::first_fitting_line(ghost_copy, text_budget);
             if !ghost.is_empty() {
                 spans.push(Span::styled(
-                    ghost,
-                    Style::default().fg(self.colors.text_muted),
+                    format!("{ghost} "),
+                    Style::default().fg(self.colors.text_dim),
                 ));
             }
         } else {
-            let shown = crate::ui::text_utils::first_fitting_line(
-                &input_text,
-                content_width.saturating_sub(2) as usize,
-            );
+            let shown = crate::ui::text_utils::first_fitting_line(&input_text, text_budget);
             spans.push(Span::styled(shown, Style::default().fg(self.colors.text)));
         }
         spans.push(Span::styled("█", Style::default().fg(self.colors.text)));
 
-        let line = Line::from(spans);
-        let text_area = Rect::new(content_x, content_y, content_width, 1);
-        let paragraph = Paragraph::new(line);
-        paragraph.render(text_area, buf);
+        let text_area = Rect::new(area.x, content_y, content_width, 1);
+        Paragraph::new(Line::from(spans)).render(text_area, buf);
     }
 
     /// Returns the cursor position for the input field.
     pub fn cursor_position(&self, input_area: Rect) -> Option<(u16, u16)> {
-        // Cursor is after "> " prefix (2 chars) plus the input text
-        // Input starts at input_area.x + 2 (border + space)
-        // Text starts after prompt "> " (length 2)
-        // So cursor is at input_area.x + 2 + 2 + cursor_pos
-
+        // Cursor is after the "> " prefix (2 chars) plus the input text, on
+        // the middle row of the composer (between the two hairlines).
         let cursor_pos = self.app_state.input.cursor_pos();
-        // x = area.x + border(1) + space(1) + prompt(2) + cursor_pos
-        let x = input_area.x + 4 + cursor_pos as u16;
-        let y = input_area.y + 1; // Middle line
+        let x = input_area.x + 2 + cursor_pos as u16;
+        let y = input_area.y + 1;
 
-        if x < input_area.right() - 2 {
-            // Ensure inside right border
+        if x < input_area.right() {
             Some((x, y))
         } else {
             None
@@ -242,11 +255,12 @@ impl<'a> MinimalSessionView<'a> {
         }
     }
 
-    /// Renders autocomplete suggestions inline below the input.
-    /// The top stays fixed, only the bottom varies with item count.
+    /// Renders autocomplete suggestions inline below the composer.
     ///
-    /// The popup is frameless at every width — zero rounded boxes; the rows
-    /// sit directly on the host terminal background.
+    /// The popup is frameless at every width: rows sit directly on the host
+    /// terminal background. The focused row is the dark gray selection bar
+    /// with a cyan `>` and a cyan label; every other row is a dim `·`, a
+    /// white label and a dim description.
     fn render_autocomplete_inline(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;
@@ -255,6 +269,7 @@ impl<'a> MinimalSessionView<'a> {
         let accent = self.colors.accent;
         let dim = self.colors.text_dim;
         let text = self.colors.text;
+        let bar = self.colors.selection;
 
         // Calculate actual height based on items (top stays fixed, bottom varies)
         let visible_items = self.app_state.autocomplete.visible_items();
@@ -269,17 +284,24 @@ impl<'a> MinimalSessionView<'a> {
         let drawn = visible_items.len().min(max_items);
 
         let inner_y = area.y;
-        let inner_x = area.x + 1;
 
         if visible_items.is_empty() {
             buf.set_string(
-                inner_x,
+                area.x,
                 inner_y,
                 "No matching commands",
                 Style::default().fg(dim),
             );
             return;
         }
+
+        // Descriptions line up in one column after the widest label.
+        let widest = visible_items
+            .iter()
+            .take(drawn)
+            .map(|item| item.label.chars().count())
+            .max()
+            .unwrap_or(0);
 
         for (i, item) in visible_items.iter().take(drawn).enumerate() {
             let y = inner_y + i as u16;
@@ -292,23 +314,20 @@ impl<'a> MinimalSessionView<'a> {
             if is_selected {
                 for dx in 0..area.width {
                     if let Some(cell) = buf.cell_mut((area.x + dx, y)) {
-                        cell.set_bg(SELECTION_BG);
+                        cell.set_bg(bar);
                         cell.set_fg(text);
                     }
                 }
-                buf.set_string(
-                    inner_x.saturating_sub(1),
-                    y,
-                    "> ",
-                    Style::default().fg(accent).bg(SELECTION_BG),
-                );
+                buf.set_string(area.x, y, "> ", Style::default().fg(accent).bg(bar));
+            } else {
+                buf.set_string(area.x, y, "· ", Style::default().fg(dim));
             }
 
-            let mut x = inner_x + 1;
+            let mut x = area.x + 2;
             let label_style = if is_selected {
                 Style::default()
-                    .fg(text)
-                    .bg(SELECTION_BG)
+                    .fg(accent)
+                    .bg(bar)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(text)
@@ -318,20 +337,19 @@ impl<'a> MinimalSessionView<'a> {
                 area.right().saturating_sub(x + 1) as usize,
             );
             buf.set_string(x, y, &label, label_style);
-            x += label.chars().count() as u16;
+            x += (widest as u16).max(label.chars().count() as u16);
 
             if !item.description.is_empty() {
                 let remaining = area.right().saturating_sub(x + 3) as usize;
                 let desc = crate::ui::text_utils::first_fitting_line(&item.description, remaining);
                 if !desc.is_empty() {
                     // Descriptions stay dim even on the selection bar; only
-                    // the label is bright and only the `>` marker is violet.
+                    // the `>` and the label are cyan.
                     let desc_style = if is_selected {
-                        Style::default().fg(dim).bg(SELECTION_BG)
+                        Style::default().fg(dim).bg(bar)
                     } else {
                         Style::default().fg(dim)
                     };
-                    buf.set_string(x, y, "  ", desc_style);
                     buf.set_string(x + 2, y, &desc, desc_style);
                 }
             }
@@ -351,12 +369,7 @@ impl<'a> MinimalSessionView<'a> {
                     &more,
                     area.width.saturating_sub(2) as usize,
                 );
-                buf.set_string(
-                    inner_x.saturating_sub(1),
-                    y,
-                    &line,
-                    Style::default().fg(dim),
-                );
+                buf.set_string(area.x, y, &line, Style::default().fg(dim));
             }
         }
     }
@@ -369,8 +382,10 @@ impl<'a> Widget for MinimalSessionView<'a> {
         }
 
         let is_task_running = self.is_task_running();
+        let footer_height: u16 = 1;
+        let footer_y = area.bottom().saturating_sub(footer_height);
 
-        // Calculate fixed heights
+        // ---- bottom stack sizes -------------------------------------------
         let autocomplete_visible = self.app_state.autocomplete.visible;
         let remaining_cmds = self.app_state.autocomplete.items.len().saturating_sub(
             self.app_state
@@ -397,64 +412,17 @@ impl<'a> Widget for MinimalSessionView<'a> {
         let status_height: u16 = if is_task_running { 1 } else { 0 };
         let show_update_banner = self.app_state.should_show_update_banner();
         let update_banner_height: u16 = if show_update_banner { 1 } else { 0 };
-        let input_height: u16 = 1;
-        let hints_height: u16 = 1;
 
-        let bottom_stack = status_height + update_banner_height + input_height + hints_height;
-        let max_ac_height = area.height.saturating_sub(bottom_stack.saturating_add(1));
+        let rows_above_footer = footer_y.saturating_sub(area.y);
+        let fixed_stack = status_height + update_banner_height + COMPOSER_ROWS;
+        let max_ac_height = rows_above_footer.saturating_sub(fixed_stack.saturating_add(1));
         let autocomplete_height: u16 = if autocomplete_visible {
             (ac_items as u16).min(max_ac_height).max(1)
         } else {
             0
         };
 
-        let hints_y = area.y + area.height.saturating_sub(hints_height);
-        let input_y = hints_y.saturating_sub(autocomplete_height + input_height);
-        // The popup sits below the composer, so the transcript (or the empty
-        // session chrome) keeps the rows above it.
-        let content_height = input_y.saturating_sub(area.y);
-        let content_area = Rect::new(area.x, area.y, area.width, content_height);
-        self.render_scrollable_content(content_area, buf, 1);
-
-        let mut next_y = input_y;
-        if is_task_running && status_height > 0 {
-            let status_area = Rect::new(
-                area.x,
-                next_y.saturating_sub(status_height),
-                area.width,
-                status_height,
-            );
-            let _ = status_area;
-        }
-
-        if show_update_banner {
-            let banner_y = input_y.saturating_sub(update_banner_height);
-            let banner_area = Rect::new(area.x, banner_y, area.width, update_banner_height);
-            super::rendering::render_update_banner(
-                banner_area,
-                buf,
-                &self.colors,
-                &self.app_state.update_status,
-            );
-        }
-
-        if is_task_running {
-            let status_area = Rect::new(
-                area.x,
-                input_y.saturating_sub(update_banner_height + status_height),
-                area.width,
-                status_height,
-            );
-            let header = self.status_header();
-            let elapsed = self.app_state.streaming.prompt_elapsed_seconds();
-            let status = StatusIndicator::new(header)
-                .with_elapsed_secs(elapsed)
-                .with_interrupt_hint(true);
-            status.render(status_area, buf);
-        }
-
-        let input_area = Rect::new(area.x, input_y, area.width, input_height);
-
+        // ---- interactive pickers replace the composer --------------------
         if self.app_state.is_interactive_mode() {
             if let Some(state) = self.app_state.get_interactive_state() {
                 // Always leave rows for the empty-state copy and one for the
@@ -464,28 +432,84 @@ impl<'a> Widget for MinimalSessionView<'a> {
                 } else {
                     state.filtered_indices.len().min(state.max_visible)
                 };
-                let search_rows: u16 = if state.searchable { 1 } else { 0 };
+                let search_rows: u16 = if state.searchable { 3 } else { 0 };
                 let required_height = (items_count as u16) + 3 + search_rows;
-                let max_height = area.height.saturating_sub(hints_height).max(3);
+                let max_height = rows_above_footer.max(3);
                 let widget_height = required_height.min(max_height);
-                let interactive_y = area.y + area.height - widget_height - hints_height;
+                let interactive_y = footer_y.saturating_sub(widget_height);
+                let content_area = Rect::new(
+                    area.x,
+                    area.y,
+                    area.width,
+                    interactive_y.saturating_sub(area.y),
+                );
+                let lines = self.content_lines(area.width, area.height);
+                self.render_scrollable_content(content_area, buf, lines);
                 let interactive_area = Rect::new(area.x, interactive_y, area.width, widget_height);
                 let widget = crate::interactive::InteractiveWidget::new(state);
                 widget.render(interactive_area, buf);
             }
-        } else {
-            self.render_input(input_area, buf);
+            self.render_footer(area, footer_y, buf, is_task_running);
+            return;
         }
 
-        next_y = input_y + input_height;
+        // ---- transcript, then the composer right under it ---------------
+        let lines = self.content_lines(area.width, area.height);
+        let stack = fixed_stack + autocomplete_height;
+        let max_content = rows_above_footer.saturating_sub(stack);
+        let content_height = (lines.len() as u16).min(max_content);
+        let content_area = Rect::new(area.x, area.y, area.width, content_height);
+        self.render_scrollable_content(content_area, buf, lines);
+
+        let mut next_y = area.y + content_height;
+
+        if is_task_running {
+            let status_area = Rect::new(area.x, next_y, area.width, status_height);
+            let header = self.status_header();
+            let elapsed = self.app_state.streaming.prompt_elapsed_seconds();
+            let status = StatusIndicator::new(header)
+                .with_elapsed_secs(elapsed)
+                .with_interrupt_hint(true);
+            status.render(status_area, buf);
+            next_y += status_height;
+        }
+
+        if show_update_banner {
+            let banner_area = Rect::new(area.x, next_y, area.width, update_banner_height);
+            super::rendering::render_update_banner(
+                banner_area,
+                buf,
+                &self.colors,
+                &self.app_state.update_status,
+            );
+            next_y += update_banner_height;
+        }
+
+        let input_area = Rect::new(area.x, next_y, area.width, COMPOSER_ROWS);
+        self.render_input(input_area, buf);
+        next_y += COMPOSER_ROWS;
+
         if autocomplete_visible {
             let autocomplete_area = Rect::new(area.x, next_y, area.width, autocomplete_height);
             self.render_autocomplete_inline(autocomplete_area, buf);
         }
 
-        // The session footer (cwd · git, model · mode · context) stays on
-        // screen in every mode, including the interactive pickers.
-        let hints_area = Rect::new(area.x, hints_y, area.width, hints_height);
+        self.render_footer(area, footer_y, buf, is_task_running);
+    }
+}
+
+/// Footer hint while the slash palette is open, and its narrow form.
+pub const PALETTE_FOOTER_HINT: &str = "↑↓ select · ↵ run · tab complete · esc close";
+pub const PALETTE_FOOTER_HINT_SHORT: &str = "↵ run · esc close";
+
+impl<'a> MinimalSessionView<'a> {
+    /// The session footer stays on screen in every mode, including the
+    /// interactive pickers: model · mode · context on the left, one shortcut
+    /// hint on the right, all gray. The hint follows the context — the
+    /// palette's keys while it is open, nothing while a picker panel shows
+    /// its own hints row, `shift+tab to cycle modes` otherwise.
+    fn render_footer(&self, area: Rect, footer_y: u16, buf: &mut Buffer, is_task_running: bool) {
+        let hints_area = Rect::new(area.x, footer_y, area.width, 1);
         let context = if self.app_state.is_viewing_subagent() {
             HintContext::SubagentView
         } else if is_task_running {
@@ -493,15 +517,19 @@ impl<'a> Widget for MinimalSessionView<'a> {
         } else {
             HintContext::Idle
         };
-        let mut hints = KeyHints::new(context).with_permission_mode(self.app_state.permission_mode);
-        hints = hints.with_model(&self.app_state.model);
-        hints = hints.with_session_footer(
-            &self.app_state.footer_cwd,
-            &self.app_state.git_branch,
-            self.app_state.git_dirty,
-            &self.app_state.agent_mode_label,
-            self.app_state.context_percent,
-        );
+        let mut hints = KeyHints::new(context)
+            .with_colors(self.colors.clone())
+            .with_permission_mode(self.app_state.permission_mode)
+            .with_model(&self.app_state.model)
+            .with_session_footer(
+                &self.app_state.agent_mode_label,
+                self.app_state.context_percent,
+            );
+        if self.app_state.is_interactive_mode() {
+            hints = hints.with_footer_hint("", "");
+        } else if self.app_state.autocomplete.visible {
+            hints = hints.with_footer_hint(PALETTE_FOOTER_HINT, PALETTE_FOOTER_HINT_SHORT);
+        }
         if let Some(ref budget) = self.app_state.thinking_budget {
             hints = hints.with_thinking_budget(budget);
         }

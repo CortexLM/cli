@@ -71,7 +71,7 @@ pub fn detect_terminal_bg() -> Option<(u8, u8, u8)> {
 /// Adaptive color palette that adjusts to terminal background
 #[derive(Debug, Clone)]
 pub struct AdaptiveColors {
-    /// Brand accent color — the locked violet, reserved for markers
+    /// Selection accent — cyan, for the focused `>` caret and label only
     pub accent: Color,
     /// Primary text color
     pub text: Color,
@@ -79,19 +79,23 @@ pub struct AdaptiveColors {
     pub text_dim: Color,
     /// Very subtle/muted text color
     pub text_muted: Color,
-    /// Background color for user messages
+    /// Bar behind a past user turn
     pub user_bg: Color,
-    /// Border color for UI elements
+    /// Filled charcoal panel for tips / info blocks
+    pub panel_bg: Color,
+    /// Hairline / border color for UI elements
     pub border: Color,
-    /// Success/confirmation color (violet, same family as the accent)
+    /// Success color — green, for `✓` checks
     pub success: Color,
-    /// Diff-addition color — the only green in the chrome
+    /// Diff-addition color — the same green, for `+N`
     pub diff_add: Color,
     /// Error/danger color (red)
     pub error: Color,
     /// Warning/caution color (amber/yellow)
     pub warning: Color,
-    /// Selection highlight color
+    /// Thinking status color (muted gold)
+    pub thinking: Color,
+    /// Selection bar background (dark gray)
     pub selection: Color,
 }
 
@@ -107,41 +111,44 @@ impl AdaptiveColors {
 
     /// Create dark theme colors adapted to the given background
     pub fn dark_theme(bg: (u8, u8, u8)) -> Self {
-        // Locked violet accent — matches cortex_core::style::ACCENT
-        let accent_rgb = (0xA7, 0x8B, 0xFA); // #A78BFA
-
-        // Blend colors with background for better integration
-        let text_dim_rgb = blend((0x80, 0x80, 0x80), bg, 0.9);
-        let text_muted_rgb = blend((0x50, 0x50, 0x50), bg, 0.9);
-        let border_rgb = blend((0x40, 0x40, 0x40), bg, 0.9);
-        let user_bg_rgb = blend((0x30, 0x30, 0x30), bg, 0.8);
+        // Blend the structural grays with the background for better
+        // integration; the accent and the semantic colors stay locked.
+        let text_dim_rgb = blend((0x6B, 0x72, 0x80), bg, 0.9);
+        let text_muted_rgb = blend((0x4B, 0x55, 0x63), bg, 0.9);
+        let border_rgb = blend((0x3A, 0x3A, 0x3A), bg, 0.9);
+        let user_bg_rgb = blend((0x1C, 0x1C, 0x1C), bg, 0.8);
+        let panel_rgb = blend((0x14, 0x14, 0x14), bg, 0.8);
+        let selection_rgb = blend((0x26, 0x26, 0x26), bg, 0.9);
 
         Self {
-            accent: Color::Rgb(accent_rgb.0, accent_rgb.1, accent_rgb.2),
-            text: Color::Rgb(0xE0, 0xE0, 0xE0),
+            accent: cortex_core::style::ACCENT,
+            text: Color::Rgb(0xFF, 0xFF, 0xFF),
             text_dim: Color::Rgb(text_dim_rgb.0, text_dim_rgb.1, text_dim_rgb.2),
             text_muted: Color::Rgb(text_muted_rgb.0, text_muted_rgb.1, text_muted_rgb.2),
             user_bg: Color::Rgb(user_bg_rgb.0, user_bg_rgb.1, user_bg_rgb.2),
+            panel_bg: Color::Rgb(panel_rgb.0, panel_rgb.1, panel_rgb.2),
             border: Color::Rgb(border_rgb.0, border_rgb.1, border_rgb.2),
-            success: Color::Rgb(0xA7, 0x8B, 0xFA),   // #A78BFA
-            diff_add: Color::Rgb(0x4A, 0xDE, 0x80),  // #4ADE80
-            error: Color::Rgb(0xFF, 0x6B, 0x6B),     // #FF6B6B
-            warning: Color::Rgb(0xFF, 0xC8, 0x57),   // #FFC857
-            selection: Color::Rgb(0x22, 0x1A, 0x38), // #221A38
+            success: cortex_core::style::SUCCESS,
+            diff_add: cortex_core::style::DIFF_ADD,
+            error: cortex_core::style::ERROR,
+            warning: cortex_core::style::WARNING,
+            thinking: cortex_core::style::THINKING,
+            selection: Color::Rgb(selection_rgb.0, selection_rgb.1, selection_rgb.2),
         }
     }
 
     /// Create light theme colors adapted to the given background
     pub fn light_theme(bg: (u8, u8, u8)) -> Self {
-        // Darker violet for contrast on light backgrounds
-        let accent_rgb = (0x7C, 0x3A, 0xED);
+        // Darker cyan for contrast on light backgrounds
+        let accent_rgb = (0x03, 0x69, 0xA1);
 
         // Blend colors with background for better integration
         let text_dim_rgb = blend((0x60, 0x60, 0x60), bg, 0.9);
         let text_muted_rgb = blend((0xA0, 0xA0, 0xA0), bg, 0.9);
         let border_rgb = blend((0xC0, 0xC0, 0xC0), bg, 0.9);
         let user_bg_rgb = blend((0xF0, 0xF0, 0xF0), bg, 0.8);
-        let selection_rgb = blend(accent_rgb, bg, 0.2);
+        let panel_rgb = blend((0xF5, 0xF5, 0xF5), bg, 0.8);
+        let selection_rgb = blend((0xE0, 0xE0, 0xE0), bg, 0.9);
 
         Self {
             accent: Color::Rgb(accent_rgb.0, accent_rgb.1, accent_rgb.2),
@@ -149,29 +156,34 @@ impl AdaptiveColors {
             text_dim: Color::Rgb(text_dim_rgb.0, text_dim_rgb.1, text_dim_rgb.2),
             text_muted: Color::Rgb(text_muted_rgb.0, text_muted_rgb.1, text_muted_rgb.2),
             user_bg: Color::Rgb(user_bg_rgb.0, user_bg_rgb.1, user_bg_rgb.2),
+            panel_bg: Color::Rgb(panel_rgb.0, panel_rgb.1, panel_rgb.2),
             border: Color::Rgb(border_rgb.0, border_rgb.1, border_rgb.2),
-            success: Color::Rgb(0x7C, 0x3A, 0xED), // Darker violet for light bg
-            diff_add: Color::Rgb(0x16, 0xA3, 0x4A), // Darker green for light bg
-            error: Color::Rgb(0xD9, 0x3D, 0x3D),   // Darker red for light bg
+            success: Color::Rgb(0x16, 0xA3, 0x4A), // Darker green for light bg
+            diff_add: Color::Rgb(0x16, 0xA3, 0x4A),
+            error: Color::Rgb(0xD9, 0x3D, 0x3D), // Darker red for light bg
             warning: Color::Rgb(0xC9, 0x9A, 0x2E), // Darker amber for light bg
+            thinking: Color::Rgb(0x9A, 0x7B, 0x2E), // Darker gold for light bg
             selection: Color::Rgb(selection_rgb.0, selection_rgb.1, selection_rgb.2),
         }
     }
 
-    /// Create default dark theme colors when detection fails
+    /// Create default dark theme colors when detection fails — the locked
+    /// palette from `cortex_core::style`.
     pub fn default_dark() -> Self {
         Self {
-            accent: Color::Rgb(0xA7, 0x8B, 0xFA), // #A78BFA - locked violet
-            text: Color::Rgb(0xE0, 0xE0, 0xE0),   // #E0E0E0
-            text_dim: Color::Rgb(0x80, 0x80, 0x80), // #808080
-            text_muted: Color::Rgb(0x50, 0x50, 0x50), // #505050
-            user_bg: Color::Rgb(0x2A, 0x2A, 0x2A),
-            border: Color::Rgb(0x40, 0x40, 0x40),    // #404040
-            success: Color::Rgb(0xA7, 0x8B, 0xFA),   // #A78BFA
-            diff_add: Color::Rgb(0x4A, 0xDE, 0x80),  // #4ADE80
-            error: Color::Rgb(0xFF, 0x6B, 0x6B),     // #FF6B6B
-            warning: Color::Rgb(0xFF, 0xC8, 0x57),   // #FFC857
-            selection: Color::Rgb(0x22, 0x1A, 0x38), // #221A38
+            accent: cortex_core::style::ACCENT,          // #7DD3FC cyan
+            text: cortex_core::style::TEXT,              // #FFFFFF
+            text_dim: cortex_core::style::TEXT_DIM,      // #6B7280
+            text_muted: cortex_core::style::TEXT_MUTED,  // #4B5563
+            user_bg: cortex_core::style::USER_TURN_BG,   // #1C1C1C
+            panel_bg: cortex_core::style::PANEL_BG,      // #141414
+            border: cortex_core::style::HAIRLINE,        // #3A3A3A
+            success: cortex_core::style::SUCCESS,        // #4ADE80
+            diff_add: cortex_core::style::DIFF_ADD,      // #4ADE80
+            error: cortex_core::style::ERROR,            // #FF6B6B
+            warning: cortex_core::style::WARNING,        // #FFC857
+            thinking: cortex_core::style::THINKING,      // #C9A95C
+            selection: cortex_core::style::SELECTION_BG, // #262626
         }
     }
 }
@@ -186,33 +198,29 @@ impl AdaptiveColors {
     /// Create AdaptiveColors from a ThemeColors instance
     pub fn from_theme_colors(theme: &ThemeColors) -> Self {
         // Light backgrounds blend their own selection tint; dark themes use
-        // the locked dark violet bar.
+        // the locked dark gray bar.
         let selection = match theme.background {
             Color::Rgb(r, g, b) if is_light((r, g, b)) => {
-                let accent = match theme.success {
-                    Color::Rgb(ar, ag, ab) => (ar, ag, ab),
-                    _ => (0xA7, 0x8B, 0xFA),
-                };
-                let blended = blend(accent, (r, g, b), 0.2);
+                let blended = blend((0x80, 0x80, 0x80), (r, g, b), 0.2);
                 Color::Rgb(blended.0, blended.1, blended.2)
             }
             _ => cortex_core::style::SELECTION_BG,
         };
 
         Self {
-            // The session chrome reserves its accent for `>` markers and
-            // success dots, so it maps to the locked violet, not the brand
-            // primary.
-            accent: theme.success,
+            // The theme's primary is its selection accent.
+            accent: theme.primary,
             text: theme.text,
             text_dim: theme.text_dim,
             text_muted: theme.text_muted,
-            user_bg: theme.surface[0],
+            user_bg: theme.surface[1],
+            panel_bg: theme.surface[0],
             border: theme.border,
             success: theme.success,
             diff_add: cortex_core::style::DIFF_ADD,
             error: theme.error,
             warning: theme.warning,
+            thinking: cortex_core::style::THINKING,
             selection,
         }
     }
@@ -255,42 +263,56 @@ mod tests {
     #[test]
     fn test_default_dark_colors() {
         let colors = AdaptiveColors::default_dark();
-        // The accent is the locked violet.
-        assert!(matches!(colors.accent, Color::Rgb(0xA7, 0x8B, 0xFA)));
-        // Green is reserved for diff additions.
+        // The accent is the selection cyan.
+        assert!(matches!(colors.accent, Color::Rgb(0x7D, 0xD3, 0xFC)));
+        // Green covers `✓` and diff additions alike.
         assert!(matches!(colors.diff_add, Color::Rgb(0x4A, 0xDE, 0x80)));
-        // The selection bar is the locked dark violet.
-        assert!(matches!(colors.selection, Color::Rgb(0x22, 0x1A, 0x38)));
+        assert_eq!(colors.success, colors.diff_add);
+        // The selection bar is the dark gray bar, the user turn a lighter
+        // gray, the tips panel charcoal, the hairline gray.
+        assert!(matches!(colors.selection, Color::Rgb(0x26, 0x26, 0x26)));
+        assert!(matches!(colors.user_bg, Color::Rgb(0x1C, 0x1C, 0x1C)));
+        assert!(matches!(colors.panel_bg, Color::Rgb(0x14, 0x14, 0x14)));
+        assert!(matches!(colors.border, Color::Rgb(0x3A, 0x3A, 0x3A)));
+        assert!(matches!(colors.text_dim, Color::Rgb(0x6B, 0x72, 0x80)));
+        // Thinking is the muted gold, distinct from the warning amber.
+        assert_ne!(colors.thinking, colors.warning);
     }
 
     #[test]
     fn test_dark_theme() {
         let colors = AdaptiveColors::dark_theme((0x1A, 0x1A, 0x1A));
-        assert!(matches!(colors.accent, Color::Rgb(0xA7, 0x8B, 0xFA)));
-        assert!(matches!(colors.selection, Color::Rgb(0x22, 0x1A, 0x38)));
+        assert!(matches!(colors.accent, Color::Rgb(0x7D, 0xD3, 0xFC)));
+        // Structural grays stay neutral after blending with the background.
+        for color in [colors.selection, colors.user_bg, colors.border] {
+            let Color::Rgb(r, g, b) = color else {
+                panic!("{color:?} must be RGB");
+            };
+            assert!(r == g && g == b, "{color:?} is not a neutral gray");
+        }
     }
 
     #[test]
     fn test_light_theme() {
         let colors = AdaptiveColors::light_theme((255, 255, 255));
         // Light theme should have darker accent for contrast
-        assert!(matches!(colors.accent, Color::Rgb(0x7C, 0x3A, 0xED)));
+        assert!(matches!(colors.accent, Color::Rgb(0x03, 0x69, 0xA1)));
     }
 
     #[test]
     fn test_from_theme_name() {
         let dark_colors = AdaptiveColors::from_theme_name("dark");
-        // The session accent maps to the theme's success violet.
-        assert!(matches!(dark_colors.accent, Color::Rgb(0xA7, 0x8B, 0xFA)));
+        // The session accent is the theme's primary — the selection cyan.
+        assert!(matches!(dark_colors.accent, Color::Rgb(0x7D, 0xD3, 0xFC)));
         // Dark themes carry the locked selection bar.
         assert!(matches!(
             dark_colors.selection,
-            Color::Rgb(0x22, 0x1A, 0x38)
+            Color::Rgb(0x26, 0x26, 0x26)
         ));
 
         let light_colors = AdaptiveColors::from_theme_name("light");
         // Light theme should have different accent
-        assert!(matches!(light_colors.accent, Color::Rgb(0x7C, 0x3A, 0xED)));
+        assert!(matches!(light_colors.accent, Color::Rgb(0x03, 0x69, 0xA1)));
 
         let monokai_colors = AdaptiveColors::from_theme_name("monokai");
         // Monokai has green accent
@@ -304,9 +326,9 @@ mod tests {
         let theme = ThemeColors::ocean_dark();
         let colors = AdaptiveColors::from_theme_colors(&theme);
 
-        // The session accent is the theme's success color, reserved for
-        // markers.
-        assert_eq!(colors.accent, theme.success);
+        // The session accent is the theme's primary, reserved for the
+        // focused selection.
+        assert_eq!(colors.accent, theme.primary);
         assert_eq!(colors.text, theme.text);
         assert_eq!(colors.text_dim, theme.text_dim);
         assert_eq!(colors.text_muted, theme.text_muted);

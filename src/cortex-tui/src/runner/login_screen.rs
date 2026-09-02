@@ -19,7 +19,7 @@ use ratatui::widgets::{Clear, Paragraph};
 use tokio::sync::mpsc;
 
 use crate::ui::text_utils::{first_fitting_line, wrap_or_drop};
-use cortex_core::style::{ACCENT, ERROR, SELECTION_BG, TEXT, TEXT_DIM};
+use cortex_core::style::{ACCENT, ERROR, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM};
 use cortex_login::{SecureAuthData, save_auth_with_fallback};
 use cortex_tui_components::spinner::SpinnerStyle;
 
@@ -29,8 +29,12 @@ use cortex_tui_components::spinner::SpinnerStyle;
 
 const API_BASE_URL: &str = "https://api.cortex.foundation";
 
-/// Highlight token (violet) — success accents only; selection is `SELECTION_BG`.
-const HIGHLIGHT: ratatui::style::Color = ACCENT;
+/// Title of the sign-in picker.
+pub const LOGIN_TITLE: &str = "Welcome to Cortex CLI!";
+/// Question above the numbered sign-in options.
+pub const LOGIN_QUESTION: &str = "How would you like to log in?";
+/// Key hints under the sign-in options.
+pub const LOGIN_HINTS: &str = "↑↓ select · ↵ confirm · esc quit";
 
 // ============================================================================
 // Login Screen State
@@ -65,10 +69,8 @@ impl LoginMethod {
 
     fn description(&self) -> &'static str {
         match self {
-            LoginMethod::Browser => {
-                "Opens cortex.foundation/cli/auth — token never hits the model."
-            }
-            LoginMethod::ApiKey => "Paste a key from your Cortex account.",
+            LoginMethod::Browser => "Opens cortex.foundation/cli/auth",
+            LoginMethod::ApiKey => "Enter your key to authenticate",
         }
     }
 }
@@ -160,7 +162,7 @@ impl LoginScreen {
         screen
     }
 
-    /// Success screen (`Signed in.` violet).
+    /// Success screen (`✓ Signed in.` — the check is the only green).
     pub fn lock_success(version: &str) -> Self {
         let mut screen =
             Self::new(PathBuf::from("/tmp/cortex-lock"), None).with_splash_version(version);
@@ -300,75 +302,103 @@ impl LoginScreen {
         }
     }
 
+    /// The sign-in picker: title, question, numbered options — the focused
+    /// one is a cyan `>` and label on the dark gray bar, the others a dim `·`
+    /// with white copy — each with its dim description under the title, then
+    /// the key hints. The version sits alone in the footer.
     fn render_select_method(&self, f: &mut ratatui::Frame, area: Rect) {
         let version = self.splash_version.as_str();
         let methods = LoginMethod::all();
         let buf = f.buffer_mut();
         let w = area.width.saturating_sub(1).max(1) as usize;
+        let compact = area.height < 14;
+        let footer_y = area.bottom().saturating_sub(1);
+        let hints_y = footer_y.saturating_sub(1);
         let mut y = area.y;
 
         buf.set_string(
             area.x,
             y,
-            first_fitting_line(&format!("Cortex CLI v{version}"), w),
+            first_fitting_line(LOGIN_TITLE, w),
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         );
-        y += 2;
+        y += 1;
         buf.set_string(
             area.x,
             y,
-            first_fitting_line("Sign in to Cortex", w),
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            first_fitting_line(LOGIN_QUESTION, w),
+            Style::default().fg(TEXT),
         );
         y += 2;
 
         for (i, method) in methods.iter().enumerate() {
-            if y >= area.bottom().saturating_sub(3) {
+            if y + 1 >= hints_y {
                 break;
             }
             let is_selected = i == self.selected_method;
-            let radio = if is_selected { "●" } else { "○" };
-            let label = first_fitting_line(method.label(), w.saturating_sub(2));
+            let number = i + 1;
+            let label = first_fitting_line(method.label(), w.saturating_sub(4));
             if is_selected {
-                for x in area.x..area.right() {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_bg(SELECTION_BG);
-                        cell.set_fg(TEXT);
+                for row in [y, y + 1] {
+                    for x in area.x..area.right() {
+                        if let Some(cell) = buf.cell_mut((x, row)) {
+                            cell.set_bg(SELECTION_BG);
+                            cell.set_fg(TEXT);
+                        }
                     }
                 }
                 buf.set_string(
                     area.x,
                     y,
-                    first_fitting_line(&format!("{radio} {label}"), w),
+                    "> ",
+                    Style::default().fg(ACCENT).bg(SELECTION_BG),
+                );
+                buf.set_string(
+                    area.x + 2,
+                    y,
+                    format!("{number} "),
+                    Style::default().fg(TEXT).bg(SELECTION_BG),
+                );
+                buf.set_string(
+                    area.x + 4,
+                    y,
+                    &label,
                     Style::default()
-                        .fg(TEXT)
+                        .fg(ACCENT)
                         .bg(SELECTION_BG)
                         .add_modifier(Modifier::BOLD),
                 );
-            } else {
                 buf.set_string(
-                    area.x,
+                    area.x + 4,
+                    y + 1,
+                    first_fitting_line(method.description(), w.saturating_sub(4)),
+                    Style::default().fg(TEXT_DIM).bg(SELECTION_BG),
+                );
+            } else {
+                buf.set_string(area.x, y, "· ", Style::default().fg(TEXT_DIM));
+                buf.set_string(
+                    area.x + 2,
                     y,
-                    first_fitting_line(&format!("{radio} {label}"), w),
+                    format!("{number} "),
                     Style::default().fg(TEXT),
                 );
+                buf.set_string(area.x + 4, y, &label, Style::default().fg(TEXT));
+                buf.set_string(
+                    area.x + 4,
+                    y + 1,
+                    first_fitting_line(method.description(), w.saturating_sub(4)),
+                    Style::default().fg(TEXT_DIM),
+                );
             }
-            y += 1;
-            if is_selected {
-                for hint_line in wrap_or_drop(method.description(), w) {
-                    if y >= area.bottom().saturating_sub(3) {
-                        break;
-                    }
-                    buf.set_string(area.x, y, &hint_line, Style::default().fg(TEXT_DIM));
-                    y += 1;
-                }
-            }
+            y += if compact { 2 } else { 3 };
         }
 
         if let Some(ref error) = self.error_message {
-            y += 1;
+            if !compact {
+                y += 1;
+            }
             for err_line in wrap_or_drop(error, w) {
-                if y >= area.bottom().saturating_sub(2) {
+                if y >= hints_y {
                     break;
                 }
                 buf.set_string(area.x, y, &err_line, Style::default().fg(ERROR));
@@ -376,10 +406,23 @@ impl LoginScreen {
             }
         }
 
+        // The hints follow the options — one blank row under them — and
+        // never drop below the row above the footer.
+        let hints_row = if compact {
+            y.min(hints_y)
+        } else {
+            y.saturating_add(1).min(hints_y)
+        };
         buf.set_string(
             area.x,
-            area.bottom().saturating_sub(2),
-            first_fitting_line("↑↓ select · ↵ continue · esc quit", w),
+            hints_row,
+            first_fitting_line(LOGIN_HINTS, w),
+            Style::default().fg(TEXT_DIM),
+        );
+        buf.set_string(
+            area.x,
+            footer_y,
+            first_fitting_line(&format!("Cortex CLI v{version}"), w),
             Style::default().fg(TEXT_DIM),
         );
     }
@@ -455,15 +498,20 @@ impl LoginScreen {
             .style(Style::default().fg(TEXT));
         f.render_widget(url_line, chunks[5]);
 
-        let hints =
-            Paragraph::new("Esc to go back · Ctrl+C to exit").style(Style::default().fg(TEXT_DIM));
+        let hints = Paragraph::new("esc back · ctrl+c exit").style(Style::default().fg(TEXT_DIM));
         f.render_widget(hints, chunks[7]);
     }
 
     fn render_success(&self, f: &mut ratatui::Frame, area: Rect) {
-        let msg = Paragraph::new("Signed in.")
-            .style(Style::default().fg(HIGHLIGHT).add_modifier(Modifier::BOLD));
-        f.render_widget(msg, centered_line(area, 20, 1));
+        // `✓` is the only green; the copy stays white.
+        let msg = Paragraph::new(Line::from(vec![
+            Span::styled("✓ ", Style::default().fg(SUCCESS)),
+            Span::styled(
+                "Signed in.",
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        f.render_widget(msg, centered_line(area, 12, 1));
     }
 
     fn render_failed(&self, f: &mut ratatui::Frame, area: Rect) {
@@ -476,7 +524,7 @@ impl LoginScreen {
             .into_iter()
             .map(|line| Line::from(Span::styled(line, Style::default().fg(ERROR))))
             .collect();
-        if let Some(hint) = wrap_or_drop("↑↓ select · esc close", width)
+        if let Some(hint) = wrap_or_drop("↵ try again · esc quit", width)
             .into_iter()
             .next()
         {
@@ -913,23 +961,88 @@ mod tests {
             let _ = std::fs::write(std::path::Path::new(&dir).join("auth.txt"), &text);
         }
         assert!(text.contains("Cortex CLI"), "{text}");
-        assert!(text.contains("Continue with browser"), "{text}");
-        assert!(text.contains("Paste an API key"), "{text}");
+        assert!(text.contains(LOGIN_TITLE), "{text}");
+        assert!(text.contains(LOGIN_QUESTION), "{text}");
+        // Numbered options: the focused one leads with `>`, the other with
+        // a middot; each title has its description under it.
+        assert!(text.contains("> 1 Continue with browser"), "{text}");
+        assert!(
+            text.contains("    Opens cortex.foundation/cli/auth"),
+            "{text}"
+        );
+        assert!(text.contains("· 2 Paste an API key"), "{text}");
+        assert!(
+            text.contains("    Enter your key to authenticate"),
+            "{text}"
+        );
         assert!(!text.contains("Guest"), "{text}");
         assert!(!text.contains("Exit"), "{text}");
-        assert!(text.contains("Sign in to Cortex"), "{text}");
-        assert!(text.contains("●"), "{text}");
-        assert!(text.contains("○"), "{text}");
         assert!(
-            text.contains("cortex.foundation/cli/auth") || text.contains("foundation"),
-            "{text}"
+            !text.contains("●") && !text.contains("○"),
+            "no radios: {text}"
         );
-        assert!(
-            text.contains("↵ continue") || text.contains("continue"),
-            "{text}"
-        );
+        assert!(text.contains(LOGIN_HINTS), "{text}");
         assert!(!text.contains("▄█▀▀▀▀█▄"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));
+
+        // Cyan is the focused `>` and label only; the number stays white, the
+        // description dim, and the whole two-row option sits on the gray bar.
+        let buf = terminal.backend().buffer();
+        let row = (0..24u16)
+            .find(|y| buf[(0, *y)].symbol() == ">")
+            .expect("selected row");
+        assert_eq!(buf[(0, row)].style().fg, Some(ACCENT));
+        assert_eq!(buf[(0, row)].style().bg, Some(SELECTION_BG));
+        assert_eq!(buf[(2, row)].style().fg, Some(TEXT));
+        assert_eq!(buf[(4, row)].style().fg, Some(ACCENT));
+        assert_eq!(buf[(4, row + 1)].style().fg, Some(TEXT_DIM));
+        assert_eq!(buf[(4, row + 1)].style().bg, Some(SELECTION_BG));
+        assert_eq!(buf[(79, row)].style().bg, Some(SELECTION_BG));
+        // The unselected option is white with a dim middot.
+        let other = (0..24u16)
+            .find(|y| buf[(0, *y)].symbol() == "·")
+            .expect("unselected row");
+        assert_eq!(buf[(0, other)].style().fg, Some(TEXT_DIM));
+        assert_eq!(buf[(4, other)].style().fg, Some(TEXT));
+        assert_ne!(buf[(4, other)].style().bg, Some(SELECTION_BG));
+        // Nothing on screen is violet.
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                let cell = &buf[(x, y)];
+                assert_ne!(
+                    cell.style().fg,
+                    Some(ratatui::style::Color::Rgb(167, 139, 250))
+                );
+                assert_ne!(
+                    cell.style().bg,
+                    Some(ratatui::style::Color::Rgb(34, 26, 56))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn login_success_check_is_the_only_green() {
+        let mut screen = LoginScreen::new(PathBuf::from("/tmp"), None);
+        screen.state = LoginState::Success;
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal.draw(|f| screen.render(f)).expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut green = String::new();
+        let mut white = String::new();
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                let cell = &buf[(x, y)];
+                if cell.style().fg == Some(SUCCESS) {
+                    green.push_str(cell.symbol());
+                } else if cell.style().fg == Some(TEXT) {
+                    white.push_str(cell.symbol());
+                }
+            }
+        }
+        assert_eq!(green.trim(), "✓");
+        assert!(white.contains("Signed in."), "{white}");
     }
 
     #[test]
@@ -993,6 +1106,18 @@ mod tests {
             let text = buffer_text(&terminal);
             assert!(text.contains("Cortex CLI"), "{text}");
             assert!(!text.trim().is_empty());
+            // Both options, their descriptions and the hints fit at 40×12.
+            for needle in [
+                "> 1 Continue with browser",
+                "Opens cortex.foundation/cli/auth",
+                "· 2 Paste an API key",
+                "Enter your key to authenticate",
+                LOGIN_HINTS,
+            ] {
+                assert!(text.contains(needle), "{w}x{h} missing {needle}:\n{text}");
+            }
+            let footer = text.lines().last().unwrap_or_default();
+            assert!(footer.starts_with("Cortex CLI v"), "{w}x{h}:\n{text}");
         }
     }
 }

@@ -1,53 +1,62 @@
-//! Cortex Theme - Violet chrome on the host terminal background.
+//! Cortex Theme - Gray chrome on the host terminal background.
 //!
-//! The locked chrome never paints its own background: the terminal shows
-//! through (`Color::Reset`, black by default). The single accent is the
-//! violet `#A78BFA`, reserved for markers — `>` prompts, selection carets,
-//! `●` tile dots and `✓` checks. Green exists only for `+` diff additions.
+//! The chrome never paints its own background: the terminal shows through
+//! (`Color::Reset`, black by default). Structure comes from gray — hairlines,
+//! filled charcoal panels, dim secondary copy, white primary copy. The one
+//! accent is the cyan `#7DD3FC`, reserved for the focused selection: the `>`
+//! caret and the selected label on the dark gray selection bar. Green exists
+//! only for `✓` success and `+` diff additions; red and amber only on
+//! diagnostics; a muted gold only on the Thinking status.
 
 use ratatui::style::{Color, Modifier, Style};
 
 // ============================================================
-// BRAND COLORS - Violet accent family
+// ACCENT - one cyan, focused selection only
 // ============================================================
 
-/// Primary accent - the locked violet, for `>` markers and carets
-pub const ACCENT: Color = Color::Rgb(167, 139, 250); // #A78BFA
+/// Primary accent - cyan for the focused selection (`>` caret + label)
+pub const ACCENT: Color = Color::Rgb(125, 211, 252); // #7DD3FC
 
-/// Legacy name for the primary accent (was the brand green)
+/// Legacy name for the primary accent
 pub const CYAN_PRIMARY: Color = ACCENT;
 
-/// Soft accent - lighter violet for secondary emphasis
-pub const SKY_BLUE: Color = Color::Rgb(196, 181, 253); // #C4B5FD
+/// Soft emphasis - light gray for secondary emphasis (legacy name)
+pub const SKY_BLUE: Color = Color::Rgb(212, 212, 216); // #D4D4D8
 
-/// Bright accent - lightest violet for highlights
-pub const ELECTRIC_BLUE: Color = Color::Rgb(221, 214, 254); // #DDD6FE
+/// Bright emphasis - near-white for highlights (legacy name)
+pub const ELECTRIC_BLUE: Color = Color::Rgb(229, 231, 235); // #E5E7EB
 
-/// Mid accent - links and interactive elements
-pub const DEEP_CYAN: Color = Color::Rgb(139, 92, 246); // #8B5CF6
+/// Mid gray - links and interactive elements at rest (legacy name)
+pub const DEEP_CYAN: Color = Color::Rgb(156, 163, 175); // #9CA3AF
 
-/// Dark accent
-pub const TEAL: Color = Color::Rgb(109, 40, 217); // #6D28D9
+/// Dark gray (legacy name)
+pub const TEAL: Color = Color::Rgb(75, 85, 99); // #4B5563
 
 // ============================================================
 // BACKGROUND COLORS - the host terminal owns the canvas
 // ============================================================
 
 /// Main background — never painted. The host terminal shows through
-/// (black by default). Do not swap this back to a solid navy/void fill.
+/// (black by default). Do not swap this back to a solid fill.
 pub const VOID: Color = Color::Reset;
 
-/// Surface level 0 - darkest neutral surface (popups, command rows)
-pub const SURFACE_0: Color = Color::Rgb(20, 20, 23); // #141417
+/// Filled charcoal panel for tips / info blocks
+pub const PANEL_BG: Color = Color::Rgb(20, 20, 20); // #141414
+
+/// Bar behind a past user turn (`> prompt text`) — slightly lighter gray
+pub const USER_TURN_BG: Color = Color::Rgb(28, 28, 28); // #1C1C1C
+
+/// Surface level 0 - the charcoal panel
+pub const SURFACE_0: Color = PANEL_BG;
 
 /// Surface level 1 - mid neutral surface
-pub const SURFACE_1: Color = Color::Rgb(28, 28, 32); // #1C1C20
+pub const SURFACE_1: Color = USER_TURN_BG;
 
-/// Surface level 2 - light neutral surface
-pub const SURFACE_2: Color = Color::Rgb(38, 38, 43); // #26262B
+/// Surface level 2 - the selection bar tone
+pub const SURFACE_2: Color = Color::Rgb(38, 38, 38); // #262626
 
 /// Surface level 3 - lightest neutral surface
-pub const SURFACE_3: Color = Color::Rgb(50, 50, 58); // #32323A
+pub const SURFACE_3: Color = Color::Rgb(51, 51, 51); // #333333
 
 // ============================================================
 // TEXT COLORS
@@ -56,11 +65,11 @@ pub const SURFACE_3: Color = Color::Rgb(50, 50, 58); // #32323A
 /// Primary text - white
 pub const TEXT: Color = Color::Rgb(255, 255, 255); // #FFFFFF
 
-/// Dimmed text - secondary text color
-pub const TEXT_DIM: Color = Color::Rgb(130, 154, 177); // #829AB1
+/// Dimmed text - secondary copy, placeholders, hints, descriptions
+pub const TEXT_DIM: Color = Color::Rgb(107, 114, 128); // #6B7280
 
 /// Muted text - very dim for background elements
-pub const TEXT_MUTED: Color = Color::Rgb(72, 101, 129); // #486581
+pub const TEXT_MUTED: Color = Color::Rgb(75, 85, 99); // #4B5563
 
 /// Bright text - pure white for emphasis
 pub const TEXT_BRIGHT: Color = Color::Rgb(255, 255, 255); // #FFFFFF
@@ -69,39 +78,47 @@ pub const TEXT_BRIGHT: Color = Color::Rgb(255, 255, 255); // #FFFFFF
 // SEMANTIC COLORS
 // ============================================================
 
-/// Success - the violet accent; `✓` and `●` markers are violet, not green
-pub const SUCCESS: Color = ACCENT; // #A78BFA
-
-/// Diff additions - the only green in the chrome (`+N`, `+` lines)
+/// Diff additions - green for `+N` / `+` lines
 pub const DIFF_ADD: Color = Color::Rgb(74, 222, 128); // #4ADE80
 
-/// Warning - golden amber for warnings
+/// Success - the same green, for `✓` checks only
+pub const SUCCESS: Color = DIFF_ADD; // #4ADE80
+
+/// Warning - amber, diagnostics only (`warn`)
 pub const WARNING: Color = Color::Rgb(255, 200, 87); // #FFC857
 
-/// Error - coral red for errors
+/// Error - red, diagnostics only (`error`, `✗ Stopped`)
 pub const ERROR: Color = Color::Rgb(255, 107, 107); // #FF6B6B
 
-/// Info - light blue for informational messages
-pub const INFO: Color = Color::Rgb(72, 202, 228); // #48CAE4
+/// Thinking status - muted gold, nothing else uses it
+pub const THINKING: Color = Color::Rgb(201, 169, 92); // #C9A95C
 
-/// Highlight - bright electric blue for emphasis
-pub const HIGHLIGHT: Color = Color::Rgb(125, 249, 255); // #7DF9FF
+/// Info - mid gray for informational messages (legacy name)
+pub const INFO: Color = DEEP_CYAN; // #9CA3AF
 
-/// Selected-row background - dark violet bar with light text, never inverted
-pub const SELECTION_BG: Color = Color::Rgb(34, 26, 56); // #221A38
+/// Highlight - near-white for emphasis (legacy name)
+pub const HIGHLIGHT: Color = ELECTRIC_BLUE; // #E5E7EB
+
+/// Selected-row background - dark gray bar; the caret and label on it are
+/// cyan, everything else stays white/dim. Never inverted onto the accent.
+pub const SELECTION_BG: Color = SURFACE_2; // #262626
 
 // ============================================================
 // BORDER COLORS
 // ============================================================
 
-/// Normal border - subtle neutral gray
-pub const BORDER: Color = Color::Rgb(42, 42, 50); // #2A2A32
+/// Hairline - the thin gray rule above and below the prompt, and around
+/// search fields
+pub const HAIRLINE: Color = Color::Rgb(58, 58, 58); // #3A3A3A
 
-/// Focused border - violet accent for active elements
-pub const BORDER_FOCUS: Color = ACCENT; // #A78BFA
+/// Normal border - the hairline gray
+pub const BORDER: Color = HAIRLINE;
+
+/// Focused border - still gray; cyan never outlines a box
+pub const BORDER_FOCUS: Color = Color::Rgb(82, 82, 82); // #525252
 
 /// Dim border - very subtle border
-pub const BORDER_DIM: Color = Color::Rgb(30, 30, 36); // #1E1E24
+pub const BORDER_DIM: Color = Color::Rgb(38, 38, 38); // #262626
 
 // ============================================================
 // LEGACY ALIASES - Backward compatibility
@@ -168,7 +185,7 @@ pub struct ThemeColors {
 }
 
 impl ThemeColors {
-    /// Violet-chrome theme - the default Cortex theme (legacy fn name)
+    /// Gray-chrome theme - the default Cortex theme (legacy fn name)
     pub fn ocean_cyan() -> Self {
         Self {
             primary: CYAN_PRIMARY,
@@ -188,17 +205,17 @@ impl ThemeColors {
         }
     }
 
-    /// Dark theme (default) - cyan/green accent on dark background
+    /// Dark theme (default) - gray chrome, cyan selection on dark background
     pub fn dark() -> Self {
         Self::ocean_cyan()
     }
 
-    /// Light theme - darker violet accents on light background
+    /// Light theme - darker cyan selection, gray chrome on a light background
     pub fn light() -> Self {
         Self {
-            primary: Color::Rgb(124, 58, 237),
-            secondary: Color::Rgb(109, 40, 217),
-            accent: Color::Rgb(91, 33, 182),
+            primary: Color::Rgb(3, 105, 161),
+            secondary: Color::Rgb(82, 82, 91),
+            accent: Color::Rgb(39, 39, 42),
             background: Color::Rgb(255, 255, 255),
             surface: [
                 Color::Rgb(245, 245, 245),
@@ -209,12 +226,12 @@ impl ThemeColors {
             text: Color::Rgb(30, 30, 30),
             text_dim: Color::Rgb(100, 100, 100),
             text_muted: Color::Rgb(150, 150, 150),
-            success: Color::Rgb(124, 58, 237),
+            success: Color::Rgb(22, 163, 74),
             warning: Color::Rgb(200, 150, 0),
             error: Color::Rgb(200, 50, 50),
-            info: Color::Rgb(50, 100, 200),
+            info: Color::Rgb(100, 100, 100),
             border: Color::Rgb(200, 200, 200),
-            border_focus: Color::Rgb(124, 58, 237),
+            border_focus: Color::Rgb(160, 160, 160),
         }
     }
 
@@ -314,10 +331,10 @@ impl CortexStyle {
             .add_modifier(Modifier::BOLD)
     }
 
-    /// Selected item style: light text on the dark violet bar — never inverted
+    /// Selected item style: cyan text on the dark gray bar — never inverted
     #[inline]
     pub fn selected() -> Style {
-        Style::default().fg(TEXT).bg(SELECTION_BG)
+        Style::default().fg(ACCENT).bg(SELECTION_BG)
     }
 
     /// Error style: coral red text for error messages
@@ -326,10 +343,22 @@ impl CortexStyle {
         Style::default().fg(ERROR)
     }
 
-    /// Success style: violet accent text for success messages
+    /// Success style: green, for `✓` checks
     #[inline]
     pub fn success() -> Style {
         Style::default().fg(SUCCESS)
+    }
+
+    /// Thinking status style: the muted gold
+    #[inline]
+    pub fn thinking() -> Style {
+        Style::default().fg(THINKING)
+    }
+
+    /// Hairline style: the thin gray rule framing the prompt
+    #[inline]
+    pub fn hairline() -> Style {
+        Style::default().fg(HAIRLINE)
     }
 
     /// Warning style: golden text for warnings
@@ -338,7 +367,7 @@ impl CortexStyle {
         Style::default().fg(WARNING)
     }
 
-    /// Info style: light blue text for informational messages
+    /// Info style: mid gray text for informational messages
     #[inline]
     pub fn info() -> Style {
         Style::default().fg(INFO)
@@ -356,19 +385,19 @@ impl CortexStyle {
         Style::default().fg(TEXT_MUTED)
     }
 
-    /// Highlight style: bright electric blue bold text
+    /// Highlight style: near-white bold text
     #[inline]
     pub fn highlight() -> Style {
         Style::default().fg(HIGHLIGHT).add_modifier(Modifier::BOLD)
     }
 
-    /// User message style: cyan primary text
+    /// User message style: white copy on the user-turn bar
     #[inline]
     pub fn user_message() -> Style {
-        Style::default().fg(CYAN_PRIMARY)
+        Style::default().fg(TEXT).bg(USER_TURN_BG)
     }
 
-    /// Assistant message style: sky blue text
+    /// Assistant message style: light gray text
     #[inline]
     pub fn assistant_message() -> Style {
         Style::default().fg(SKY_BLUE)
@@ -388,19 +417,19 @@ impl CortexStyle {
         Style::default().fg(ERROR).add_modifier(Modifier::ITALIC)
     }
 
-    /// Code style: electric blue text on surface background
+    /// Code style: near-white text on a slightly lighter surface
     #[inline]
     pub fn code() -> Style {
         Style::default().fg(ELECTRIC_BLUE).bg(SURFACE_1)
     }
 
-    /// Border style: standard border color
+    /// Border style: hairline gray
     #[inline]
     pub fn border() -> Style {
         Style::default().fg(BORDER)
     }
 
-    /// Focused border style: bright cyan border for focused elements
+    /// Focused border style: a lighter gray — cyan never outlines a box
     #[inline]
     pub fn border_focused() -> Style {
         Style::default().fg(BORDER_FOCUS)
@@ -608,6 +637,49 @@ mod tests {
         assert_eq!(RED, ERROR);
         assert_eq!(YELLOW, HIGHLIGHT);
         assert_eq!(BORDER_HIGHLIGHT, BORDER_FOCUS);
+    }
+
+    #[test]
+    fn gray_chrome_palette_is_locked() {
+        // One accent: cyan, for the focused selection only.
+        assert_eq!(ACCENT, Color::Rgb(0x7D, 0xD3, 0xFC));
+        assert_eq!(CortexStyle::selected().fg, Some(ACCENT));
+        assert_eq!(CortexStyle::selected().bg, Some(SELECTION_BG));
+        // Green covers `✓` and `+diff` — the same green.
+        assert_eq!(SUCCESS, DIFF_ADD);
+        assert_eq!(SUCCESS, Color::Rgb(0x4A, 0xDE, 0x80));
+        // Structure is gray: the host background shows through, panels are
+        // charcoal, hairlines and bars are neutral grays, secondary copy is
+        // the dim gray.
+        assert_eq!(VOID, Color::Reset);
+        assert_eq!(PANEL_BG, Color::Rgb(0x14, 0x14, 0x14));
+        assert_eq!(TEXT_DIM, Color::Rgb(0x6B, 0x72, 0x80));
+        for gray in [HAIRLINE, SELECTION_BG, USER_TURN_BG, BORDER_FOCUS] {
+            let Color::Rgb(r, g, b) = gray else {
+                panic!("{gray:?} must be an RGB gray");
+            };
+            assert!(r == g && g == b, "{gray:?} is not neutral");
+        }
+        // The violet and mint washes are gone from every semantic slot.
+        for color in [
+            ACCENT,
+            SUCCESS,
+            SELECTION_BG,
+            BORDER_FOCUS,
+            INFO,
+            HIGHLIGHT,
+            SKY_BLUE,
+            ELECTRIC_BLUE,
+            DEEP_CYAN,
+            TEAL,
+        ] {
+            assert_ne!(color, Color::Rgb(0xA7, 0x8B, 0xFA), "violet leaked");
+            assert_ne!(color, Color::Rgb(0x22, 0x1A, 0x38), "violet bar leaked");
+            assert_ne!(color, Color::Rgb(0x00, 0xF5, 0xD4), "mint leaked");
+        }
+        // Thinking is the only gold.
+        assert_eq!(CortexStyle::thinking().fg, Some(THINKING));
+        assert_ne!(THINKING, WARNING);
     }
 
     #[test]

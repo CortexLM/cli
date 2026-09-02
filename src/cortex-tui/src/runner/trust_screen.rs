@@ -10,13 +10,25 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, Paragraph};
+use ratatui::widgets::Clear;
 
-use cortex_core::style::{CYAN_PRIMARY, TEXT, TEXT_DIM, TEXT_MUTED};
-use cortex_tui_components::mascot::MASCOT;
+use crate::ui::text_utils::{first_fitting_line, wrap_or_drop};
+use cortex_core::style::{ACCENT, SELECTION_BG, TEXT, TEXT_DIM};
+
+/// Title of the trust prompt.
+pub const TRUST_TITLE: &str = "Trust this workspace?";
+/// Key hints under the trust options.
+pub const TRUST_HINTS: &str = "↑↓ select · ↵ confirm · esc quit";
+
+const TRUST_OPTIONS: [(&str, &str); 2] = [
+    (
+        "Yes, trust this folder",
+        "Cortex may read, edit and run commands here",
+    ),
+    ("No, exit", "Review the contents before granting access"),
+];
 
 // ============================================================================
 // Trust Result
@@ -128,142 +140,197 @@ impl TrustScreen {
         }
     }
 
+    /// The trust prompt: title and workspace path, the why in dim copy, then
+    /// two numbered options — the focused one a cyan `>` and label on the
+    /// dark gray bar, the other a dim `·` — each with its description under
+    /// the title, and the key hints at the bottom.
     fn render(&self, f: &mut ratatui::Frame) {
         let area = f.area();
         f.render_widget(Clear, area);
-
-        // Calculate content area with some padding
-        let content_width = 80.min(area.width.saturating_sub(4));
-        let content_x = (area.width.saturating_sub(content_width)) / 2;
-        let content_area = Rect::new(content_x, 0, content_width, area.height);
-
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1), // Top separator
-                Constraint::Length(1), // Spacing
-                Constraint::Length(5), // Mascot
-                Constraint::Length(1), // Spacing
-                Constraint::Length(4), // Description text
-                Constraint::Length(1), // Spacing
-                Constraint::Length(2), // Permissions text
-                Constraint::Length(1), // Spacing
-                Constraint::Length(1), // Security link
-                Constraint::Length(2), // Spacing
-                Constraint::Length(2), // Options
-                Constraint::Min(1),    // Flex
-                Constraint::Length(1), // Hints
-            ])
-            .split(content_area);
-
-        // Top separator line
-        let separator =
-            Paragraph::new("─".repeat(content_width as usize)).style(Style::default().fg(TEXT_DIM));
-        f.render_widget(separator, chunks[0]);
-
-        // Mascot with title
-        let path_display = self.workspace_path.display().to_string();
-        let mascot_lines: Vec<Line> = MASCOT
-            .lines()
-            .enumerate()
-            .map(|(i, line)| {
-                let suffix = match i {
-                    1 => Span::styled("  Workspace Access", Style::default().fg(CYAN_PRIMARY)),
-                    3 => Span::styled(
-                        format!("  {}", truncate_path(&path_display, 50)),
-                        Style::default().fg(TEXT),
-                    ),
-                    _ => Span::raw(""),
-                };
-                Line::from(vec![Span::styled(line, Style::default().fg(TEXT)), suffix])
-            })
-            .collect();
-        let mascot_widget = Paragraph::new(mascot_lines);
-        f.render_widget(mascot_widget, chunks[2]);
-
-        // Description text
-        let desc_lines = vec![
-            Line::from(Span::styled(
-                " Before continuing, please confirm you trust this workspace.",
-                Style::default().fg(TEXT_MUTED),
-            )),
-            Line::from(Span::styled(
-                " This should be your own project, a verified repository, or code from collaborators.",
-                Style::default().fg(TEXT_MUTED),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                " For unfamiliar directories, review the contents before granting access.",
-                Style::default().fg(TEXT_MUTED),
-            )),
-        ];
-        f.render_widget(Paragraph::new(desc_lines), chunks[4]);
-
-        // Permissions text
-        let perm_lines = vec![Line::from(Span::styled(
-            " Cortex requires permission to read, modify, and run commands in this directory.",
-            Style::default().fg(TEXT_MUTED),
-        ))];
-        f.render_widget(Paragraph::new(perm_lines), chunks[6]);
-
-        // Security link
-        let link = Line::from(vec![
-            Span::styled(" Learn more: ", Style::default().fg(TEXT_MUTED)),
-            Span::styled(
-                "https://cortex.dev/docs/security",
-                Style::default()
-                    .fg(CYAN_PRIMARY)
-                    .add_modifier(Modifier::UNDERLINED),
-            ),
-        ]);
-        f.render_widget(Paragraph::new(vec![link]), chunks[8]);
-
-        // Options
-        let opt1_style = if self.selected == 0 {
-            Style::default().fg(CYAN_PRIMARY)
-        } else {
-            Style::default().fg(TEXT_DIM)
-        };
-        let opt2_style = if self.selected == 1 {
-            Style::default().fg(CYAN_PRIMARY)
-        } else {
-            Style::default().fg(TEXT_DIM)
-        };
-
-        let opt1_prefix = if self.selected == 0 { " › " } else { "   " };
-        let opt2_prefix = if self.selected == 1 { " › " } else { "   " };
-
-        let options = vec![
-            Line::from(Span::styled(
-                format!("{}1. Yes, I trust this folder", opt1_prefix),
-                opt1_style,
-            )),
-            Line::from(Span::styled(
-                format!("{}2. No, exit", opt2_prefix),
-                opt2_style,
-            )),
-        ];
-        f.render_widget(Paragraph::new(options), chunks[10]);
-
-        // Hints at bottom
-        let hints = Line::from(Span::styled(
-            "Enter to confirm · Esc to exit",
-            Style::default().fg(TEXT_MUTED),
-        ));
-        f.render_widget(
-            Paragraph::new(vec![hints]).alignment(Alignment::Right),
-            chunks[12],
+        render_trust_prompt(
+            f.buffer_mut(),
+            area,
+            &self.workspace_path.display().to_string(),
+            self.selected,
         );
     }
 }
 
+/// Paint the trust prompt into `buf`.
+pub fn render_trust_prompt(
+    buf: &mut ratatui::buffer::Buffer,
+    area: Rect,
+    workspace: &str,
+    selected: usize,
+) {
+    if area.is_empty() {
+        return;
+    }
+    let w = area.width.saturating_sub(1).max(1) as usize;
+    let compact = area.height < 14;
+    let hints_y = area.bottom().saturating_sub(1);
+    let mut y = area.y;
+
+    buf.set_string(
+        area.x,
+        y,
+        first_fitting_line(TRUST_TITLE, w),
+        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+    );
+    y += 1;
+    buf.set_string(
+        area.x,
+        y,
+        truncate_path(workspace, w),
+        Style::default().fg(TEXT),
+    );
+    y += 2;
+
+    if !compact {
+        for part in wrap_or_drop(
+            "Only continue for your own projects, verified repositories, or code from collaborators. Cortex reads and edits files and runs commands in this directory with your approval.",
+            w,
+        ) {
+            if y + 6 >= hints_y {
+                break;
+            }
+            buf.set_string(area.x, y, &part, Style::default().fg(TEXT_DIM));
+            y += 1;
+        }
+        y += 1;
+    }
+
+    for (i, (label, description)) in TRUST_OPTIONS.iter().enumerate() {
+        if y + 1 >= hints_y {
+            break;
+        }
+        let is_selected = i == selected;
+        let number = i + 1;
+        let label = first_fitting_line(label, w.saturating_sub(4));
+        let description = first_fitting_line(description, w.saturating_sub(4));
+        if is_selected {
+            for row in [y, y + 1] {
+                for x in area.x..area.right() {
+                    if let Some(cell) = buf.cell_mut((x, row)) {
+                        cell.set_bg(SELECTION_BG);
+                        cell.set_fg(TEXT);
+                    }
+                }
+            }
+            let bar = Style::default().bg(SELECTION_BG);
+            buf.set_string(area.x, y, "> ", bar.fg(ACCENT));
+            buf.set_string(area.x + 2, y, format!("{number} "), bar.fg(TEXT));
+            buf.set_string(
+                area.x + 4,
+                y,
+                &label,
+                bar.fg(ACCENT).add_modifier(Modifier::BOLD),
+            );
+            buf.set_string(area.x + 4, y + 1, &description, bar.fg(TEXT_DIM));
+        } else {
+            buf.set_string(area.x, y, "· ", Style::default().fg(TEXT_DIM));
+            buf.set_string(
+                area.x + 2,
+                y,
+                format!("{number} "),
+                Style::default().fg(TEXT),
+            );
+            buf.set_string(area.x + 4, y, &label, Style::default().fg(TEXT));
+            buf.set_string(
+                area.x + 4,
+                y + 1,
+                &description,
+                Style::default().fg(TEXT_DIM),
+            );
+        }
+        y += if compact { 2 } else { 3 };
+    }
+
+    if !compact && y < hints_y {
+        buf.set_string(
+            area.x,
+            hints_y.saturating_sub(1).max(y),
+            first_fitting_line("Learn more: cortex.foundation/docs/security", w),
+            Style::default().fg(TEXT_DIM),
+        );
+    }
+    buf.set_string(
+        area.x,
+        hints_y,
+        first_fitting_line(TRUST_HINTS, w),
+        Style::default().fg(TEXT_DIM),
+    );
+}
+
 /// Truncate a path string to fit within max_len.
 fn truncate_path(path: &str, max_len: usize) -> String {
-    if path.len() <= max_len {
+    if path.chars().count() <= max_len {
         path.to_string()
     } else if max_len > 5 {
-        format!("...{}", &path[path.len() - (max_len - 3)..])
+        let tail: String = path
+            .chars()
+            .rev()
+            .take(max_len - 3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        format!("...{tail}")
     } else {
         path.chars().take(max_len).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::buffer::Buffer;
+
+    fn buffer_text(buf: &Buffer) -> String {
+        let area = buf.area();
+        let mut out = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn trust_prompt_is_a_numbered_picker_at_both_sizes() {
+        for (w, h) in [(40u16, 12u16), (120u16, 40u16)] {
+            let area = Rect::new(0, 0, w, h);
+            let mut buf = Buffer::empty(area);
+            render_trust_prompt(&mut buf, area, "~/cortex-api", 0);
+            let text = buffer_text(&buf);
+            for needle in [
+                TRUST_TITLE,
+                "~/cortex-api",
+                "> 1 Yes, trust this folder",
+                "· 2 No, exit",
+                TRUST_HINTS,
+            ] {
+                assert!(text.contains(needle), "{w}x{h} missing {needle}:\n{text}");
+            }
+            let row = (0..h)
+                .find(|y| buf[(0, *y)].symbol() == ">")
+                .expect("selected");
+            assert_eq!(buf[(0, row)].style().fg, Some(ACCENT));
+            assert_eq!(buf[(4, row)].style().fg, Some(ACCENT));
+            assert_eq!(buf[(4, row)].style().bg, Some(SELECTION_BG));
+            assert_eq!(buf[(4, row + 1)].style().fg, Some(TEXT_DIM));
+            let other = (0..h)
+                .find(|y| buf[(0, *y)].symbol() == "·")
+                .expect("other");
+            assert_eq!(buf[(4, other)].style().fg, Some(TEXT));
+        }
+    }
+
+    #[test]
+    fn truncate_path_keeps_the_tail() {
+        assert_eq!(truncate_path("~/a", 10), "~/a");
+        assert_eq!(truncate_path("/very/long/path/to/repo", 12), "...h/to/repo");
     }
 }

@@ -29,6 +29,8 @@ pub struct LockFrame {
     pub id: String,
     pub ansi: String,
     pub plain: String,
+    /// The rendered cells, for style assertions.
+    pub buffer: ratatui::buffer::Buffer,
 }
 
 /// Manifest consumed by `scripts/ansi-frames-to-pngs.py`.
@@ -175,11 +177,9 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
             // through.
             frame.render_widget(Clear, area);
             match id {
-                "splash" => {
-                    crate::lock_boards::render_lock_board("splash", area, frame.buffer_mut());
-                }
-                "login_select" => {
-                    crate::lock_boards::render_lock_board("login", area, frame.buffer_mut());
+                // The sign-in picker is the real login screen, not a board.
+                "login" | "login_select" => {
+                    LoginScreen::lock_select(LOCK_SPLASH_VERSION, None).render(frame)
                 }
                 "login_waiting" => LoginScreen::lock_waiting(
                     LOCK_SPLASH_VERSION,
@@ -190,9 +190,6 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
                 "login_success" => LoginScreen::lock_success(LOCK_SPLASH_VERSION).render(frame),
                 "login_error" => {
                     LoginScreen::lock_failed(LOCK_SPLASH_VERSION, PRODUCT_ERROR).render(frame)
-                }
-                "palette" => {
-                    crate::lock_boards::render_lock_board("palette", area, frame.buffer_mut());
                 }
                 "palette_empty" => draw_session(frame, palette_state(true)),
                 "settings_empty" => draw_session(frame, settings_state(true, height)),
@@ -244,6 +241,7 @@ fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
         id: id.to_string(),
         ansi: snapshot.to_ansi(&config),
         plain: snapshot.to_ascii(&config),
+        buffer: terminal.backend().buffer().clone(),
     })
 }
 
@@ -345,6 +343,14 @@ pub fn command_palette_home() -> crate::widgets::CommandPaletteState {
 mod tests {
     use super::*;
     use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
+    use cortex_core::style::{
+        ACCENT, DIFF_ADD, ERROR, HAIRLINE, PANEL_BG, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM,
+        THINKING, USER_TURN_BG, WARNING,
+    };
+    use ratatui::buffer::Buffer;
+    use ratatui::style::Color;
+
+    const SIZES: [(u16, u16); 2] = [(40, 12), (120, 40)];
 
     /// Every character the ANSI stream paints with `fg`, in order.
     ///
@@ -377,58 +383,278 @@ mod tests {
         painted
     }
 
-    /// Locked violet accent `#A78BFA` as an SGR foreground.
-    const ACCENT_FG: &str = "38;2;167;139;250";
     /// Locked diff green `#4ADE80` as an SGR foreground.
-    const DIFF_GREEN_FG: &str = "38;2;74;222;128";
+    const GREEN_FG: &str = "38;2;74;222;128";
+    /// Selection cyan `#7DD3FC` as an SGR foreground.
+    const CYAN_FG: &str = "38;2;125;211;252";
 
-    fn accent_painted_chars(ansi: &str) -> String {
-        painted_chars(ansi, ACCENT_FG)
+    fn row_text(buf: &Buffer, y: u16) -> String {
+        (0..buf.area.width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect()
     }
 
+    fn cells(buf: &Buffer) -> impl Iterator<Item = (u16, u16, &ratatui::buffer::Cell)> + '_ {
+        (0..buf.area.height)
+            .flat_map(move |y| (0..buf.area.width).map(move |x| (x, y, &buf[(x, y)])))
+    }
+
+    fn is_hairline_row(buf: &Buffer, y: u16) -> bool {
+        (0..buf.area.width).all(|x| {
+            let cell = &buf[(x, y)];
+            cell.symbol() == "─" && cell.style().fg == Some(HAIRLINE)
+        })
+    }
+
+    /// Scenes that show the hairline-framed composer.
+    const COMPOSER_SCENES: &[&str] = &[
+        "splash",
+        "typing",
+        "working",
+        "read",
+        "shell",
+        "streaming",
+        "usage",
+        "quota",
+        "cloud",
+        "sudo",
+        "ask",
+        "files",
+        "queue",
+        "first_run",
+        "footer_max",
+        "thinking",
+        "todos",
+        "btw",
+        "stopped",
+        "interrupt",
+        "compacted",
+        "compact",
+        "write",
+        "grep",
+        "tool_tiles",
+        "glob",
+        "list",
+        "fetch",
+        "mcp_call",
+        "task",
+        "diagnostics",
+        "edit",
+        "palette",
+        "palette_empty",
+        "session_empty",
+        "session_loading",
+        "session_error",
+        "session_success",
+    ];
+
+    /// Scenes that begin with a past user turn (`> …` on the gray bar).
+    const TURN_SCENES: &[&str] = &[
+        "working",
+        "read",
+        "shell",
+        "streaming",
+        "queue",
+        "thinking",
+        "todos",
+        "btw",
+        "stopped",
+        "write",
+        "grep",
+        "glob",
+        "list",
+        "fetch",
+        "mcp_call",
+        "task",
+        "diagnostics",
+        "edit",
+        "model_compact",
+        "mode",
+        "permissions",
+        "resume",
+        "mcp",
+        "usage",
+        "quota",
+        "sandbox",
+        "cloud",
+        "sudo",
+        "jobs",
+        "help",
+        "config",
+        "footer_max",
+        "skills",
+        "compacted",
+        "clear_confirm",
+        "multi_diff",
+        "settings_hub",
+        "session_loading",
+        "session_error",
+        "session_success",
+    ];
+
+    /// Scenes with a focused selection row.
+    const SELECTION_SCENES: &[&str] = &[
+        "palette",
+        "model_compact",
+        "model_full",
+        "mode",
+        "permissions",
+        "permission",
+        "plan",
+        "resume",
+        "sandbox",
+        "files",
+        "jobs",
+        "config",
+        "login",
+        "login_select",
+        "question",
+        "skills",
+        "clear_confirm",
+        "clear",
+        "delete",
+        "multi_diff",
+        "settings_hub",
+    ];
+
+    /// Composer scenes whose footer carries a picker hint (or none) instead
+    /// of the `shift+tab` hint.
+    const PICKER_COMPOSER_SCENES: &[&str] = &["palette", "palette_empty", "files"];
+
+    const LOGIN_SCENES: &[&str] = &[
+        "login",
+        "login_select",
+        "login_waiting",
+        "login_success",
+        "login_error",
+    ];
+
     #[test]
-    fn violet_is_reserved_for_markers_everywhere() {
-        // The locked chrome allows violet on the `>` prompt, the `●` dot,
-        // `✓` checks and small stats — never on a command name, label or
-        // sentence. Login sub-states are locked as shipped.
-        let locked_login = ["login_waiting", "login_success", "login_error"];
+    fn cyan_is_reserved_for_the_focused_selection() {
+        // The one accent: a cyan cell is always on the dark gray selection
+        // bar, and every scene with a selection paints its `>` caret cyan.
         for id in lock_scene_ids() {
-            if locked_login.contains(id) {
-                continue;
-            }
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let painted = accent_painted_chars(&frame.ansi);
-                assert!(
-                    painted
-                        .chars()
-                        .all(|c| matches!(c, '>' | '●' | '✓' | '%' | '0'..='9' | ' ')),
-                    "{id} paints violet outside the marker set at {size:?}: {painted:?}"
-                );
+                for (x, y, cell) in cells(&frame.buffer) {
+                    if cell.style().fg == Some(ACCENT) && cell.symbol() != " " {
+                        assert_eq!(
+                            cell.style().bg,
+                            Some(SELECTION_BG),
+                            "{id} paints cyan {:?} off the selection bar at {size:?} ({x},{y}):\n{}",
+                            cell.symbol(),
+                            frame.plain
+                        );
+                    }
+                }
+                let cyan = painted_chars(&frame.ansi, CYAN_FG);
+                if SELECTION_SCENES.contains(id) {
+                    assert!(
+                        cyan.contains('>'),
+                        "{id} must paint its selection caret cyan at {size:?}: {cyan:?}"
+                    );
+                } else {
+                    assert!(
+                        cyan.trim().is_empty(),
+                        "{id} has no focused selection yet paints cyan at {size:?}: {cyan:?}"
+                    );
+                }
             }
         }
     }
 
     #[test]
-    fn green_is_reserved_for_diff_additions_everywhere() {
-        // The only green in the chrome is `+N` / `+` diff additions.
+    fn selection_rows_are_cyan_on_the_gray_bar_never_inverted() {
+        const ACCENT_BG: &str = "48;2;125;211;252";
         for id in lock_scene_ids() {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let painted = painted_chars(&frame.ansi, DIFF_GREEN_FG);
                 assert!(
-                    painted.chars().all(|c| matches!(c, '+' | '0'..='9' | ' ')),
-                    "{id} paints green outside +diff at {size:?}: {painted:?}"
+                    !frame.ansi.contains(ACCENT_BG),
+                    "{id} paints an inverted cyan bar at {size:?}"
                 );
             }
         }
-        // Diff additions really are green, not violet.
+        for id in SELECTION_SCENES {
+            let frame = render_lock_scene(id, 120, 40).expect(id);
+            let row = (0..40u16)
+                .find(|y| {
+                    frame.buffer[(0, *y)].symbol() == ">"
+                        && frame.buffer[(0, *y)].style().fg == Some(ACCENT)
+                })
+                .unwrap_or_else(|| panic!("{id} has no cyan `>` row:\n{}", frame.plain));
+            // The whole row is the bar; the caret and the label are cyan; the
+            // description / meta on the bar stay dim.
+            for x in 0..120u16 {
+                assert_eq!(
+                    frame.buffer[(x, row)].style().bg,
+                    Some(SELECTION_BG),
+                    "{id} selection bar must span the row (col {x}):\n{}",
+                    row_text(&frame.buffer, row)
+                );
+            }
+            let text = row_text(&frame.buffer, row);
+            let label_x = text
+                .chars()
+                .enumerate()
+                .skip(2)
+                .find(|(_, c)| c.is_alphabetic() || *c == '/' || *c == '~')
+                .map(|(i, _)| i as u16)
+                .unwrap_or_else(|| panic!("{id} selected row has no label: {text}"));
+            assert_eq!(
+                frame.buffer[(label_x, row)].style().fg,
+                Some(ACCENT),
+                "{id} selected label must be cyan: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn green_is_reserved_for_checks_and_diff_additions() {
+        // Green covers `✓` and `+N` — never a word, a dot or a bar.
+        for id in lock_scene_ids() {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                for (x, y, cell) in cells(&frame.buffer) {
+                    if cell.style().fg == Some(SUCCESS) || cell.style().fg == Some(DIFF_ADD) {
+                        let symbol = cell.symbol();
+                        assert!(
+                            symbol == "✓"
+                                || symbol == "+"
+                                || symbol == " "
+                                || symbol.chars().all(|c| c.is_ascii_digit()),
+                            "{id} paints green {symbol:?} at {size:?} ({x},{y}):\n{}",
+                            frame.plain
+                        );
+                    }
+                }
+            }
+        }
+        // Diff additions really are green.
         for id in ["footer_max", "write", "edit", "multi_diff", "queue"] {
             let frame = render_lock_scene(id, 120, 40).expect(id);
-            let painted = painted_chars(&frame.ansi, DIFF_GREEN_FG);
+            let painted = painted_chars(&frame.ansi, GREEN_FG);
             assert!(
                 painted.contains('+'),
                 "{id} must paint its +diff green: {painted:?}"
+            );
+        }
+        // Checks really are green.
+        for id in [
+            "shell",
+            "task",
+            "todos",
+            "jobs",
+            "mcp",
+            "footer_max",
+            "login_success",
+            "sandbox",
+        ] {
+            let frame = render_lock_scene(id, 120, 40).expect(id);
+            let painted = painted_chars(&frame.ansi, GREEN_FG);
+            assert!(
+                painted.contains('✓'),
+                "{id} must paint its ✓ green: {painted:?}"
             );
         }
     }
@@ -437,12 +663,12 @@ mod tests {
     fn every_edit_plus_count_is_green() {
         // Rule from states 10 (Edit +9), 24 (queued Edit +58) and 30 (MAX
         // footer +214): the `+N` of an Edit / Write / commit is the diff
-        // green at both sizes — never gray, violet or mint. Scan every scene
-        // for `+N` tokens on Edit, Write and Committed lines.
+        // green at both sizes — never gray or cyan. Scan every scene for
+        // `+N` tokens on Edit, Write and Committed lines.
         for id in lock_scene_ids() {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let green = painted_chars(&frame.ansi, DIFF_GREEN_FG);
+                let green = painted_chars(&frame.ansi, GREEN_FG);
                 for line in frame.plain.lines() {
                     if !(line.contains("Edit ")
                         || line.contains("Write ")
@@ -468,33 +694,75 @@ mod tests {
                 }
             }
         }
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let queue = render_lock_scene("queue", size.0, size.1).expect("queue");
             assert!(
-                painted_chars(&queue.ansi, DIFF_GREEN_FG).contains("+58"),
+                painted_chars(&queue.ansi, GREEN_FG).contains("+58"),
                 "queued Edit +58 must be green at {size:?}"
             );
-            // The queued Edit is the Edit tile's own format.
             assert!(
                 queue.plain.contains("rateLimit.ts +58 -0"),
                 "queued Edit must read `Edit <path> +58 -0` at {size:?}:\n{}",
                 queue.plain
             );
             let edit = render_lock_scene("edit", size.0, size.1).expect("edit");
-            assert!(painted_chars(&edit.ansi, DIFF_GREEN_FG).contains("+9"));
+            assert!(painted_chars(&edit.ansi, GREEN_FG).contains("+9"));
             let max = render_lock_scene("footer_max", size.0, size.1).expect("footer_max");
-            assert!(painted_chars(&max.ansi, DIFF_GREEN_FG).contains("+214"));
+            assert!(painted_chars(&max.ansi, GREEN_FG).contains("+214"));
+        }
+    }
+
+    #[test]
+    fn red_amber_and_gold_stay_on_diagnostics_and_thinking() {
+        for id in lock_scene_ids() {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let mut red = String::new();
+                let mut amber = String::new();
+                let mut gold = String::new();
+                for (_, _, cell) in cells(&frame.buffer) {
+                    match cell.style().fg {
+                        Some(c) if c == ERROR => red.push_str(cell.symbol()),
+                        Some(c) if c == WARNING => amber.push_str(cell.symbol()),
+                        Some(c) if c == THINKING => gold.push_str(cell.symbol()),
+                        _ => {}
+                    }
+                }
+                let error_scene = matches!(*id, "diagnostics" | "session_error" | "login_error");
+                assert!(
+                    error_scene || red.trim().is_empty(),
+                    "{id} paints red outside diagnostics at {size:?}: {red:?}"
+                );
+                assert!(
+                    *id == "diagnostics" || amber.trim().is_empty(),
+                    "{id} paints amber outside diagnostics at {size:?}: {amber:?}"
+                );
+                assert!(
+                    *id == "thinking" || gold.trim().is_empty(),
+                    "{id} paints the Thinking gold at {size:?}: {gold:?}"
+                );
+                if *id == "thinking" {
+                    assert_eq!(gold.trim(), "Thinking", "{size:?}");
+                }
+            }
         }
     }
 
     #[test]
     fn banned_colors_never_painted() {
-        // The mint chrome is dead: #00F5D4 and #1A3330 are banned outright,
-        // the old brand green #00FFA3 with them, and no scene paints the
-        // navy #0A1628 wash — the host terminal owns the background.
-        const BANNED: [&str; 4] = ["0;245;212", "26;51;48", "0;255;163", "10;22;40"];
+        // The violet chrome is gone with the mint one: no scene paints the
+        // violet accent or its dark violet bar, the mint pair, the old brand
+        // green, or the navy wash — the host terminal owns the background.
+        const BANNED: [&str; 6] = [
+            "167;139;250",
+            "34;26;56",
+            "0;245;212",
+            "26;51;48",
+            "0;255;163",
+            "10;22;40",
+        ];
         for id in lock_scene_ids() {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 for banned in BANNED {
                     assert!(
@@ -502,8 +770,385 @@ mod tests {
                         "{id} paints banned color {banned} at {size:?}"
                     );
                 }
+                // Nothing paints its own background wash: bars are the
+                // documented grays, never a colour.
+                for (x, y, cell) in cells(&frame.buffer) {
+                    if let Some(Color::Rgb(r, g, b)) = cell.style().bg {
+                        assert!(
+                            r == g && g == b,
+                            "{id} paints a tinted background {r},{g},{b} at {size:?} ({x},{y})"
+                        );
+                    }
+                }
             }
         }
+    }
+
+    #[test]
+    fn composer_is_framed_by_hairlines_in_every_session_state() {
+        for id in COMPOSER_SCENES {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let buf = &frame.buffer;
+                let found = (1..buf.area.height.saturating_sub(1)).find(|&y| {
+                    buf[(0, y)].symbol() == ">"
+                        && buf[(0, y)].style().bg != Some(USER_TURN_BG)
+                        && buf[(0, y)].style().bg != Some(SELECTION_BG)
+                        && is_hairline_row(buf, y - 1)
+                        && is_hairline_row(buf, y + 1)
+                });
+                let Some(y) = found else {
+                    panic!(
+                        "{id} has no hairline-framed `> ` composer at {size:?}:\n{}",
+                        frame.plain
+                    );
+                };
+                // The `>` and the block cursor are white; a placeholder is dim.
+                assert_eq!(buf[(0, y)].style().fg, Some(TEXT), "{id} at {size:?}");
+                let row = row_text(buf, y);
+                assert!(
+                    row.contains('█'),
+                    "{id} composer needs its block cursor: {row}"
+                );
+                assert!(
+                    !row.contains("▐"),
+                    "{id} must not overflow into a scrollbar at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
+        }
+        // Idle states carry the idle placeholder, dim; live ones invite a
+        // follow-up.
+        for size in SIZES {
+            let splash = render_lock_scene("splash", size.0, size.1).expect("splash");
+            assert!(
+                splash.plain.contains("> Plan, search, build anything █"),
+                "{}",
+                splash.plain
+            );
+            let ghost_x = splash
+                .plain
+                .lines()
+                .find_map(|l| l.find("Plan, search"))
+                .expect("ghost") as u16;
+            let ghost_y = (0..size.1)
+                .find(|y| row_text(&splash.buffer, *y).contains("Plan, search"))
+                .expect("ghost row");
+            assert_eq!(
+                splash.buffer[(ghost_x, ghost_y)].style().fg,
+                Some(TEXT_DIM),
+                "placeholder must be dim"
+            );
+            let working = render_lock_scene("working", size.0, size.1).expect("working");
+            assert!(
+                working.plain.contains("> Add a follow-up ↵ to queue █"),
+                "{}",
+                working.plain
+            );
+        }
+    }
+
+    #[test]
+    fn past_user_turns_sit_on_the_gray_bar() {
+        for id in TURN_SCENES {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let buf = &frame.buffer;
+                let y = (0..buf.area.height)
+                    .find(|y| {
+                        buf[(0, *y)].symbol() == ">"
+                            && buf[(0, *y)].style().bg == Some(USER_TURN_BG)
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{id} has no past user turn on the gray bar at {size:?}:\n{}",
+                            frame.plain
+                        )
+                    });
+                for x in 0..buf.area.width {
+                    assert_eq!(
+                        buf[(x, y)].style().bg,
+                        Some(USER_TURN_BG),
+                        "{id} user-turn bar must span the row at {size:?} (col {x})"
+                    );
+                }
+                // White copy on the bar — never the accent.
+                assert_eq!(buf[(0, y)].style().fg, Some(TEXT));
+                assert_eq!(buf[(2, y)].style().fg, Some(TEXT));
+            }
+        }
+    }
+
+    #[test]
+    fn footer_is_model_left_hint_right_and_gray() {
+        for id in lock_scene_ids() {
+            if LOGIN_SCENES.contains(id) {
+                continue;
+            }
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let buf = &frame.buffer;
+                let y = buf.area.height - 1;
+                let footer = row_text(buf, y);
+                assert!(
+                    footer.starts_with("Cortex Mini 1"),
+                    "{id} footer must lead with the model at {size:?}: {footer:?}"
+                );
+                for x in 0..buf.area.width {
+                    let cell = &buf[(x, y)];
+                    if cell.symbol() == " " {
+                        continue;
+                    }
+                    let fg = cell.style().fg;
+                    // The MAX badge is the one bold white token; everything
+                    // else on the footer is the dim gray.
+                    assert!(
+                        fg == Some(TEXT_DIM) || fg == Some(TEXT),
+                        "{id} footer cell {x} is not gray at {size:?}: {footer:?}"
+                    );
+                    assert_ne!(fg, Some(ACCENT), "{id} footer paints the accent");
+                    assert!(
+                        matches!(cell.style().bg, None | Some(Color::Reset)),
+                        "{id} footer must not paint a bar at {size:?}: {footer:?}"
+                    );
+                }
+            }
+        }
+        // Session states end the wide footer with the shortcut hint.
+        for id in COMPOSER_SCENES {
+            if PICKER_COMPOSER_SCENES.contains(id) {
+                continue;
+            }
+            let frame = render_lock_scene(id, 120, 40).expect(id);
+            let footer = row_text(&frame.buffer, 39);
+            assert!(
+                footer.trim_end().ends_with("shift+tab to cycle modes"),
+                "{id} wide footer must end with the shortcut hint: {footer:?}"
+            );
+        }
+        // The palette's footer carries the palette hints instead.
+        let palette = render_lock_scene("palette", 120, 40).expect("palette");
+        let footer = row_text(&palette.buffer, 39);
+        assert!(
+            footer.contains("↵ run") && footer.trim_end().ends_with("esc close"),
+            "{footer:?}"
+        );
+        // The MAX badge keeps the model beside it, even at 40 columns.
+        for id in ["footer_max", "config"] {
+            let frame = render_lock_scene(id, 40, 12).expect(id);
+            let footer = frame.plain.lines().last().unwrap_or_default();
+            assert!(
+                footer.starts_with("Cortex Mini 1 · MAX"),
+                "{id} footer must read Cortex Mini 1 · MAX: {footer:?}"
+            );
+        }
+        // The sign-in screens carry the version in the footer instead.
+        for id in ["login", "login_select"] {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let footer = frame.plain.lines().last().unwrap_or_default();
+                assert!(
+                    footer.starts_with("Cortex CLI v1.0.0"),
+                    "{id} footer at {size:?}: {footer:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pickers_are_numbered_with_dim_descriptions() {
+        let expectations: &[(&str, &[&str], &str)] = &[
+            (
+                "mode",
+                &[
+                    "> 1 Agent",
+                    "    edits files and runs commands",
+                    "· 2 Plan",
+                    "    draft an approach first — no edits",
+                    "· 3 Ask",
+                    "    read-only answers on the codebase",
+                ],
+                "↑↓ select · ↵ confirm · esc close",
+            ),
+            (
+                "permissions",
+                &[
+                    "· 1 Read-only",
+                    "    never edit files or run commands",
+                    "> 2 Smart",
+                    "· 3 Full access",
+                    "    only ask when leaving the sandbox",
+                ],
+                "↑↓ select · ↵ confirm · esc close",
+            ),
+            (
+                "login",
+                &[
+                    "Welcome to Cortex CLI!",
+                    "How would you like to log in?",
+                    "> 1 Continue with browser",
+                    "    Opens cortex.foundation/cli/auth",
+                    "· 2 Paste an API key",
+                    "    Enter your key to authenticate",
+                ],
+                "↑↓ select · ↵ confirm · esc quit",
+            ),
+            (
+                "clear_confirm",
+                &["Start a new thread?", "> 1 Clear thread", "· 2 Cancel"],
+                "↑↓ select · ↵ confirm · esc cancel",
+            ),
+            (
+                "delete",
+                &["> 1 Delete", "· 2 Keep"],
+                "↑↓ select · ↵ confirm · esc keep",
+            ),
+            (
+                "question",
+                &[
+                    "· 1 Middleware on POST",
+                    "> 2 Shared limiter for every",
+                    "· 3 Per-model limits",
+                ],
+                "1-9 pick · ↑↓ move · ↵ confirm · esc",
+            ),
+            (
+                "permission",
+                &["> 1 Yes, run once", "· 3 Edit command"],
+                "↑↓ select · ↵ confirm · e edit command",
+            ),
+        ];
+        for (id, needles, hints) in expectations {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                for needle in *needles {
+                    assert!(
+                        frame.plain.contains(needle),
+                        "{id} missing `{needle}` at {size:?}:\n{}",
+                        frame.plain
+                    );
+                }
+                assert!(
+                    frame.plain.contains(hints),
+                    "{id} missing hints `{hints}` at {size:?}:\n{}",
+                    frame.plain
+                );
+                // Numbered options replaced the `●` / `○` radios.
+                assert!(
+                    !frame.plain.contains("○"),
+                    "{id} keeps radios at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
+            // Descriptions under a title are dim, on the bar for the focused
+            // option.
+            let frame = render_lock_scene(id, 120, 40).expect(id);
+            let buf = &frame.buffer;
+            let selected = (0..40u16)
+                .find(|y| buf[(0, *y)].symbol() == ">" && buf[(0, *y)].style().fg == Some(ACCENT))
+                .expect("selected row");
+            let number_x = 2u16;
+            assert_eq!(
+                buf[(number_x, selected)].style().fg,
+                Some(TEXT),
+                "{id}: the number stays white"
+            );
+            let below = row_text(buf, selected + 1);
+            if below.starts_with("    ") && !below.trim().is_empty() {
+                let desc_x = below.len() - below.trim_start().len();
+                assert_eq!(
+                    buf[(desc_x as u16, selected + 1)].style().fg,
+                    Some(TEXT_DIM),
+                    "{id}: description under the focused title must be dim"
+                );
+                assert_eq!(
+                    buf[(desc_x as u16, selected + 1)].style().bg,
+                    Some(SELECTION_BG),
+                    "{id}: the bar covers the description row"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn search_fields_are_framed_by_hairlines_without_a_pricing_bar() {
+        for id in ["model_compact", "model_full", "resume", "skills"] {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let buf = &frame.buffer;
+                let field = (1..buf.area.height.saturating_sub(1)).find(|&y| {
+                    row_text(buf, y).starts_with("/ ")
+                        && is_hairline_row(buf, y - 1)
+                        && is_hairline_row(buf, y + 1)
+                });
+                assert!(
+                    field.is_some(),
+                    "{id} must frame its search field with two hairlines at {size:?}:\n{}",
+                    frame.plain
+                );
+                let y = field.unwrap();
+                assert_eq!(buf[(0, y)].style().fg, Some(TEXT_DIM));
+                assert!(
+                    row_text(buf, y).contains("Type to search"),
+                    "{id} search placeholder at {size:?}: {}",
+                    row_text(buf, y)
+                );
+                // No rainbow pricing bar: no gradient glyphs, and every
+                // non-gray foreground on screen is one of the locked accents.
+                assert!(!frame.plain.contains('$'), "{id} shows pricing at {size:?}");
+                for (_, _, cell) in cells(buf) {
+                    if let Some(Color::Rgb(r, g, b)) = cell.style().fg {
+                        let gray = r == g && g == b;
+                        let locked = matches!(cell.style().fg, Some(c) if c == ACCENT || c == SUCCESS || c == TEXT_DIM || c == TEXT);
+                        assert!(
+                            gray || locked,
+                            "{id} paints {r},{g},{b} at {size:?}: only grays + the locked accents"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn first_run_tips_sit_on_the_charcoal_panel() {
+        for size in SIZES {
+            let frame = render_lock_scene("first_run", size.0, size.1).expect("first_run");
+            let buf = &frame.buffer;
+            let tips_y = (0..buf.area.height)
+                .find(|y| row_text(buf, *y).contains("A few tips"))
+                .unwrap_or_else(|| panic!("no tips at {size:?}:\n{}", frame.plain));
+            for x in 0..buf.area.width {
+                assert_eq!(
+                    buf[(x, tips_y)].style().bg,
+                    Some(PANEL_BG),
+                    "the tips panel spans the width at {size:?} (col {x})"
+                );
+            }
+            for needle in ["/model", "@", "shift+tab", "Cortex CLI", "Cortex Pro"] {
+                assert!(
+                    frame.plain.contains(needle),
+                    "first_run missing `{needle}` at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
+            // The panel is the only filled block besides the composer bars.
+            let panel_rows = (0..buf.area.height)
+                .filter(|y| buf[(0, *y)].style().bg == Some(PANEL_BG))
+                .count();
+            assert!(
+                panel_rows >= 4,
+                "panel too small at {size:?}:\n{}",
+                frame.plain
+            );
+        }
+        let wide = render_lock_scene("first_run", 120, 40).expect("first_run");
+        assert!(
+            wide.plain.contains("· · · · ·  Cortex CLI"),
+            "{}",
+            wide.plain
+        );
+        assert!(wide.plain.contains("v1.0.0"), "{}", wide.plain);
     }
 
     #[test]
@@ -511,7 +1156,7 @@ mod tests {
         // Users see English product names — `Cortex Mini 1`, never the
         // served `cortex-1-mini` / `cortex-1-max` / `cortex-1` slugs.
         for id in lock_scene_ids() {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 assert!(
                     !frame.plain.contains("cortex-1"),
@@ -540,7 +1185,7 @@ mod tests {
         // A code span is always followed by a space: never
         // `estimateTokens(prompt)counts` or `rateLimit()checks`.
         for id in lock_scene_ids() {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 let chars: Vec<char> = frame.plain.chars().collect();
                 for pair in chars.windows(2) {
@@ -589,33 +1234,43 @@ mod tests {
 
     #[test]
     fn live_states_keep_chrome_complete() {
-        // Empty is allowed, but the chrome is whole at both sizes: version,
-        // keystroke hints, composer, cwd + model footer.
+        // Empty is allowed, but the chrome is whole: composer and model
+        // footer at both sizes, the version header wherever the transcript
+        // has not scrolled it away (an error at 40×12 legitimately does).
         for id in [
             "session_empty",
             "session_loading",
             "session_error",
             "palette_empty",
         ] {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                for needle in ["Cortex CLI v1.0.0", "> ", "~/cortex-api", "Cortex Mini 1"] {
+                for needle in ["> ", "Cortex Mini 1"] {
                     assert!(
                         frame.plain.contains(needle),
                         "{id} missing `{needle}` at {size:?}:\n{}",
                         frame.plain
                     );
                 }
-                assert!(
-                    !frame.plain.contains('▐'),
-                    "{id} must not overflow into a scrollbar at {size:?}:\n{}",
-                    frame.plain
-                );
+                let scrolls = size == (40, 12) && id == "session_error";
+                if !scrolls {
+                    assert!(
+                        frame.plain.contains("Cortex CLI v1.0.0"),
+                        "{id} missing the version at {size:?}:\n{}",
+                        frame.plain
+                    );
+                    assert!(
+                        !frame.plain.contains('▐'),
+                        "{id} must not overflow into a scrollbar at {size:?}:\n{}",
+                        frame.plain
+                    );
+                }
             }
         }
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let empty = render_lock_scene("session_empty", size.0, size.1).expect("empty");
             assert!(empty.plain.contains("/ commands"), "{}", empty.plain);
+            assert!(empty.plain.contains("~/cortex-api"), "{}", empty.plain);
             assert!(
                 empty.plain.contains("Plan, search, build anything"),
                 "{}",
@@ -671,7 +1326,7 @@ mod tests {
                 settings.plain
             );
             assert!(
-                settings.plain.contains("~/cortex-api"),
+                settings.plain.contains("Cortex Mini 1"),
                 "{}",
                 settings.plain
             );
@@ -685,39 +1340,10 @@ mod tests {
     }
 
     #[test]
-    fn footer_shows_product_model_everywhere() {
-        // Every session footer names the model as a product — `Cortex Mini 1`
-        // — at both sizes. Only the login sub-states have no footer.
-        let no_footer = ["login_waiting", "login_success", "login_error"];
-        for id in lock_scene_ids() {
-            if no_footer.contains(id) {
-                continue;
-            }
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
-                let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let footer = frame.plain.lines().last().unwrap_or_default();
-                assert!(
-                    footer.contains("Cortex Mini 1"),
-                    "{id} footer must name Cortex Mini 1 at {size:?}: {footer:?}"
-                );
-            }
-        }
-        // The MAX badge keeps the model beside it, even at 40 columns.
-        for id in ["footer_max", "config"] {
-            let frame = render_lock_scene(id, 40, 12).expect(id);
-            let footer = frame.plain.lines().last().unwrap_or_default();
-            assert!(
-                footer.contains("Cortex Mini 1 · MAX"),
-                "{id} footer must read Cortex Mini 1 · MAX: {footer:?}"
-            );
-        }
-    }
-
-    #[test]
     fn model_full_is_the_full_picker_at_every_size() {
         // State 05 is never the compact list: a description under each model
         // plus the Effort radios, at 40×12 as well as 120×40.
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let full = render_lock_scene("model_full", size.0, size.1).expect("model_full");
             let compact = render_lock_scene("model_compact", size.0, size.1).expect("compact");
             assert_ne!(
@@ -733,6 +1359,7 @@ mod tests {
                 "Longest context",
                 "Effort",
                 "○ Low   ● Medium   ○ High",
+                "Type to search models",
             ] {
                 assert!(
                     full.plain.contains(needle),
@@ -747,7 +1374,19 @@ mod tests {
                     compact.plain
                 );
             }
+            assert!(
+                compact.plain.contains("> /model") && compact.plain.contains("Model"),
+                "{}",
+                compact.plain
+            );
         }
+        let wide = render_lock_scene("model_full", 120, 40).expect("model_full");
+        assert!(wide.plain.contains("> /model"), "{}", wide.plain);
+        assert!(
+            wide.plain.contains("cortex.foundation/billing"),
+            "{}",
+            wide.plain
+        );
     }
 
     #[test]
@@ -761,7 +1400,7 @@ mod tests {
             &["interrupt", "stopped"],
             &["login", "login_select"],
         ];
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let mut seen: std::collections::HashMap<String, &str> = Default::default();
             for id in lock_scene_ids() {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -783,7 +1422,7 @@ mod tests {
     fn mode_chips_are_kept() {
         // `┌ Ask — read-only ┐` and `┌ Bash mode ┐` are square mode chips,
         // not session frames — they stay at both sizes.
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let ask = render_lock_scene("ask", size.0, size.1).expect("ask");
             assert!(
                 ask.plain.contains("┌ Ask — read-only ┐"),
@@ -803,14 +1442,20 @@ mod tests {
     fn no_rounded_frame_glyphs_anywhere() {
         // Zero rounded frames: the TUI bleeds to the terminal edges and no
         // scene draws a ╭╮╰╯ box. Square `┌ … ┐` mode chips are not frames
-        // and are allowed.
+        // and are allowed; hairlines are single `─` rows, never boxes.
         for id in lock_scene_ids() {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
+            for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                for glyph in ['╭', '╮', '╰', '╯'] {
+                for glyph in ['╭', '╮', '╰', '╯', '│'] {
+                    if glyph == '│' && *id == "btw" {
+                        continue; // the side-thread gutter
+                    }
+                    if glyph == '│' && *id == "config" {
+                        continue; // the config tree branches
+                    }
                     assert!(
                         !frame.plain.contains(glyph),
-                        "{id} draws a rounded frame glyph {glyph} at {size:?}:\n{}",
+                        "{id} draws a frame glyph {glyph} at {size:?}:\n{}",
                         frame.plain
                     );
                 }
@@ -819,51 +1464,45 @@ mod tests {
     }
 
     #[test]
-    fn slash_palette_paints_violet_on_the_marker_only() {
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+    fn slash_palette_rows_are_middot_or_cyan_caret() {
+        for size in SIZES {
             let frame = render_lock_scene("palette", size.0, size.1).expect("palette");
-            let painted = accent_painted_chars(&frame.ansi);
             assert!(
-                painted.chars().all(|c| matches!(c, '>' | ' ')),
-                "violet must stay on the `>` marker at {size:?}; painted {painted:?}"
+                frame.plain.contains("> /model"),
+                "the focused command leads with the cyan caret at {size:?}:\n{}",
+                frame.plain
             );
             assert!(
-                painted.contains('>'),
-                "the prompt marker must stay violet at {size:?}"
+                frame.plain.contains("· /mode"),
+                "unfocused commands lead with a middot at {size:?}:\n{}",
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("more — keep typing to filter"),
+                "{}",
+                frame.plain
             );
         }
-        // The wide selected row keeps the 40×12 tone: dim description on the
-        // dark #221A38 bar, never a bright (or violet) command row.
+        // The wide selected row keeps the dim description on the bar, never a
+        // bright (or cyan) description.
         let wide = render_lock_scene("palette", 120, 40).expect("palette wide");
-        assert!(
-            wide.ansi
-                .contains("\x1b[38;2;130;154;177m\x1b[48;2;34;26;56m"),
-            "selected description must be dim on the selection bar"
-        );
-    }
-
-    #[test]
-    fn no_inverted_accent_selection_anywhere() {
-        // Violet is highlight-only: `>`, small accents, success. A selected
-        // row is a dark #221A38 bar with light text, never text-on-violet.
-        const ACCENT_BG: &str = "48;2;167;139;250";
-        const DARK_SELECTION_BG: &str = "48;2;34;26;56";
-        for id in lock_scene_ids() {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
-                let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                assert!(
-                    !frame.ansi.contains(ACCENT_BG),
-                    "{id} paints an inverted violet bar at {size:?}"
-                );
-            }
-        }
-        for id in ["palette", "settings_hub", "login_select", "multi_diff"] {
-            let frame = render_lock_scene(id, 120, 40).expect(id);
-            assert!(
-                frame.ansi.contains(DARK_SELECTION_BG),
-                "{id} must use the dark selection bar"
-            );
-        }
+        let buf = &wide.buffer;
+        let y = (0..40u16)
+            .find(|y| row_text(buf, *y).starts_with("> /model"))
+            .expect("selected /model row");
+        let text = row_text(buf, y);
+        let desc_x = text.find("Choose").expect("description") as u16;
+        assert_eq!(buf[(desc_x, y)].style().fg, Some(TEXT_DIM));
+        assert_eq!(buf[(desc_x, y)].style().bg, Some(SELECTION_BG));
+        assert_eq!(buf[(2, y)].style().fg, Some(ACCENT));
+        let other = row_text(buf, y + 1);
+        assert!(other.starts_with("· /mode"), "{other}");
+        assert_eq!(buf[(0, y + 1)].style().fg, Some(TEXT_DIM));
+        assert_eq!(buf[(2, y + 1)].style().fg, Some(TEXT));
+        assert!(matches!(
+            buf[(2, y + 1)].style().bg,
+            None | Some(Color::Reset)
+        ));
     }
 
     #[test]
@@ -888,55 +1527,44 @@ mod tests {
             "queued follow-up badge must render:\n{plain}"
         );
         assert!(
-            plain.contains("> "),
+            plain.contains("> Add a follow-up ↵ to queue"),
             "the composer stays on screen during a run:\n{plain}"
         );
     }
 
     #[test]
     fn splash_has_session_chrome() {
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let frame = render_lock_scene("splash", size.0, size.1).expect("splash");
-            assert!(
-                frame.plain.contains("Cortex CLI v1.0.0"),
-                "{:?}\n{}",
-                size,
-                frame.plain
-            );
-            assert!(
-                frame.plain.contains("Plan, search, build anything")
-                    || frame.plain.contains("Plan, search"),
-                "{:?}\n{}",
-                size,
-                frame.plain
-            );
-            assert!(
-                frame.plain.contains("~/cortex-api") || frame.plain.contains("cortex-api"),
-                "{:?}\n{}",
-                size,
-                frame.plain
-            );
-            assert!(
-                frame.plain.contains("Cortex Mini 1"),
-                "{:?}\n{}",
-                size,
-                frame.plain
-            );
+            for needle in [
+                "~/cortex-api main*",
+                "> cortex",
+                "Cortex CLI v1.0.0",
+                "/ commands · @ files · ! shell",
+                "Plan, search, build anything",
+                "Cortex Mini 1",
+            ] {
+                assert!(
+                    frame.plain.contains(needle),
+                    "splash missing `{needle}` at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
             assert!(!frame.plain.contains("▄█▀▀▀▀█▄"), "{}", frame.plain);
             assert_no_junk(&frame.plain);
-            assert!(
-                !frame.plain.trim().is_empty(),
-                "splash must not be empty at {size:?}"
-            );
         }
         let wide = render_lock_scene("splash", 120, 40).expect("splash wide");
-        assert!(wide.plain.contains("> cortex") || wide.plain.contains("cortex"));
+        assert!(wide.plain.contains("& cloud"), "{}", wide.plain);
+        assert!(wide.plain.contains("100% context"), "{}", wide.plain);
+        // The composer follows the header rather than hugging the footer.
+        let composer_y = (0..40u16)
+            .find(|y| row_text(&wide.buffer, *y).starts_with("> Plan"))
+            .expect("composer");
         assert!(
-            wide.plain.contains("/ commands") || wide.plain.contains("commands"),
-            "{}",
+            composer_y < 10,
+            "composer sits under the header:\n{}",
             wide.plain
         );
-        assert!(wide.plain.contains("100% context") || wide.plain.contains("Agent"));
     }
 
     fn assert_no_junk(plain: &str) {
@@ -959,75 +1587,56 @@ mod tests {
         }
         if plain.contains("Devi") {
             assert!(
-                plain.contains("Device") || plain.contains("device"),
+                plain.contains("Device") || plain.contains("device") || plain.contains("Devin"),
                 "truncated Device:\n{plain}"
             );
         }
+        assert!(!plain.contains("Devin"), "competitor name in:\n{plain}");
         assert!(!plain.to_lowercase().contains("grok"));
         assert!(!plain.to_lowercase().contains("claude"));
         assert!(!plain.to_lowercase().contains("fable"));
     }
 
     #[test]
-    fn login_radios_and_states() {
+    fn login_is_a_numbered_picker_with_live_sub_states() {
         let select = render_lock_scene("login_select", 120, 40).expect("select");
-        assert!(select.plain.contains("Sign in to Cortex"));
-        assert!(select.plain.contains("●"));
-        assert!(select.plain.contains("○"));
-        assert!(select.plain.contains("Continue with browser"));
-        assert!(select.plain.contains("Paste an API key"));
+        assert!(select.plain.contains("Welcome to Cortex CLI!"));
+        assert!(select.plain.contains("How would you like to log in?"));
+        assert!(select.plain.contains("> 1 Continue with browser"));
+        assert!(select.plain.contains("· 2 Paste an API key"));
         assert!(select.plain.contains("cortex.foundation/cli/auth"));
-        assert!(select.plain.contains("token never hits the model"));
-        assert!(select.plain.contains("continue") || select.plain.contains("↵"));
+        assert!(select.plain.contains("↵ confirm"));
         assert!(!select.plain.contains("Guest"));
         assert!(!select.plain.contains("Exit"));
-        assert!(!select.plain.contains("▄█▀▀▀▀█▄"));
-        let radio_count = select.plain.matches("Continue with browser").count()
-            + select.plain.matches("Paste an API key").count();
-        assert_eq!(radio_count, 2, "{}", select.plain);
+        assert!(!select.plain.contains("●") && !select.plain.contains("○"));
+        assert_eq!(select.plain.matches("Continue with browser").count(), 1);
         assert_no_junk(&select.plain);
 
         let narrow = render_lock_scene("login_select", 40, 12).expect("narrow");
-        assert!(
-            narrow.plain.contains("Continue with browser"),
-            "{}",
-            narrow.plain
-        );
-        assert!(
-            narrow.plain.contains("Paste an API key"),
-            "{}",
-            narrow.plain
-        );
-        assert!(
-            narrow.plain.contains("Sign in to Cortex"),
-            "{}",
-            narrow.plain
-        );
-        assert!(!narrow.plain.contains("Devi"));
-        assert!(
-            !narrow.plain.contains("foundatio") || narrow.plain.contains("foundation"),
-            "{}",
-            narrow.plain
-        );
-        let hint_idx = narrow
-            .plain
-            .find("Opens")
-            .or_else(|| narrow.plain.find("token"));
-        let paste_idx = narrow.plain.find("Paste an API key");
-        if let (Some(h), Some(p)) = (hint_idx, paste_idx) {
-            assert!(
-                h < p,
-                "hint must sit under the selected radio:\n{}",
-                narrow.plain
-            );
+        for needle in [
+            "Welcome to Cortex CLI!",
+            "> 1 Continue with browser",
+            "Opens cortex.foundation/cli/auth",
+            "· 2 Paste an API key",
+            "Enter your key to authenticate",
+            "↑↓ select · ↵ confirm · esc quit",
+        ] {
+            assert!(narrow.plain.contains(needle), "{needle}\n{}", narrow.plain);
         }
+        let hint_idx = narrow.plain.find("Opens").expect("hint");
+        let paste_idx = narrow.plain.find("Paste an API key").expect("paste");
+        assert!(
+            hint_idx < paste_idx,
+            "the description sits under its title:\n{}",
+            narrow.plain
+        );
         assert_no_junk(&narrow.plain);
 
         let waiting = render_lock_scene("login_waiting", 120, 40).expect("waiting");
         assert!(waiting.plain.contains("Waiting for browser"));
 
         let ok = render_lock_scene("login_success", 80, 24).expect("ok");
-        assert!(ok.plain.contains("Signed in."));
+        assert!(ok.plain.contains("✓ Signed in."));
 
         let err = render_lock_scene("login_error", 80, 24).expect("err");
         assert!(err.plain.contains("temporarily unavailable"));
@@ -1072,16 +1681,10 @@ mod tests {
         assert_no_junk(&frame.plain);
 
         let narrow = render_lock_scene("palette", 40, 12).expect("narrow palette");
+        assert!(narrow.plain.contains("/model"), "{}", narrow.plain);
         assert!(
-            narrow.plain.contains("/model") || narrow.plain.contains("model"),
-            "{}",
-            narrow.plain
-        );
-        assert!(
-            narrow.plain.contains("Choose the model")
-                || narrow.plain.contains("model for this")
-                || narrow.plain.contains("session"),
-            "narrow slash should keep a description when it fits:\n{}",
+            narrow.plain.contains("Choose the model"),
+            "narrow slash should keep a description under the command:\n{}",
             narrow.plain
         );
         assert!(!narrow.plain.contains("/interrupt"));
@@ -1142,6 +1745,8 @@ mod tests {
             "{}",
             frame.plain
         );
+        assert!(frame.plain.contains("> Model"), "{}", frame.plain);
+        assert!(frame.plain.contains("· Mode"), "{}", frame.plain);
         assert_no_junk(&frame.plain);
         let narrow = render_lock_scene("settings_hub", 40, 12).expect("narrow settings");
         assert!(narrow.plain.contains("Model"), "{}", narrow.plain);
@@ -1174,8 +1779,6 @@ mod tests {
         assert!(diag.plain.contains("L22"), "{}", diag.plain);
         assert!(diag.plain.contains("warn"), "{}", diag.plain);
         assert!(diag.plain.contains("L47"), "{}", diag.plain);
-        assert!(!diag.plain.contains("L a.rs"), "{}", diag.plain);
-        assert!(!diag.plain.contains("L example"), "{}", diag.plain);
         let diff = render_lock_scene("multi_diff", 120, 40).expect("diff");
         assert!(diff.plain.contains("Changed this turn"), "{}", diff.plain);
         assert!(diff.plain.contains("4 files"), "{}", diff.plain);
@@ -1184,8 +1787,57 @@ mod tests {
     }
 
     #[test]
+    fn tool_tile_dots_are_white() {
+        // Every tool tile paints its `●` status dot white — never the accent,
+        // never green. Labels stay white too.
+        let tiles = [
+            "tool_tiles",
+            "grep",
+            "read",
+            "plan",
+            "write",
+            "glob",
+            "edit",
+            "delete",
+            "list",
+            "fetch",
+            "mcp_call",
+            "task",
+            "diagnostics",
+            "shell",
+            "sudo",
+            "queue",
+            "stopped",
+            "interrupt",
+            "footer_max",
+            "permission",
+        ];
+        for id in tiles {
+            for size in SIZES {
+                let frame = render_lock_scene(id, size.0, size.1).expect(id);
+                let mut dots = 0;
+                for (_, _, cell) in cells(&frame.buffer) {
+                    if cell.symbol() == "●" {
+                        dots += 1;
+                        assert_eq!(
+                            cell.style().fg,
+                            Some(TEXT),
+                            "{id} tile dot must be white at {size:?}"
+                        );
+                    }
+                }
+                assert!(
+                    dots > 0,
+                    "{id} must show a tile dot at {size:?}:\n{}",
+                    frame.plain
+                );
+            }
+        }
+    }
+
+    #[test]
     fn compact_interrupt_clear_and_states_reflow() {
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             for id in [
                 "compact",
                 "interrupt",
@@ -1207,7 +1859,7 @@ mod tests {
         }
         // 37 interrupt keeps the prompt and tool tiles on screen, then shows
         // `✗ Stopped` — never a lone `/interrupt` line or a bare splash.
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let interrupt = render_lock_scene("interrupt", size.0, size.1).expect("interrupt");
             assert!(interrupt.plain.contains("✗"), "{}", interrupt.plain);
             assert!(interrupt.plain.contains("Stopped"), "{}", interrupt.plain);
@@ -1228,8 +1880,8 @@ mod tests {
                 interrupt.plain
             );
         }
-        // 38 compact reports the compaction, on the locked chrome.
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        // 38 compact reports the compaction, on the gray chrome.
+        for size in SIZES {
             let compacted = render_lock_scene("compact", size.0, size.1).expect("compact");
             assert!(compacted.plain.contains("/compact"), "{}", compacted.plain);
             assert!(
@@ -1239,14 +1891,9 @@ mod tests {
             );
             assert!(compacted.plain.contains("86%"), "{}", compacted.plain);
             assert!(compacted.plain.contains("12%"), "{}", compacted.plain);
-            assert!(
-                compacted.plain.contains("~/cortex-api"),
-                "{}",
-                compacted.plain
-            );
         }
         // 40 clear is the confirm dialog, not an empty splash.
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let clear = render_lock_scene("clear", size.0, size.1).expect("clear");
             assert!(
                 clear.plain.contains("Start a new thread?"),
@@ -1288,7 +1935,7 @@ mod tests {
             }
         }
 
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let frame = render_lock_scene("diagnostics", size.0, size.1).expect("diagnostics");
             assert!(frame.ansi.contains(RED_FG), "error must be red at {size:?}");
             assert!(
@@ -1311,44 +1958,6 @@ mod tests {
     }
 
     #[test]
-    fn tool_tile_dots_are_violet() {
-        // Every tool tile paints its `●` status dot violet, exactly like the
-        // locked Grep tile. Labels stay white.
-        let tiles = [
-            "tool_tiles",
-            "grep",
-            "read",
-            "plan",
-            "write",
-            "glob",
-            "edit",
-            "delete",
-            "list",
-            "fetch",
-            "mcp_call",
-            "task",
-            "diagnostics",
-            "shell",
-            "sudo",
-            "queue",
-            "stopped",
-            "interrupt",
-            "footer_max",
-            "permission",
-        ];
-        for id in tiles {
-            for size in [(40u16, 12u16), (120u16, 40u16)] {
-                let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let painted = accent_painted_chars(&frame.ansi);
-                assert!(
-                    painted.contains('●'),
-                    "{id} must paint its tile dot violet at {size:?}; painted {painted:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
     fn lock_boards_02_09_product_copy() {
         let always: &[(&str, &[&str])] = &[
             ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "█"]),
@@ -1360,11 +1969,12 @@ mod tests {
                     "Cortex Mini 1",
                     "Cortex Max 1",
                     "current",
+                    "Type to search",
                 ],
             ),
             (
                 "model_full",
-                &["/model", "Model", "Cortex Mini 1", "Cortex Max 1"],
+                &["Cortex Mini 1", "Cortex Max 1", "Type to search"],
             ),
             ("mode", &["/mode", "Agent", "Plan", "Ask"]),
             (
@@ -1374,14 +1984,14 @@ mod tests {
             ("working", &["Working", "esc to interrupt", "follow-up"]),
             ("read", &["Read", "completions.ts", "141 lines"]),
         ];
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             for (id, needles) in always {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 let lower = frame.plain.to_lowercase();
                 assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
-                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("devin"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
                 assert!(
                     !frame.plain.contains("gpt-"),
@@ -1407,6 +2017,7 @@ mod tests {
         );
 
         let full = render_lock_scene("model_full", 120, 40).expect("model_full");
+        assert!(full.plain.contains("Model"), "{}", full.plain);
         assert!(full.plain.contains("Effort"), "{}", full.plain);
         assert!(full.plain.contains("● Medium"), "{}", full.plain);
         assert!(
@@ -1453,8 +2064,11 @@ mod tests {
                 ],
             ),
             ("streaming", &["Done", "rateLimit()", "follow-up"]),
-            ("resume", &["/resume", "search sessions", "24 messages"]),
-            ("mcp", &["/mcp", "2 of 4 connected", "mcp.json"]),
+            (
+                "resume",
+                &["/resume", "Type to search sessions", "24 messages"],
+            ),
+            ("mcp", &["/mcp", "2 of 4 connected"]),
             ("usage", &["/usage", "Cortex Pro", "Agent requests"]),
             (
                 "quota",
@@ -1464,23 +2078,18 @@ mod tests {
             ("cloud", &["Handed off to Cortex Cloud", "bc-4f2a", "/jobs"]),
         ];
 
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             for (id, needles) in always {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 let lower = frame.plain.to_lowercase();
                 assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
-                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("devin"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
                 assert!(
                     frame.plain.contains("Cortex Mini 1"),
                     "{id} footer model at {size:?}:\n{}",
-                    frame.plain
-                );
-                assert!(
-                    frame.plain.contains("~/cortex-api") || frame.plain.contains("cortex-api"),
-                    "{id} cwd at {size:?}:\n{}",
                     frame.plain
                 );
                 for needle in *needles {
@@ -1495,19 +2104,23 @@ mod tests {
 
         let wide_shell = render_lock_scene("shell", 120, 40).expect("shell wide");
         assert!(wide_shell.plain.contains("vitest"), "{}", wide_shell.plain);
-        assert!(wide_shell.plain.contains("✓") || wide_shell.plain.contains("rateLimit.test"));
+        assert!(wide_shell.plain.contains("✓"), "{}", wide_shell.plain);
 
         let perm = render_lock_scene("permission", 120, 40).expect("perm");
         assert!(perm.plain.contains("always allow npm install"));
         assert!(perm.plain.contains("Edit command"));
         assert!(perm.plain.contains("Normal"));
         assert!(perm.plain.contains("tell Cortex"));
+        assert!(perm.plain.contains("$ npm install ioredis"));
 
-        // At 40 columns option 2 wraps — `project` lands on its own line and
-        // is never dropped.
+        // At 40 columns option 2 wraps — `this project` lands on its own
+        // indented row and is never dropped.
         let perm_n = render_lock_scene("permission", 40, 12).expect("perm narrow");
         assert!(
-            perm_n.plain.lines().any(|line| line.trim() == "project"),
+            perm_n
+                .plain
+                .lines()
+                .any(|line| line.starts_with("    ") && line.trim() == "this project"),
             "option copy must wrap, not truncate:\n{}",
             perm_n.plain
         );
@@ -1515,7 +2128,12 @@ mod tests {
 
         let plan = render_lock_scene("plan", 120, 40).expect("plan");
         assert!(plan.plain.contains("Redis-backed"));
-        assert!(plan.plain.contains(" · Plan · ") || plan.plain.contains("Plan ·"));
+        assert!(
+            plan.plain
+                .contains("> 1 Yes, switch to Agent mode and implement")
+        );
+        assert!(plan.plain.contains("· 2 No, keep planning"));
+        assert!(plan.plain.contains(" · Plan · "));
         let plan_n = render_lock_scene("plan", 40, 12).expect("plan narrow");
         assert!(
             plan_n.plain.contains("implement"),
@@ -1525,6 +2143,11 @@ mod tests {
 
         let resume = render_lock_scene("resume", 120, 40).expect("resume");
         assert!(resume.plain.contains("Sessions sync through Cortex Cloud"));
+        assert!(
+            resume
+                .plain
+                .contains("> 2h ago  Rate limiting for /v1/completions")
+        );
 
         let usage = render_lock_scene("usage", 120, 40).expect("usage");
         assert!(usage.plain.contains("cortex.foundation/billing"));
@@ -1538,6 +2161,7 @@ mod tests {
         assert!(sandbox.plain.contains("Filesystem"));
         assert!(sandbox.plain.contains("space toggle"));
         assert!(sandbox.plain.contains("Smart"));
+        assert!(sandbox.plain.contains("✓ On"));
 
         let stream = render_lock_scene("streaming", 120, 40).expect("stream");
         assert!(stream.plain.contains("zadd") || stream.plain.contains("rateLimit"));
@@ -1546,6 +2170,8 @@ mod tests {
         let mcp = render_lock_scene("mcp", 120, 40).expect("mcp");
         assert!(mcp.plain.contains("authenticating"));
         assert!(mcp.plain.contains("failed"));
+        assert!(mcp.plain.contains("mcp.json"));
+        assert!(mcp.plain.contains("✓ github"));
     }
 
     #[test]
@@ -1562,13 +2188,10 @@ mod tests {
             ),
             ("ask", &["Ask", "read-only", "shift+tab", "Agent mode"]),
             ("files", &["@rate", "rateLimit", "insert", "tab complete"]),
-            ("queue", &["Queued", "Retry-After", "ctrl+x clear queue"]),
+            ("queue", &["Queued", "Retry-After", "follow-up"]),
             ("jobs", &["/jobs", "2 running", "cloud"]),
             ("help", &["/help", "/model", "Shortcuts"]),
-            (
-                "first_run",
-                &["Cortex CLI v1.0.0", "Tips for getting started"],
-            ),
+            ("first_run", &["Cortex CLI", "A few tips", "/model"]),
             (
                 "bash",
                 &["Bash mode", "the model is not involved", "redis-cli"],
@@ -1577,30 +2200,23 @@ mod tests {
                 "config",
                 &["/config", "~/.cortex/config.json", "Cortex Mini 1"],
             ),
-            ("footer_max", &["Committed and pushed", "MAX", "& cloud"]),
+            ("footer_max", &["Committed and pushed", "MAX", "follow-up"]),
         ];
 
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             for (id, needles) in always {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 let lower = frame.plain.to_lowercase();
                 assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
-                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("devin"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
                 assert!(
                     !frame.plain.contains("gpt-"),
                     "{id} must use a Cortex product model name:\n{}",
                     frame.plain
                 );
-                if *id != "footer_max" {
-                    assert!(
-                        frame.plain.contains("Cortex Mini 1") || frame.plain.contains("MAX"),
-                        "{id} footer at {size:?}:\n{}",
-                        frame.plain
-                    );
-                }
                 for needle in *needles {
                     let hit = frame.plain.contains(needle)
                         || needle
@@ -1629,11 +2245,17 @@ mod tests {
             "the cramped timestamp must be dropped:\n{}",
             files_n.plain
         );
+        // The typed mention sits in the hairline composer.
+        assert!(
+            files_n.plain.contains("> Add integration tests for @rate█"),
+            "{}",
+            files_n.plain
+        );
 
         let ask = render_lock_scene("ask", 120, 40).expect("ask");
-        assert!(ask.plain.contains("Ask — read-only") || ask.plain.contains("read-only"));
-        assert!(ask.plain.contains("estimateTokens") || ask.plain.contains("src/lib/tokens.ts"));
-        assert!(ask.plain.contains(" · Ask · ") || ask.plain.contains("Ask"));
+        assert!(ask.plain.contains("Ask — read-only"));
+        assert!(ask.plain.contains("estimateTokens"));
+        assert!(ask.plain.contains(" · Ask · "));
 
         let jobs = render_lock_scene("jobs", 120, 40).expect("jobs");
         assert!(jobs.plain.contains("subagent"));
@@ -1667,12 +2289,14 @@ mod tests {
         let cfg = render_lock_scene("config", 120, 40).expect("config");
         assert!(cfg.plain.contains(".cortex/config.json"));
         assert!(cfg.plain.contains("MAX"));
+        assert!(cfg.plain.contains("> ├── model"));
 
         let max = render_lock_scene("footer_max", 120, 40).expect("max");
         assert!(max.plain.contains("rate-limit-9e4d"));
         assert!(max.plain.contains("+214"));
         assert!(max.plain.contains("-9"));
         assert!(max.plain.contains("38% context left"));
+        assert!(max.plain.contains("> Add a follow-up█"));
     }
 
     #[test]
@@ -1681,10 +2305,10 @@ mod tests {
             (
                 "login",
                 &[
-                    "Sign in to Cortex",
+                    "Welcome to Cortex CLI!",
                     "Continue with browser",
                     "Paste an API key",
-                    "continue",
+                    "confirm",
                 ],
             ),
             ("thinking", &["Thinking", "follow-up"]),
@@ -1703,14 +2327,14 @@ mod tests {
                 &["Start a new thread?", "Clear thread", "Cancel"],
             ),
         ];
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             for (id, needles) in always {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 let lower = frame.plain.to_lowercase();
                 assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
-                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("devin"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
                 for needle in *needles {
                     let hit = frame.plain.contains(needle)
@@ -1730,6 +2354,7 @@ mod tests {
 
         let think = render_lock_scene("thinking", 120, 40).expect("think");
         assert!(think.plain.contains("ZADD") || think.plain.contains("sliding window"));
+        assert!(think.plain.contains("⠇ Thinking · 14s · esc to interrupt"));
 
         let q = render_lock_scene("question", 120, 40).expect("q");
         assert!(q.plain.contains("Shared limiter"));
@@ -1739,6 +2364,8 @@ mod tests {
         for cmd in ["/commit", "/pr", "/review", "/fix-ci", "/migrate"] {
             assert!(skills.plain.contains(cmd), "{cmd}\n{}", skills.plain);
         }
+        assert!(skills.plain.contains("> /pr"), "{}", skills.plain);
+        assert!(skills.plain.contains("· /commit"), "{}", skills.plain);
 
         let compact = render_lock_scene("compacted", 120, 40).expect("compacted");
         assert!(compact.plain.contains("86%"));
@@ -1783,14 +2410,14 @@ mod tests {
             ),
             ("edit", &["Edit", "completions.ts", "+9"]),
         ];
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             for (id, needles) in always {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 let lower = frame.plain.to_lowercase();
                 assert!(!lower.contains("grok"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("claude"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("fable"), "{id}\n{}", frame.plain);
-                assert!(!lower.contains("rakazo"), "{id}\n{}", frame.plain);
+                assert!(!lower.contains("devin"), "{id}\n{}", frame.plain);
                 assert!(!lower.contains("opencode"), "{id}\n{}", frame.plain);
                 assert!(!frame.plain.contains("L example"), "{id}\n{}", frame.plain);
                 assert!(!frame.plain.contains("L a.rs"), "{id}\n{}", frame.plain);
@@ -1810,12 +2437,12 @@ mod tests {
         assert!(glob.plain.contains("docs/rate-limiting.md"));
         let del = render_lock_scene("delete", 120, 40).expect("delete");
         assert!(del.plain.contains("Undo via git"));
-        assert!(del.plain.contains("esc keep") || del.plain.contains("keep"));
+        assert!(del.plain.contains("esc keep"));
         let list = render_lock_scene("list", 120, 40).expect("list");
         assert!(list.plain.contains("auth.ts"));
         assert!(list.plain.contains("cors.ts"));
         // The identifier is camelCase everywhere, same as @files.
-        for size in [(40u16, 12u16), (120u16, 40u16)] {
+        for size in SIZES {
             let list = render_lock_scene("list", size.0, size.1).expect("list");
             assert!(
                 list.plain.contains("rateLimit.ts") && !list.plain.contains("ratelimit.ts"),
@@ -1846,5 +2473,6 @@ mod tests {
         let diff = render_lock_scene("multi_diff", 120, 40).expect("diff");
         assert!(diff.plain.contains("completions.ts"));
         assert!(diff.plain.contains("-2"));
+        assert!(diff.plain.contains("> src/middleware/rateLimit.ts"));
     }
 }

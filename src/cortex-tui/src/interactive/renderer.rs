@@ -1,7 +1,9 @@
 //! Renderer for interactive selection in the input area.
 
 use super::state::{InlineFormState, InteractiveItem, InteractiveState};
-use cortex_core::style::{ACCENT, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{
+    ACCENT, BORDER_FOCUS, HAIRLINE, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
@@ -10,9 +12,28 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Widget},
 };
 
+/// Rows the search field takes: hairline, `/ query`, hairline.
+pub const SEARCH_FIELD_ROWS: u16 = 3;
+
+/// Placeholder of an empty search field.
+pub const SEARCH_PLACEHOLDER: &str = "Type to search";
+
 /// Widget for rendering the interactive selection list.
 pub struct InteractiveWidget<'a> {
     state: &'a InteractiveState,
+}
+
+/// Paint a full-width hairline on row `y`.
+fn hairline(area: Rect, y: u16, buf: &mut Buffer) {
+    if y >= area.bottom() {
+        return;
+    }
+    buf.set_string(
+        area.x,
+        y,
+        "─".repeat(area.width as usize),
+        Style::default().fg(HAIRLINE),
+    );
 }
 
 impl<'a> InteractiveWidget<'a> {
@@ -60,8 +81,12 @@ impl<'a> InteractiveWidget<'a> {
             return;
         }
 
-        // Layout: search (optional) + items + hints
-        let search_height = if state.searchable { 1 } else { 0 };
+        // Layout: search (optional, framed by hairlines) + items + hints
+        let search_height = if state.searchable {
+            SEARCH_FIELD_ROWS
+        } else {
+            0
+        };
         let hints_height = 1;
         let items_height = inner.height.saturating_sub(search_height + hints_height);
 
@@ -103,12 +128,15 @@ impl<'a> InteractiveWidget<'a> {
             .filtered_indices
             .len()
             .min(self.state.max_visible);
-        let header_height = 1; // Title
-        let search_height = if self.state.searchable { 1 } else { 0 };
+        let header_height = 2; // Top hairline + title
+        let search_height = if self.state.searchable {
+            SEARCH_FIELD_ROWS
+        } else {
+            0
+        };
         let hints_height = 1;
-        let border_height = 2;
 
-        (items_count as u16) + header_height + search_height + hints_height + border_height
+        (items_count as u16) + header_height + search_height + hints_height
     }
 }
 
@@ -123,10 +151,8 @@ impl<'a> Widget for InteractiveWidget<'a> {
             return;
         }
 
-        // Draw only top border line
-        let border_style = Style::default().fg(TEXT_DIM);
-        let border_line = "─".repeat(area.width as usize);
-        buf.set_string(area.x, area.y, &border_line, border_style);
+        // A hairline separates the panel from the transcript above.
+        hairline(area, area.y, buf);
 
         // Render title as normal text on the line below
         let title_y = area.y + 1;
@@ -147,15 +173,15 @@ impl<'a> Widget for InteractiveWidget<'a> {
                 let is_active = i == self.state.active_tab;
                 let is_hovered = self.state.hovered_tab == Some(i);
                 let tab_text = format!(" {} ", tab.label);
-                // Active tab: light text on the dark violet bar — never
-                // inverted onto the accent.
+                // Active tab: the focused selection — cyan on the dark gray
+                // bar. Never inverted onto the accent.
                 let style = if is_active {
                     Style::default()
-                        .fg(TEXT)
+                        .fg(ACCENT)
                         .bg(SELECTION_BG)
                         .add_modifier(Modifier::BOLD)
                 } else if is_hovered {
-                    Style::default().fg(ACCENT)
+                    Style::default().fg(TEXT)
                 } else {
                     Style::default().fg(TEXT_DIM)
                 };
@@ -176,10 +202,10 @@ impl<'a> Widget for InteractiveWidget<'a> {
             return;
         }
 
-        // Layout: search (optional) + items + hints
+        // Layout: search (optional, framed by two hairlines) + items + hints
         let mut constraints = Vec::new();
         if self.state.searchable {
-            constraints.push(Constraint::Length(1)); // Search bar
+            constraints.push(Constraint::Length(SEARCH_FIELD_ROWS));
         }
         constraints.push(Constraint::Min(1)); // Items
         constraints.push(Constraint::Length(1)); // Hints
@@ -187,26 +213,12 @@ impl<'a> Widget for InteractiveWidget<'a> {
         let chunks = Layout::vertical(constraints).split(inner);
         let mut chunk_idx = 0;
 
-        // Render search bar if enabled
+        // Render the search field if enabled: `/ Type to search` between two
+        // hairlines — the same bar as the composer.
         if self.state.searchable {
             let search_area = chunks[chunk_idx];
             chunk_idx += 1;
-
-            let search_text = if self.state.search_query.is_empty() {
-                Span::styled("Type to search...", Style::default().fg(TEXT_MUTED))
-            } else {
-                Span::styled(
-                    format!("Search: {}_", self.state.search_query),
-                    Style::default().fg(TEXT),
-                )
-            };
-
-            let search_line = Line::from(vec![
-                Span::styled(" ", Style::default().fg(TEXT_DIM)),
-                search_text,
-            ]);
-
-            Paragraph::new(search_line).render(search_area, buf);
+            render_search_field(search_area, buf, &self.state.search_query);
         }
 
         // Render items
@@ -219,6 +231,30 @@ impl<'a> Widget for InteractiveWidget<'a> {
         let hints_area = chunks[chunk_idx];
         self.render_hints(hints_area, buf);
     }
+}
+
+/// Paint the search field: a hairline, `/ query█` (or the dim placeholder),
+/// and a closing hairline. `area` is `SEARCH_FIELD_ROWS` tall.
+pub fn render_search_field(area: Rect, buf: &mut Buffer, query: &str) {
+    if area.is_empty() {
+        return;
+    }
+    hairline(area, area.y, buf);
+    let field_y = area.y + 1;
+    if field_y >= area.bottom() {
+        return;
+    }
+    buf.set_string(area.x, field_y, "/ ", Style::default().fg(TEXT_DIM));
+    let budget = area.width.saturating_sub(3) as usize;
+    if query.is_empty() {
+        let ghost = crate::ui::text_utils::first_fitting_line(SEARCH_PLACEHOLDER, budget);
+        buf.set_string(area.x + 2, field_y, ghost, Style::default().fg(TEXT_DIM));
+    } else {
+        let shown = crate::ui::text_utils::first_fitting_line(query, budget);
+        let typed = format!("{shown}█");
+        buf.set_string(area.x + 2, field_y, typed, Style::default().fg(TEXT));
+    }
+    hairline(area, area.y + 2, buf);
 }
 
 impl<'a> InteractiveWidget<'a> {
@@ -312,14 +348,16 @@ impl<'a> InteractiveWidget<'a> {
         is_hovered: bool,
         is_checked: bool,
     ) {
-        // Selected row: dark violet bar, light text — never inverted.
+        // Selected row: the dark gray bar with a cyan `>` and a cyan label —
+        // never inverted onto the accent. Unselected rows lead with a dim
+        // middot and keep white copy.
         let selected_bar = is_selected && !item.disabled && !item.is_separator;
         let (fg, bg) = if item.disabled {
             (TEXT_MUTED, Color::Reset)
         } else if selected_bar {
             (TEXT, SELECTION_BG)
         } else if is_hovered {
-            (TEXT, Color::Rgb(40, 44, 52))
+            (TEXT, SURFACE_1)
         } else {
             (TEXT, Color::Reset)
         };
@@ -337,11 +375,25 @@ impl<'a> InteractiveWidget<'a> {
             }
         }
 
-        let mut x = area.x + 1;
+        let mut x = area.x;
+        if !item.is_separator {
+            let (marker, marker_style) = if selected_bar {
+                ("> ", Style::default().fg(ACCENT).bg(SELECTION_BG))
+            } else if item.disabled {
+                ("  ", Style::default().fg(TEXT_MUTED))
+            } else {
+                ("· ", Style::default().fg(TEXT_DIM))
+            };
+            buf.set_string(x, area.y, marker, marker_style);
+        } else {
+            buf.set_string(x, area.y, "  ", Style::default());
+        }
+        x += 2;
 
-        // Checkbox (multi-select)
+        // Checkbox (multi-select): a green check when on, dim brackets when
+        // off.
         if self.state.multi_select {
-            let checkbox = if is_checked { "[x]" } else { "[ ]" };
+            let checkbox = if is_checked { "[✓]" } else { "[ ]" };
             let checkbox_style = if is_checked {
                 Style::default().fg(SUCCESS)
             } else {
@@ -364,7 +416,7 @@ impl<'a> InteractiveWidget<'a> {
             Style::default().fg(TEXT_DIM).add_modifier(Modifier::BOLD)
         } else if selected_bar {
             Style::default()
-                .fg(TEXT)
+                .fg(ACCENT)
                 .bg(SELECTION_BG)
                 .add_modifier(Modifier::BOLD)
         } else {
@@ -376,7 +428,8 @@ impl<'a> InteractiveWidget<'a> {
         buf.set_string(x, area.y, &label, label_style);
         x += label.chars().count() as u16;
 
-        // Description right-aligned when it fits beside the label.
+        // Description right-aligned when it fits beside the label; dim even
+        // on the selection bar.
         if let Some(ref desc) = item.description {
             let remaining = (area.x + area.width).saturating_sub(x + 2) as usize;
             let desc_text = crate::ui::text_utils::first_fitting_line(desc, remaining);
@@ -385,7 +438,7 @@ impl<'a> InteractiveWidget<'a> {
                 let desc_x = area.x + area.width.saturating_sub(desc_w + 1);
                 if desc_x > x + 1 {
                     let desc_style = if selected_bar {
-                        Style::default().fg(TEXT).bg(SELECTION_BG)
+                        Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
                     } else {
                         Style::default().fg(TEXT_DIM)
                     };
@@ -395,7 +448,7 @@ impl<'a> InteractiveWidget<'a> {
         }
     }
 
-    /// Render the key hints at the bottom.
+    /// Render the key hints at the bottom: `↑↓ select · ↵ confirm · esc close`.
     fn render_hints(&self, area: Rect, buf: &mut Buffer) {
         let hint_text = if let Some(ref custom) = self.state.hints {
             custom
@@ -404,22 +457,22 @@ impl<'a> InteractiveWidget<'a> {
                 .collect::<Vec<_>>()
                 .join(" · ")
         } else {
-            let mut hints = vec![("↑↓", "navigate"), ("Enter", "select")];
+            let mut hints = vec![("↑↓", "select"), ("↵", "confirm")];
 
             if self.state.multi_select {
-                hints.insert(1, ("Space", "toggle"));
+                hints.insert(1, ("space", "toggle"));
             }
 
             if self.state.searchable {
-                hints.push(("Type", "search"));
+                hints.push(("type", "to search"));
             }
 
-            hints.push(("Esc", "cancel"));
+            hints.push(("esc", "close"));
             hints
                 .iter()
-                .map(|(key, action)| format!("[{key}] {action}"))
+                .map(|(key, action)| format!("{key} {action}"))
                 .collect::<Vec<_>>()
-                .join("  ")
+                .join(" · ")
         };
 
         let hint_color = TEXT_DIM;
@@ -434,13 +487,14 @@ impl<'a> InteractiveWidget<'a> {
 
     /// Render inline form for configuration within the panel.
     fn render_form(&self, form: &InlineFormState, area: Rect, buf: &mut Buffer) {
-        // Draw border with form title — square corners, zero rounded frames.
+        // Draw border with form title — square corners, zero rounded frames,
+        // gray hairline: cyan never outlines a box.
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(ACCENT))
+            .border_style(Style::default().fg(BORDER_FOCUS))
             .title(Span::styled(
                 format!(" {} ", form.title),
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             ));
 
         let inner = block.inner(area);
@@ -485,7 +539,7 @@ impl<'a> InteractiveWidget<'a> {
     ) {
         let x = area.x + 1;
 
-        // Label
+        // Label: the focused field is the selection — cyan; the rest dim.
         let label_style = if is_focused {
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
         } else {
@@ -551,32 +605,25 @@ impl<'a> InteractiveWidget<'a> {
             if is_focused {
                 let cursor_x = value_x + display_value.len() as u16;
                 if cursor_x < area.x + area.width - 1 {
-                    buf[(cursor_x, area.y)].set_char('_');
-                    buf[(cursor_x, area.y)].set_fg(ACCENT);
+                    buf[(cursor_x, area.y)].set_char('█');
+                    buf[(cursor_x, area.y)].set_fg(TEXT);
                 }
             }
         }
     }
 
-    /// Render hints for the form.
+    /// Render hints for the form: `tab next · ↵ submit · esc cancel`.
     fn render_form_hints(&self, area: Rect, buf: &mut Buffer) {
-        let hints = [("Tab", "next"), ("Enter", "submit"), ("Esc", "cancel")];
-
-        // Use standard TEXT_DIM color for hints
-        let hint_color = TEXT_DIM;
+        let hints = [("tab", "next"), ("↵", "submit"), ("esc", "cancel")];
 
         let mut spans = Vec::new();
         for (i, (key, action)) in hints.iter().enumerate() {
             if i > 0 {
-                spans.push(Span::styled("  ", Style::default()));
+                spans.push(Span::styled(" · ", Style::default().fg(TEXT_DIM)));
             }
             spans.push(Span::styled(
-                format!("[{}]", key),
-                Style::default().fg(hint_color),
-            ));
-            spans.push(Span::styled(
-                format!(" {}", action),
-                Style::default().fg(hint_color),
+                format!("{key} {action}"),
+                Style::default().fg(TEXT_DIM),
             ));
         }
 
@@ -590,6 +637,18 @@ mod tests {
     use super::*;
     use crate::interactive::state::InteractiveAction;
 
+    fn buffer_text(buf: &Buffer) -> String {
+        let area = buf.area();
+        let mut out = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
     #[test]
     fn test_required_height() {
         let items = vec![
@@ -600,8 +659,8 @@ mod tests {
         let state = InteractiveState::new("Test", items, InteractiveAction::Custom("test".into()));
         let widget = InteractiveWidget::new(&state);
 
-        // 3 items + 1 title + 1 hints + 2 border = 7
-        assert_eq!(widget.required_height(), 7);
+        // 3 items + hairline + title + hints = 6
+        assert_eq!(widget.required_height(), 6);
     }
 
     #[test]
@@ -614,7 +673,47 @@ mod tests {
             .with_search();
         let widget = InteractiveWidget::new(&state);
 
-        // 2 items + 1 title + 1 search + 1 hints + 2 border = 7
-        assert_eq!(widget.required_height(), 7);
+        // 2 items + hairline + title + (hairline, search, hairline) + hints = 8
+        assert_eq!(widget.required_height(), 8);
+    }
+
+    #[test]
+    fn selected_row_is_cyan_on_the_gray_bar_and_search_is_framed() {
+        let items = vec![
+            InteractiveItem::new("model", "Model").with_description("Cortex Mini 1"),
+            InteractiveItem::new("mode", "Mode").with_description("Agent"),
+        ];
+        let state = InteractiveState::new("Settings", items, InteractiveAction::Custom("s".into()))
+            .with_search();
+        let widget = InteractiveWidget::new(&state);
+        let area = Rect::new(0, 0, 60, 8);
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+        let text = buffer_text(&buf);
+
+        // Hairline, title, then the search field framed by two hairlines.
+        let rows: Vec<&str> = text.lines().collect();
+        assert!(rows[0].chars().all(|c| c == '─'), "{text}");
+        assert!(rows[1].contains("Settings"), "{text}");
+        assert!(rows[2].chars().all(|c| c == '─'), "{text}");
+        assert!(rows[3].starts_with("/ Type to search"), "{text}");
+        assert!(rows[4].chars().all(|c| c == '─'), "{text}");
+        assert_eq!(buf[(0, 2)].style().fg, Some(HAIRLINE), "{text}");
+
+        // Selected row: cyan `>` and label on the gray bar, dim description.
+        assert!(rows[5].starts_with("> Model"), "{text}");
+        assert_eq!(buf[(0, 5)].style().fg, Some(ACCENT));
+        assert_eq!(buf[(0, 5)].style().bg, Some(SELECTION_BG));
+        assert_eq!(buf[(2, 5)].style().fg, Some(ACCENT));
+        let desc_x = rows[5].find("Cortex").expect("description") as u16;
+        assert_eq!(buf[(desc_x, 5)].style().fg, Some(TEXT_DIM));
+        assert_eq!(buf[(desc_x, 5)].style().bg, Some(SELECTION_BG));
+        // Unselected row: dim middot, white label.
+        assert!(rows[6].starts_with("· Mode"), "{text}");
+        assert_eq!(buf[(0, 6)].style().fg, Some(TEXT_DIM));
+        assert_eq!(buf[(2, 6)].style().fg, Some(TEXT));
+        // Hints in the locked format.
+        assert!(rows[7].contains("↑↓ select · ↵ confirm"), "{text}");
+        assert!(rows[7].contains("esc close"), "{text}");
     }
 }

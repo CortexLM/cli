@@ -43,27 +43,9 @@ pub fn render_message_with_theme(
 
     match msg.role {
         MessageRole::User => {
-            // "> message" — violet marker, gray/white copy (locked chrome).
-            let prefix = Span::styled("> ", Style::default().fg(colors.accent));
-
-            // Calculate available width for text (after "> " prefix)
-            let text_width = (width as usize).saturating_sub(3); // "> " + margin
-
-            // Wrap text and render each line
-            let wrapped_lines = wrap_text(&msg.content, text_width);
-            for (i, line_content) in wrapped_lines.iter().enumerate() {
-                if i == 0 {
-                    lines.push(Line::from(vec![
-                        prefix.clone(),
-                        Span::styled(line_content.clone(), Style::default().fg(colors.text)),
-                    ]));
-                } else {
-                    lines.push(Line::from(vec![
-                        Span::raw("  "), // Indent continuation (2 spaces = "> " length)
-                        Span::styled(line_content.clone(), Style::default().fg(colors.text)),
-                    ]));
-                }
-            }
+            // A past user turn: `> prompt text` in white on a full-width,
+            // slightly lighter gray bar. Every wrapped row carries the bar.
+            lines.extend(user_turn_lines(&msg.content, width, colors));
         }
         MessageRole::Assistant => {
             // Use full markdown renderer with theme
@@ -122,7 +104,7 @@ pub fn render_message_with_theme(
         }
         MessageRole::Tool => {
             // "[>] tool_name: result"
-            let prefix = Span::styled("[>] ", Style::default().fg(colors.accent));
+            let prefix = Span::styled("[>] ", Style::default().fg(colors.text_dim));
             let tool_name = msg.tool_name.as_deref().unwrap_or("tool");
             let name_span = Span::styled(
                 format!("{}: ", tool_name),
@@ -154,6 +136,30 @@ pub fn render_message_with_theme(
     lines
 }
 
+/// A past user turn as full-width bar rows: `> text` on the first row, the
+/// wrapped continuation indented under the copy, every row padded to `width`
+/// so the gray bar spans the terminal.
+pub fn user_turn_lines(content: &str, width: u16, colors: &AdaptiveColors) -> Vec<Line<'static>> {
+    let bar = Style::default().fg(colors.text).bg(colors.user_bg);
+    let width = width.max(3) as usize;
+    let text_width = width.saturating_sub(3);
+    let mut lines = Vec::new();
+    let wrapped = wrap_text(content, text_width);
+    let rows: Vec<String> = if wrapped.is_empty() {
+        vec![String::new()]
+    } else {
+        wrapped
+    };
+    for (i, row) in rows.iter().enumerate() {
+        let prefix = if i == 0 { "> " } else { "  " };
+        let mut text = format!("{prefix}{row}");
+        let used = unicode_width::UnicodeWidthStr::width(text.as_str());
+        text.push_str(&" ".repeat(width.saturating_sub(used)));
+        lines.push(Line::from(Span::styled(text, bar)));
+    }
+    lines
+}
+
 /// Renders a single tool call as one card: name + path + body.
 pub fn render_tool_call(
     call: &ToolCallDisplay,
@@ -168,12 +174,12 @@ pub fn render_tool_call(
         ToolStatus::Pending => (None, colors.text_muted),
         ToolStatus::Running => {
             let frame = TOOL_SPINNER_FRAMES[call.spinner_frame % TOOL_SPINNER_FRAMES.len()];
-            // Spinners stay gray — violet is reserved for markers and success.
+            // Spinners stay dim gray.
             (Some(frame.to_string()), colors.text_dim)
         }
-        // Completed tiles carry the violet status dot, same as the locked
-        // Grep tile; the label stays white.
-        ToolStatus::Completed => (Some("●".to_string()), colors.accent),
+        // Completed tiles carry a white status dot; the label stays white.
+        // Cyan is the selection accent only, green is `✓` and `+diff` only.
+        ToolStatus::Completed => (Some("●".to_string()), colors.text),
         ToolStatus::Failed => (Some("●".to_string()), colors.error),
     };
 
@@ -316,12 +322,13 @@ pub fn render_subagent(
     let content_width = (width as usize).saturating_sub(6); // 6 chars for prefix/indent
     let line_width = (width as usize).saturating_sub(8); // 8 chars for nested content
 
-    // Status indicator with color
+    // Status indicator: a dim dot while running, white when done, red when
+    // failed — the tile label stays white.
     let (indicator, indicator_color) = match &task.status {
         SubagentDisplayStatus::Starting
         | SubagentDisplayStatus::Thinking
-        | SubagentDisplayStatus::ExecutingTool(_) => ("●", colors.accent),
-        SubagentDisplayStatus::Completed => ("●", colors.success),
+        | SubagentDisplayStatus::ExecutingTool(_) => ("●", colors.text_dim),
+        SubagentDisplayStatus::Completed => ("●", colors.text),
         SubagentDisplayStatus::Failed => ("●", colors.error),
     };
 
@@ -332,7 +339,7 @@ pub fn render_subagent(
         Span::styled(
             format!("Task {}", task.agent_type),
             Style::default()
-                .fg(colors.accent)
+                .fg(colors.text)
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
@@ -365,9 +372,9 @@ pub fn render_subagent(
         // Display todos if any - use ⎿ prefix for first, space for rest
         for (i, todo) in task.todos.iter().enumerate() {
             let (status_text, status_color) = match todo.status {
-                SubagentTodoStatus::Completed => ("[completed]", colors.success),
-                SubagentTodoStatus::InProgress => ("[in_progress]", colors.accent),
-                SubagentTodoStatus::Pending => ("[pending]", colors.text_muted),
+                SubagentTodoStatus::Completed => ("✓", colors.success),
+                SubagentTodoStatus::InProgress => ("›", colors.text),
+                SubagentTodoStatus::Pending => ("○", colors.text_muted),
             };
             // Calculate max content width (accounting for status text)
             let max_content = content_width.saturating_sub(status_text.len() + 1);
@@ -418,13 +425,39 @@ pub fn render_subagent(
     lines
 }
 
-/// Generates welcome card as styled lines using TUI components.
+/// Keystroke hints shown under the splash while the session is empty.
+pub const EMPTY_SESSION_HINTS: &str = "/ commands · @ files · ! shell · & cloud";
+
+/// Generates the launch header as styled lines: the workspace (`~/cortex-api
+/// main*`, dim), the `> cortex` invocation, the bold `Cortex CLI v…` splash
+/// and — while the session is empty — the keystroke hints.
 pub fn generate_welcome_lines(
     width: u16,
     colors: &AdaptiveColors,
     app_state: &AppState,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
+    let w = width as usize;
+
+    if !app_state.footer_cwd.is_empty() {
+        let dirty = if app_state.git_dirty { "*" } else { "" };
+        let workspace = if app_state.git_branch.is_empty() {
+            app_state.footer_cwd.clone()
+        } else {
+            format!("{} {}{dirty}", app_state.footer_cwd, app_state.git_branch)
+        };
+        let shown = crate::ui::text_utils::first_fitting_line(&workspace, w);
+        if !shown.is_empty() {
+            lines.push(Line::from(Span::styled(
+                shown,
+                Style::default().fg(colors.text_dim),
+            )));
+        }
+        lines.push(Line::from(Span::styled(
+            "> cortex",
+            Style::default().fg(colors.text),
+        )));
+    }
 
     let version = if app_state.cli_version.is_empty() {
         VERSION
@@ -445,8 +478,7 @@ pub fn generate_welcome_lines(
     if empty {
         // The keystroke hints are part of the empty-session chrome at every
         // width; narrow terminals show the leading keys that fit.
-        let hints = "/ commands · @ files · ! shell · shift+tab modes";
-        let line = crate::ui::text_utils::first_fitting_line(hints, width as usize);
+        let line = crate::ui::text_utils::first_fitting_line(EMPTY_SESSION_HINTS, w);
         if !line.is_empty() {
             lines.push(Line::from(Span::styled(
                 line,
@@ -780,7 +812,6 @@ pub fn _render_motd(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, app_s
 /// Renders the welcome text next to the brain (legacy).
 #[allow(dead_code)]
 pub fn render_welcome_text(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, model: &str) {
-    let accent = colors.accent;
     let text_color = colors.text;
     let dim = colors.text_dim;
 
@@ -789,7 +820,7 @@ pub fn render_welcome_text(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             "Welcome to Cortex",
-            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            Style::default().fg(text_color).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled("─────────────────", Style::default().fg(dim))),
         Line::from(""),
@@ -821,13 +852,14 @@ pub fn _render_welcome_text_centered(
     colors: &AdaptiveColors,
     _app_state: &AppState,
 ) {
-    let accent = colors.accent;
     let dim = colors.text_dim;
 
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             "Welcome to Cortex",
-            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(colors.text)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
@@ -858,37 +890,32 @@ pub fn render_update_banner(
         return;
     }
 
-    let (icon, text, style) = match update_status {
-        UpdateStatus::Available { version } => {
-            let icon = "↑";
-            let text = format!(" A new version ({}) is available ", version);
-            let style = Style::default()
-                .fg(colors.accent)
-                .add_modifier(Modifier::BOLD);
-            (icon, text, style)
-        }
+    // Gray copy throughout; only the `✓` of a finished download is green.
+    let (icon, icon_style, text) = match update_status {
+        UpdateStatus::Available { version } => (
+            "↑",
+            Style::default().fg(colors.text),
+            format!(" A new version ({}) is available ", version),
+        ),
         UpdateStatus::Downloading {
             version: _,
             progress,
-        } => {
-            let icon = "⟳";
-            let text = format!(" Downloading update... {}% ", progress);
-            let style = Style::default().fg(colors.warning);
-            (icon, text, style)
-        }
-        UpdateStatus::ReadyToRestart { version: _ } => {
-            let icon = "✓";
-            let text = " You must restart to run the latest version ".to_string();
-            let style = Style::default()
-                .fg(colors.success)
-                .add_modifier(Modifier::BOLD);
-            (icon, text, style)
-        }
+        } => (
+            "⟳",
+            Style::default().fg(colors.text_dim),
+            format!(" Downloading update... {}% ", progress),
+        ),
+        UpdateStatus::ReadyToRestart { version: _ } => (
+            "✓",
+            Style::default().fg(colors.success),
+            " You must restart to run the latest version ".to_string(),
+        ),
         _ => return, // Don't render for other states
     };
+    let text_style = Style::default().fg(colors.text);
 
     // Calculate banner width
-    let banner_width = (icon.len() + text.len() + 2) as u16; // +2 for spacing
+    let banner_width = (icon.chars().count() + text.len() + 2) as u16; // +2 for spacing
 
     // Position at left side of the area with some padding
     let x = area.x + 2;
@@ -900,8 +927,8 @@ pub fn render_update_banner(
     }
 
     // Render icon
-    buf.set_string(x, y, icon, style);
+    buf.set_string(x, y, icon, icon_style);
 
     // Render text
-    buf.set_string(x + icon.len() as u16 + 1, y, &text, style);
+    buf.set_string(x + icon.chars().count() as u16 + 1, y, &text, text_style);
 }

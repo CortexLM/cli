@@ -125,7 +125,8 @@ mod tests {
 
     #[test]
     fn sequence_is_splash_then_typing_then_working() {
-        let labels: Vec<&str> = recording()
+        let recording = recording();
+        let labels: Vec<&str> = recording
             .frames
             .iter()
             .map(|frame| frame.label.as_str())
@@ -144,7 +145,8 @@ mod tests {
 
     #[test]
     fn splash_is_the_signed_lock() {
-        let first = &recording().frames[0];
+        let recording = recording();
+        let first = &recording.frames[0];
         for needle in [
             "Cortex CLI v1.0.0",
             "Plan, search, build anything",
@@ -227,7 +229,8 @@ mod tests {
 
     #[test]
     fn working_matches_the_signed_lock() {
-        let last = recording().frames.last().expect("frames");
+        let recording = recording();
+        let last = recording.frames.last().expect("frames");
         assert_eq!(last.label, "working");
         for needle in [
             "Add rate limiting to POST /v1/completions",
@@ -252,7 +255,8 @@ mod tests {
 
     #[test]
     fn hero_never_names_a_provider_or_transport() {
-        for frame in &recording().frames {
+        let recording = recording();
+        for frame in &recording.frames {
             let lower = frame.plain.to_lowercase();
             for banned in [
                 "grok",

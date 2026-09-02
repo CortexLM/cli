@@ -427,6 +427,18 @@ impl EventLoop {
         };
     }
 
+    /// Keep the agent harness in spec/read-only when the session is Plan or Ask.
+    pub(super) fn sync_agent_mode_harness(&mut self) {
+        match self.app_state.operation_mode {
+            crate::app::OperationMode::Plan | crate::app::OperationMode::Spec => {
+                cortex_engine::harness::enter_spec_mode();
+            }
+            crate::app::OperationMode::Build => {
+                cortex_engine::harness::exit_spec_mode();
+            }
+        }
+    }
+
     /// Updates the session's model metadata and persists it.
     /// This ensures the model is saved with the session for /load to display correctly.
     pub(super) fn update_session_model(&mut self, model_id: &str) {
@@ -552,8 +564,10 @@ impl EventLoop {
         let already = self
             .app_state
             .messages
-            .last()
-            .is_some_and(|m| m.content.contains(crate::ui::consts::STOPPED_TITLE));
+            .iter()
+            .rev()
+            .take(4)
+            .any(|m| m.content.contains(crate::ui::consts::STOPPED_TITLE));
         if already {
             return;
         }

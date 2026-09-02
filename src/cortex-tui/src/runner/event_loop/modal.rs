@@ -511,6 +511,43 @@ impl EventLoop {
                 self.reopen_mcp_panel();
                 true
             }
+            "mcp-add-http" => {
+                let name = values.get("name").cloned().unwrap_or_default();
+                let url = values.get("url").cloned().unwrap_or_default();
+                if name.is_empty() || url.is_empty() {
+                    self.app_state.toasts.error("Name and URL are required");
+                    return false;
+                }
+                let stored_server =
+                    crate::mcp_storage::StoredMcpServer::new_http(name.clone(), url);
+                if let Err(e) = self.save_mcp_server(&stored_server) {
+                    self.app_state
+                        .toasts
+                        .error(format!("Failed to save MCP server: {}", e));
+                    return false;
+                }
+                self.app_state
+                    .mcp_servers
+                    .push(crate::modal::mcp_manager::McpServerInfo {
+                        name: name.clone(),
+                        status: crate::modal::mcp_manager::McpStatus::Starting,
+                        tool_count: 0,
+                        error: None,
+                        requires_auth: stored_server.api_key_env_var.is_some(),
+                    });
+                let config = stored_server.to_engine_config();
+                let manager = self.mcp_manager.clone();
+                let connect_name = name.clone();
+                tokio::spawn(async move {
+                    manager.add_server(config).await;
+                    let _ = manager.connect(&connect_name).await;
+                });
+                self.app_state
+                    .toasts
+                    .success(format!("Added HTTP MCP server: {}", name));
+                self.reopen_mcp_panel();
+                true
+            }
             _ => {
                 tracing::warn!("Unhandled inline form submission: {}", action_id);
                 false
@@ -593,32 +630,51 @@ impl EventLoop {
                 match item_id.as_str() {
                     "model" => {
                         self.app_state.exit_interactive_mode();
-                        self.app_state.toasts.info("Model");
-                        return false;
+                        self.handle_open_modal(crate::commands::ModalType::ModelPicker)
+                            .await;
+                        return true;
                     }
                     "mode" => {
                         self.app_state.exit_interactive_mode();
-                        self.app_state.toasts.info("Mode: Agent · Plan · Ask");
-                        return false;
+                        self.handle_open_modal(crate::commands::ModalType::Mode)
+                            .await;
+                        return true;
                     }
                     "permissions" => {
                         self.app_state.exit_interactive_mode();
-                        self.app_state.toasts.info("Permissions");
-                        return false;
+                        self.handle_open_modal(crate::commands::ModalType::Permissions)
+                            .await;
+                        return true;
+                    }
+                    "sandbox" => {
+                        let interactive = crate::interactive::builders::build_sandbox_selector(
+                            self.app_state.sandbox_mode,
+                        );
+                        self.app_state.enter_interactive_mode(interactive);
+                        return true;
                     }
                     "mcp" => {
                         self.app_state.exit_interactive_mode();
-                        self.app_state.toasts.info("MCP");
-                        return false;
+                        self.handle_open_modal(crate::commands::ModalType::McpManager)
+                            .await;
+                        return true;
                     }
                     "config" => {
                         self.app_state.exit_interactive_mode();
-                        self.app_state.toasts.info("Config");
+                        let path = dirs::home_dir()
+                            .map(|h| h.join(".cortex").join("config.json"))
+                            .unwrap_or_else(|| std::path::PathBuf::from("~/.cortex/config.json"));
+                        self.add_system_message(&format!("Config: {}", path.display()));
                         return false;
                     }
                     "usage" => {
                         self.app_state.exit_interactive_mode();
-                        self.add_system_message("Usage");
+                        crate::runner::billing_handlers::spawn_usage_fetch(
+                            self.tool_event_tx.clone(),
+                            None,
+                            None,
+                        );
+                        self.app_state.toasts.info("Fetching usage…");
                         return false;
                     }
                     "compact" => {
@@ -626,9 +682,6 @@ impl EventLoop {
                     }
                     "debug" => {
                         self.app_state.debug_mode = !self.app_state.debug_mode;
-                    }
-                    "sandbox" => {
-                        self.app_state.sandbox_mode = !self.app_state.sandbox_mode;
                     }
                     "sound" => {
                         self.app_state.sound_enabled = !self.app_state.sound_enabled;
@@ -638,12 +691,79 @@ impl EventLoop {
                 self.reopen_settings_menu();
                 return true;
             }
+            InteractiveAction::SetApprovalMode => {
+                self.handle_set_value("approval", &item_id);
+                return false;
+            }
             InteractiveAction::McpServerAction => {
                 return self.handle_mcp_selector_item(&item_id).await;
             }
-            InteractiveAction::Custom(ref custom) if custom.starts_with("mcp:") => {
-                let server = custom.trim_start_matches("mcp:").to_string();
-                return self.handle_mcp_server_action(&server, &item_id).await;
+            InteractiveAction::Custom(ref custom) => {
+                if let Some(server) = custom.strip_prefix("mcp:") {
+                    return self.handle_mcp_server_action(server, &item_id).await;
+                }
+                match custom.as_str() {
+                    "mode" => {
+                        self.app_state.set_agent_mode(&item_id);
+                        self.sync_agent_mode_harness();
+                        self.app_state
+                            .toasts
+                            .info(format!("Mode: {}", self.app_state.agent_mode_label));
+                        return false;
+                    }
+                    "effort" => {
+                        self.app_state.set_thinking_budget(Some(item_id.clone()));
+                        self.app_state.toasts.info(format!("Effort: {}", item_id));
+                        return false;
+                    }
+                    "sandbox" => {
+                        self.app_state.sandbox_mode = item_id == "on";
+                        let state = if self.app_state.sandbox_mode {
+                            "on"
+                        } else {
+                            "off"
+                        };
+                        self.app_state
+                            .toasts
+                            .info(format!("Sandbox mode: {}", state));
+                        return false;
+                    }
+                    "skill-run" => {
+                        self.invoke_skill_command(&format!("skill:invoke:{item_id}"))
+                            .await;
+                        return false;
+                    }
+                    "mcp-source" => {
+                        let interactive = match item_id.as_str() {
+                            "custom" => {
+                                crate::interactive::builders::build_mcp_transport_selector()
+                            }
+                            "registry" => {
+                                crate::interactive::builders::build_mcp_registry_browser()
+                            }
+                            _ => return false,
+                        };
+                        self.app_state.enter_interactive_mode(interactive);
+                        return true;
+                    }
+                    "mcp-transport" => {
+                        let mut interactive = crate::interactive::builders::build_mcp_selector(
+                            &self.app_state.mcp_servers,
+                        );
+                        match item_id.as_str() {
+                            "stdio" => interactive
+                                .open_form(crate::interactive::builders::build_mcp_stdio_form()),
+                            "http" => interactive
+                                .open_form(crate::interactive::builders::build_mcp_http_form()),
+                            _ => return false,
+                        }
+                        self.app_state.enter_interactive_mode(interactive);
+                        return true;
+                    }
+                    _ => {
+                        tracing::debug!("Unhandled interactive action: {:?}", action);
+                    }
+                }
             }
             _ => {
                 tracing::debug!("Unhandled interactive action: {:?}", action);
@@ -716,8 +836,8 @@ impl EventLoop {
     async fn handle_mcp_selector_item(&mut self, item_id: &str) -> bool {
         match item_id {
             "__add__" => {
-                let form = crate::interactive::builders::build_mcp_add_server_form();
-                self.app_state.active_modal = Some(crate::app::ActiveModal::Form(form));
+                let interactive = crate::interactive::builders::build_mcp_source_selector();
+                self.app_state.enter_interactive_mode(interactive);
                 true
             }
             "__tools__" => {

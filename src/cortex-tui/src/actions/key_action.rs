@@ -455,7 +455,7 @@ impl KeyAction {
             // Tools
             KeyAction::CancelTool => "Cancel tool",
             KeyAction::RetryTool => "Retry tool",
-            KeyAction::CyclePermissionMode => "Cycle permission mode",
+            KeyAction::CyclePermissionMode => "Cycle Agent / Plan / Ask",
             KeyAction::ToggleToolDetails => "Toggle tool details",
 
             // Operation Mode

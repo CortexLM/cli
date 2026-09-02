@@ -67,7 +67,7 @@ impl ActionMapper {
             KeyBinding::global(
                 KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
                 KeyAction::CyclePermissionMode,
-                "Cycle permission mode",
+                "Cycle Agent / Plan / Ask",
             ),
             // Sidebar toggle (Ctrl+B only)
             KeyBinding::global(
@@ -279,11 +279,11 @@ impl ActionMapper {
                 KeyAction::Paste,
                 "Paste (vim)",
             ),
-            // Cycle permission mode
+            // Cycle Agent / Plan / Ask
             KeyBinding::chat(
                 KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
                 KeyAction::CyclePermissionMode,
-                "Cycle permission mode",
+                "Cycle Agent / Plan / Ask",
             ),
             // Toggle tool details
             KeyBinding::chat(

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -42,6 +43,9 @@ CANVAS_BG = (0, 0, 0)
 # JetBrains Mono does not carry (the tool-result marker U+23BF, for instance).
 FONT_CANDIDATES = {
     "regular": [
+        os.path.expanduser("~/.local/share/fonts/IBMPlexMono-Regular.ttf"),
+        "/usr/share/fonts/truetype/ibm-plex/IBMPlexMono-Regular.ttf",
+        "/usr/share/fonts/opentype/ibm-plex/IBMPlexMono-Regular.otf",
         "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
         "/usr/share/fonts/truetype/macos/JetBrainsMono-Regular.ttf",
         "/usr/share/fonts/TTF/JetBrainsMono-Regular.ttf",
@@ -52,6 +56,9 @@ FONT_CANDIDATES = {
         "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
     ],
     "bold": [
+        os.path.expanduser("~/.local/share/fonts/IBMPlexMono-Bold.ttf"),
+        "/usr/share/fonts/truetype/ibm-plex/IBMPlexMono-Bold.ttf",
+        "/usr/share/fonts/opentype/ibm-plex/IBMPlexMono-Bold.otf",
         "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Bold.ttf",
         "/usr/share/fonts/truetype/macos/JetBrainsMono-Bold.ttf",
         "/usr/share/fonts/TTF/JetBrainsMono-Bold.ttf",

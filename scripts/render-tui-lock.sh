@@ -99,7 +99,8 @@ binary still reports the crate version.
 | `diagnostics.png` | Diagnostics tile |
 | `multi_diff.png` | `/diff` files changed this turn |
 | `compact.png` | `/compact` — thread compacted (same board as `compacted.png`) |
-| `interrupt.png` | Interrupt — tiles stay on screen, `✗ Stopped` |
+| `interrupt.png` | Interrupt — tiles stay on screen, `× Stopped` in error red |
+| `quota.png` | Agent quota exhausted (title in error red) |
 | `clear.png` | `/clear` confirm (same board as `clear_confirm.png`) |
 | `session_empty.png` | Empty session |
 | `session_loading.png` | Loading / streaming |
@@ -112,7 +113,6 @@ binary still reports the crate version.
 | `resume.png` | `/resume` session list |
 | `mcp.png` | `/mcp` servers |
 | `usage.png` | `/usage` bars |
-| `quota.png` | Agent quota exhausted |
 | `sandbox.png` | `/sandbox` |
 | `cloud.png` | Cloud handoff |
 | `sudo.png` | Elevated Shell password |
@@ -149,6 +149,8 @@ binary still reports the crate version.
 | `md_mixed.png` | Heading + bullets + table + fence in one reply — the auto-format proof |
 | `diff_hunk.png` | Edit tile + unified hunk: dim gutter, white context, red `-`, green `+` |
 | `diff_word.png` | Edit tile, one changed line: only the mutated token is coloured |
+| `sandbox_deny.png` | Sandbox blocked a command (`× Sandbox denied` in error red) |
+| `mcp_drop.png` | MCP server dropped (`x github dropped` in error red) |
 EOF
 
 echo "Wrote $output_dir"

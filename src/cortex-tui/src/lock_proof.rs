@@ -770,6 +770,7 @@ mod tests {
                 .find(|y| {
                     frame.buffer[(0, *y)].symbol() == ">"
                         && frame.buffer[(0, *y)].style().fg == Some(ACCENT)
+                        && frame.buffer[(0, *y)].style().bg == Some(SELECTION_BG)
                 })
                 .unwrap_or_else(|| panic!("{id} has no violet `>` row:\n{}", frame.plain));
             // The whole row is the bar; the caret and the label are violet; the
@@ -1522,7 +1523,7 @@ mod tests {
             assert_eq!(buf[(col(minus, "-"), minus)].style().fg, Some(ERROR));
             assert_eq!(buf[(col(plus, "+"), plus)].style().fg, Some(DIFF_ADD));
             assert_eq!(
-                painted_chars(&frame.ansi, "38;2;255;107;107").trim(),
+                painted_chars(&frame.ansi, ERROR_FG).trim(),
                 "- 30;",
                 "red is the marker and the removed token only at {size:?}"
             );
@@ -2636,7 +2637,7 @@ mod tests {
     fn diagnostics_severity_words_carry_the_only_color() {
         // 48 diagnostics: `error` is red and `warn` is amber — the message
         // and the path stay gray/white.
-        const RED_FG: &str = "\x1b[38;2;255;107;107m";
+        const RED_FG: &str = "\x1b[38;2;248;113;113m";
         const AMBER_FG: &str = "\x1b[38;2;255;200;87m";
 
         /// Visible text right after `marker`, skipping SGR runs and spaces.

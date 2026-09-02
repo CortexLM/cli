@@ -396,6 +396,11 @@ impl EventLoop {
             return;
         }
 
+        if name == "usage" && success {
+            self.add_system_message(&output);
+            return;
+        }
+
         tracing::debug!(
             "Tool execution completed: {} ({}) in {:?}",
             name,
@@ -506,6 +511,18 @@ impl EventLoop {
         // Handle billing errors specially
         if name == "billing" && id == "billing" {
             self.handle_billing_error(&error);
+            return;
+        }
+
+        if name == "usage" {
+            let msg = if error == "usage:not_logged_in" {
+                "Run /login to see usage."
+            } else if let Some(rest) = error.strip_prefix("usage:error:") {
+                rest
+            } else {
+                error.as_str()
+            };
+            self.add_system_message(msg);
             return;
         }
 

@@ -1154,6 +1154,16 @@ mod tests {
 
     const BOX_GLYPHS: [char; 9] = ['┌', '┐', '└', '┘', '┼', '┬', '┴', '├', '┤'];
 
+    /// The table rows of a frame: every row that starts on the grid (`+`
+    /// rule or `|` cell row), trailing padding removed.
+    fn table_rows(plain: &str) -> Vec<String> {
+        plain
+            .lines()
+            .map(|line| line.trim_end().to_string())
+            .filter(|line| line.starts_with(['+', '|']))
+            .collect()
+    }
+
     #[test]
     fn md_table_is_a_gray_plus_ascii_grid() {
         for size in SIZES {
@@ -1175,6 +1185,58 @@ mod tests {
                     !frame.plain.contains(glyph),
                     "md_table draws {glyph} at {size:?}:\n{}",
                     frame.plain
+                );
+            }
+            // Every visible table row is framed (`+…+` or `|…|`) and carries
+            // nothing from the Unicode box-drawing block — so the frameless
+            // `Header | Header` / `---+---` layout can never come back.
+            let visible = table_rows(&frame.plain);
+            assert!(
+                !visible.is_empty(),
+                "no table rows at {size:?}:\n{}",
+                frame.plain
+            );
+            for row in &visible {
+                let first = row.chars().next().unwrap();
+                let last = row.chars().last().unwrap();
+                assert!(
+                    first == last,
+                    "unframed table row {row:?} at {size:?}:\n{}",
+                    frame.plain
+                );
+                assert!(
+                    !row.chars().any(|c| ('\u{2500}'..='\u{257F}').contains(&c)),
+                    "box drawing in table row {row:?} at {size:?}"
+                );
+            }
+            // The scene is a real assistant `Message` rendered by the
+            // session view: its rows are exactly the `MarkdownRenderer`'s
+            // rows for `MD_TABLE` at the view's content width (a contiguous
+            // window of them where the 40×12 frame scrolls the top away).
+            let state = reply_state(MD_TABLE_PROMPT, MD_TABLE);
+            let renderer = cortex_core::markdown::MarkdownRenderer::cortex(
+                state.markdown_theme.clone(),
+                size.0 - 4,
+            );
+            let expected: Vec<String> = renderer
+                .render(MD_TABLE)
+                .iter()
+                .map(|line| line.to_string())
+                .filter(|line| line.starts_with(['+', '|']))
+                .collect();
+            assert_eq!(expected.len(), 7, "{expected:?}");
+            assert!(
+                expected
+                    .windows(visible.len())
+                    .any(|window| window == visible.as_slice()),
+                "the scene's table is not the renderer's output at {size:?}:\n{visible:#?}\nvs\n{expected:#?}"
+            );
+            if size.0 == 120 {
+                assert_eq!(visible, expected, "the whole grid is visible at 120×40");
+                assert_eq!(
+                    visible.iter().filter(|row| row.starts_with('+')).count(),
+                    3,
+                    "top rule, header rule, bottom rule"
                 );
             }
             // Borders are the hairline gray, cells white, header bold white.

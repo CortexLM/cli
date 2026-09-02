@@ -199,10 +199,6 @@ def dim_colour(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
     return tuple(int(channel * 0.65) for channel in rgb)
 
 
-def _dist2(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
-    return sum((x - y) * (x - y) for x, y in zip(a, b))
-
-
 def snap_cell_to_fg(
     image: Image.Image,
     x0: int,
@@ -224,8 +220,7 @@ def snap_cell_to_fg(
             pixel = pix[x, y]
             if pixel == bg or pixel == fg:
                 continue
-            if _dist2(pixel, fg) <= _dist2(pixel, bg):
-                pix[x, y] = fg
+            pix[x, y] = fg
 
 
 def check_glyph_coverage(grid: list[list[tuple[str, CellStyle]]], fonts: dict[str, FontSet]) -> None:
@@ -282,7 +277,7 @@ def render_frame(
             face = font_set.face_for(symbol)
             if face is None:
                 continue
-            let colour = dim_colour(style.fg) if style.dim else style.fg
+            colour = dim_colour(style.fg) if style.dim else style.fg
             # Fallback faces differ in advance width and ascent, so glyphs are
             # centred in the cell and pinned to the primary face's baseline.
             offset = max(0, round((cell_w - face.getlength(symbol)) / 2))

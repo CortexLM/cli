@@ -6,7 +6,7 @@ use cortex_core::style::{
 use ratatui::prelude::Color;
 
 /// Colors used by the form modal — the gray chrome: charcoal panel, hairline
-/// borders, white/dim copy, the cyan accent on the focused field only.
+/// borders, white/dim copy, the violet accent on the focused field only.
 #[derive(Debug, Clone, Copy)]
 pub struct FormModalColors {
     pub background: Color,

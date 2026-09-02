@@ -167,7 +167,7 @@ impl<'a> MentionPopup<'a> {
 
         // File path
         let path_str = path.to_string_lossy();
-        // The selected path is the cyan accent on the gray bar.
+        // The selected path is the violet accent on the gray bar.
         let style = if is_selected {
             Style::default().fg(ACCENT).bg(bg).bold()
         } else {

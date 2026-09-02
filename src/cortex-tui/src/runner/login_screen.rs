@@ -312,7 +312,7 @@ impl LoginScreen {
     }
 
     /// The sign-in picker: title, question, numbered options — the focused
-    /// one is a cyan `>` and label on the dark gray bar, the others a dim `·`
+    /// one is a violet `>` and label on the dark gray bar, the others a dim `·`
     /// with white copy — each with its dim description under the title, then
     /// the key hints. The version sits alone in the footer.
     fn render_select_method(&self, f: &mut ratatui::Frame, area: Rect) {
@@ -994,7 +994,7 @@ mod tests {
         assert!(!text.contains("▄█▀▀▀▀█▄"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));
 
-        // Cyan is the focused `>` and label only; the number stays white, the
+        // Violet is the focused `>` and label only; the number stays white, the
         // description dim, and the whole two-row option sits on the gray bar.
         let buf = terminal.backend().buffer();
         let row = (0..24u16)
@@ -1014,14 +1014,16 @@ mod tests {
         assert_eq!(buf[(0, other)].style().fg, Some(TEXT_DIM));
         assert_eq!(buf[(4, other)].style().fg, Some(TEXT));
         assert_ne!(buf[(4, other)].style().bg, Some(SELECTION_BG));
-        // Nothing on screen is violet.
+        // Nothing on screen is the interim violet, and the violet is never a
+        // background — no inverted bar, no `#221A38` wash.
         for y in 0..24u16 {
             for x in 0..80u16 {
                 let cell = &buf[(x, y)];
                 assert_ne!(
                     cell.style().fg,
-                    Some(ratatui::style::Color::Rgb(167, 139, 250))
+                    Some(ratatui::style::Color::Rgb(125, 211, 252))
                 );
+                assert_ne!(cell.style().bg, Some(ACCENT));
                 assert_ne!(
                     cell.style().bg,
                     Some(ratatui::style::Color::Rgb(34, 26, 56))

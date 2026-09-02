@@ -297,7 +297,7 @@ impl Modal for HelpModal {
                     // Empty line, nothing to render
                 }
                 ContentLine::Header(title) => {
-                    // Section header in cyan
+                    // Section header in violet
                     buf.set_string(area.x + 1, y, title, Style::default().fg(CYAN_PRIMARY));
                 }
                 ContentLine::Item { key, description } => {

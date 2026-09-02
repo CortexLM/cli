@@ -11,7 +11,7 @@ shadow. The pixels outside the rounded corners are transparent, like a
 Because the content is never resampled, a 40×12 capture yields a genuinely
 small 40-column window and a 120×40 capture a wide 120-column one — the two
 packs differ in canvas size, and every locked colour (the `#4ADE80` of a
-`+58`, the `#7DD3FC` of a selected `>`) survives exactly. No terminal text is
+`+58`, the `#A78BFA` of a selected `>`) survives exactly. No terminal text is
 ever invented; the rounded corners belong to the macOS window only, the TUI
 itself stays frameless.
 

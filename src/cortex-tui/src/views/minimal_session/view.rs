@@ -259,7 +259,7 @@ impl<'a> MinimalSessionView<'a> {
     ///
     /// The popup is frameless at every width: rows sit directly on the host
     /// terminal background. The focused row is the dark gray selection bar
-    /// with a cyan `>` and a cyan label; every other row is a dim `·`, a
+    /// with a violet `>` and a violet label; every other row is a dim `·`, a
     /// white label and a dim description.
     fn render_autocomplete_inline(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
@@ -344,7 +344,7 @@ impl<'a> MinimalSessionView<'a> {
                 let desc = crate::ui::text_utils::first_fitting_line(&item.description, remaining);
                 if !desc.is_empty() {
                     // Descriptions stay dim even on the selection bar; only
-                    // the `>` and the label are cyan.
+                    // the `>` and the label are violet.
                     let desc_style = if is_selected {
                         Style::default().fg(dim).bg(bar)
                     } else {

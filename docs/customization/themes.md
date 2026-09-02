@@ -5,7 +5,7 @@ text, tool rows, borders, status and accents.
 
 | Theme id | Name | Description |
 |----------|------|-------------|
-| `dark` | Dark | The default. Gray chrome on the host terminal background; cyan marks the focused selection. |
+| `dark` | Dark | The default. Gray chrome on the host terminal background; the Cortex violet marks the focused selection. |
 | `light` | Light | Light background with dark text. |
 | `ocean_dark` | Ocean Dark | Deep blue and cyan. Also accepted as `ocean`. |
 | `monokai` | Monokai | Classic code-editor colours. |
@@ -38,13 +38,13 @@ For reference — these are the colours the demo recording on the
 
 | Role | Colour |
 |------|--------|
-| Selection accent (`>` caret + focused label only) | `#7DD3FC` |
+| Selection accent (`>` caret + focused label only) | `#A78BFA` |
 | Background | terminal default (`Color::Reset` — never painted) |
 | Charcoal panel (tips / info) | `#141414` |
 | Past user turn bar | `#1C1C1C` |
-| Selection bar | `#262626` (cyan caret + label, dim description, never inverted) |
+| Selection bar | `#262626` (violet caret + label, dim description, never inverted — never a violet wash) |
 | Hairline (above / below the prompt, around search fields) | `#3A3A3A` |
-| Focused border | `#525252` (gray — cyan never outlines a box) |
+| Focused border | `#525252` (gray — the accent never outlines a box) |
 | Text | `#FFFFFF` |
 | Dim text (placeholders, hints, descriptions) | `#6B7280` |
 | Muted text | `#4B5563` |

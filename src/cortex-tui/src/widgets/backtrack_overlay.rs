@@ -149,7 +149,7 @@ impl<'a> BacktrackOverlay<'a> {
         // Content preview
         let max_content_width = (area.width as usize).saturating_sub((x - area.x) as usize + 12);
         let content_preview = Self::truncate_content(&snapshot.content, max_content_width);
-        // The selected snapshot is the cyan accent on the gray bar.
+        // The selected snapshot is the violet accent on the gray bar.
         let content_style = if is_selected {
             Style::default().fg(ACCENT).bg(bg).bold()
         } else {

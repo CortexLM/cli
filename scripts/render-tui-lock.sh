@@ -58,9 +58,10 @@ Each scene is captured at **40×12** (narrow) and **120×40** (wide), twice:
 Chrome rules: structure is gray — `#3A3A3A` hairlines above and below the
 `> ` composer and around search fields, `#141414` charcoal panels for tips,
 `#1C1C1C` bars behind past user turns, `#6B7280` secondary copy, white
-primary copy. The one accent is cyan `#7DD3FC`, on the focused selection only
-(the `>` caret and the selected label on the `#262626` bar, never inverted);
-unselected rows lead with a dim middot. Green `#4ADE80` appears only on `✓`
+primary copy. The one accent is the Cortex violet `#A78BFA`, on the focused
+selection only (the `>` caret and the selected label on the `#262626` gray bar,
+never inverted, never a `#221A38` wash); unselected rows lead with a dim
+middot. Green `#4ADE80` appears only on `✓`
 and `+N` diff additions, red / amber only on diagnostics, and the Thinking
 status is the muted gold `#C9A95C`. The footer is the model on the left and
 one shortcut hint on the right, all gray.

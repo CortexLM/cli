@@ -82,7 +82,7 @@ pub fn render_search_bar(search_query: &str, area: Rect, buf: &mut Buffer) {
 
 /// Render a single session row.
 pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, buf: &mut Buffer) {
-    // Selected rows: the cyan accent on the dark gray bar — never inverted.
+    // Selected rows: the violet accent on the dark gray bar — never inverted.
     let (bg, fg, prefix_fg) = if is_selected {
         (SELECTION_BG, ACCENT, ACCENT)
     } else {

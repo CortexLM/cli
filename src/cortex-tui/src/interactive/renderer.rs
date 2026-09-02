@@ -173,7 +173,7 @@ impl<'a> Widget for InteractiveWidget<'a> {
                 let is_active = i == self.state.active_tab;
                 let is_hovered = self.state.hovered_tab == Some(i);
                 let tab_text = format!(" {} ", tab.label);
-                // Active tab: the focused selection — cyan on the dark gray
+                // Active tab: the focused selection — violet on the dark gray
                 // bar. Never inverted onto the accent.
                 let style = if is_active {
                     Style::default()
@@ -348,7 +348,7 @@ impl<'a> InteractiveWidget<'a> {
         is_hovered: bool,
         is_checked: bool,
     ) {
-        // Selected row: the dark gray bar with a cyan `>` and a cyan label —
+        // Selected row: the dark gray bar with a violet `>` and a violet label —
         // never inverted onto the accent. Unselected rows lead with a dim
         // middot and keep white copy.
         let selected_bar = is_selected && !item.disabled && !item.is_separator;
@@ -488,7 +488,7 @@ impl<'a> InteractiveWidget<'a> {
     /// Render inline form for configuration within the panel.
     fn render_form(&self, form: &InlineFormState, area: Rect, buf: &mut Buffer) {
         // Draw border with form title — square corners, zero rounded frames,
-        // gray hairline: cyan never outlines a box.
+        // gray hairline: violet never outlines a box.
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(BORDER_FOCUS))
@@ -539,7 +539,7 @@ impl<'a> InteractiveWidget<'a> {
     ) {
         let x = area.x + 1;
 
-        // Label: the focused field is the selection — cyan; the rest dim.
+        // Label: the focused field is the selection — violet; the rest dim.
         let label_style = if is_focused {
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
         } else {
@@ -678,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_row_is_cyan_on_the_gray_bar_and_search_is_framed() {
+    fn selected_row_is_violet_on_the_gray_bar_and_search_is_framed() {
         let items = vec![
             InteractiveItem::new("model", "Model").with_description("Cortex Mini 1"),
             InteractiveItem::new("mode", "Mode").with_description("Agent"),
@@ -700,7 +700,7 @@ mod tests {
         assert!(rows[4].chars().all(|c| c == '─'), "{text}");
         assert_eq!(buf[(0, 2)].style().fg, Some(HAIRLINE), "{text}");
 
-        // Selected row: cyan `>` and label on the gray bar, dim description.
+        // Selected row: violet `>` and label on the gray bar, dim description.
         assert!(rows[5].starts_with("> Model"), "{text}");
         assert_eq!(buf[(0, 5)].style().fg, Some(ACCENT));
         assert_eq!(buf[(0, 5)].style().bg, Some(SELECTION_BG));

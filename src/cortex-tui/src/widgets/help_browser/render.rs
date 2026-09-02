@@ -128,7 +128,7 @@ impl<'a> HelpBrowser<'a> {
             let is_selected = i == self.state.selected_section;
             let prefix = if is_selected { "> " } else { "  " };
 
-            // The focused section is the cyan accent on the gray bar; the
+            // The focused section is the violet accent on the gray bar; the
             // remembered one stays white, the rest dim.
             let style = if is_selected && is_focused {
                 Style::default().fg(ACCENT).bg(SELECTION_BG)

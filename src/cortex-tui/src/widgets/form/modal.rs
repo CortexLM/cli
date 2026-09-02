@@ -230,7 +230,7 @@ impl<'a> Widget for FormModal<'a> {
         let submit_x =
             inner_area.x + (inner_area.width.saturating_sub(submit_text.len() as u16)) / 2;
 
-        // The focused submit button is the cyan accent on the gray bar —
+        // The focused submit button is the violet accent on the gray bar —
         // never inverted onto the accent.
         let submit_style = if self.state.is_submit_focused() {
             Style::default()

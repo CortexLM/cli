@@ -548,7 +548,7 @@ impl ApprovalOverlay {
 
             let mut col = area.x;
 
-            // Selection indicator: cyan `>` on the focused row, a dim middot
+            // Selection indicator: violet `>` on the focused row, a dim middot
             // on the others.
             let prefix = if is_selected { ">" } else { "·" };
             let prefix_style = if is_selected {
@@ -559,7 +559,7 @@ impl ApprovalOverlay {
             buf.set_string(col, y, prefix, prefix_style);
             col += 2;
 
-            // Option label: the cyan accent when focused, white otherwise.
+            // Option label: the violet accent when focused, white otherwise.
             let label_style = if is_selected {
                 Style::default()
                     .fg(ACCENT)

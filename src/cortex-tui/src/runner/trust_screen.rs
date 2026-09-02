@@ -141,7 +141,7 @@ impl TrustScreen {
     }
 
     /// The trust prompt: title and workspace path, the why in dim copy, then
-    /// two numbered options — the focused one a cyan `>` and label on the
+    /// two numbered options — the focused one a violet `>` and label on the
     /// dark gray bar, the other a dim `·` — each with its description under
     /// the title, and the key hints at the bottom.
     fn render(&self, f: &mut ratatui::Frame) {

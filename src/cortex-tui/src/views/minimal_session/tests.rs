@@ -183,7 +183,7 @@ mod harness_snapshots {
     }
 
     #[test]
-    fn autocomplete_selected_row_is_cyan_on_the_gray_bar() {
+    fn autocomplete_selected_row_is_violet_on_the_gray_bar() {
         use cortex_core::style::{ACCENT, HAIRLINE, SELECTION_BG, TEXT, TEXT_DIM};
 
         use crate::app::{AutocompleteItem, AutocompleteTrigger};
@@ -215,7 +215,7 @@ mod harness_snapshots {
             if buf[(60, y)].style().bg != Some(SELECTION_BG) || !row.contains('/') {
                 continue;
             }
-            assert!(row.starts_with("> /"), "cyan caret leads the row: {row}");
+            assert!(row.starts_with("> /"), "violet caret leads the row: {row}");
             let label_at = row.find('/').expect("selected command label");
             let desc_at = row
                 .char_indices()
@@ -229,7 +229,7 @@ mod harness_snapshots {
             assert_eq!(
                 label_cell.style().fg,
                 Some(ACCENT),
-                "selected label is the one cyan accent: {row}"
+                "selected label is the one violet accent: {row}"
             );
             assert_eq!(
                 desc_cell.style().fg,

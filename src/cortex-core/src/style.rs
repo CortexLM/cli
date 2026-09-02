@@ -3,22 +3,23 @@
 //! The chrome never paints its own background: the terminal shows through
 //! (`Color::Reset`, black by default). Structure comes from gray — hairlines,
 //! filled charcoal panels, dim secondary copy, white primary copy. The one
-//! accent is the cyan `#7DD3FC`, reserved for the focused selection: the `>`
-//! caret and the selected label on the dark gray selection bar. Green exists
-//! only for `✓` success and `+` diff additions; red and amber only on
-//! diagnostics; a muted gold only on the Thinking status.
+//! accent is the Cortex violet `#A78BFA`, reserved for the focused selection:
+//! the `>` caret and the selected label on the dark gray selection bar (the
+//! bar itself stays gray — never a violet wash). Green exists only for `✓`
+//! success and `+` diff additions; red and amber only on diagnostics; a muted
+//! gold only on the Thinking status.
 
 use ratatui::style::{Color, Modifier, Style};
 
 // ============================================================
-// ACCENT - one cyan, focused selection only
+// ACCENT - one violet, focused selection only
 // ============================================================
 
-/// Primary accent - cyan for the focused selection (`>` caret + label)
-pub const ACCENT: Color = Color::Rgb(125, 211, 252); // #7DD3FC
+/// Primary accent - Cortex violet for the focused selection (`>` caret + label)
+pub const ACCENT: Color = Color::Rgb(167, 139, 250); // #A78BFA
 
 /// Legacy brand slot. Widgets that once painted titles, icons and cursors in
-/// the brand colour now get a light gray, so cyan stays on the focused
+/// the brand colour now get a light gray, so the violet stays on the focused
 /// selection only — use `ACCENT` for that.
 pub const CYAN_PRIMARY: Color = SKY_BLUE;
 
@@ -102,7 +103,8 @@ pub const INFO: Color = DEEP_CYAN; // #9CA3AF
 pub const HIGHLIGHT: Color = ELECTRIC_BLUE; // #E5E7EB
 
 /// Selected-row background - dark gray bar; the caret and label on it are
-/// cyan, everything else stays white/dim. Never inverted onto the accent.
+/// violet, everything else stays white/dim. Never inverted onto the accent,
+/// never the old `#221A38` violet wash.
 pub const SELECTION_BG: Color = SURFACE_2; // #262626
 
 // ============================================================
@@ -116,7 +118,7 @@ pub const HAIRLINE: Color = Color::Rgb(58, 58, 58); // #3A3A3A
 /// Normal border - the hairline gray
 pub const BORDER: Color = HAIRLINE;
 
-/// Focused border - still gray; cyan never outlines a box
+/// Focused border - still gray; the accent never outlines a box
 pub const BORDER_FOCUS: Color = Color::Rgb(82, 82, 82); // #525252
 
 /// Dim border - very subtle border
@@ -207,15 +209,15 @@ impl ThemeColors {
         }
     }
 
-    /// Dark theme (default) - gray chrome, cyan selection on dark background
+    /// Dark theme (default) - gray chrome, violet selection on dark background
     pub fn dark() -> Self {
         Self::ocean_cyan()
     }
 
-    /// Light theme - darker cyan selection, gray chrome on a light background
+    /// Light theme - darker violet selection, gray chrome on a light background
     pub fn light() -> Self {
         Self {
-            primary: Color::Rgb(3, 105, 161),
+            primary: Color::Rgb(124, 58, 237),
             secondary: Color::Rgb(82, 82, 91),
             accent: Color::Rgb(39, 39, 42),
             background: Color::Rgb(255, 255, 255),
@@ -333,7 +335,7 @@ impl CortexStyle {
             .add_modifier(Modifier::BOLD)
     }
 
-    /// Selected item style: cyan text on the dark gray bar — never inverted
+    /// Selected item style: violet text on the dark gray bar — never inverted
     #[inline]
     pub fn selected() -> Style {
         Style::default().fg(ACCENT).bg(SELECTION_BG)
@@ -431,7 +433,7 @@ impl CortexStyle {
         Style::default().fg(BORDER)
     }
 
-    /// Focused border style: a lighter gray — cyan never outlines a box
+    /// Focused border style: a lighter gray — violet never outlines a box
     #[inline]
     pub fn border_focused() -> Style {
         Style::default().fg(BORDER_FOCUS)
@@ -478,7 +480,7 @@ impl CortexStyle {
     pub fn brain_cyan(brightness: f32) -> Style {
         let b = brightness.clamp(0.0, 1.0);
         // CYAN_PRIMARY is RGB(0, 255, 255)
-        // Scale the brightness while keeping the cyan hue
+        // Scale the brightness while keeping the violet hue
         let r = (0.0 * b) as u8;
         let g = (255.0 * b) as u8;
         let bl = (255.0 * b) as u8;
@@ -589,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_brain_cyan_brightness() {
-        // Full brightness should be cyan
+        // Full brightness should be violet
         let style_full = CortexStyle::brain_cyan(1.0);
         assert_eq!(style_full.fg, Some(Color::Rgb(0, 255, 255)));
 
@@ -643,8 +645,8 @@ mod tests {
 
     #[test]
     fn gray_chrome_palette_is_locked() {
-        // One accent: cyan, for the focused selection only.
-        assert_eq!(ACCENT, Color::Rgb(0x7D, 0xD3, 0xFC));
+        // One accent: the Cortex violet, for the focused selection only.
+        assert_eq!(ACCENT, Color::Rgb(0xA7, 0x8B, 0xFA));
         assert_eq!(CortexStyle::selected().fg, Some(ACCENT));
         assert_eq!(CortexStyle::selected().bg, Some(SELECTION_BG));
         // Green covers `✓` and `+diff` — the same green.
@@ -662,9 +664,10 @@ mod tests {
             };
             assert!(r == g && g == b, "{gray:?} is not neutral");
         }
-        // The violet and mint washes are gone from every semantic slot.
+        // The violet lives in `ACCENT` alone: no other semantic slot carries
+        // it, the old `#221A38` wash and the mint are gone, and the interim
+        // violet highlight is banned.
         for color in [
-            ACCENT,
             SUCCESS,
             SELECTION_BG,
             BORDER_FOCUS,
@@ -675,10 +678,21 @@ mod tests {
             DEEP_CYAN,
             TEAL,
         ] {
-            assert_ne!(color, Color::Rgb(0xA7, 0x8B, 0xFA), "violet leaked");
+            assert_ne!(color, ACCENT, "violet leaked off the accent");
             assert_ne!(color, Color::Rgb(0x22, 0x1A, 0x38), "violet bar leaked");
             assert_ne!(color, Color::Rgb(0x00, 0xF5, 0xD4), "mint leaked");
+            assert_ne!(color, Color::Rgb(0x7D, 0xD3, 0xFC), "cyan leaked");
         }
+        assert_ne!(
+            ACCENT,
+            Color::Rgb(0x7D, 0xD3, 0xFC),
+            "the accent is not cyan"
+        );
+        assert_ne!(
+            SELECTION_BG,
+            Color::Rgb(0x22, 0x1A, 0x38),
+            "the bar is gray"
+        );
         // Thinking is the only gold.
         assert_eq!(CortexStyle::thinking().fg, Some(THINKING));
         assert_ne!(THINKING, WARNING);

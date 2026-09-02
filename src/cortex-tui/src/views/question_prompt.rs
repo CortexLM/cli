@@ -115,7 +115,7 @@ impl Widget for QuestionPromptView<'_> {
         // Clear the modal area
         Clear.render(layout.modal_area, buf);
 
-        // Draw border — gray hairline, white title; cyan never outlines a box.
+        // Draw border — gray hairline, white title; violet never outlines a box.
         let border_style = Style::default().fg(colors.border);
         let block = Block::default()
             .borders(Borders::ALL)
@@ -155,7 +155,7 @@ impl QuestionPromptView<'_> {
             let is_hovered = self.hovered_tab == Some(i);
             let is_answered = !self.state.answers[i].is_empty();
 
-            // The active tab is the focused selection: cyan on the gray bar,
+            // The active tab is the focused selection: violet on the gray bar,
             // never inverted onto the accent. Answered tabs read white.
             let (fg, bg) = if is_active {
                 (colors.accent, colors.selection)
@@ -264,7 +264,7 @@ impl QuestionPromptView<'_> {
             let prefix = format!("{}. {}", i + 1, checkbox);
             let label = &opt.label;
 
-            // Focused option: cyan on the gray selection bar; a picked option
+            // Focused option: violet on the gray selection bar; a picked option
             // stays white — its `✓` carries the green.
             let (fg, bg) = if is_selected {
                 (colors.accent, colors.selection)
@@ -640,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn focused_option_is_cyan_on_the_gray_bar_and_the_frame_is_gray() {
+    fn focused_option_is_violet_on_the_gray_bar_and_the_frame_is_gray() {
         let state = QuestionState::new(request());
         let view = QuestionPromptView::new(&state);
         let area = Rect::new(0, 0, 100, 24);
@@ -653,7 +653,7 @@ mod tests {
             for x in 0..100u16 {
                 let cell = &buf[(x, y)];
                 if cell.style().fg == Some(ACCENT) && cell.symbol() != " " {
-                    // Cyan only ever sits on the selection bar.
+                    // Violet only ever sits on the selection bar.
                     assert_eq!(cell.style().bg, Some(SELECTION_BG), "({x},{y})");
                     focused = Some(y);
                 }

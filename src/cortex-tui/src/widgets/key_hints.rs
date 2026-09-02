@@ -222,7 +222,7 @@ impl KeyHints {
 
         let mut spans = Vec::new();
         let separator_style = Style::default().fg(self.colors.text_muted);
-        // Hint rows are uniformly dim in the gray chrome — cyan stays on the
+        // Hint rows are uniformly dim in the gray chrome — violet stays on the
         // focused selection only.
         let key_style = Style::default().fg(self.colors.text_dim);
         let desc_style = Style::default().fg(self.colors.text_dim);

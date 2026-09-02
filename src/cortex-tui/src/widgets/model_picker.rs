@@ -380,7 +380,7 @@ impl ModelPicker<'_> {
 
             let is_selected = start + i == self.state.selected;
 
-            // Selection highlight: the cyan label on the dark gray bar —
+            // Selection highlight: the violet label on the dark gray bar —
             // never inverted onto the accent.
             let (bg, fg) = if is_selected {
                 (SELECTION_BG, ACCENT)

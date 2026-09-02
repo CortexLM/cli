@@ -280,7 +280,7 @@ impl<'a> ScrollableDropdown<'a> {
         }
 
         // Label
-        // The selected label is the cyan accent on the gray bar.
+        // The selected label is the violet accent on the gray bar.
         let label_style = if is_selected {
             Style::default()
                 .fg(ACCENT)

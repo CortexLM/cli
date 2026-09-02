@@ -2,7 +2,7 @@
 //!
 //! These scenes share the gray session chrome — a past user turn on its gray
 //! bar, the hairline-framed `> ` composer, and the `model · hint` footer —
-//! and Cortex product copy only. The one accent is the cyan of a focused
+//! and Cortex product copy only. The one accent is the violet of a focused
 //! selection; green covers `✓` and `+diff`; red and amber stay on
 //! diagnostics; the Thinking status is the muted gold.
 
@@ -389,7 +389,7 @@ fn paint_search_field(area: Rect, buf: &mut Buffer, y: u16, query: &str, placeho
 
 /// One picker option at row `y`.
 ///
-/// Selected: the dark gray bar, a cyan `>`, the white number, the cyan label,
+/// Selected: the dark gray bar, a violet `>`, the white number, the violet label,
 /// dim `meta` right-aligned, and the dim description on the bar's second
 /// row. Unselected: a dim `·`, white number and label, dim meta and
 /// description. Returns the rows used; nothing is painted past `limit`.

@@ -522,7 +522,7 @@ impl SelectionList {
         buf: &mut Buffer,
     ) {
         // Determine styles based on selection and disabled state. The
-        // selected row is the one cyan accent — caret and label — on the dark
+        // selected row is the one violet accent — caret and label — on the dark
         // gray bar, never inverted; other rows stay white.
         let (bg, fg, prefix_fg) = if is_selected {
             (SELECTION_BG, ACCENT, ACCENT)

@@ -389,8 +389,8 @@ mod tests {
 
     /// Locked diff green `#4ADE80` as an SGR foreground.
     const GREEN_FG: &str = "38;2;74;222;128";
-    /// Selection cyan `#7DD3FC` as an SGR foreground.
-    const CYAN_FG: &str = "38;2;125;211;252";
+    /// Selection violet `#A78BFA` as an SGR foreground.
+    const ACCENT_FG: &str = "38;2;167;139;250";
 
     fn row_text(buf: &Buffer, y: u16) -> String {
         (0..buf.area.width)
@@ -534,9 +534,9 @@ mod tests {
     ];
 
     #[test]
-    fn cyan_is_reserved_for_the_focused_selection() {
-        // The one accent: a cyan cell is always on the dark gray selection
-        // bar, and every scene with a selection paints its `>` caret cyan.
+    fn violet_is_reserved_for_the_focused_selection() {
+        // The one accent: a violet cell is always on the dark gray selection
+        // bar, and every scene with a selection paints its `>` caret violet.
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -545,22 +545,22 @@ mod tests {
                         assert_eq!(
                             cell.style().bg,
                             Some(SELECTION_BG),
-                            "{id} paints cyan {:?} off the selection bar at {size:?} ({x},{y}):\n{}",
+                            "{id} paints violet {:?} off the selection bar at {size:?} ({x},{y}):\n{}",
                             cell.symbol(),
                             frame.plain
                         );
                     }
                 }
-                let cyan = painted_chars(&frame.ansi, CYAN_FG);
+                let violet = painted_chars(&frame.ansi, ACCENT_FG);
                 if SELECTION_SCENES.contains(id) {
                     assert!(
-                        cyan.contains('>'),
-                        "{id} must paint its selection caret cyan at {size:?}: {cyan:?}"
+                        violet.contains('>'),
+                        "{id} must paint its selection caret violet at {size:?}: {violet:?}"
                     );
                 } else {
                     assert!(
-                        cyan.trim().is_empty(),
-                        "{id} has no focused selection yet paints cyan at {size:?}: {cyan:?}"
+                        violet.trim().is_empty(),
+                        "{id} has no focused selection yet paints violet at {size:?}: {violet:?}"
                     );
                 }
             }
@@ -568,14 +568,21 @@ mod tests {
     }
 
     #[test]
-    fn selection_rows_are_cyan_on_the_gray_bar_never_inverted() {
-        const ACCENT_BG: &str = "48;2;125;211;252";
+    fn selection_rows_are_violet_on_the_gray_bar_never_inverted() {
+        // Violet is never a background: no inverted bar, and never the old
+        // `#221A38` full-row wash — the bar is the dark gray `#262626`.
+        const ACCENT_BG: &str = "48;2;167;139;250";
+        const OLD_VIOLET_WASH: &str = "48;2;34;26;56";
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 assert!(
                     !frame.ansi.contains(ACCENT_BG),
-                    "{id} paints an inverted cyan bar at {size:?}"
+                    "{id} paints an inverted violet bar at {size:?}"
+                );
+                assert!(
+                    !frame.ansi.contains(OLD_VIOLET_WASH),
+                    "{id} brings back the #221A38 wash at {size:?}"
                 );
             }
         }
@@ -586,8 +593,8 @@ mod tests {
                     frame.buffer[(0, *y)].symbol() == ">"
                         && frame.buffer[(0, *y)].style().fg == Some(ACCENT)
                 })
-                .unwrap_or_else(|| panic!("{id} has no cyan `>` row:\n{}", frame.plain));
-            // The whole row is the bar; the caret and the label are cyan; the
+                .unwrap_or_else(|| panic!("{id} has no violet `>` row:\n{}", frame.plain));
+            // The whole row is the bar; the caret and the label are violet; the
             // description / meta on the bar stay dim.
             for x in 0..120u16 {
                 assert_eq!(
@@ -608,7 +615,7 @@ mod tests {
             assert_eq!(
                 frame.buffer[(label_x, row)].style().fg,
                 Some(ACCENT),
-                "{id} selected label must be cyan: {text}"
+                "{id} selected label must be violet: {text}"
             );
         }
     }
@@ -667,7 +674,7 @@ mod tests {
     fn every_edit_plus_count_is_green() {
         // Rule from states 10 (Edit +9), 24 (queued Edit +58) and 30 (MAX
         // footer +214): the `+N` of an Edit / Write / commit is the diff
-        // green at both sizes — never gray or cyan. Scan every scene for
+        // green at both sizes — never gray or violet. Scan every scene for
         // `+N` tokens on Edit, Write and Committed lines.
         for id in lock_scene_ids() {
             for size in SIZES {
@@ -754,11 +761,12 @@ mod tests {
 
     #[test]
     fn banned_colors_never_painted() {
-        // The violet chrome is gone with the mint one: no scene paints the
-        // violet accent or its dark violet bar, the mint pair, the old brand
-        // green, or the navy wash — the host terminal owns the background.
+        // The interim violet highlight is gone with the mint one: no scene
+        // paints violet, the old `#221A38` violet wash, the mint pair, the old
+        // brand green, or the navy wash — the host terminal owns the
+        // background and the violet lives on the focused selection alone.
         const BANNED: [&str; 6] = [
-            "167;139;250",
+            "125;211;252",
             "34;26;56",
             "0;245;212",
             "26;51;48",
@@ -884,11 +892,11 @@ mod tests {
     }
 
     #[test]
-    fn past_turn_and_composer_carets_are_white_never_cyan() {
-        // Cyan belongs to the focused selection's caret alone. The `>` of a
+    fn past_turn_and_composer_carets_are_white_never_violet() {
+        // Violet belongs to the focused selection's caret alone. The `>` of a
         // past user turn (on the gray bar) and the `>` of the composer (between
         // the hairlines) are white in every scene at both sizes — never
-        // `#7DD3FC`, never dim.
+        // `#A78BFA`, never dim.
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -900,7 +908,7 @@ mod tests {
                     }
                     let bg = cell.style().bg;
                     if bg == Some(SELECTION_BG) {
-                        // A selection caret: cyan, checked elsewhere.
+                        // A selection caret: violet, checked elsewhere.
                         continue;
                     }
                     assert_eq!(
@@ -913,13 +921,13 @@ mod tests {
             }
         }
         // The scene QA called out — a historical turn on its bar plus a typed
-        // composer — has no focused selection, so it paints no cyan at all.
+        // composer — has no focused selection, so it paints no violet at all.
         for id in ["footer_max", "typing"] {
             let frame = render_lock_scene(id, 120, 40).expect(id);
             assert!(
-                painted_chars(&frame.ansi, CYAN_FG).trim().is_empty(),
-                "{id} paints cyan: {:?}",
-                painted_chars(&frame.ansi, CYAN_FG)
+                painted_chars(&frame.ansi, ACCENT_FG).trim().is_empty(),
+                "{id} paints violet: {:?}",
+                painted_chars(&frame.ansi, ACCENT_FG)
             );
         }
     }
@@ -1539,12 +1547,12 @@ mod tests {
     }
 
     #[test]
-    fn slash_palette_rows_are_middot_or_cyan_caret() {
+    fn slash_palette_rows_are_middot_or_violet_caret() {
         for size in SIZES {
             let frame = render_lock_scene("palette", size.0, size.1).expect("palette");
             assert!(
                 frame.plain.contains("> /model"),
-                "the focused command leads with the cyan caret at {size:?}:\n{}",
+                "the focused command leads with the violet caret at {size:?}:\n{}",
                 frame.plain
             );
             assert!(
@@ -1559,7 +1567,7 @@ mod tests {
             );
         }
         // The wide selected row keeps the dim description on the bar, never a
-        // bright (or cyan) description.
+        // bright (or violet) description.
         let wide = render_lock_scene("palette", 120, 40).expect("palette wide");
         let buf = &wide.buffer;
         let y = (0..40u16)
@@ -1675,7 +1683,7 @@ mod tests {
     #[test]
     fn login_is_a_numbered_picker_with_live_sub_states() {
         // `login_select` is the picker with the selection moved to option 2:
-        // the cyan `>` and the gray bar sit on `Paste an API key`, option 1
+        // the violet `>` and the gray bar sit on `Paste an API key`, option 1
         // falls back to the dim middot.
         let select = render_lock_scene("login_select", 120, 40).expect("select");
         assert!(select.plain.contains("Welcome to Cortex CLI!"));
@@ -1894,7 +1902,7 @@ mod tests {
 
     #[test]
     fn tool_tile_dots_are_white() {
-        // Every tool tile paints its `●` status dot white — never the accent,
+        // Every tool tile paints its `●` status dot white — never the violet accent,
         // never green. Labels stay white too.
         let tiles = [
             "tool_tiles",

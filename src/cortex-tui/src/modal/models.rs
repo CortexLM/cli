@@ -327,7 +327,7 @@ impl ModelsModal {
         is_selected: bool,
     ) {
         // Determine styles
-        // Selected rows: the cyan accent on the dark gray bar — never inverted.
+        // Selected rows: the violet accent on the dark gray bar — never inverted.
         let (bg, fg, prefix_fg) = if is_selected {
             (SELECTION_BG, ACCENT, ACCENT)
         } else {

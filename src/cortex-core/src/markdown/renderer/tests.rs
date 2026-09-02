@@ -466,6 +466,91 @@ mod tests {
         assert!(lines.len() >= 5);
     }
 
+    fn is_box_drawing(c: char) -> bool {
+        ('\u{2500}'..='\u{257F}').contains(&c)
+    }
+
+    /// Every table row starts and ends on the grid — `+` for rules, `|` for
+    /// cell rows. This is what bans the frameless `Header | Header` layout.
+    fn assert_framed_grid(text: &[String]) {
+        for row in text {
+            let first = row.chars().next().unwrap_or(' ');
+            let last = row.trim_end().chars().last().unwrap_or(' ');
+            assert!(
+                matches!(first, '+' | '|') && first == last,
+                "unframed table row {row:?} in {text:?}"
+            );
+            assert!(
+                !row.chars().any(is_box_drawing),
+                "box drawing in table row {row:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_table_cut_mid_row_is_still_the_framed_grid() {
+        // The incremental renderer re-renders every partial chunk, so a
+        // reply that stops inside a table row goes through the EOF path.
+        // It must paint the same `+---+` grid, never a frameless fallback.
+        let mut incremental =
+            IncrementalMarkdownRenderer::new(MarkdownRenderer::new().with_width(60));
+        incremental.append("| Model | Effort |\n|---|---|\n| Mini 1 | Med");
+        let partial: Vec<String> = incremental
+            .get_lines()
+            .iter()
+            .map(|l| l.to_string())
+            .collect();
+        assert_eq!(partial.len(), 5, "{partial:?}");
+        assert_framed_grid(&partial);
+        assert!(partial[0].starts_with("+-"), "{partial:?}");
+        assert!(partial[1].contains("| Model"), "{partial:?}");
+        assert!(partial[2].contains("-+-"), "{partial:?}");
+        assert!(partial[3].contains("| Mini 1 | Med"), "{partial:?}");
+
+        // Finishing the row fills the cell inside the same frame.
+        incremental.append("ium |\n| Max 1 | MAX |\n");
+        let done: Vec<String> = incremental
+            .get_lines()
+            .iter()
+            .map(|l| l.to_string())
+            .collect();
+        assert_eq!(done.len(), 6, "{done:?}");
+        assert_framed_grid(&done);
+        assert!(done[3].contains("| Mini 1 | Medium |"), "{done:?}");
+        assert!(done[4].contains("| Max 1  | MAX    |"), "{done:?}");
+        assert!(
+            done[5].starts_with("+-") && done[5].ends_with('+'),
+            "{done:?}"
+        );
+    }
+
+    #[test]
+    fn table_inside_a_blockquote_keeps_the_grid_behind_the_quote_bar() {
+        let renderer = MarkdownRenderer::new();
+        let lines = renderer.render("> | A | B |\n> |---|---|\n> | 1 | 2 |");
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        assert_eq!(text.len(), 5, "{text:?}");
+        // Strip the quote prefix; the grid behind it is complete and framed.
+        let grid: Vec<String> = text
+            .iter()
+            .map(|row| {
+                let start = row
+                    .find(|c| c == '+' || c == '|')
+                    .unwrap_or_else(|| panic!("no grid in {row:?}"));
+                row[start..].to_string()
+            })
+            .collect();
+        assert_framed_grid(&grid);
+        assert!(
+            grid[0].starts_with("+-") && grid[4].starts_with("+-"),
+            "{grid:?}"
+        );
+        assert!(
+            grid[1].contains("| A") && grid[3].contains("| 1"),
+            "{grid:?}"
+        );
+    }
+
     // ============================================================
     // Blockquote Tests
     // ============================================================

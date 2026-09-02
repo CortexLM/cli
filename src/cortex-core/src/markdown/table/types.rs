@@ -177,7 +177,7 @@ impl Table {
         }
 
         // Calculate available width for content
-        // Border chars: │ at start, │ between each column, │ at end = num_cols + 1
+        // Border chars: `|` at start, between each column and at end = num_cols + 1
         // Padding: CELL_PADDING on each side of content = 2 * CELL_PADDING * num_cols
         let border_overhead = num_cols + 1;
         let padding_overhead = 2 * CELL_PADDING * num_cols;

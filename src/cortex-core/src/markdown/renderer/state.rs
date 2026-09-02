@@ -5,7 +5,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::markdown::list::ListContext;
-use crate::markdown::table::{TableBuilder, render_table_simple};
+use crate::markdown::table::TableBuilder;
 
 use super::MarkdownRenderer;
 
@@ -245,22 +245,10 @@ impl<'a> RenderState<'a> {
             self.code_language = None;
         }
 
-        // Close any unclosed tables
-        if let Some(builder) = self.table_builder.take() {
-            let mut table = builder.build();
-            table.calculate_column_widths(self.renderer.width);
-
-            // Use simple ASCII table format without outer borders
-            // Headers use table_header_text style for colored/bold headers
-            let table_lines = render_table_simple(
-                &table,
-                self.renderer.theme.table_header_text,
-                self.renderer.theme.table_cell_text,
-                self.renderer.width,
-            );
-
-            self.lines.extend(table_lines);
-        }
+        // A table still open at EOF (a reply cut off mid-stream) closes
+        // through the same plus-ASCII grid as a finished one — there is no
+        // frameless fallback.
+        self.end_table();
 
         // Flush any remaining content
         self.flush_line();

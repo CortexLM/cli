@@ -1,7 +1,8 @@
-//! ASCII Table Renderer
+//! Plus-ASCII Table Renderer
 //!
-//! Provides complete ASCII box-drawing table rendering with:
-//! - Full box-drawing border characters
+//! Renders markdown tables as the framed `+---+` grid — `+` junctions, `-`
+//! rules, `|` separators, never Unicode box drawing — with:
+//! - An outer frame on every table (no frameless variant)
 //! - Column alignment (left, center, right)
 //! - Unicode-aware width calculation
 //! - Automatic column width distribution
@@ -58,7 +59,7 @@ pub mod utils;
 
 // Re-exports for backwards compatibility
 pub use builder::TableBuilder;
-pub use render::{render_table, render_table_simple};
+pub use render::render_table;
 pub use types::{Alignment, Table, TableCell};
 
 // Internal re-exports for use within the crate

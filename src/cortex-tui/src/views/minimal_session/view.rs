@@ -184,7 +184,12 @@ impl<'a> MinimalSessionView<'a> {
         let text_budget = content_width.saturating_sub(3 + badge_cols) as usize;
 
         // Violet focused `>`; dim placeholder while idle; white copy and block cursor.
-        let mut spans = vec![Span::styled("> ", Style::default().fg(self.colors.accent))];
+        let mut spans = vec![Span::styled(
+            "> ",
+            Style::default()
+                .fg(self.colors.accent)
+                .add_modifier(Modifier::BOLD),
+        )];
         if input_text.is_empty() {
             let ghost_copy = if self.app_state.quota_held {
                 crate::ui::consts::PLACEHOLDER_QUOTA

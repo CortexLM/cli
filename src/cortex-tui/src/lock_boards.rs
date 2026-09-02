@@ -212,7 +212,12 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
     let mut row = y + 1;
     match composer {
         Composer::Ghost(ghost) => {
-            buf.set_string(area.x, row, "> ", Style::default().fg(ACCENT));
+            buf.set_string(
+                area.x,
+                row,
+                "> ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            );
             let shown = first_fitting_line(ghost, w.saturating_sub(4));
             let mut x = area.x + 2;
             if !shown.is_empty() {
@@ -232,7 +237,12 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
             for (i, part) in parts.iter().enumerate() {
                 let prefix = if i == 0 { "> " } else { "  " };
                 let caret = if i == 0 { ACCENT } else { TEXT };
-                buf.set_string(area.x, row, prefix, Style::default().fg(caret));
+                let prefix_style = if i == 0 {
+                    Style::default().fg(caret).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(caret)
+                };
+                buf.set_string(area.x, row, prefix, prefix_style);
                 let cursor = if i == last { "█" } else { "" };
                 buf.set_string(
                     area.x + prefix.chars().count() as u16,
@@ -243,7 +253,12 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
                 row += 1;
             }
             if parts.is_empty() {
-                buf.set_string(area.x, row, "> ", Style::default().fg(ACCENT));
+                buf.set_string(
+                    area.x,
+                    row,
+                    "> ",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                );
                 buf.set_string(area.x + 2, row, "█", Style::default().fg(TEXT));
                 row += 1;
             }

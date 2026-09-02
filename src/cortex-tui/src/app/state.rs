@@ -172,6 +172,10 @@ pub struct AppState {
     pub compact_mode: bool,
     /// Version shown on the empty-session splash (`Cortex CLI v{cli_version}`).
     pub cli_version: String,
+    /// When true, an empty session paints the launch splash (`Cortex CLI v…`
+    /// and the `/ commands` legend). An already-open empty session turns this
+    /// off so it is not the same frame as splash.
+    pub show_launch_splash: bool,
     /// Short cwd shown in the session footer (`~/cli`).
     pub footer_cwd: String,
     /// Git branch shown in the session footer.
@@ -319,6 +323,7 @@ impl AppState {
             markdown_theme: MarkdownTheme::default(),
             compact_mode: false,
             cli_version: env!("CARGO_PKG_VERSION").to_string(),
+            show_launch_splash: true,
             footer_cwd: default_footer_cwd(),
             git_branch: String::from("main"),
             git_dirty: false,

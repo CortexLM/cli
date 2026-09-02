@@ -283,7 +283,10 @@ fn lock_app() -> AppState {
 }
 
 fn empty_session_state() -> AppState {
-    lock_app()
+    let mut state = lock_app();
+    // Open session: workspace chrome only — not the v1.0.0 splash legend.
+    state.show_launch_splash = false;
+    state
 }
 
 fn loading_session_state() -> AppState {
@@ -1933,7 +1936,7 @@ mod tests {
                     );
                 }
                 let scrolls = size == (40, 12) && id == "session_error";
-                if !scrolls {
+                if !scrolls && id != "session_empty" {
                     assert!(
                         frame.plain.contains("Cortex CLI v1.0.0"),
                         "{id} missing the version at {size:?}:\n{}",
@@ -1949,11 +1952,20 @@ mod tests {
         }
         for size in SIZES {
             let empty = render_lock_scene("session_empty", size.0, size.1).expect("empty");
-            assert!(empty.plain.contains("/ commands"), "{}", empty.plain);
             assert!(empty.plain.contains("~/cortex-api"), "{}", empty.plain);
             assert!(
                 empty.plain.contains("Plan, search, build anything"),
                 "{}",
+                empty.plain
+            );
+            assert!(
+                !empty.plain.contains("Cortex CLI v1.0.0"),
+                "open session must not reuse the splash title:\n{}",
+                empty.plain
+            );
+            assert!(
+                !empty.plain.contains("/ commands"),
+                "open session must not reuse the splash legend:\n{}",
                 empty.plain
             );
 
@@ -2247,6 +2259,16 @@ mod tests {
             composer_y < 10,
             "composer sits under the header:\n{}",
             wide.plain
+        );
+        let empty = render_lock_scene("session_empty", 120, 40).expect("empty");
+        assert_ne!(
+            wide.ansi, empty.ansi,
+            "splash and session_empty must be distinct frames"
+        );
+        assert!(
+            !empty.plain.contains("Cortex CLI v1.0.0"),
+            "{}",
+            empty.plain
         );
     }
 
@@ -2630,7 +2652,16 @@ mod tests {
             );
         }
         let empty = render_lock_scene("session_empty", 80, 24).expect("empty");
-        assert!(empty.plain.contains("Cortex CLI v1.0.0"), "{}", empty.plain);
+        assert!(
+            empty.plain.contains("Plan, search, build anything"),
+            "{}",
+            empty.plain
+        );
+        assert!(
+            !empty.plain.contains("Cortex CLI v1.0.0"),
+            "session_empty is not the splash:\n{}",
+            empty.plain
+        );
     }
 
     #[test]

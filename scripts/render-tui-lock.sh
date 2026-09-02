@@ -34,6 +34,32 @@ for spec in 40x12 120x40; do
     --raw "$pngs" --output "$output_dir/macos/$spec" --size "$spec"
 done
 
+python3 - <<'PY'
+from pathlib import Path
+from PIL import Image
+
+ACCENT = (167, 139, 250)
+root = Path("docs/media/tui-lock/120x40")
+
+def exact_accent(path: Path) -> int:
+    im = Image.open(path).convert("RGB")
+    return sum(1 for p in im.getdata() if p == ACCENT)
+
+splash = exact_accent(root / "splash.png")
+login = exact_accent(root / "login.png")
+empty = exact_accent(root / "session_empty.png")
+print(f"accent pixels 120×40: splash={splash} session_empty={empty} login={login}")
+if splash < 40:
+    raise SystemExit(f"splash composer `>` is not lock violet (#A78BFA): {splash} exact pixels")
+if empty < 40:
+    raise SystemExit(f"session_empty composer `>` is not lock violet: {empty} exact pixels")
+splash_bytes = (root / "splash.png").read_bytes()
+empty_bytes = (root / "session_empty.png").read_bytes()
+if splash_bytes == empty_bytes:
+    raise SystemExit("splash.png and session_empty.png are identical")
+print("lock colour check ok")
+PY
+
 cat > "$output_dir/README.md" <<'EOF'
 # Cortex CLI visual lock captures
 
@@ -79,7 +105,7 @@ binary still reports the crate version.
 
 | File | Surface |
 |------|---------|
-| `splash.png` | Empty session chrome: cwd, `> cortex`, version, hairline composer |
+| `splash.png` | Launch splash: cwd, `> cortex`, `Cortex CLI v1.0.0`, `/ commands` legend, hairline composer |
 | `typing.png` | Prompt typed in the composer, block cursor |
 | `model_compact.png` | `/model` compact picker, hairline search field |
 | `model_full.png` | `/model` full picker: search field, descriptions, effort, billing note |
@@ -99,10 +125,10 @@ binary still reports the crate version.
 | `diagnostics.png` | Diagnostics tile |
 | `multi_diff.png` | `/diff` files changed this turn |
 | `compact.png` | `/compact` — thread compacted (same board as `compacted.png`) |
-| `interrupt.png` | Interrupt — tiles stay on screen, `× Stopped` in error red |
+| `interrupt.png` | Interrupt — tiles stay on screen, `× Stopped` in error red (same board as `stopped.png`: the UI after ctrl+c) |
 | `quota.png` | Agent quota exhausted (title in error red) |
 | `clear.png` | `/clear` confirm (same board as `clear_confirm.png`) |
-| `session_empty.png` | Empty session |
+| `session_empty.png` | Open session without splash title/legend: cwd, dual-bar composer, footer |
 | `session_loading.png` | Loading / streaming |
 | `session_error.png` | Error |
 | `session_success.png` | Success |

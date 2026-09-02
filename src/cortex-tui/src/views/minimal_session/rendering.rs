@@ -475,31 +475,33 @@ pub fn generate_welcome_lines(
         )));
     }
 
-    let version = if app_state.cli_version.is_empty() {
-        VERSION
-    } else {
-        app_state.cli_version.as_str()
-    };
-    let welcome_card = WelcomeCard::new()
-        .version(version)
-        .text_color(colors.text)
-        .dim_color(colors.text_dim)
-        .border_color(colors.text_dim);
+    if app_state.show_launch_splash {
+        let version = if app_state.cli_version.is_empty() {
+            VERSION
+        } else {
+            app_state.cli_version.as_str()
+        };
+        let welcome_card = WelcomeCard::new()
+            .version(version)
+            .text_color(colors.text)
+            .dim_color(colors.text_dim)
+            .border_color(colors.text_dim);
 
-    lines.extend(welcome_card.to_lines(width));
+        lines.extend(welcome_card.to_lines(width));
 
-    let empty = app_state.messages.is_empty()
-        && !app_state.streaming.is_streaming
-        && app_state.tool_calls.is_empty();
-    if empty {
-        // The keystroke hints are part of the empty-session chrome at every
-        // width; narrow terminals show the leading keys that fit.
-        let line = crate::ui::text_utils::first_fitting_line(EMPTY_SESSION_HINTS, w);
-        if !line.is_empty() {
-            lines.push(Line::from(Span::styled(
-                line,
-                Style::default().fg(colors.text_dim),
-            )));
+        let empty = app_state.messages.is_empty()
+            && !app_state.streaming.is_streaming
+            && app_state.tool_calls.is_empty();
+        if empty {
+            // The keystroke hints are part of the launch splash at every
+            // width; narrow terminals show the leading keys that fit.
+            let line = crate::ui::text_utils::first_fitting_line(EMPTY_SESSION_HINTS, w);
+            if !line.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    line,
+                    Style::default().fg(colors.text_dim),
+                )));
+            }
         }
     }
 

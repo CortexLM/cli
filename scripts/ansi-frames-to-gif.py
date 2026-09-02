@@ -199,6 +199,35 @@ def dim_colour(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
     return tuple(int(channel * 0.65) for channel in rgb)
 
 
+def _dist2(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
+    return sum((x - y) * (x - y) for x, y in zip(a, b))
+
+
+def snap_cell_to_fg(
+    image: Image.Image,
+    x0: int,
+    y0: int,
+    x1: int,
+    y1: int,
+    fg: tuple[int, int, int],
+    bg: tuple[int, int, int],
+) -> None:
+    """Replace anti-aliased fringe in one cell with the exact foreground."""
+    pix = image.load()
+    width, height = image.size
+    x0 = max(0, x0)
+    y0 = max(0, y0)
+    x1 = min(width, x1)
+    y1 = min(height, y1)
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            pixel = pix[x, y]
+            if pixel == bg or pixel == fg:
+                continue
+            if _dist2(pixel, fg) <= _dist2(pixel, bg):
+                pix[x, y] = fg
+
+
 def check_glyph_coverage(grid: list[list[tuple[str, CellStyle]]], fonts: dict[str, FontSet]) -> None:
     """Fail before rendering if any character would come out as a blank box."""
     missing = set()
@@ -253,16 +282,31 @@ def render_frame(
             face = font_set.face_for(symbol)
             if face is None:
                 continue
-            colour = dim_colour(style.fg) if style.dim else style.fg
+            let colour = dim_colour(style.fg) if style.dim else style.fg
             # Fallback faces differ in advance width and ascent, so glyphs are
             # centred in the cell and pinned to the primary face's baseline.
             offset = max(0, round((cell_w - face.getlength(symbol)) / 2))
+            gx = pad + col_index * cell_w + offset
+            gy = y + baseline
             draw.text(
-                (pad + col_index * cell_w + offset, y + baseline),
+                (gx, gy),
                 symbol,
                 font=face,
                 fill=colour,
                 anchor="ls",
+            )
+            # FreeType anti-aliases onto the cell background, which turns a
+            # lone `#A78BFA` `>` on black into a gray fringe. Snap coverage
+            # back to the exact lock colour so composer and picker carets match.
+            cell_bg = style.bg if style.bg != DEFAULT_BG else CANVAS_BG
+            snap_cell_to_fg(
+                image,
+                pad + col_index * cell_w,
+                y,
+                pad + (col_index + 1) * cell_w,
+                y + cell_h,
+                colour,
+                cell_bg,
             )
 
     return image

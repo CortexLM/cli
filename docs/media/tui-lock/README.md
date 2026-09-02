@@ -9,15 +9,14 @@ Each scene is captured at **40×12** (narrow) and **120×40** (wide), twice:
 - `40x12/`, `120x40/` — raw terminal pixels. The background is the host
   terminal's (`Color::Reset`, black by default); nothing paints a wash and no
   rounded frame is drawn — the TUI bleeds to the terminal edges.
-- `macos/40x12/`, `macos/120x40/` — the same captures composited into the
-  designer macOS chrome template: Sequoia ray wallpaper, menu bar, and a
-  Terminal.app window (traffic lights, `cortex-api — cortex — W×H` proxy
-  title, native shadow). TUI pixels are never resampled: 120×40 captures are
-  pasted 1:1 into the window's black content rect (the chrome renders at
-  2.5×), 40×12 captures keep the same chrome with a smaller content rect at an
-  integer 2× nearest-neighbour blow-up — so every locked colour survives
-  pixel-exact. Nothing is re-typed, and the rounded corners belong to the
-  macOS window chrome only.
+- `macos/40x12/`, `macos/120x40/` — the same captures as a macOS Terminal.app
+  *window*, cropped to the window: a title bar (traffic lights, `cortex-api —
+  cortex — W×H` proxy-icon title) over the capture pasted 1:1, rounded window
+  corners on a transparent background — no desktop wallpaper, no menu bar, no
+  shadow. TUI pixels are never resampled, so the 40×12 pack is a genuinely
+  small 40-column window (432×324) and the 120×40 pack a wide 120-column one
+  (1232×940), and every locked colour survives pixel-exact. Nothing is
+  re-typed, and the rounded corners belong to the macOS window chrome only.
 
 Chrome rules: structure is gray — `#3A3A3A` hairlines above and below the
 `> ` composer and around search fields, `#141414` charcoal panels for tips,

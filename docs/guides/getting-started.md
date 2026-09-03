@@ -7,7 +7,10 @@ This page takes you from nothing installed to a working Cortex Code session.
 ### Linux and macOS
 
 The install script fetches the release build for your platform from
-[software.cortex.foundation](https://software.cortex.foundation):
+[software.cortex.foundation](https://software.cortex.foundation), verifies the
+SHA-256 checksum from the release manifest, and installs into `~/.local/bin`
+(`Cortex`, plus a `cortex` symlink). Add that directory to `PATH` if it is not
+already there.
 
 ```bash
 curl -fsSL https://software.cortex.foundation/install.sh | sh
@@ -19,7 +22,13 @@ Read it first if you would rather not pipe a script into a shell:
 curl -fsSL https://software.cortex.foundation/install.sh | less
 ```
 
+Pin a version with `CORTEX_VERSION=0.1.4`. Update later with `cortex upgrade`
+(same host, same checksum).
+
 ### Windows
+
+Windows installs into `%LOCALAPPDATA%\Cortex\bin` and adds that folder to the
+user `PATH`:
 
 ```powershell
 irm https://software.cortex.foundation/install.ps1 | iex
@@ -49,6 +58,17 @@ cargo build -p cortex-cli --release
 ```bash
 cortex --version
 ```
+
+### Update
+
+```bash
+cortex upgrade          # latest on the stable channel
+cortex upgrade --check  # report only
+```
+
+`cortex upgrade` talks to `https://software.cortex.foundation`
+(`/releases/manifest.json` and `/v1/assets/...`), verifies SHA-256, and
+replaces the current binary.
 
 ## 2. Sign in
 

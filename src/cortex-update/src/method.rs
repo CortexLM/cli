@@ -13,9 +13,9 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InstallMethod {
-    /// curl -fsSL https://cortex.foundation/install.sh | bash (macOS/Linux)
+    /// curl -fsSL https://software.cortex.foundation/install.sh | sh (macOS/Linux)
     CurlScript,
-    /// irm https://cortex.foundation/install.ps1 | iex (Windows)
+    /// irm https://software.cortex.foundation/install.ps1 | iex (Windows)
     PowerShellScript,
     /// brew install --cask cortex (macOS/Linux)
     Homebrew,
@@ -74,10 +74,11 @@ impl InstallMethod {
             return Some(Self::WinGet);
         }
 
-        // Cortex script install (default locations)
-        // macOS/Linux: ~/.cortex/bin/cortex
-        // Windows: %LOCALAPPDATA%\Cortex\bin\cortex.exe
-        if path_str.contains("/.cortex/bin/")
+        // Script install (default locations)
+        // macOS/Linux: ~/.local/bin/Cortex (also ~/.cortex/bin from older installers)
+        // Windows: %LOCALAPPDATA%\Cortex\bin\Cortex.exe
+        if path_str.contains("/.local/bin/")
+            || path_str.contains("/.cortex/bin/")
             || path_str.contains("\\.cortex\\bin\\")
             || path_str.contains("\\cortex\\bin\\")
         {
@@ -127,8 +128,8 @@ impl InstallMethod {
     /// Get a human-readable description of this method.
     pub fn description(&self) -> &'static str {
         match self {
-            Self::CurlScript => "curl script (cortex.foundation)",
-            Self::PowerShellScript => "PowerShell script (cortex.foundation)",
+            Self::CurlScript => "curl script (software.cortex.foundation)",
+            Self::PowerShellScript => "PowerShell script (software.cortex.foundation)",
             Self::Homebrew => "Homebrew",
             Self::WinGet => "WinGet",
             Self::Unknown => "Manual/Unknown",
@@ -138,11 +139,11 @@ impl InstallMethod {
     /// Get the install hint for fresh installation.
     pub fn install_hint(&self) -> &'static str {
         match self {
-            Self::CurlScript => "curl -fsSL https://cortex.foundation/install.sh | bash",
-            Self::PowerShellScript => "irm https://cortex.foundation/install.ps1 | iex",
+            Self::CurlScript => "curl -fsSL https://software.cortex.foundation/install.sh | sh",
+            Self::PowerShellScript => "irm https://software.cortex.foundation/install.ps1 | iex",
             Self::Homebrew => "brew install --cask cortex",
             Self::WinGet => "winget install Cortex.CLI",
-            Self::Unknown => "Visit https://cortex.foundation/download",
+            Self::Unknown => "Visit https://software.cortex.foundation",
         }
     }
 
@@ -218,6 +219,13 @@ mod tests {
     #[test]
     fn test_detect_from_path_curl_script() {
         let path = PathBuf::from("/home/user/.cortex/bin/cortex");
+        #[cfg(not(windows))]
+        assert_eq!(
+            InstallMethod::detect_from_path(&path),
+            Some(InstallMethod::CurlScript)
+        );
+
+        let path = PathBuf::from("/home/user/.local/bin/Cortex");
         #[cfg(not(windows))]
         assert_eq!(
             InstallMethod::detect_from_path(&path),

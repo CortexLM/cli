@@ -64,5 +64,6 @@ libc = { workspace = true }
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
+wiremock = { workspace = true }
 tokio-test = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }

@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use cortex_engine::create_client_builder;
 use futures::StreamExt;
 use reqwest::Client;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
@@ -48,6 +49,32 @@ pub struct ReleaseInfo {
     /// Signature URLs by platform key
     #[serde(default)]
     pub signatures: HashMap<String, String>,
+}
+
+/// Channel pointer file at `/releases/manifest.json` (and `/v1/releases/manifest.json`).
+///
+/// `cortex upgrade` prefers this static layout on software.cortex.foundation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReleaseManifest {
+    #[serde(default)]
+    pub stable: Option<ReleaseInfo>,
+    #[serde(default)]
+    pub beta: Option<ReleaseInfo>,
+    #[serde(default)]
+    pub nightly: Option<ReleaseInfo>,
+    #[serde(default)]
+    pub all_versions: Vec<String>,
+}
+
+impl ReleaseManifest {
+    /// Return the release published for `channel`, if any.
+    pub fn for_channel(&self, channel: ReleaseChannel) -> Option<&ReleaseInfo> {
+        match channel {
+            ReleaseChannel::Stable => self.stable.as_ref(),
+            ReleaseChannel::Beta => self.beta.as_ref(),
+            ReleaseChannel::Nightly => self.nightly.as_ref(),
+        }
+    }
 }
 
 impl ReleaseInfo {
@@ -117,14 +144,9 @@ impl CortexSoftwareClient {
         Ok(Self { client, base_url })
     }
 
-    /// Get the latest release for a channel.
-    pub async fn get_latest(&self, channel: ReleaseChannel) -> UpdateResult<ReleaseInfo> {
-        let url = format!(
-            "{}/v1/releases/latest?channel={}",
-            self.base_url,
-            channel.as_str()
-        );
-
+    /// GET JSON from a path under `base_url`. Paths may include a query string.
+    async fn get_json<T: DeserializeOwned>(&self, path: &str) -> UpdateResult<T> {
+        let url = format!("{}{}", self.base_url.trim_end_matches('/'), path);
         let response =
             self.client
                 .get(&url)
@@ -138,12 +160,9 @@ impl CortexSoftwareClient {
         if status.as_u16() == 404 {
             return Err(UpdateError::ServerError {
                 status: 404,
-                message: "No releases available yet. The release server has not published any releases. \
-                         Please check https://github.com/CortexLM/cortex/releases for manual download or try again later."
-                    .to_string(),
+                message: format!("Not found: {url}"),
             });
         }
-
         if !status.is_success() {
             let status_code = status.as_u16();
             let message = response.text().await.unwrap_or_default();
@@ -153,37 +172,81 @@ impl CortexSoftwareClient {
             });
         }
 
-        let info: ReleaseInfo = response.json().await?;
-        Ok(info)
+        Ok(response.json().await?)
+    }
+
+    fn is_missing(err: &UpdateError) -> bool {
+        matches!(
+            err,
+            UpdateError::ServerError { status: 404, .. } | UpdateError::Json(_)
+        )
+    }
+
+    /// Get the latest release for a channel.
+    ///
+    /// Tries `/v1/releases/latest` first (query string is ignored by static
+    /// object storage), then the channel pointer in `releases/manifest.json`.
+    pub async fn get_latest(&self, channel: ReleaseChannel) -> UpdateResult<ReleaseInfo> {
+        let latest_paths = [
+            format!("/v1/releases/latest.json?channel={}", channel.as_str()),
+            format!("/v1/releases/latest?channel={}", channel.as_str()),
+        ];
+        for path in &latest_paths {
+            match self.get_json::<ReleaseInfo>(path).await {
+                Ok(info) if info.channel == channel => return Ok(info),
+                Ok(_) => continue,
+                Err(e) if Self::is_missing(&e) => continue,
+                Err(e) => return Err(e),
+            }
+        }
+
+        for path in ["/v1/releases/manifest.json", "/releases/manifest.json"] {
+            match self.get_json::<ReleaseManifest>(path).await {
+                Ok(manifest) => {
+                    return manifest.for_channel(channel).cloned().ok_or_else(|| {
+                        UpdateError::ServerError {
+                            status: 404,
+                            message: format!(
+                                "No {} releases available yet. Check {} or try again later.",
+                                channel.as_str(),
+                                crate::SOFTWARE_URL
+                            ),
+                        }
+                    });
+                }
+                Err(e) if Self::is_missing(&e) => continue,
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err(UpdateError::ServerError {
+            status: 404,
+            message: format!(
+                "No releases available yet. Check {} or try again later.",
+                crate::SOFTWARE_URL
+            ),
+        })
     }
 
     /// Get a specific release by version.
     pub async fn get_release(&self, version: &str) -> UpdateResult<ReleaseInfo> {
-        let url = format!("{}/v1/releases/{}", self.base_url, version);
-
-        let response =
-            self.client
-                .get(&url)
-                .send()
-                .await
-                .map_err(|e| UpdateError::ConnectionFailed {
-                    message: e.to_string(),
-                })?;
-
-        if response.status().as_u16() == 404 {
-            return Err(UpdateError::VersionNotFound {
-                version: version.to_string(),
-            });
+        let version = version.trim_start_matches('v');
+        let paths = [
+            format!("/v1/releases/{version}.json"),
+            format!("/v1/releases/{version}"),
+            format!("/releases/{version}.json"),
+        ];
+        for path in &paths {
+            match self.get_json::<ReleaseInfo>(path).await {
+                Ok(info) => return Ok(info),
+                Err(e) if Self::is_missing(&e) => continue,
+                Err(e) => return Err(e),
+            }
         }
 
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_default();
-            return Err(UpdateError::ServerError { status, message });
-        }
-
-        let info: ReleaseInfo = response.json().await?;
-        Ok(info)
+        Err(UpdateError::VersionNotFound {
+            version: version.to_string(),
+        })
     }
 
     /// Get changelog entries since a version.
@@ -325,9 +388,92 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_platform_key() {
-        let key = platform_key();
-        assert!(!key.is_empty());
-        assert!(key.contains('-'));
+    fn install_sh_verifies_checksum_against_software_host() {
+        let script = include_str!("../../../scripts/install.sh");
+        assert!(script.contains("verify_sha256"));
+        assert!(script.contains("https://software.cortex.foundation"));
+        assert!(script.contains("$HOME/.local"));
+    }
+
+    #[test]
+    fn test_release_manifest_fixture_parses() {
+        let fixture = include_str!("../tests/fixtures/manifest.json");
+        let manifest: ReleaseManifest =
+            serde_json::from_str(fixture).expect("fixture must deserialize");
+        let stable = manifest
+            .for_channel(ReleaseChannel::Stable)
+            .expect("stable channel");
+        assert_eq!(stable.version, "0.1.2");
+        assert_eq!(stable.channel, ReleaseChannel::Stable);
+        let linux = stable
+            .assets
+            .get("linux-x86_64")
+            .expect("linux-x86_64 asset");
+        assert_eq!(
+            linux.url,
+            "https://software.cortex.foundation/v1/assets/linux-x86_64/0.1.2/cortex.tar.gz"
+        );
+        assert_eq!(linux.sha256.len(), 64);
+        assert!(manifest.all_versions.contains(&"0.1.2".to_string()));
+        assert!(manifest.for_channel(ReleaseChannel::Beta).is_none());
+    }
+
+    #[tokio::test]
+    async fn get_latest_reads_manifest_when_latest_is_missing() {
+        let fixture = include_str!("../tests/fixtures/manifest.json");
+        let server = wiremock::MockServer::start().await;
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/v1/releases/latest.json"))
+            .respond_with(wiremock::ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/v1/releases/latest"))
+            .respond_with(wiremock::ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/v1/releases/manifest.json"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_raw(fixture, "application/json"),
+            )
+            .mount(&server)
+            .await;
+
+        let client = CortexSoftwareClient::with_url(server.uri()).expect("localhost http");
+        let latest = client
+            .get_latest(ReleaseChannel::Stable)
+            .await
+            .expect("manifest fallback");
+        assert_eq!(latest.version, "0.1.2");
+        assert!(latest.assets.contains_key("linux-x86_64"));
+        assert_eq!(latest.assets.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn get_release_reads_version_json() {
+        let fixture = include_str!("../tests/fixtures/release.json");
+        let server = wiremock::MockServer::start().await;
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/v1/releases/0.1.2.json"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_raw(fixture, "application/json"),
+            )
+            .mount(&server)
+            .await;
+
+        let client = CortexSoftwareClient::with_url(server.uri()).expect("localhost http");
+        let release = client.get_release("v0.1.2").await.expect("version json");
+        assert_eq!(release.version, "0.1.2");
+        assert_eq!(
+            release
+                .assets
+                .get("darwin-aarch64")
+                .expect("darwin asset")
+                .size,
+            12345678
+        );
     }
 }

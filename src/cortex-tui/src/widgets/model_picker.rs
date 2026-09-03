@@ -16,7 +16,7 @@
 
 use crate::providers::models::{ModelInfo, get_models_for_provider, get_popular_models};
 use cortex_core::style::{
-    BORDER_FOCUS, CYAN_PRIMARY, GREEN, ORANGE, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
+    ACCENT, BORDER_FOCUS, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::{
@@ -285,7 +285,7 @@ impl Widget for ModelPicker<'_> {
         let title = format!(" Select Model ({}) ", self.state.current_provider);
         let block = Block::default()
             .title(title)
-            .title_style(Style::default().fg(CYAN_PRIMARY).bold())
+            .title_style(Style::default().fg(TEXT).bold())
             .borders(Borders::ALL)
             .border_style(Style::default().fg(BORDER_FOCUS))
             .style(Style::default().bg(SURFACE_0));
@@ -331,7 +331,7 @@ impl ModelPicker<'_> {
         let x = search_inner.x;
         let y = search_inner.y;
 
-        buf.set_string(x, y, " > ", Style::default().fg(CYAN_PRIMARY));
+        buf.set_string(x, y, " / ", Style::default().fg(TEXT_DIM));
 
         let display_query = if self.state.search_query.is_empty() {
             "Type to search models...".to_string()
@@ -350,7 +350,7 @@ impl ModelPicker<'_> {
         // Cursor
         let cursor_x = x + 3 + self.state.search_query.len() as u16;
         if cursor_x < search_inner.right() {
-            buf[(cursor_x, y)].set_bg(CYAN_PRIMARY);
+            buf[(cursor_x, y)].set_bg(TEXT);
         }
 
         // Result count
@@ -380,9 +380,10 @@ impl ModelPicker<'_> {
 
             let is_selected = start + i == self.state.selected;
 
-            // Selection highlight
+            // Selection highlight: the violet label on the dark gray bar —
+            // never inverted onto the accent.
             let (bg, fg) = if is_selected {
-                (CYAN_PRIMARY, VOID)
+                (SELECTION_BG, ACCENT)
             } else {
                 (SURFACE_0, TEXT)
             };
@@ -403,30 +404,27 @@ impl ModelPicker<'_> {
                 " "
             };
             let status_color = if model.is_current {
-                GREEN
+                TEXT
             } else if model.is_popular {
-                ORANGE
+                TEXT_DIM
             } else {
                 TEXT_MUTED
             };
             buf.set_string(x, y, status, Style::default().fg(status_color).bg(bg));
 
-            // Model name
-            let name = if model.name.len() > name_width {
-                format!("{}...", &model.name[..name_width.saturating_sub(3)])
+            // Model name — English product name, never the served slug.
+            let display = crate::ui::text_utils::model_display_name(&model.name);
+            let name = if display.len() > name_width {
+                format!("{}...", &display[..name_width.saturating_sub(3)])
             } else {
-                model.name.clone()
+                display
             };
             buf.set_string(x + 2, y, &name, Style::default().fg(fg).bg(bg));
 
             // Provider
             let provider_x = x + name_width as u16 + 3;
             if provider_x < area.right().saturating_sub(15) {
-                let provider_style = if is_selected {
-                    Style::default().fg(VOID).bg(bg)
-                } else {
-                    Style::default().fg(TEXT_DIM).bg(bg)
-                };
+                let provider_style = Style::default().fg(TEXT_DIM).bg(bg);
                 buf.set_string(provider_x, y, &model.provider, provider_style);
             }
 
@@ -435,11 +433,7 @@ impl ModelPicker<'_> {
                 let ctx_str = format!("{}k", ctx / 1000);
                 let ctx_x = area.right().saturating_sub(ctx_str.len() as u16 + 2);
                 if ctx_x > provider_x + model.provider.len() as u16 {
-                    let ctx_style = if is_selected {
-                        Style::default().fg(VOID).bg(bg)
-                    } else {
-                        Style::default().fg(TEXT_MUTED).bg(bg)
-                    };
+                    let ctx_style = Style::default().fg(TEXT_MUTED).bg(bg);
                     buf.set_string(ctx_x, y, &ctx_str, ctx_style);
                 }
             }
@@ -481,8 +475,8 @@ impl ModelPicker<'_> {
         let x = area.x + 1;
 
         // Legend
-        buf.set_string(x, y, "* current  ", Style::default().fg(GREEN));
-        buf.set_string(x + 11, y, "+ popular", Style::default().fg(ORANGE));
+        buf.set_string(x, y, "* current  ", Style::default().fg(TEXT));
+        buf.set_string(x + 11, y, "+ popular", Style::default().fg(TEXT_DIM));
 
         // Help
         let help = "[Enter] select  [Esc] cancel  [Ctrl+L] clear search";

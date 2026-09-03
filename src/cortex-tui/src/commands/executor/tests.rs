@@ -180,9 +180,12 @@ fn test_toggle_commands() {
     let result = executor.execute_str("/favorite");
     assert!(matches!(result, CommandResult::Toggle(ref s) if s == "favorite"));
 
-    // sandbox without arg
+    // sandbox without arg opens the on/off picker
     let result = executor.execute_str("/sandbox");
-    assert!(matches!(result, CommandResult::Toggle(ref s) if s == "sandbox"));
+    assert!(matches!(
+        result,
+        CommandResult::OpenModal(ModalType::Form(ref s)) if s == "sandbox"
+    ));
 }
 
 #[test]

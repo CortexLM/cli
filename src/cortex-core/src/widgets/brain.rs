@@ -7,7 +7,7 @@
 //! Uses sine wave radial expansion from center:
 //! - Wave expands outward from brain center
 //! - 2-second cycle (slow, hypnotic)
-//! - Green gradient (#00FFA3)
+//! - Gray gradient (dark charcoal to light gray)
 //!
 //! # Example
 //! ```
@@ -62,11 +62,11 @@ const WAVE_SPEED: f32 = std::f32::consts::PI * 2.0;
 /// Wave scale: controls the "wavelength" of radial rings
 const WAVE_SCALE: f32 = 6.0;
 
-/// Accent green color
-const ACCENT_GREEN: (u8, u8, u8) = (0x00, 0xFF, 0xA3);
+/// Bright end of the gradient — light gray
+const ACCENT_GRAY: (u8, u8, u8) = (0xD4, 0xD4, 0xD8);
 
-/// Dark green base color
-const DARK_GREEN: (u8, u8, u8) = (0x00, 0x40, 0x30);
+/// Dark end of the gradient — charcoal
+const DARK_GRAY: (u8, u8, u8) = (0x26, 0x26, 0x26);
 
 // ============================================================
 // BRAIN WIDGET
@@ -194,15 +194,17 @@ impl Brain {
 
     /// Gets the style for a character based on wave intensity.
     ///
-    /// Creates a gradient from dark green to bright green (#00FFA3).
+    /// Creates a gradient from charcoal to light gray — the chrome is gray
+    /// and cyan stays on the focused selection only.
     fn get_wave_style(&self, base_density: f32, wave: f32) -> Style {
         // Combine base density with wave for final brightness
         let brightness = base_density * (0.4 + wave * 0.6 * self.intensity);
 
-        // Interpolate between dark green and accent green
-        let r = DARK_GREEN.0;
-        let g = (DARK_GREEN.1 as f32 + (ACCENT_GREEN.1 - DARK_GREEN.1) as f32 * brightness) as u8;
-        let b = (DARK_GREEN.2 as f32 + (ACCENT_GREEN.2 - DARK_GREEN.2) as f32 * brightness) as u8;
+        // Interpolate between the charcoal and the light gray
+        let lerp = |from: u8, to: u8| (from as f32 + (to as f32 - from as f32) * brightness) as u8;
+        let r = lerp(DARK_GRAY.0, ACCENT_GRAY.0);
+        let g = lerp(DARK_GRAY.1, ACCENT_GRAY.1);
+        let b = lerp(DARK_GRAY.2, ACCENT_GRAY.2);
 
         Style::default().fg(Color::Rgb(r, g, b))
     }

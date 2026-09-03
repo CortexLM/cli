@@ -72,6 +72,9 @@ arboard = { workspace = true }
 # File search and fuzzy matching
 walkdir = { workspace = true }
 
+# Word-level diffs for Edit tiles
+similar = { workspace = true }
+
 # External editor
 which = { workspace = true }
 
@@ -91,3 +94,7 @@ workspace = true
 [[bin]]
 name = "generate_tui_lock_screenshots"
 path = "src/bin/generate_tui_lock_screenshots.rs"
+
+[[bin]]
+name = "generate_tui_demo"
+path = "src/bin/generate_tui_demo.rs"

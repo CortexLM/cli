@@ -104,7 +104,7 @@ pub enum CortexError {
     #[error("Sandbox not available on this platform")]
     SandboxNotAvailable,
 
-    #[error("Command denied by sandbox: {command}")]
+    #[error("Sandbox denied — {command} was blocked by the workspace sandbox.")]
     SandboxDenied { command: String },
 
     // File system errors
@@ -361,6 +361,12 @@ impl CortexError {
                 | Self::BackendUnavailable(_)
                 | Self::BackendError { .. }
                 | Self::ProxyError { .. } => SERVICE_UNAVAILABLE.to_string(),
+                Self::RateLimit(_)
+                | Self::RateLimitWithRetryAfter { .. }
+                | Self::RateLimitExceeded => "Agent quota exhausted".to_string(),
+                Self::SandboxDenied { command } => {
+                    format!("Sandbox denied — {command} was blocked by the workspace sandbox.")
+                }
                 _ => self.to_string(),
             }
         }

@@ -3,7 +3,9 @@
 //! This modal displays available AI models and allows the user to select one.
 //! Models are grouped by provider with section headers for easy navigation.
 
-use cortex_core::style::{BORDER, CYAN_PRIMARY, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED, VOID};
+use cortex_core::style::{
+    ACCENT, BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -156,7 +158,8 @@ impl ModelsModal {
                 }
                 let description = desc_parts.join(" | ");
 
-                SelectionItem::new(&model.name)
+                // Rows show the English product name, never the served slug.
+                SelectionItem::new(crate::ui::text_utils::model_display_name(&model.name))
                     .with_description(description)
                     .with_current(is_current)
             })
@@ -324,10 +327,11 @@ impl ModelsModal {
         is_selected: bool,
     ) {
         // Determine styles
+        // Selected rows: the violet accent on the dark gray bar — never inverted.
         let (bg, fg, prefix_fg) = if is_selected {
-            (CYAN_PRIMARY, VOID, VOID)
+            (SELECTION_BG, ACCENT, ACCENT)
         } else {
-            (SURFACE_0, TEXT, CYAN_PRIMARY)
+            (SURFACE_0, TEXT, TEXT_DIM)
         };
 
         // Clear the line with background
@@ -342,13 +346,14 @@ impl ModelsModal {
         buf.set_string(col, y, prefix, Style::default().fg(prefix_fg).bg(bg));
         col += 2;
 
-        // Model name
+        // Model name — English product name, never the served slug.
         let name_style = Style::default().fg(fg).bg(bg);
+        let display = crate::ui::text_utils::model_display_name(&model.name);
         let max_name_len = 35.min(width.saturating_sub(30) as usize);
-        let truncated_name = if model.name.len() > max_name_len && max_name_len > 3 {
-            format!("{}...", &model.name[..max_name_len.saturating_sub(3)])
+        let truncated_name = if display.len() > max_name_len && max_name_len > 3 {
+            format!("{}...", &display[..max_name_len.saturating_sub(3)])
         } else {
-            model.name.clone()
+            display
         };
         buf.set_string(col, y, &truncated_name, name_style);
 
@@ -367,21 +372,13 @@ impl ModelsModal {
         let right_x = x + width.saturating_sub(right_section.len() as u16 + 2);
 
         if !ctx_str.is_empty() && right_x > col + truncated_name.len() as u16 + 2 {
-            let ctx_style = if is_selected {
-                Style::default().fg(VOID).bg(bg)
-            } else {
-                Style::default().fg(TEXT_DIM).bg(bg)
-            };
+            let ctx_style = Style::default().fg(TEXT_DIM).bg(bg);
             buf.set_string(right_x, y, &ctx_str, ctx_style);
         }
 
         if !current_marker.is_empty() {
             let marker_x = x + width.saturating_sub(current_marker.len() as u16 + 2);
-            let marker_style = if is_selected {
-                Style::default().fg(VOID).bg(bg)
-            } else {
-                Style::default().fg(TEXT_DIM).bg(bg)
-            };
+            let marker_style = Style::default().fg(TEXT_DIM).bg(bg);
             buf.set_string(marker_x, y, current_marker, marker_style);
         }
     }

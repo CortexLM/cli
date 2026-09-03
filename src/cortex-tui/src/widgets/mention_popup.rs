@@ -15,8 +15,7 @@
 //! ```
 
 use crate::mentions::FileMentionState;
-use cortex_core::style::{CYAN_PRIMARY, PINK, SURFACE_1, SURFACE_2, TEXT, TEXT_MUTED};
-use cortex_tui_components::borders::ROUNDED_BORDER;
+use cortex_core::style::{ACCENT, HAIRLINE, SELECTION_BG, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
 use ratatui::prelude::*;
 use ratatui::widgets::{
     Block, Borders, Clear, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget,
@@ -134,7 +133,7 @@ impl<'a> MentionPopup<'a> {
         buf: &mut Buffer,
     ) {
         // Background
-        let bg = if is_selected { SURFACE_2 } else { SURFACE_1 };
+        let bg = if is_selected { SELECTION_BG } else { SURFACE_1 };
         for x in area.x..area.x + area.width {
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_bg(bg);
@@ -145,7 +144,7 @@ impl<'a> MentionPopup<'a> {
 
         // Selection indicator
         if is_selected {
-            let style = Style::default().fg(CYAN_PRIMARY).bg(bg).bold();
+            let style = Style::default().fg(ACCENT).bg(bg).bold();
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_char('>').set_style(style);
             }
@@ -154,7 +153,7 @@ impl<'a> MentionPopup<'a> {
 
         // File icon
         let icon = Self::file_icon(path);
-        let icon_style = Style::default().fg(PINK).bg(bg);
+        let icon_style = Style::default().fg(TEXT_DIM).bg(bg);
         for ch in icon.chars() {
             if x >= area.x + area.width - 1 {
                 break;
@@ -168,8 +167,9 @@ impl<'a> MentionPopup<'a> {
 
         // File path
         let path_str = path.to_string_lossy();
+        // The selected path is the violet accent on the gray bar.
         let style = if is_selected {
-            Style::default().fg(TEXT).bg(bg).bold()
+            Style::default().fg(ACCENT).bg(bg).bold()
         } else {
             Style::default().fg(TEXT).bg(bg)
         };
@@ -220,10 +220,9 @@ impl Widget for MentionPopup<'_> {
 
         let block = Block::default()
             .title(title)
-            .title_style(Style::default().fg(CYAN_PRIMARY).bold())
+            .title_style(Style::default().fg(TEXT).bold())
             .borders(Borders::ALL)
-            .border_set(ROUNDED_BORDER)
-            .border_style(Style::default().fg(CYAN_PRIMARY));
+            .border_style(Style::default().fg(HAIRLINE));
 
         let inner = block.inner(popup_area);
         block.render(popup_area, buf);

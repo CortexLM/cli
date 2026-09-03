@@ -21,8 +21,7 @@
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::style::{
-    BORDER, CYAN_PRIMARY, DEEP_CYAN, HIGHLIGHT, INFO, SKY_BLUE, SUCCESS, SURFACE_0, SURFACE_1,
-    TEXT, TEXT_BRIGHT, TEXT_DIM, TEXT_MUTED,
+    HAIRLINE, SKY_BLUE, SUCCESS, SURFACE_1, TEXT, TEXT_BRIGHT, TEXT_DIM, TEXT_MUTED,
 };
 
 /// Comprehensive theme configuration for markdown rendering.
@@ -584,17 +583,19 @@ impl MarkdownTheme {
 }
 
 impl Default for MarkdownTheme {
+    /// The gray chrome: white headings and emphasis, dim bullets and rules,
+    /// hairline `#3A3A3A` table / fence / quote borders, green only on the
+    /// checked `✓`. No accent colour anywhere in a reply — the violet belongs
+    /// to the focused selection alone.
     fn default() -> Self {
         Self {
             // Headers - decreasing prominence from H1 to H6
             h1: Style::default()
-                .fg(CYAN_PRIMARY)
+                .fg(TEXT)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            h2: Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
+            h2: Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             h3: Style::default()
-                .fg(SKY_BLUE)
+                .fg(TEXT)
                 .add_modifier(Modifier::BOLD | Modifier::ITALIC),
             h4: Style::default().fg(SKY_BLUE).add_modifier(Modifier::ITALIC),
             h5: Style::default().fg(TEXT_DIM).add_modifier(Modifier::ITALIC),
@@ -603,45 +604,43 @@ impl Default for MarkdownTheme {
                 .add_modifier(Modifier::ITALIC),
 
             // Text styles
-            bold: Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
+            bold: Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             italic: Style::default().fg(TEXT).add_modifier(Modifier::ITALIC),
             strikethrough: Style::default()
                 .fg(TEXT_DIM)
                 .add_modifier(Modifier::CROSSED_OUT),
-            code_inline: Style::default().fg(HIGHLIGHT).bg(SURFACE_1),
+            code_inline: Style::default().fg(TEXT).bg(SURFACE_1),
 
-            // Code blocks
-            code_block_bg: SURFACE_0,
-            code_block_border: BORDER,
+            // Code blocks: a hairline above and below, no background wash
+            code_block_bg: Color::Reset,
+            code_block_border: HAIRLINE,
             code_block_text: Style::default().fg(TEXT),
-            code_lang_tag: Style::default().fg(INFO).add_modifier(Modifier::ITALIC),
+            code_lang_tag: Style::default().fg(TEXT_DIM),
 
             // Blockquotes
-            blockquote_border: DEEP_CYAN,
+            blockquote_border: HAIRLINE,
             blockquote_text: Style::default().fg(TEXT_DIM).add_modifier(Modifier::ITALIC),
 
             // Lists
-            list_bullet: Style::default().fg(CYAN_PRIMARY),
-            list_number: Style::default().fg(CYAN_PRIMARY),
+            list_bullet: Style::default().fg(TEXT_DIM),
+            list_number: Style::default().fg(TEXT_DIM),
             task_checked: Style::default().fg(SUCCESS),
-            task_unchecked: Style::default().fg(TEXT_MUTED),
+            task_unchecked: Style::default().fg(TEXT_DIM),
 
-            // Tables - use accent color for borders to match theme
-            table_border: CYAN_PRIMARY,
-            table_header_bg: SURFACE_1,
+            // Tables - gray plus-ASCII grid, bold white header, white cells
+            table_border: HAIRLINE,
+            table_header_bg: Color::Reset,
             table_header_text: Style::default()
                 .fg(TEXT_BRIGHT)
                 .add_modifier(Modifier::BOLD),
             table_cell_text: Style::default().fg(TEXT),
 
             // Links
-            link_text: Style::default().fg(INFO).add_modifier(Modifier::UNDERLINED),
+            link_text: Style::default().fg(TEXT).add_modifier(Modifier::UNDERLINED),
             link_url: Style::default().fg(TEXT_MUTED),
 
             // Other elements
-            hr: Style::default().fg(BORDER),
+            hr: Style::default().fg(HAIRLINE),
             text: Style::default().fg(TEXT),
         }
     }
@@ -656,9 +655,9 @@ mod tests {
         let theme = MarkdownTheme::default();
 
         // Verify header styles have expected colors
-        assert_eq!(theme.h1.fg, Some(CYAN_PRIMARY));
-        assert_eq!(theme.h2.fg, Some(CYAN_PRIMARY));
-        assert_eq!(theme.h3.fg, Some(SKY_BLUE));
+        assert_eq!(theme.h1.fg, Some(TEXT));
+        assert_eq!(theme.h2.fg, Some(TEXT));
+        assert_eq!(theme.h3.fg, Some(TEXT));
         assert_eq!(theme.h4.fg, Some(SKY_BLUE));
         assert_eq!(theme.h5.fg, Some(TEXT_DIM));
         assert_eq!(theme.h6.fg, Some(TEXT_MUTED));
@@ -715,7 +714,7 @@ mod tests {
     fn test_code_inline_has_background() {
         let theme = MarkdownTheme::default();
 
-        assert_eq!(theme.code_inline.fg, Some(HIGHLIGHT));
+        assert_eq!(theme.code_inline.fg, Some(TEXT));
         assert_eq!(theme.code_inline.bg, Some(SURFACE_1));
     }
 
@@ -723,17 +722,18 @@ mod tests {
     fn test_code_block_colors() {
         let theme = MarkdownTheme::default();
 
-        assert_eq!(theme.code_block_bg, SURFACE_0);
-        assert_eq!(theme.code_block_border, BORDER);
+        assert_eq!(theme.code_block_bg, Color::Reset);
+        assert_eq!(theme.code_block_border, HAIRLINE);
         assert_eq!(theme.code_block_text.fg, Some(TEXT));
-        assert!(theme.code_lang_tag.add_modifier.contains(Modifier::ITALIC));
+        // The language tag is dim gray on the hairline — no colour, no italic.
+        assert_eq!(theme.code_lang_tag.fg, Some(TEXT_DIM));
     }
 
     #[test]
     fn test_blockquote_styles() {
         let theme = MarkdownTheme::default();
 
-        assert_eq!(theme.blockquote_border, DEEP_CYAN);
+        assert_eq!(theme.blockquote_border, HAIRLINE);
         assert_eq!(theme.blockquote_text.fg, Some(TEXT_DIM));
         assert!(
             theme
@@ -747,18 +747,18 @@ mod tests {
     fn test_list_styles() {
         let theme = MarkdownTheme::default();
 
-        assert_eq!(theme.list_bullet.fg, Some(CYAN_PRIMARY));
-        assert_eq!(theme.list_number.fg, Some(CYAN_PRIMARY));
+        assert_eq!(theme.list_bullet.fg, Some(TEXT_DIM));
+        assert_eq!(theme.list_number.fg, Some(TEXT_DIM));
         assert_eq!(theme.task_checked.fg, Some(SUCCESS));
-        assert_eq!(theme.task_unchecked.fg, Some(TEXT_MUTED));
+        assert_eq!(theme.task_unchecked.fg, Some(TEXT_DIM));
     }
 
     #[test]
     fn test_table_styles() {
         let theme = MarkdownTheme::default();
 
-        assert_eq!(theme.table_border, CYAN_PRIMARY); // Uses accent color for consistency
-        assert_eq!(theme.table_header_bg, SURFACE_1);
+        assert_eq!(theme.table_border, HAIRLINE); // gray plus-ASCII grid
+        assert_eq!(theme.table_header_bg, Color::Reset);
         assert_eq!(theme.table_header_text.fg, Some(TEXT_BRIGHT));
         assert!(
             theme
@@ -773,7 +773,7 @@ mod tests {
     fn test_link_styles() {
         let theme = MarkdownTheme::default();
 
-        assert_eq!(theme.link_text.fg, Some(INFO));
+        assert_eq!(theme.link_text.fg, Some(TEXT));
         assert!(theme.link_text.add_modifier.contains(Modifier::UNDERLINED));
         assert_eq!(theme.link_url.fg, Some(TEXT_MUTED));
     }
@@ -782,7 +782,7 @@ mod tests {
     fn test_other_styles() {
         let theme = MarkdownTheme::default();
 
-        assert_eq!(theme.hr.fg, Some(BORDER));
+        assert_eq!(theme.hr.fg, Some(HAIRLINE));
         assert_eq!(theme.text.fg, Some(TEXT));
     }
 

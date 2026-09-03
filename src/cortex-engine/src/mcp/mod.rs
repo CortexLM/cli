@@ -24,7 +24,9 @@ pub use oauth_callback::{
 
 // Client exports
 pub use client::{ConnectionState, McpClient};
-pub use manager::{McpConnectionManager, create_qualified_name, parse_qualified_name};
+pub use manager::{
+    McpConnectionManager, McpLifecycleEvent, create_qualified_name, parse_qualified_name,
+};
 
 // Registry exports
 pub use registry::{

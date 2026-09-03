@@ -4,7 +4,9 @@
 //! commands with fuzzy search filtering. Commands are grouped by category
 //! with section headers for easy navigation.
 
-use cortex_core::style::{BORDER, CYAN_PRIMARY, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED, VOID};
+use cortex_core::style::{
+    ACCENT, BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -403,9 +405,9 @@ impl CommandsModal {
     ) {
         // Determine styles
         let (bg, fg, prefix_fg) = if is_selected {
-            (CYAN_PRIMARY, VOID, VOID)
+            (SELECTION_BG, ACCENT, ACCENT)
         } else {
-            (SURFACE_0, TEXT, CYAN_PRIMARY)
+            (SURFACE_0, TEXT, TEXT_DIM)
         };
 
         // Clear the line with background
@@ -427,11 +429,7 @@ impl CommandsModal {
         col += cmd_name.len() as u16 + 2;
 
         // Description
-        let desc_style = if is_selected {
-            Style::default().fg(VOID).bg(bg)
-        } else {
-            Style::default().fg(TEXT_DIM).bg(bg)
-        };
+        let desc_style = Style::default().fg(TEXT_DIM).bg(bg);
 
         // Calculate available space for description
         let shortcut_str = cmd.shortcut.as_deref().unwrap_or("");
@@ -455,11 +453,7 @@ impl CommandsModal {
         // Shortcut (right-aligned)
         if !shortcut_str.is_empty() {
             let shortcut_x = x + width.saturating_sub(shortcut_len + 2);
-            let shortcut_style = if is_selected {
-                Style::default().fg(VOID).bg(bg)
-            } else {
-                Style::default().fg(TEXT_DIM).bg(bg)
-            };
+            let shortcut_style = Style::default().fg(TEXT_DIM).bg(bg);
             buf.set_string(shortcut_x, y, shortcut_str, shortcut_style);
         }
     }

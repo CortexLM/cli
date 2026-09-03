@@ -32,12 +32,33 @@ pub const MAX_CARD_HEIGHT_PERCENT: u16 = 70;
 /// Padding between card border and content.
 pub const CARD_PADDING: u16 = 1;
 
-/// Border characters for rounded corners (Unicode box drawing).
+/// Product-facing next step shown under *The coding service is temporarily
+/// unavailable* — the error is never a lone line.
+pub const SERVICE_UNAVAILABLE_NEXT_STEP: &str =
+    "Try again in a moment — your work so far is saved in this session.";
+
+/// Interrupt / stopped title painted in error red (`× Stopped`).
+pub const STOPPED_MARK: &str = "×";
+pub const STOPPED_TITLE: &str = "Stopped";
+
+/// Quota-exhausted title painted in error red.
+pub const QUOTA_EXHAUSTED: &str = "Agent quota exhausted";
+
+/// Composer placeholder while agent quota is held.
+pub const PLACEHOLDER_QUOTA: &str = "Add a follow-up — held until quota resets";
+/// Narrow (40-column) form of the quota placeholder.
+pub const PLACEHOLDER_QUOTA_NARROW: &str = "Follow-up — held until quota resets";
+
+/// Sandbox deny title painted in error red.
+pub const SANDBOX_DENIED_TITLE: &str = "Sandbox denied";
+
+/// Border characters (Unicode box drawing) — square corners only; the
+/// locked chrome never draws rounded frames.
 pub mod border {
-    pub const TOP_LEFT: char = '╭';
-    pub const TOP_RIGHT: char = '╮';
-    pub const BOTTOM_LEFT: char = '╰';
-    pub const BOTTOM_RIGHT: char = '╯';
+    pub const TOP_LEFT: char = '┌';
+    pub const TOP_RIGHT: char = '┐';
+    pub const BOTTOM_LEFT: char = '└';
+    pub const BOTTOM_RIGHT: char = '┘';
     pub const HORIZONTAL: char = '─';
     pub const VERTICAL: char = '│';
 

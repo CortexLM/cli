@@ -98,13 +98,17 @@ pub struct KeyHints {
     model_name: Option<String>,
     /// Thinking budget level (e.g., "medium", "high")
     thinking_budget: Option<String>,
-    /// Workspace label for the session footer (`~/cli`).
-    footer_cwd: Option<String>,
-    git_branch: Option<String>,
-    git_dirty: bool,
+    /// Session footer: `Cortex Mini 1 · Agent · 92% context` on the left,
+    /// one shortcut hint on the right.
     agent_mode: Option<String>,
     context_percent: Option<u8>,
+    /// `(full, short)` override for the right-hand footer hint.
+    footer_hint: Option<(String, String)>,
 }
+
+/// Right-hand footer hint while idle, with its narrower fallbacks.
+pub const FOOTER_HINT_IDLE: &str = "shift+tab to cycle modes";
+const FOOTER_HINT_IDLE_SHORT: &str = "shift+tab modes";
 
 impl KeyHints {
     /// Creates a new key hints widget with the given context.
@@ -116,11 +120,9 @@ impl KeyHints {
             permission_mode: None,
             model_name: None,
             thinking_budget: None,
-            footer_cwd: None,
-            git_branch: None,
-            git_dirty: false,
             agent_mode: None,
             context_percent: None,
+            footer_hint: None,
         }
     }
 
@@ -151,9 +153,10 @@ impl KeyHints {
         self
     }
 
-    /// Sets the model name to display on the right
+    /// Sets the model to display on the right — always the English product
+    /// name, never the served slug.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
-        self.model_name = Some(model.into());
+        self.model_name = Some(crate::ui::text_utils::model_display_name(&model.into()));
         self
     }
 
@@ -163,20 +166,24 @@ impl KeyHints {
         self
     }
 
-    /// Session footer: cwd + git on the left, model · mode · context on the right.
+    /// Session footer: `model · mode · context` on the left, a shortcut hint
+    /// on the right — gray throughout.
     pub fn with_session_footer(
         mut self,
-        cwd: impl Into<String>,
-        git_branch: impl Into<String>,
-        git_dirty: bool,
         agent_mode: impl Into<String>,
         context_percent: u8,
     ) -> Self {
-        self.footer_cwd = Some(cwd.into());
-        self.git_branch = Some(git_branch.into());
-        self.git_dirty = git_dirty;
         self.agent_mode = Some(agent_mode.into());
         self.context_percent = Some(context_percent);
+        self
+    }
+
+    /// Override the right-hand shortcut hint of the session footer (defaults
+    /// to `shift+tab to cycle modes`); `short` is the narrow fallback. Pass
+    /// two empty strings to leave the right side blank — a panel that shows
+    /// its own hints does that.
+    pub fn with_footer_hint(mut self, hint: impl Into<String>, short: impl Into<String>) -> Self {
+        self.footer_hint = Some((hint.into(), short.into()));
         self
     }
 
@@ -215,8 +222,8 @@ impl KeyHints {
 
         let mut spans = Vec::new();
         let separator_style = Style::default().fg(self.colors.text_muted);
-        // Hint rows are uniformly dim in the locked chrome — mint stays on
-        // the prompt marker and success dots only.
+        // Hint rows are uniformly dim in the gray chrome — violet stays on the
+        // focused selection only.
         let key_style = Style::default().fg(self.colors.text_dim);
         let desc_style = Style::default().fg(self.colors.text_dim);
 
@@ -276,7 +283,7 @@ impl Widget for KeyHints {
             return;
         }
 
-        if self.footer_cwd.is_some() {
+        if self.agent_mode.is_some() {
             render_session_footer(&self, area, buf);
             return;
         }
@@ -351,7 +358,7 @@ impl Widget for KeyHints {
             }
             right_spans.push(Span::styled(
                 budget.clone(),
-                Style::default().fg(Color::Rgb(0xFF, 0xA5, 0x00)), // Orange for thinking
+                Style::default().fg(self.colors.thinking),
             ));
         }
 
@@ -426,18 +433,46 @@ impl Widget for KeyHints {
     }
 }
 
+/// Pick the widest `(left, right)` pair that fits `width` with a one-column
+/// gap. Both sides are tried in order; a pairing that keeps some hint on the
+/// right wins over a wider left side alone, and the left side (the model)
+/// always survives on its own when nothing else fits.
+pub fn fit_footer_pair<'a>(
+    left_opts: &[&'a str],
+    right_opts: &[&'a str],
+    width: usize,
+) -> (&'a str, &'a str) {
+    let fits = |left: &str, right: &str| {
+        let need = if left.is_empty() {
+            right.chars().count()
+        } else if right.is_empty() {
+            left.chars().count()
+        } else {
+            left.chars().count() + 1 + right.chars().count()
+        };
+        need <= width
+    };
+    for left in left_opts {
+        for right in right_opts.iter().filter(|r| !r.is_empty()) {
+            if fits(left, right) {
+                return (left, right);
+            }
+        }
+    }
+    for left in left_opts {
+        if fits(left, "") {
+            return (left, "");
+        }
+    }
+    ("", "")
+}
+
+/// Session footer: the model on the left, one shortcut hint on the right,
+/// both dim gray. The left side degrades `model · mode · N% context` →
+/// `model · mode` → `model`; the right side degrades to its short form and
+/// then disappears. The model always wins over the hint.
 fn render_session_footer(hints: &KeyHints, area: Rect, buf: &mut Buffer) {
     let width = area.width as usize;
-    let cwd = hints.footer_cwd.as_deref().unwrap_or("");
-    let branch = hints.git_branch.as_deref().unwrap_or("");
-    let dirty = if hints.git_dirty { "*" } else { "" };
-    let left_full = if branch.is_empty() {
-        cwd.to_string()
-    } else {
-        format!("{cwd} {branch}{dirty}")
-    };
-    let left_cwd = cwd.to_string();
-
     let model = hints
         .model_name
         .as_deref()
@@ -445,54 +480,32 @@ fn render_session_footer(hints: &KeyHints, area: Rect, buf: &mut Buffer) {
         .unwrap_or_default();
     let mode = hints.agent_mode.clone().unwrap_or_else(|| "Agent".into());
     let pct = hints.context_percent.unwrap_or(100);
-    let right_full = format!("{model} · {mode} · {pct}% context");
-    let right_mid = format!("{model} · {mode}");
-    let right_model = model.clone();
+    let left_full = format!("{model} · {mode} · {pct}% context");
+    let left_mid = format!("{model} · {mode}");
+    let left_model = model.clone();
+    let (hint_full, hint_short) = hints.footer_hint.clone().unwrap_or_else(|| {
+        (
+            FOOTER_HINT_IDLE.to_string(),
+            FOOTER_HINT_IDLE_SHORT.to_string(),
+        )
+    });
 
-    let left_opts = [left_full.as_str(), left_cwd.as_str(), ""];
-    let right_opts = [
-        right_full.as_str(),
-        right_mid.as_str(),
-        right_model.as_str(),
-        "",
-    ];
+    let left_opts = [left_full.as_str(), left_mid.as_str(), left_model.as_str()];
+    let right_opts = [hint_full.as_str(), hint_short.as_str(), ""];
+    let (left, right) = fit_footer_pair(&left_opts, &right_opts, width);
 
-    let mut chosen_left = "";
-    let mut chosen_right = "";
-    'pick: for left in left_opts {
-        for right in right_opts {
-            let need = if left.is_empty() {
-                right.chars().count()
-            } else if right.is_empty() {
-                left.chars().count()
-            } else {
-                left.chars().count() + 1 + right.chars().count()
-            };
-            if need <= width {
-                chosen_left = left;
-                chosen_right = right;
-                break 'pick;
-            }
-        }
+    let dim = Style::default().fg(hints.colors.text_dim);
+    if !left.is_empty() {
+        buf.set_string(area.x, area.y, first_fitting_line(left, width), dim);
     }
-
-    if !chosen_left.is_empty() {
-        let text = first_fitting_line(chosen_left, width);
-        buf.set_string(
-            area.x,
-            area.y,
-            &text,
-            Style::default().fg(hints.colors.text_dim),
-        );
-    }
-    if !chosen_right.is_empty() {
-        let text = first_fitting_line(chosen_right, width);
+    if !right.is_empty() {
+        let text = first_fitting_line(right, width);
         let x = area
             .right()
             .saturating_sub(text.chars().count() as u16)
             .max(area.x);
-        if chosen_left.is_empty() || x > area.x + chosen_left.chars().count() as u16 {
-            buf.set_string(x, area.y, &text, Style::default().fg(hints.colors.text_dim));
+        if left.is_empty() || x > area.x + left.chars().count() as u16 {
+            buf.set_string(x, area.y, &text, dim);
         }
     }
 }
@@ -661,6 +674,69 @@ mod tests {
         let mut buf = create_test_buffer(80, 1);
         let area = Rect::new(0, 0, 80, 1);
         hints.render(area, &mut buf);
+    }
+
+    fn row_text(buf: &Buffer, width: u16) -> String {
+        (0..width)
+            .map(|x| buf[(x, 0)].symbol().chars().next().unwrap_or(' '))
+            .collect()
+    }
+
+    #[test]
+    fn session_footer_is_model_left_hint_right() {
+        let hints = KeyHints::new(HintContext::Idle)
+            .with_colors(AdaptiveColors::default_dark())
+            .with_model("cortex-1-mini")
+            .with_session_footer("Agent", 92);
+        let mut buf = create_test_buffer(120, 1);
+        hints.render(Rect::new(0, 0, 120, 1), &mut buf);
+        let row = row_text(&buf, 120);
+        assert!(
+            row.starts_with("Cortex Mini 1 · Agent · 92% context"),
+            "{row}"
+        );
+        assert!(row.trim_end().ends_with(FOOTER_HINT_IDLE), "{row}");
+        // Every footer cell is the dim gray — never the accent.
+        let dim = AdaptiveColors::default_dark().text_dim;
+        for x in 0..120u16 {
+            if buf[(x, 0)].symbol() != " " {
+                assert_eq!(buf[(x, 0)].style().fg, Some(dim), "col {x}: {row}");
+            }
+        }
+    }
+
+    #[test]
+    fn session_footer_degrades_but_keeps_the_model() {
+        let make = |w: u16| {
+            let hints = KeyHints::new(HintContext::Idle)
+                .with_colors(AdaptiveColors::default_dark())
+                .with_model("cortex-1-mini")
+                .with_session_footer("Agent", 100);
+            let mut buf = create_test_buffer(w, 1);
+            hints.render(Rect::new(0, 0, w, 1), &mut buf);
+            row_text(&buf, w)
+        };
+        let narrow = make(40);
+        assert!(narrow.starts_with("Cortex Mini 1"), "{narrow}");
+        assert!(narrow.contains("shift+tab"), "{narrow}");
+        assert!(!narrow.contains("context"), "{narrow}");
+        let tiny = make(16);
+        assert!(tiny.starts_with("Cortex Mini 1"), "{tiny}");
+        assert!(!tiny.contains("shift"), "{tiny}");
+    }
+
+    #[test]
+    fn session_footer_takes_a_custom_hint() {
+        let hints = KeyHints::new(HintContext::Idle)
+            .with_colors(AdaptiveColors::default_dark())
+            .with_model("cortex-1-mini")
+            .with_session_footer("Plan", 88)
+            .with_footer_hint("↑↓ select · ↵ confirm · esc close", "esc close");
+        let mut buf = create_test_buffer(120, 1);
+        hints.render(Rect::new(0, 0, 120, 1), &mut buf);
+        let row = row_text(&buf, 120);
+        assert!(row.contains("Cortex Mini 1 · Plan · 88% context"), "{row}");
+        assert!(row.trim_end().ends_with("esc close"), "{row}");
     }
 
     #[test]

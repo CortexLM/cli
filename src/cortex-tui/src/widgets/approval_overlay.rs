@@ -29,7 +29,7 @@
 
 use std::path::PathBuf;
 
-use cortex_core::style::{CYAN_PRIMARY, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED, VOID};
+use cortex_core::style::{ACCENT, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED};
 #[cfg(test)]
 use crossterm::event::KeyModifiers;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -446,8 +446,8 @@ impl ApprovalOverlay {
         let cmd_display = format!("$ {}", cmd_str);
         let truncated = Self::truncate_str(&cmd_display, width as usize);
 
-        // "$" prefix in cyan
-        buf.set_string(x, y, "$", Style::default().fg(CYAN_PRIMARY).bg(SURFACE_0));
+        // "$" prefix, dim
+        buf.set_string(x, y, "$", Style::default().fg(TEXT_DIM).bg(SURFACE_0));
         // Command in bright text
         buf.set_string(
             x + 2,
@@ -486,22 +486,11 @@ impl ApprovalOverlay {
             let path_str = change.path.display().to_string();
             let summary = change.summary();
 
-            // Color code based on change type
-            let (_type_color, summary_style) = match change.change_type {
-                ChangeType::Add => (
-                    cortex_core::style::SUCCESS,
-                    Style::default()
-                        .fg(cortex_core::style::SUCCESS)
-                        .bg(SURFACE_0),
-                ),
-                ChangeType::Modify => (
-                    cortex_core::style::WARNING,
-                    Style::default().fg(TEXT_DIM).bg(SURFACE_0),
-                ),
-                ChangeType::Delete => (
-                    cortex_core::style::ERROR,
-                    Style::default().fg(cortex_core::style::ERROR).bg(SURFACE_0),
-                ),
+            // Deletions are red; every other summary is dim except its `+N`
+            // tokens, which are the diff green — never the `-N` beside them.
+            let base_style = match change.change_type {
+                ChangeType::Delete => Style::default().fg(cortex_core::style::ERROR).bg(SURFACE_0),
+                ChangeType::Add | ChangeType::Modify => Style::default().fg(TEXT_DIM).bg(SURFACE_0),
             };
 
             // Path
@@ -513,7 +502,26 @@ impl ApprovalOverlay {
             // Summary (e.g., "+15 -3")
             let summary_x = x + truncated_path.len() as u16 + 1;
             if summary_x + summary.len() as u16 <= x + width {
-                buf.set_string(summary_x, y, format!("({})", summary), summary_style);
+                let mut cx = summary_x;
+                buf.set_string(cx, y, "(", base_style);
+                cx += 1;
+                for token in summary.split(' ') {
+                    let is_add = token.len() > 1
+                        && token.starts_with('+')
+                        && token[1..].chars().all(|c| c.is_ascii_digit());
+                    let style = if is_add {
+                        Style::default()
+                            .fg(cortex_core::style::DIFF_ADD)
+                            .bg(SURFACE_0)
+                    } else {
+                        base_style
+                    };
+                    buf.set_string(cx, y, token, style);
+                    cx += token.chars().count() as u16;
+                    buf.set_string(cx, y, " ", base_style);
+                    cx += 1;
+                }
+                buf.set_string(cx.saturating_sub(1), y, ")", base_style);
             }
 
             y += 1;
@@ -532,26 +540,31 @@ impl ApprovalOverlay {
 
             let is_selected = self.list.selected_index() == Some(idx);
 
-            // Clear line
+            // Clear line: the selected row is the dark gray bar, never an
+            // inverted accent fill.
             for col in area.x..area.right() {
-                buf[(col, y)].set_bg(if is_selected { CYAN_PRIMARY } else { SURFACE_0 });
+                buf[(col, y)].set_bg(if is_selected { SELECTION_BG } else { SURFACE_0 });
             }
 
             let mut col = area.x;
 
-            // Selection indicator
-            let prefix = if is_selected { ">" } else { " " };
+            // Selection indicator: violet `>` on the focused row, a dim middot
+            // on the others.
+            let prefix = if is_selected { ">" } else { "·" };
             let prefix_style = if is_selected {
-                Style::default().fg(VOID).bg(CYAN_PRIMARY)
+                Style::default().fg(ACCENT).bg(SELECTION_BG)
             } else {
-                Style::default().fg(CYAN_PRIMARY).bg(SURFACE_0)
+                Style::default().fg(TEXT_DIM).bg(SURFACE_0)
             };
             buf.set_string(col, y, prefix, prefix_style);
             col += 2;
 
-            // Option label
+            // Option label: the violet accent when focused, white otherwise.
             let label_style = if is_selected {
-                Style::default().fg(VOID).bg(CYAN_PRIMARY)
+                Style::default()
+                    .fg(ACCENT)
+                    .bg(SELECTION_BG)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(TEXT).bg(SURFACE_0)
             };
@@ -563,7 +576,7 @@ impl ApprovalOverlay {
             let shortcut_str = format!("[{}]", option.shortcut);
             let shortcut_x = area.right().saturating_sub(shortcut_str.len() as u16 + 1);
             let shortcut_style = if is_selected {
-                Style::default().fg(VOID).bg(CYAN_PRIMARY)
+                Style::default().fg(TEXT_MUTED).bg(SELECTION_BG)
             } else {
                 Style::default().fg(TEXT_MUTED).bg(SURFACE_0)
             };

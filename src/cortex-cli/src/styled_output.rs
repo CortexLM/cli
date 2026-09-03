@@ -35,10 +35,10 @@ fn is_terminal_output(stderr: bool) -> bool {
 
 /// ANSI color codes for light theme (bright/light terminal backgrounds).
 mod light_theme {
-    pub const SUCCESS: &str = "\x1b[38;2;0;150;125m"; // #00967D - Teal for contrast
+    pub const SUCCESS: &str = "\x1b[38;2;22;163;74m"; // #16A34A - Darker green for contrast
     pub const ERROR: &str = "\x1b[38;2;217;61;61m"; // #D93D3D - Darker red for contrast
     pub const WARNING: &str = "\x1b[38;2;201;154;46m"; // #C99A2E - Darker amber for contrast
-    pub const INFO: &str = "\x1b[38;2;0;100;160m"; // Dark blue for contrast
+    pub const INFO: &str = "\x1b[38;2;82;82;91m"; // Dark gray for contrast
     pub const DIM: &str = "\x1b[38;2;100;100;100m"; // Gray for muted text
     pub const BOLD: &str = "\x1b[1m";
     pub const RESET: &str = "\x1b[0m";
@@ -46,11 +46,11 @@ mod light_theme {
 
 /// ANSI color codes for dark theme (dark terminal backgrounds).
 mod dark_theme {
-    pub const SUCCESS: &str = "\x1b[38;2;0;245;212m"; // Bright cyan-green (#00F5D4)
-    pub const ERROR: &str = "\x1b[38;2;255;107;107m"; // Coral red (#FF6B6B)
+    pub const SUCCESS: &str = "\x1b[38;2;74;222;128m"; // Green, for ✓ success (#4ADE80)
+    pub const ERROR: &str = "\x1b[38;2;248;113;113m"; // Error red (#F87171)
     pub const WARNING: &str = "\x1b[38;2;255;200;87m"; // Golden amber (#FFC857)
-    pub const INFO: &str = "\x1b[38;2;72;202;228m"; // Light blue (#48CAE4)
-    pub const DIM: &str = "\x1b[38;2;130;154;177m"; // Dim text (#829AB1)
+    pub const INFO: &str = "\x1b[38;2;156;163;175m"; // Mid gray (#9CA3AF)
+    pub const DIM: &str = "\x1b[38;2;107;114;128m"; // Dim text (#6B7280)
     pub const BOLD: &str = "\x1b[1m";
     pub const RESET: &str = "\x1b[0m";
 }

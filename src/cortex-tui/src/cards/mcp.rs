@@ -6,11 +6,11 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::Widget;
 
 use cortex_core::style::{
-    CYAN_PRIMARY, GREEN, ORANGE, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
+    CYAN_PRIMARY, ORANGE, RED, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 
 use crate::cards::{CancellationEvent, CardAction, CardResult, CardView};
@@ -40,14 +40,14 @@ impl McpStatus {
             McpStatus::Running => "●",
             McpStatus::Stopped => "○",
             McpStatus::Starting => "◐",
-            McpStatus::Error => "✗",
+            McpStatus::Error => "x",
         }
     }
 
     /// Returns the color for this status.
     pub fn color(&self) -> ratatui::style::Color {
         match self {
-            McpStatus::Running => GREEN,
+            McpStatus::Running => SUCCESS,
             McpStatus::Stopped => TEXT_MUTED,
             McpStatus::Starting => ORANGE,
             McpStatus::Error => RED,
@@ -412,8 +412,8 @@ impl McpCard {
         // Cursor
         let cursor_x = area.x + 1 + name.len() as u16;
         if cursor_x < area.x + area.width - 1 {
-            buf[(cursor_x, input_y)].set_bg(CYAN_PRIMARY);
-            buf[(cursor_x, input_y)].set_fg(VOID);
+            buf[(cursor_x, input_y)].set_bg(TEXT);
+            buf[(cursor_x, input_y)].set_fg(Color::Rgb(20, 20, 23));
         }
 
         // Hint
@@ -603,7 +603,7 @@ mod tests {
         assert_eq!(McpStatus::Running.symbol(), "●");
         assert_eq!(McpStatus::Stopped.symbol(), "○");
         assert_eq!(McpStatus::Starting.symbol(), "◐");
-        assert_eq!(McpStatus::Error.symbol(), "✗");
+        assert_eq!(McpStatus::Error.symbol(), "x");
     }
 
     #[test]
@@ -817,7 +817,7 @@ mod tests {
         let server = McpServerInfo::new("broken").with_error("Connection refused");
 
         let display = server.format_display();
-        assert!(display.contains("✗"));
+        assert!(display.contains("x"));
         assert!(display.contains("broken"));
         assert!(display.contains("Error"));
         assert!(display.contains("Connection refused"));

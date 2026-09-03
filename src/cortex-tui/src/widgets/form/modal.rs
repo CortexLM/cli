@@ -72,7 +72,7 @@ impl<'a> Widget for FormModal<'a> {
         // Draw the border block with title
         let block = Block::default()
             .title(format!(" {} ", self.state.title))
-            .title_style(Style::default().fg(self.colors.accent).bold())
+            .title_style(Style::default().fg(self.colors.text).bold())
             .borders(Borders::ALL)
             .border_style(Style::default().fg(self.colors.border))
             .style(Style::default().bg(self.colors.background));
@@ -212,7 +212,7 @@ impl<'a> Widget for FormModal<'a> {
                         {
                             cell.set_style(
                                 Style::default()
-                                    .bg(self.colors.accent)
+                                    .bg(self.colors.text)
                                     .fg(self.colors.background),
                             );
                         }
@@ -230,10 +230,12 @@ impl<'a> Widget for FormModal<'a> {
         let submit_x =
             inner_area.x + (inner_area.width.saturating_sub(submit_text.len() as u16)) / 2;
 
+        // The focused submit button is the violet accent on the gray bar —
+        // never inverted onto the accent.
         let submit_style = if self.state.is_submit_focused() {
             Style::default()
-                .fg(self.colors.background)
-                .bg(self.colors.accent)
+                .fg(self.colors.accent)
+                .bg(self.colors.surface)
                 .bold()
         } else {
             Style::default().fg(self.colors.text_dim)

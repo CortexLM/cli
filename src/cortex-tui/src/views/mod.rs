@@ -12,6 +12,7 @@
 //! - [`tool_call`] - Tool call display types
 
 pub mod approval;
+pub mod diff;
 pub mod forge;
 pub mod minimal_session;
 pub mod question_prompt;

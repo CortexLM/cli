@@ -3,7 +3,7 @@
 //! This modal displays available AI providers and allows the user to select one.
 
 use cortex_core::style::{
-    CYAN_PRIMARY, ERROR, SUCCESS, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
+    ACCENT, ERROR, SELECTION_BG, SUCCESS, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
@@ -222,9 +222,9 @@ impl ProvidersModal {
     ) {
         // Determine styles based on selection
         let (bg, fg, icon_fg) = if is_selected {
-            (CYAN_PRIMARY, VOID, VOID)
+            (SELECTION_BG, ACCENT, ACCENT)
         } else {
-            (SURFACE_0, TEXT, CYAN_PRIMARY)
+            (SURFACE_0, TEXT, TEXT_DIM)
         };
 
         // Clear the line with background
@@ -242,7 +242,7 @@ impl ProvidersModal {
         // Provider icon based on configured state: [>] or [ ]
         let provider_icon = if provider.is_configured { "[>]" } else { "[ ]" };
         let provider_icon_style = if is_selected {
-            Style::default().fg(VOID).bg(bg)
+            Style::default().fg(TEXT_DIM).bg(bg)
         } else if provider.is_configured {
             Style::default().fg(SUCCESS).bg(bg)
         } else {
@@ -260,11 +260,7 @@ impl ProvidersModal {
         if provider.is_current {
             col += 1;
             let marker = "(current)";
-            let marker_style = if is_selected {
-                Style::default().fg(VOID).bg(bg)
-            } else {
-                Style::default().fg(TEXT_DIM).bg(bg)
-            };
+            let marker_style = Style::default().fg(TEXT_DIM).bg(bg);
             buf.set_string(col, y, marker, marker_style);
         }
 
@@ -276,7 +272,7 @@ impl ProvidersModal {
         };
 
         let status_style = if is_selected {
-            Style::default().fg(VOID).bg(bg)
+            Style::default().fg(TEXT_DIM).bg(bg)
         } else if provider.is_configured {
             Style::default().fg(SUCCESS).bg(bg)
         } else {

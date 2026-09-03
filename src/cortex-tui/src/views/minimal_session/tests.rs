@@ -102,7 +102,7 @@ mod harness_snapshots {
         assert!(text.contains("Read"), "missing Read: {text}");
         assert!(
             text.contains("●"),
-            "completed tiles carry the mint status dot: {text}"
+            "completed tiles carry the white status dot: {text}"
         );
         assert!(text.contains("Diagnostics"), "missing Diagnostics: {text}");
         assert!(!text.contains("L a.rs"), "{text}");
@@ -183,8 +183,8 @@ mod harness_snapshots {
     }
 
     #[test]
-    fn autocomplete_selected_row_keeps_dim_description_on_dark_bar() {
-        use cortex_core::style::{SELECTION_BG, TEXT, TEXT_DIM};
+    fn autocomplete_selected_row_is_violet_on_the_gray_bar() {
+        use cortex_core::style::{ACCENT, HAIRLINE, SELECTION_BG, TEXT, TEXT_DIM};
 
         use crate::app::{AutocompleteItem, AutocompleteTrigger};
         use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_LIMIT};
@@ -215,6 +215,7 @@ mod harness_snapshots {
             if buf[(60, y)].style().bg != Some(SELECTION_BG) || !row.contains('/') {
                 continue;
             }
+            assert!(row.starts_with("> /"), "violet caret leads the row: {row}");
             let label_at = row.find('/').expect("selected command label");
             let desc_at = row
                 .char_indices()
@@ -222,12 +223,13 @@ mod harness_snapshots {
                 .find(|(i, c)| c.is_ascii_uppercase() && *i > label_at)
                 .map(|(i, _)| i)
                 .expect("selected command description");
+            assert_eq!(buf[(0, y)].style().fg, Some(ACCENT), "{row}");
             let label_cell = &buf[(label_at as u16, y)];
             let desc_cell = &buf[(desc_at as u16, y)];
             assert_eq!(
                 label_cell.style().fg,
-                Some(TEXT),
-                "selected label must stay gray/white, never mint: {row}"
+                Some(ACCENT),
+                "selected label is the one violet accent: {row}"
             );
             assert_eq!(
                 desc_cell.style().fg,
@@ -235,10 +237,88 @@ mod harness_snapshots {
                 "selected description must stay dim on the bar: {row}"
             );
             assert_eq!(desc_cell.style().bg, Some(SELECTION_BG), "{row}");
+            // The next row is an unfocused command: dim middot, white label.
+            let next: String = (0..120u16)
+                .map(|x| buf[(x, y + 1)].symbol().to_string())
+                .collect();
+            assert!(next.starts_with("· /"), "{next}");
+            assert_eq!(buf[(0, y + 1)].style().fg, Some(TEXT_DIM));
+            assert_eq!(buf[(2, y + 1)].style().fg, Some(TEXT));
+            // The typed `/` sits in the hairline-framed composer just above.
+            let composer_y = (0..y)
+                .rev()
+                .find(|cy| buf[(0, *cy)].symbol() == ">" && buf[(1, *cy)].symbol() == " ")
+                .expect("composer");
+            assert_eq!(buf[(0, composer_y - 1)].symbol(), "─");
+            assert_eq!(buf[(0, composer_y - 1)].style().fg, Some(HAIRLINE));
+            assert_eq!(buf[(0, composer_y)].style().fg, Some(ACCENT));
+            assert_eq!(buf[(0, composer_y + 1)].symbol(), "─");
             checked = true;
             break;
         }
         assert!(checked, "no selection bar found in the slash palette");
+    }
+
+    #[test]
+    fn composer_is_hairline_framed_and_turns_sit_on_the_gray_bar() {
+        use cortex_core::style::{ACCENT, HAIRLINE, TEXT, TEXT_DIM, USER_TURN_BG};
+
+        let mut state = AppState::default();
+        state.footer_cwd = "~/cortex-api".into();
+        state.git_branch = "main".into();
+        state.git_dirty = true;
+        state.add_message(cortex_core::widgets::Message::user(
+            "review the auth module",
+        ));
+        state.add_message(cortex_core::widgets::Message::assistant(
+            "Looks consistent.",
+        ));
+        for (w, h) in [(40u16, 12u16), (120u16, 40u16)] {
+            let view = MinimalSessionView::new(&state);
+            let mut buf = Buffer::empty(Rect::new(0, 0, w, h));
+            view.render(Rect::new(0, 0, w, h), &mut buf);
+            let text = buffer_text(&buf);
+            let rows: Vec<String> = text.lines().map(str::to_string).collect();
+
+            // Past turn: `> review …` white on a bar spanning the row.
+            let turn = rows
+                .iter()
+                .position(|r| r.starts_with("> review the auth module"))
+                .unwrap_or_else(|| panic!("no user turn at {w}x{h}:\n{text}"));
+            for x in 0..w {
+                assert_eq!(
+                    buf[(x, turn as u16)].style().bg,
+                    Some(USER_TURN_BG),
+                    "{w}x{h}"
+                );
+            }
+            assert_eq!(buf[(0, turn as u16)].style().fg, Some(TEXT));
+
+            // Composer: hairline, `> Plan, search, build anything █`, hairline.
+            let prompt = rows
+                .iter()
+                .position(|r| r.starts_with("> Plan, search"))
+                .unwrap_or_else(|| panic!("no composer at {w}x{h}:\n{text}"));
+            assert!(rows[prompt - 1].chars().all(|c| c == '─'), "{text}");
+            assert!(rows[prompt + 1].chars().all(|c| c == '─'), "{text}");
+            assert_eq!(buf[(0, prompt as u16 - 1)].style().fg, Some(HAIRLINE));
+            assert_eq!(buf[(0, prompt as u16)].style().fg, Some(ACCENT));
+            assert_eq!(buf[(2, prompt as u16)].style().fg, Some(TEXT_DIM));
+            assert!(rows[prompt].contains('█'), "{text}");
+            // The composer follows the transcript instead of hugging the footer.
+            assert!(prompt + 2 < rows.len() - 1 || h == 12, "{text}");
+
+            // Footer: model left, hint right, all dim.
+            let footer = rows.last().unwrap();
+            assert!(footer.starts_with("Cortex Mini 1"), "{footer}");
+            if w == 120 {
+                assert!(
+                    footer.trim_end().ends_with("shift+tab to cycle modes"),
+                    "{footer}"
+                );
+                assert!(rows[0].starts_with("~/cortex-api main*"), "{text}");
+            }
+        }
     }
 
     #[test]
@@ -247,13 +327,39 @@ mod harness_snapshots {
     }
 
     #[test]
+    fn diff_stat_spans_paint_only_plus_counts_green() {
+        use crate::ui::colors::AdaptiveColors;
+        use crate::views::minimal_session::rendering::diff_stat_spans;
+
+        let colors = AdaptiveColors::default_dark();
+        let spans = diff_stat_spans("Edit src/a.ts · +58 -0", &colors);
+        let fg_of = |text: &str| {
+            spans
+                .iter()
+                .find(|s| s.content == text)
+                .unwrap_or_else(|| panic!("missing span {text:?}: {spans:?}"))
+                .style
+                .fg
+        };
+        assert_eq!(fg_of("+58"), Some(colors.diff_add));
+        assert_eq!(fg_of("-0"), Some(colors.text_dim));
+        assert_eq!(fg_of("Edit"), Some(colors.text_dim));
+        // A bare `+` or a word is never green.
+        let spans = diff_stat_spans("rate limits + 429 examples", &colors);
+        assert!(
+            spans.iter().all(|s| s.style.fg == Some(colors.text_dim)),
+            "{spans:?}"
+        );
+    }
+
+    #[test]
     fn snapshot_cancel_message() {
         let mut state = AppState::default();
         state.add_message(cortex_core::widgets::Message::user("list files"));
-        state.add_message(cortex_core::widgets::Message::system("Cancelled."));
+        state.add_message(cortex_core::widgets::Message::system("× Stopped"));
         let text = render(&state, 80, 24);
         dump_snapshot("cancel", &text);
-        assert!(text.contains("Cancelled."), "cancel missing: {text}");
+        assert!(text.contains("Stopped"), "stop missing: {text}");
         assert!(!text.to_lowercase().contains("grok"));
     }
 

@@ -527,7 +527,7 @@ impl EventLoop {
             || e.eq_ignore_ascii_case("cancelled.")
             || e.to_lowercase().contains("cancelled by user")
         {
-            self.add_system_message("Cancelled.");
+            self.mark_turn_stopped();
             self.stream_controller.reset();
             self.streaming_rx = None;
             self.streaming_task = None;
@@ -584,35 +584,35 @@ impl EventLoop {
         if error_lower.contains("rate limit")
             || error_lower.contains("usage limit")
             || error_lower.contains("quota exceeded")
+            || error_lower.contains("quota exhausted")
             || error_lower.contains("limit exceeded")
             || error_lower.contains("too many requests")
             || error_lower.contains("429")
         {
-            self.add_system_message(&format!(
-                "Warning: Usage limit reached: {}\n\n\
-                 If you've added a payment method or upgraded your plan:\n\
-                 -> Run /refresh to update your billing status\n\n\
-                 To manage your billing, visit: https://cortex.foundation/billing",
-                e
-            ));
+            self.app_state.quota_held = true;
+            self.add_system_message(&format!("x {}", crate::ui::consts::QUOTA_EXHAUSTED));
+            self.add_system_message(
+                "Your work so far is saved in this session. Switch to MAX token billing to continue now, or upgrade at cortex.foundation/billing",
+            );
             self.app_state
                 .toasts
-                .warning("Usage limit reached. Run /refresh after adding payment.");
+                .warning("Agent quota exhausted. Follow-ups are held until it resets.");
         } else {
             // Product-facing copy only — never raw provider or transport names.
-            let message = if e.to_lowercase().contains("unavailable")
+            let service_down = e.to_lowercase().contains("unavailable")
                 || e.to_lowercase().contains("connection")
                 || e.to_lowercase().contains("timed out")
                 || e.to_lowercase().contains("timeout")
                 || e.to_lowercase().contains("dns")
                 || e.to_lowercase().contains("reqwest")
-                || e.to_lowercase().contains("hyper")
-            {
-                "The coding service is temporarily unavailable".to_string()
+                || e.to_lowercase().contains("hyper");
+            if service_down {
+                self.add_system_message("The coding service is temporarily unavailable");
+                // Error plus what to do next — never a lone error line.
+                self.add_system_message(crate::ui::consts::SERVICE_UNAVAILABLE_NEXT_STEP);
             } else {
-                e
-            };
-            self.add_system_message(&message);
+                self.add_system_message(&e);
+            }
         }
 
         self.stream_controller.reset();

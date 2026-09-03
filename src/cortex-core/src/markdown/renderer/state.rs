@@ -5,7 +5,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::markdown::list::ListContext;
-use crate::markdown::table::{TableBuilder, render_table_simple};
+use crate::markdown::table::TableBuilder;
 
 use super::MarkdownRenderer;
 
@@ -103,6 +103,10 @@ pub(super) struct RenderState<'a> {
     pub(super) current_list_item: Vec<Span<'static>>,
     /// Task marker for current item.
     pub(super) current_task_marker: Option<bool>,
+    /// True once the pending list item's row has been emitted — a parent
+    /// item is flushed when its nested list starts, so its `end_item` must
+    /// not emit a second, empty row.
+    pub(super) list_item_emitted: bool,
 }
 
 impl<'a> RenderState<'a> {
@@ -128,6 +132,7 @@ impl<'a> RenderState<'a> {
             current_link_url: None,
             current_list_item: Vec::new(),
             current_task_marker: None,
+            list_item_emitted: false,
         }
     }
 
@@ -240,22 +245,10 @@ impl<'a> RenderState<'a> {
             self.code_language = None;
         }
 
-        // Close any unclosed tables
-        if let Some(builder) = self.table_builder.take() {
-            let mut table = builder.build();
-            table.calculate_column_widths(self.renderer.width);
-
-            // Use simple ASCII table format without outer borders
-            // Headers use table_header_text style for colored/bold headers
-            let table_lines = render_table_simple(
-                &table,
-                self.renderer.theme.table_header_text,
-                self.renderer.theme.table_cell_text,
-                self.renderer.width,
-            );
-
-            self.lines.extend(table_lines);
-        }
+        // A table still open at EOF (a reply cut off mid-stream) closes
+        // through the same plus-ASCII grid as a finished one — there is no
+        // frameless fallback.
+        self.end_table();
 
         // Flush any remaining content
         self.flush_line();

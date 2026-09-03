@@ -2,7 +2,7 @@
 //!
 //! Wraps `tui-textarea` with Cortex styling and history functionality.
 
-use crate::style::{BORDER, PINK, TEXT, TEXT_DIM, VOID};
+use crate::style::{BORDER, BORDER_FOCUS, TEXT, TEXT_DIM};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Widget, WidgetRef};
@@ -104,22 +104,21 @@ impl<'a> CortexInput<'a> {
 
     /// Apply Cortex theme to the textarea.
     fn apply_theme(&mut self) {
-        // Set colors
-        self.textarea.set_style(Style::default().fg(TEXT).bg(VOID));
+        // No background wash — the host terminal shows through.
+        self.textarea.set_style(Style::default().fg(TEXT));
 
-        // Cursor styling
+        // Cursor: a white block with a dark glyph.
         self.textarea
-            .set_cursor_style(Style::default().fg(VOID).bg(PINK));
+            .set_cursor_style(Style::default().fg(Color::Rgb(20, 20, 20)).bg(TEXT));
 
         // No special styling for cursor line
         self.textarea.set_cursor_line_style(Style::default());
 
         // Border styling based on focus state
-        let border_color = if self.focused { PINK } else { BORDER };
+        let border_color = if self.focused { BORDER_FOCUS } else { BORDER };
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .style(Style::default().bg(VOID));
+            .border_style(Style::default().fg(border_color));
         self.textarea.set_block(block);
     }
 

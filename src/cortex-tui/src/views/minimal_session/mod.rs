@@ -19,4 +19,8 @@ mod tests;
 pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Re-export main types for backwards compatibility
-pub use view::{ChatMessage, MinimalSessionView};
+pub use rendering::{EMPTY_SESSION_HINTS, user_turn_lines};
+pub use view::{
+    COMPOSER_ROWS, ChatMessage, MinimalSessionView, PALETTE_FOOTER_HINT, PALETTE_FOOTER_HINT_SHORT,
+    PLACEHOLDER_IDLE, PLACEHOLDER_RUNNING,
+};

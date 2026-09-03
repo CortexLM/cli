@@ -17,6 +17,9 @@ use crate::ui::shimmer::{elapsed_since_start, shimmer_spans};
 /// Prefix for the details line (tree branch character).
 const DETAILS_PREFIX: &str = "  \u{2514} "; // "  └ "
 
+/// Header text of the reasoning status — painted in the muted gold.
+pub const THINKING_HEADER: &str = "Thinking";
+
 /// Status indicator widget showing spinner, header, elapsed time, and optional details.
 ///
 /// # Example
@@ -31,7 +34,7 @@ pub struct StatusIndicator {
     header: String,
     /// Optional details line shown below the header.
     details: Option<String>,
-    /// Whether to show the interrupt hint (e.g., "Esc to interrupt").
+    /// Whether to show the interrupt hint ("esc to interrupt").
     show_interrupt_hint: bool,
     /// Pre-computed elapsed seconds (when using external timing).
     elapsed_secs: u64,
@@ -145,30 +148,31 @@ impl Widget for StatusIndicator {
         let colors = AdaptiveColors::default();
         let elapsed_str = fmt_elapsed_compact(self.elapsed_secs);
 
-        // Build the header line: "⠹ Working · Analyzing code (45s • Esc to interrupt)"
+        // Build the header line, locked copy: "⠇ Working · 12s · esc to interrupt"
         let mut spans: Vec<Span<'_>> = Vec::with_capacity(8);
 
-        // Spinner — gray, never mint: the accent is reserved for markers.
+        // Spinner — dim gray, never the accent.
         spans.push(Span::styled(
             self.spinner_frame().to_string(),
             ratatui::style::Style::default().fg(colors.text_dim),
         ));
         spans.push(Span::raw(" "));
 
-        // Header with shimmer effect
-        spans.extend(shimmer_spans(&self.header));
-
-        // Elapsed time and optional interrupt hint
-        spans.push(Span::raw(" "));
-        if self.show_interrupt_hint {
-            spans.push(Span::raw(format!("({elapsed_str} \u{2022} ")).dim());
+        // Header: the Thinking status is the one muted-gold word in the
+        // chrome; every other status shimmers in gray/white.
+        if self.header == THINKING_HEADER {
             spans.push(Span::styled(
-                "Esc",
-                ratatui::style::Style::default().fg(colors.text),
+                self.header.clone(),
+                ratatui::style::Style::default().fg(colors.thinking),
             ));
-            spans.push(Span::raw(" to interrupt)").dim());
         } else {
-            spans.push(Span::raw(format!("({elapsed_str})")).dim());
+            spans.extend(shimmer_spans(&self.header));
+        }
+
+        // Elapsed time and optional interrupt hint, dim, dot-separated.
+        spans.push(Span::raw(format!(" · {elapsed_str}")).dim());
+        if self.show_interrupt_hint {
+            spans.push(Span::raw(" · esc to interrupt").dim());
         }
 
         // Render the header line
@@ -268,5 +272,40 @@ mod tests {
         let indicator = StatusIndicator::new("Working");
         let frame = indicator.spinner_frame();
         assert!(STREAMING_SPINNER_FRAMES.contains(&frame));
+    }
+
+    #[test]
+    fn thinking_header_is_the_muted_gold() {
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+
+        let colors = AdaptiveColors::default();
+        let mut buf = Buffer::empty(Rect::new(0, 0, 60, 1));
+        StatusIndicator::new(THINKING_HEADER)
+            .with_elapsed_secs(3)
+            .with_interrupt_hint(true)
+            .render(Rect::new(0, 0, 60, 1), &mut buf);
+        let row: String = (0..60).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+        assert!(row.contains("Thinking · 3s · esc to interrupt"), "{row}");
+        let column = |row: &str, c: char| row.chars().position(|ch| ch == c).expect("header");
+        let t = column(&row, 'T');
+        for x in t..t + "Thinking".len() {
+            assert_eq!(
+                buf[(x as u16, 0)].style().fg,
+                Some(colors.thinking),
+                "{row}"
+            );
+        }
+
+        // Working shimmers in gray/white — never gold, never the accent.
+        let mut buf = Buffer::empty(Rect::new(0, 0, 60, 1));
+        StatusIndicator::new("Working").render(Rect::new(0, 0, 60, 1), &mut buf);
+        let row: String = (0..60).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+        let w = column(&row, 'W');
+        for x in w..w + "Working".len() {
+            let fg = buf[(x as u16, 0)].style().fg;
+            assert_ne!(fg, Some(colors.thinking), "{row}");
+            assert_ne!(fg, Some(colors.accent), "{row}");
+        }
     }
 }

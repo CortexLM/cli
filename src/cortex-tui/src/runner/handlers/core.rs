@@ -49,6 +49,8 @@ impl<'a> ActionHandler<'a> {
             }
             self.stream.interrupt();
             self.state.stop_streaming();
+            // Session interrupt is handled by the event loop's stream error
+            // path; the TUI still records Stopped if the loop is this handler.
         } else if self.state.view != AppView::Session {
             self.state.go_back();
         }

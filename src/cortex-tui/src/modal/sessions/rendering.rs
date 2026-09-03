@@ -2,10 +2,11 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 
 use cortex_core::style::{
-    BORDER, CYAN_PRIMARY, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, VOID, YELLOW,
+    ACCENT, BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+    YELLOW,
 };
 
 use super::session_action::SessionAction;
@@ -65,8 +66,8 @@ pub fn render_search_bar(search_query: &str, area: Rect, buf: &mut Buffer) {
     // Cursor
     let cursor_x = input_x + search_query.len().min(max_input_width) as u16;
     if cursor_x < area.right().saturating_sub(2) {
-        buf[(cursor_x, area.y)].set_bg(CYAN_PRIMARY);
-        buf[(cursor_x, area.y)].set_fg(VOID);
+        buf[(cursor_x, area.y)].set_bg(TEXT);
+        buf[(cursor_x, area.y)].set_fg(Color::Rgb(20, 20, 23));
     }
 
     // Closing bracket
@@ -81,10 +82,11 @@ pub fn render_search_bar(search_query: &str, area: Rect, buf: &mut Buffer) {
 
 /// Render a single session row.
 pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, buf: &mut Buffer) {
+    // Selected rows: the violet accent on the dark gray bar — never inverted.
     let (bg, fg, prefix_fg) = if is_selected {
-        (CYAN_PRIMARY, VOID, VOID)
+        (SELECTION_BG, ACCENT, ACCENT)
     } else {
-        (SURFACE_0, TEXT, CYAN_PRIMARY)
+        (SURFACE_0, TEXT, TEXT_DIM)
     };
 
     // Clear the row
@@ -102,10 +104,10 @@ pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, 
     // Session name (left-aligned)
     let name_style = Style::default().fg(fg).bg(bg);
 
-    // Build metadata: "2h ago   15 msgs   claude-opus"
+    // Build metadata: "2h ago   15 msgs   Cortex Mini 1"
     let time_ago = session.relative_time();
     let msg_count = format!("{} msgs", session.message_count);
-    let model = session.short_model();
+    let model = crate::ui::text_utils::model_display_name(session.short_model());
     let meta = format!("{}   {}   {}", time_ago, msg_count, model);
     let meta_len = meta.len();
 
@@ -122,11 +124,7 @@ pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, 
     buf.set_string(col, area.y, &truncated_name, name_style);
 
     // Render metadata right-aligned
-    let meta_style = if is_selected {
-        Style::default().fg(VOID).bg(bg)
-    } else {
-        Style::default().fg(TEXT_DIM).bg(bg)
-    };
+    let meta_style = Style::default().fg(TEXT_DIM).bg(bg);
     let meta_x = area.right().saturating_sub(meta_len as u16 + 2);
     if meta_x > col + truncated_name.len() as u16 + 1 {
         buf.set_string(meta_x, area.y, &meta, meta_style);
@@ -136,7 +134,7 @@ pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, 
 /// Render the "New Session" row.
 pub fn render_new_session_row(is_selected: bool, area: Rect, buf: &mut Buffer) {
     let (bg, fg) = if is_selected {
-        (CYAN_PRIMARY, VOID)
+        (SELECTION_BG, TEXT)
     } else {
         (SURFACE_0, TEXT)
     };
@@ -150,22 +148,15 @@ pub fn render_new_session_row(is_selected: bool, area: Rect, buf: &mut Buffer) {
 
     // Selection indicator
     let prefix = if is_selected { ">" } else { " " };
-    let prefix_fg = if is_selected { VOID } else { CYAN_PRIMARY };
+    let prefix_fg = CYAN_PRIMARY;
     buf.set_string(col, area.y, prefix, Style::default().fg(prefix_fg).bg(bg));
     col += 2;
 
     // "+" icon
-    let plus_style = if is_selected {
-        Style::default()
-            .fg(VOID)
-            .bg(bg)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(CYAN_PRIMARY)
-            .bg(bg)
-            .add_modifier(Modifier::BOLD)
-    };
+    let plus_style = Style::default()
+        .fg(CYAN_PRIMARY)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
     buf.set_string(col, area.y, "+", plus_style);
     col += 2;
 

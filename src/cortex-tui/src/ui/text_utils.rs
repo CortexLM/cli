@@ -111,6 +111,56 @@ pub fn first_fitting_line(text: &str, max_width: usize) -> String {
         .unwrap_or_default()
 }
 
+/// Fit `text` into `max_width` while preserving its exact spacing.
+///
+/// Unlike [`first_fitting_line`], internal runs of spaces (column gaps such
+/// as `/pr  Open a pull request`) and leading indentation survive. When the
+/// text is too wide it is cut at the last whitespace boundary — never inside
+/// a word — and trailing whitespace is dropped.
+pub fn fit_line(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    if UnicodeWidthStr::width(text) <= max_width {
+        return text.trim_end().to_string();
+    }
+    let mut cut = 0usize;
+    let mut width = 0usize;
+    for (idx, ch) in text.char_indices() {
+        let ch_width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width > max_width {
+            if ch.is_whitespace() {
+                cut = idx;
+            }
+            break;
+        }
+        if ch.is_whitespace() {
+            cut = idx;
+        }
+        width += ch_width;
+    }
+    text[..cut].trim_end().to_string()
+}
+
+/// Wrap `text` on word boundaries while preserving its leading indentation
+/// on every produced line (code excerpts keep their nesting).
+pub fn wrap_keep_indent(text: &str, max_width: usize) -> Vec<String> {
+    let indent: String = text.chars().take_while(|c| *c == ' ').collect();
+    let indent_width = indent.chars().count();
+    if indent_width >= max_width {
+        return wrap_or_drop(text, max_width);
+    }
+    wrap_or_drop(text.trim_start(), max_width - indent_width)
+        .into_iter()
+        .map(|line| format!("{indent}{line}"))
+        .collect()
+}
+
+/// Drop a dangling ` ·` separator left behind by a word-boundary cut.
+pub fn trim_dangling_separator(text: &str) -> String {
+    text.trim_end().trim_end_matches('·').trim_end().to_string()
+}
+
 /// Abbreviated versions of common hint descriptions.
 ///
 /// Maps full description to a shorter version for use when
@@ -343,6 +393,61 @@ pub fn adaptive_hints(hints: &[(&'static str, &'static str)], available_width: u
 
     let mode = calculate_hint_display_mode(&adaptive, available_width, 3);
     format_hints(&adaptive, mode, " · ")
+}
+
+/// English product name for a model id — the TUI never shows raw slugs.
+///
+/// Served/API ids stay hyphenated internally; every user-facing surface maps
+/// them here:
+///
+/// - `cortex-1-mini` → `Cortex Mini 1`
+/// - `cortex-1-max` → `Cortex Max 1`
+/// - `cortex-1` → `Cortex 1`
+///
+/// The Cortex family keeps its generation number last. Any other id is
+/// title-cased with the hyphens dropped so a slug never reaches the screen.
+///
+/// # Examples
+///
+/// ```
+/// use cortex_tui::ui::text_utils::model_display_name;
+///
+/// assert_eq!(model_display_name("cortex-1-mini"), "Cortex Mini 1");
+/// assert_eq!(model_display_name("cortex-1-max"), "Cortex Max 1");
+/// assert_eq!(model_display_name("cortex-1"), "Cortex 1");
+/// assert_eq!(model_display_name("Cortex Mini 1"), "Cortex Mini 1");
+/// ```
+pub fn model_display_name(id: &str) -> String {
+    fn capitalize(part: &str) -> String {
+        let mut chars = part.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            None => String::new(),
+        }
+    }
+
+    let slug = id.rsplit('/').next().unwrap_or(id).trim();
+    if slug.is_empty() || !slug.contains('-') {
+        return slug.to_string();
+    }
+    let parts: Vec<&str> = slug.split('-').filter(|p| !p.is_empty()).collect();
+    if parts.len() >= 2
+        && parts[0].eq_ignore_ascii_case("cortex")
+        && parts[1].chars().all(|c| c.is_ascii_digit())
+    {
+        let generation = parts[1];
+        let variants: Vec<String> = parts[2..].iter().map(|p| capitalize(p)).collect();
+        return if variants.is_empty() {
+            format!("Cortex {generation}")
+        } else {
+            format!("Cortex {} {generation}", variants.join(" "))
+        };
+    }
+    parts
+        .iter()
+        .map(|p| capitalize(p))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -665,5 +770,57 @@ mod tests {
             first_fitting_line("Paste an API key", 40),
             "Paste an API key"
         );
+    }
+
+    #[test]
+    fn fit_line_keeps_spacing_and_never_cuts_a_word() {
+        // Column gaps and indentation survive when the text fits.
+        assert_eq!(
+            fit_line("/pr  Open a pull request", 40),
+            "/pr  Open a pull request"
+        );
+        assert_eq!(fit_line("  22  { preHandler }", 40), "  22  { preHandler }");
+        // Too wide: cut at a word boundary, trailing space dropped.
+        assert_eq!(
+            fit_line("cloud  Fix flaky rateLimit test on CI", 22),
+            "cloud  Fix flaky"
+        );
+        assert_eq!(fit_line("supercalifragilistic expialidocious", 10), "");
+        assert_eq!(fit_line("anything", 0), "");
+    }
+
+    #[test]
+    fn wrap_keep_indent_preserves_code_nesting() {
+        let lines = wrap_keep_indent("    const n = await redis.zcard(key);", 24);
+        assert_eq!(lines[0], "    const n = await");
+        assert!(lines.iter().all(|l| l.starts_with("    ")), "{lines:?}");
+        assert_eq!(wrap_keep_indent("flush", 10), vec!["flush".to_string()]);
+    }
+
+    #[test]
+    fn trim_dangling_separator_drops_orphan_dot() {
+        assert_eq!(
+            trim_dangling_separator("Cortex Mini 1 · Max ·"),
+            "Cortex Mini 1 · Max"
+        );
+        assert_eq!(
+            trim_dangling_separator("Cortex Mini 1 · Max"),
+            "Cortex Mini 1 · Max"
+        );
+    }
+
+    #[test]
+    fn model_names_are_english_product_names() {
+        // The Cortex catalog maps to product names with the generation last.
+        assert_eq!(model_display_name("cortex-1-mini"), "Cortex Mini 1");
+        assert_eq!(model_display_name("cortex-1-max"), "Cortex Max 1");
+        assert_eq!(model_display_name("cortex-1"), "Cortex 1");
+        assert_eq!(model_display_name("cortex-2-mini"), "Cortex Mini 2");
+        // Provider prefixes are dropped; already-pretty names pass through.
+        assert_eq!(model_display_name("cortex/cortex-1-mini"), "Cortex Mini 1");
+        assert_eq!(model_display_name("Cortex Mini 1"), "Cortex Mini 1");
+        // No hyphenated slug ever reaches the screen.
+        assert_eq!(model_display_name("some-other-model"), "Some Other Model");
+        assert!(!model_display_name("cortex-1-mini").contains('-'));
     }
 }

@@ -1,8 +1,12 @@
 //! Color configuration for form modals.
 
+use cortex_core::style::{
+    ACCENT, BORDER_FOCUS, HAIRLINE, PANEL_BG, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use ratatui::prelude::Color;
 
-/// Colors used by the form modal.
+/// Colors used by the form modal — the gray chrome: charcoal panel, hairline
+/// borders, white/dim copy, the violet accent on the focused field only.
 #[derive(Debug, Clone, Copy)]
 pub struct FormModalColors {
     pub background: Color,
@@ -18,14 +22,14 @@ pub struct FormModalColors {
 impl Default for FormModalColors {
     fn default() -> Self {
         Self {
-            background: Color::Rgb(10, 10, 15),
-            border: Color::Rgb(60, 60, 70),
-            border_focused: Color::Rgb(0, 200, 200),
-            text: Color::Rgb(220, 220, 230),
-            text_dim: Color::Rgb(150, 150, 160),
-            text_muted: Color::Rgb(100, 100, 110),
-            accent: Color::Rgb(0, 200, 200),
-            surface: Color::Rgb(25, 25, 35),
+            background: PANEL_BG,
+            border: HAIRLINE,
+            border_focused: BORDER_FOCUS,
+            text: TEXT,
+            text_dim: TEXT_DIM,
+            text_muted: TEXT_MUTED,
+            accent: ACCENT,
+            surface: SURFACE_1,
         }
     }
 }

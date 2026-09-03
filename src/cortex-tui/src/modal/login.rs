@@ -5,7 +5,7 @@
 
 use super::{CancelBehavior, Modal, ModalAction, ModalResult};
 use crate::widgets::ActionBar;
-use cortex_core::style::{BORDER, CYAN_PRIMARY, GREEN, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{BORDER, CYAN_PRIMARY, RED, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -103,7 +103,7 @@ impl Modal for LoginModal {
 
         // Border color based on state
         let border_color = match &self.state {
-            LoginState::Success(_) => GREEN,
+            LoginState::Success(_) => CYAN_PRIMARY,
             LoginState::Failed(_) => RED,
             _ => CYAN_PRIMARY,
         };
@@ -300,7 +300,7 @@ impl LoginModal {
         // Success message centered
         let msg1 = Line::from(vec![Span::styled(
             "[+] Login successful!",
-            Style::default().fg(GREEN),
+            Style::default().fg(CYAN_PRIMARY),
         )]);
         let msg1_x = chunks[2].x + (chunks[2].width.saturating_sub(msg1.width() as u16)) / 2;
         buf.set_line(msg1_x, chunks[2].y, &msg1, chunks[2].width);

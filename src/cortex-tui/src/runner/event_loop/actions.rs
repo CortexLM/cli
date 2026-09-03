@@ -56,6 +56,8 @@ impl EventLoop {
                         self.cancel_streaming();
                     } else if let Some(ref bridge) = self.session_bridge {
                         bridge.interrupt().await?;
+                        self.app_state.stop_streaming();
+                        self.mark_turn_stopped();
                     }
                 }
             }
@@ -139,8 +141,11 @@ impl EventLoop {
 
             // Permission and tool actions
             KeyAction::CyclePermissionMode => {
-                self.app_state.cycle_permission_mode();
-                self.sync_permission_mode();
+                self.app_state.cycle_agent_mode();
+                self.sync_agent_mode_harness();
+                self.app_state
+                    .toasts
+                    .info(format!("Mode: {}", self.app_state.agent_mode_label));
             }
             KeyAction::ToggleToolDetails => {
                 // Toggle all tool calls collapsed state

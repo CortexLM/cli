@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -30,16 +31,21 @@ except ImportError:  # pragma: no cover - dependency guard
         "Install it with: python3 -m pip install pillow"
     )
 
-# Product palette, mirroring cortex-core::style.
+# Product palette, mirroring cortex-core::style. The chrome never paints its
+# own background (`Color::Reset`), so unstyled cells rasterise as the host
+# terminal default: black. No frame, border or canvas tint is drawn — the TUI
+# bleeds to the terminal edges.
 DEFAULT_FG = (255, 255, 255)
-DEFAULT_BG = (10, 22, 40)  # VOID   #0A1628
-CANVAS_BG = (6, 13, 24)
-BORDER = (27, 73, 101)  # BORDER #1B4965
+DEFAULT_BG = (0, 0, 0)
+CANVAS_BG = (0, 0, 0)
 
 # Primary face first, then faces that fill in box-drawing and symbol glyphs
 # JetBrains Mono does not carry (the tool-result marker U+23BF, for instance).
 FONT_CANDIDATES = {
     "regular": [
+        os.path.expanduser("~/.local/share/fonts/IBMPlexMono-Regular.ttf"),
+        "/usr/share/fonts/truetype/ibm-plex/IBMPlexMono-Regular.ttf",
+        "/usr/share/fonts/opentype/ibm-plex/IBMPlexMono-Regular.otf",
         "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
         "/usr/share/fonts/truetype/macos/JetBrainsMono-Regular.ttf",
         "/usr/share/fonts/TTF/JetBrainsMono-Regular.ttf",
@@ -50,6 +56,9 @@ FONT_CANDIDATES = {
         "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
     ],
     "bold": [
+        os.path.expanduser("~/.local/share/fonts/IBMPlexMono-Bold.ttf"),
+        "/usr/share/fonts/truetype/ibm-plex/IBMPlexMono-Bold.ttf",
+        "/usr/share/fonts/opentype/ibm-plex/IBMPlexMono-Bold.otf",
         "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Bold.ttf",
         "/usr/share/fonts/truetype/macos/JetBrainsMono-Bold.ttf",
         "/usr/share/fonts/TTF/JetBrainsMono-Bold.ttf",
@@ -190,6 +199,30 @@ def dim_colour(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
     return tuple(int(channel * 0.65) for channel in rgb)
 
 
+def snap_cell_to_fg(
+    image: Image.Image,
+    x0: int,
+    y0: int,
+    x1: int,
+    y1: int,
+    fg: tuple[int, int, int],
+    bg: tuple[int, int, int],
+) -> None:
+    """Replace anti-aliased fringe in one cell with the exact foreground."""
+    pix = image.load()
+    width, height = image.size
+    x0 = max(0, x0)
+    y0 = max(0, y0)
+    x1 = min(width, x1)
+    y1 = min(height, y1)
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            pixel = pix[x, y]
+            if pixel == bg or pixel == fg:
+                continue
+            pix[x, y] = fg
+
+
 def check_glyph_coverage(grid: list[list[tuple[str, CellStyle]]], fonts: dict[str, FontSet]) -> None:
     """Fail before rendering if any character would come out as a blank box."""
     missing = set()
@@ -216,15 +249,6 @@ def render_frame(
     inner_h = rows * cell_h
     image = Image.new("RGB", (inner_w + pad * 2, inner_h + pad * 2), CANVAS_BG)
     draw = ImageDraw.Draw(image)
-
-    radius = max(6, pad // 2)
-    draw.rounded_rectangle(
-        [(pad // 2, pad // 2), (image.width - pad // 2 - 1, image.height - pad // 2 - 1)],
-        radius=radius,
-        fill=DEFAULT_BG,
-        outline=BORDER,
-        width=1,
-    )
 
     for row_index, row in enumerate(grid):
         y = pad + row_index * cell_h
@@ -257,12 +281,27 @@ def render_frame(
             # Fallback faces differ in advance width and ascent, so glyphs are
             # centred in the cell and pinned to the primary face's baseline.
             offset = max(0, round((cell_w - face.getlength(symbol)) / 2))
+            gx = pad + col_index * cell_w + offset
+            gy = y + baseline
             draw.text(
-                (pad + col_index * cell_w + offset, y + baseline),
+                (gx, gy),
                 symbol,
                 font=face,
                 fill=colour,
                 anchor="ls",
+            )
+            # FreeType anti-aliases onto the cell background, which turns a
+            # lone `#A78BFA` `>` on black into a gray fringe. Snap coverage
+            # back to the exact lock colour so composer and picker carets match.
+            cell_bg = style.bg if style.bg != DEFAULT_BG else CANVAS_BG
+            snap_cell_to_fg(
+                image,
+                pad + col_index * cell_w,
+                y,
+                pad + (col_index + 1) * cell_w,
+                y + cell_h,
+                colour,
+                cell_bg,
             )
 
     return image
@@ -340,7 +379,7 @@ def main() -> int:
     if not manifest_path.is_file():
         raise SystemExit(
             f"No manifest at {manifest_path}. Run:\n"
-            "  cargo run -p cortex-tui-capture --bin generate_tui_demo"
+            "  cargo run -p cortex-tui --bin generate_tui_demo"
         )
 
     manifest = json.loads(manifest_path.read_text())

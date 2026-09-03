@@ -176,15 +176,18 @@ impl EventLoop {
             | AppView::Settings
             | AppView::Help
             | AppView::SubagentConversation(_) => {
-                let input_height: u16 = 1;
-                let hints_height: u16 = 1;
+                // The composer is the hairline bar (hairline, prompt,
+                // hairline) pinned above the one-row footer once the
+                // transcript fills the screen — the common live case.
+                let input_height: u16 = crate::views::minimal_session::COMPOSER_ROWS;
+                let footer_height: u16 = 1;
                 let status_height: u16 = if self.app_state.streaming.is_streaming {
                     1
                 } else {
                     0
                 };
 
-                let total_bottom = status_height + input_height + hints_height;
+                let total_bottom = status_height + input_height + footer_height;
                 let chat_height = area.height.saturating_sub(total_bottom);
 
                 let chat_area = Rect::new(area.x, area.y, area.width, chat_height);
@@ -195,21 +198,31 @@ impl EventLoop {
                 self.click_zones
                     .register(ClickZoneId::InputField, input_area);
 
-                // Calculate click zones for interactive mode
+                // Calculate click zones for interactive mode: the panel sits
+                // directly above the footer and is `required_height` tall
+                // (hairline, title, optional framed search, rows, hints).
                 if self.app_state.is_interactive_mode()
                     && let Some(state) = self.app_state.get_interactive_state_mut()
                 {
-                    let items_count = state.filtered_indices.len().min(state.max_visible);
-                    let required_height = (items_count as u16) + 4;
-                    let max_height = (area.height * 85 / 100).max(12);
+                    let items_count = if state.filtered_indices.is_empty() {
+                        2
+                    } else {
+                        state.filtered_indices.len().min(state.max_visible)
+                    };
+                    let search_rows: u16 = if state.searchable {
+                        crate::interactive::renderer::SEARCH_FIELD_ROWS
+                    } else {
+                        0
+                    };
+                    let required_height = (items_count as u16) + 3 + search_rows;
+                    let max_height = area.height.saturating_sub(footer_height).max(3);
                     let widget_height = required_height.min(max_height);
-                    let extra_height = widget_height.saturating_sub(input_height);
-                    let interactive_area = Rect::new(
-                        input_area.x,
-                        input_area.y.saturating_sub(extra_height),
-                        input_area.width,
-                        widget_height,
-                    );
+                    let interactive_y = area
+                        .bottom()
+                        .saturating_sub(footer_height)
+                        .saturating_sub(widget_height);
+                    let interactive_area =
+                        Rect::new(area.x, interactive_y, area.width, widget_height);
                     crate::interactive::InteractiveWidget::calculate_click_zones(
                         state,
                         interactive_area,
@@ -227,7 +240,9 @@ impl EventLoop {
             return;
         };
 
-        let selection_bg = Color::Rgb(60, 100, 140);
+        // Mouse text selection is a neutral gray — nothing in the chrome is
+        // tinted.
+        let selection_bg = Color::Rgb(0x52, 0x52, 0x52);
         let buf_area = buf.area;
 
         let start_row = start.1;

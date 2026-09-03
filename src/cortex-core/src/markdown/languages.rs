@@ -6,7 +6,8 @@
 //! - A global default highlighter singleton
 //! - Helper functions for language detection
 
-use cortex_tui_syntax::{Highlighter, LanguageConfig};
+use cortex_tui_syntax::{Highlighter, LanguageConfig, Theme};
+use cortex_tui_text::{Color, Style as SyntaxStyle};
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 
@@ -107,12 +108,83 @@ pub fn normalize_language_name(lang: &str) -> Option<&'static str> {
 // Default Highlighter Singleton
 // ============================================================================
 
-/// Global default highlighter with common languages registered.
+/// The gray-chrome syntax theme: keywords bold white, strings and comments
+/// dim, everything else the plain white — a fence never introduces a colour
+/// of its own, the violet stays on the focused selection.
+pub fn monochrome_theme() -> Theme {
+    let white = Color::from_rgb_u8(0xFF, 0xFF, 0xFF);
+    let dim = Color::from_rgb_u8(0x6B, 0x72, 0x80);
+    let light = Color::from_rgb_u8(0xD4, 0xD4, 0xD8);
+    let mut theme = Theme::with_default(SyntaxStyle::new().fg(white));
+    for capture in [
+        "keyword",
+        "keyword.control",
+        "keyword.control.flow",
+        "keyword.control.return",
+        "keyword.control.conditional",
+        "keyword.control.repeat",
+        "keyword.function",
+        "keyword.operator",
+        "keyword.import",
+        "keyword.type",
+        "keyword.modifier",
+        "keyword.storage",
+        "type.qualifier",
+    ] {
+        theme.set(capture, SyntaxStyle::new().fg(white).bold());
+    }
+    for capture in ["string", "string.special", "string.escape", "character"] {
+        theme.set(capture, SyntaxStyle::new().fg(light));
+    }
+    for capture in [
+        "comment",
+        "comment.line",
+        "comment.block",
+        "comment.documentation",
+    ] {
+        theme.set(capture, SyntaxStyle::new().fg(dim));
+    }
+    for capture in [
+        "type",
+        "type.builtin",
+        "type.definition",
+        "function",
+        "function.builtin",
+        "function.call",
+        "function.macro",
+        "function.method",
+        "function.method.call",
+        "variable",
+        "variable.builtin",
+        "variable.parameter",
+        "variable.member",
+        "property",
+        "constant",
+        "constant.builtin",
+        "number",
+        "boolean",
+        "operator",
+        "punctuation",
+        "punctuation.bracket",
+        "punctuation.delimiter",
+        "attribute",
+        "label",
+        "namespace",
+        "constructor",
+        "tag",
+    ] {
+        theme.set(capture, SyntaxStyle::new().fg(white));
+    }
+    theme
+}
+
+/// Global default highlighter with common languages registered on the
+/// monochrome theme.
 ///
 /// This singleton is lazily initialized and shared across the application.
 /// Use [`get_default_highlighter`] to access it.
 pub static DEFAULT_HIGHLIGHTER: Lazy<Arc<Highlighter>> = Lazy::new(|| {
-    let highlighter = Highlighter::new();
+    let highlighter = Highlighter::with_theme(monochrome_theme());
     register_common_languages(&highlighter);
     Arc::new(highlighter)
 });

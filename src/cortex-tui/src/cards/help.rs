@@ -432,7 +432,7 @@ impl HelpCard {
                     // Empty line, nothing to render
                 }
                 ContentLine::Header(title) => {
-                    // Section header in cyan
+                    // Section header in violet
                     buf.set_string(area.x + 1, y, title, Style::default().fg(CYAN_PRIMARY));
                 }
                 ContentLine::Item { key, description } => {
@@ -508,7 +508,7 @@ impl HelpCard {
         if self.search_active {
             let cursor_x = x + 2 + self.search_query.len() as u16;
             if cursor_x < area.right().saturating_sub(1) {
-                buf[(cursor_x, area.y)].set_bg(CYAN_PRIMARY);
+                buf[(cursor_x, area.y)].set_bg(TEXT);
                 buf[(cursor_x, area.y)].set_fg(SURFACE_0);
             }
         }

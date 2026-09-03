@@ -34,7 +34,7 @@ impl CommandExecutor {
             Some("off") | Some("false") => {
                 CommandResult::SetValue("sandbox".to_string(), "false".to_string())
             }
-            None => CommandResult::Toggle("sandbox".to_string()),
+            None => CommandResult::OpenModal(ModalType::Form("sandbox".to_string())),
             Some(other) => {
                 CommandResult::Error(format!("Invalid sandbox value: {}. Use on|off", other))
             }

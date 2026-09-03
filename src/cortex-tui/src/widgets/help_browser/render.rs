@@ -1,7 +1,8 @@
 //! Help browser widget rendering.
 
 use cortex_core::style::{
-    BORDER, BORDER_FOCUS, CYAN_PRIMARY, ELECTRIC_BLUE, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED, VOID,
+    ACCENT, BORDER, BORDER_FOCUS, ELECTRIC_BLUE, SELECTION_BG, SURFACE_1, TEXT, TEXT_DIM,
+    TEXT_MUTED,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::Widget;
@@ -50,7 +51,7 @@ impl<'a> HelpBrowser<'a> {
         for y in area.y..area.y + area.height {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_char(' ').set_bg(VOID);
+                    cell.set_char(' ').set_bg(Color::Reset);
                 }
             }
         }
@@ -93,9 +94,7 @@ impl<'a> HelpBrowser<'a> {
             title_x,
             area.y,
             title,
-            Style::default()
-                .fg(CYAN_PRIMARY)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         );
 
         // Close button
@@ -129,10 +128,12 @@ impl<'a> HelpBrowser<'a> {
             let is_selected = i == self.state.selected_section;
             let prefix = if is_selected { "> " } else { "  " };
 
+            // The focused section is the violet accent on the gray bar; the
+            // remembered one stays white, the rest dim.
             let style = if is_selected && is_focused {
-                Style::default().fg(VOID).bg(CYAN_PRIMARY)
+                Style::default().fg(ACCENT).bg(SELECTION_BG)
             } else if is_selected {
-                Style::default().fg(CYAN_PRIMARY)
+                Style::default().fg(TEXT)
             } else {
                 Style::default().fg(TEXT_DIM)
             };
@@ -184,9 +185,7 @@ impl<'a> HelpBrowser<'a> {
             HelpContent::Title(text) => {
                 vec![StyledLine::new(
                     text.clone(),
-                    Style::default()
-                        .fg(CYAN_PRIMARY)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
                 )]
             }
             HelpContent::Paragraph(text) => wrap_text(text, width as usize)
@@ -248,7 +247,7 @@ impl<'a> HelpBrowser<'a> {
         // Clear footer line
         for x in area.x + 1..area.x + area.width - 1 {
             if let Some(cell) = buf.cell_mut((x, footer_y)) {
-                cell.set_char(' ').set_bg(VOID);
+                cell.set_char(' ').set_bg(Color::Reset);
             }
         }
 

@@ -113,6 +113,35 @@ impl StoredMcpServer {
         self.api_key_env_var = Some(env_var);
         self
     }
+
+    /// Convert to an engine MCP server config for the connection manager.
+    pub fn to_engine_config(&self) -> cortex_engine::McpServerConfig {
+        use cortex_engine::mcp::TransportType;
+        match self.transport {
+            McpTransport::Http => {
+                let mut cfg = cortex_engine::McpServerConfig::new_sse(
+                    &self.name,
+                    self.url.clone().unwrap_or_default(),
+                );
+                cfg.env = self.env.clone();
+                cfg.cwd = self.cwd.clone();
+                cfg.auto_start = self.auto_start && self.enabled;
+                cfg
+            }
+            McpTransport::Stdio => {
+                let mut cfg = cortex_engine::McpServerConfig::new(
+                    &self.name,
+                    self.command.clone().unwrap_or_default(),
+                )
+                .args(self.args.clone());
+                cfg.env = self.env.clone();
+                cfg.cwd = self.cwd.clone();
+                cfg.transport = TransportType::Stdio;
+                cfg.auto_start = self.auto_start && self.enabled;
+                cfg
+            }
+        }
+    }
 }
 
 /// MCP storage manager

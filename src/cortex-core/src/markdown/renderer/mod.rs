@@ -96,6 +96,26 @@ impl MarkdownRenderer {
         }
     }
 
+    /// The renderer the session view uses for every reply: the given theme
+    /// plus the default highlighter, so fences come out as a hairline with
+    /// the language tag, a dim line-number gutter and monochrome
+    /// tree-sitter (or lexical) highlighting; tables as the plus-ASCII grid;
+    /// task items as `✓` / `○`.
+    pub fn cortex(theme: MarkdownTheme, width: u16) -> Self {
+        let code_renderer =
+            CodeBlockRenderer::new(crate::markdown::languages::get_default_highlighter())
+                .with_border_color(theme.code_block_border)
+                .with_background(theme.code_block_bg)
+                .with_text_style(theme.code_block_text)
+                .with_lang_tag_style(theme.code_lang_tag)
+                .with_line_numbers(true);
+        Self {
+            theme: Arc::new(theme),
+            code_renderer: Some(Arc::new(code_renderer)),
+            width,
+        }
+    }
+
     /// Sets a code block renderer for syntax highlighting.
     #[must_use]
     pub fn with_code_renderer(mut self, renderer: Arc<CodeBlockRenderer>) -> Self {

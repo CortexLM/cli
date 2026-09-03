@@ -23,7 +23,7 @@ impl McpStatus {
             McpStatus::Running => "[*]",
             McpStatus::Stopped => "[ ]",
             McpStatus::Starting => "[~]",
-            McpStatus::Error => "[!]",
+            McpStatus::Error => "x",
         }
     }
 

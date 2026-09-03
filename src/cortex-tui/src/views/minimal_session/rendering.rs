@@ -43,27 +43,9 @@ pub fn render_message_with_theme(
 
     match msg.role {
         MessageRole::User => {
-            // "> message" — mint marker, gray/white copy (locked chrome).
-            let prefix = Span::styled("> ", Style::default().fg(colors.accent));
-
-            // Calculate available width for text (after "> " prefix)
-            let text_width = (width as usize).saturating_sub(3); // "> " + margin
-
-            // Wrap text and render each line
-            let wrapped_lines = wrap_text(&msg.content, text_width);
-            for (i, line_content) in wrapped_lines.iter().enumerate() {
-                if i == 0 {
-                    lines.push(Line::from(vec![
-                        prefix.clone(),
-                        Span::styled(line_content.clone(), Style::default().fg(colors.text)),
-                    ]));
-                } else {
-                    lines.push(Line::from(vec![
-                        Span::raw("  "), // Indent continuation (2 spaces = "> " length)
-                        Span::styled(line_content.clone(), Style::default().fg(colors.text)),
-                    ]));
-                }
-            }
+            // A past user turn: `> prompt text` in white on a full-width,
+            // slightly lighter gray bar. Every wrapped row carries the bar.
+            lines.extend(user_turn_lines(&msg.content, width, colors));
         }
         MessageRole::Assistant => {
             // Use full markdown renderer with theme
@@ -71,8 +53,7 @@ pub fn render_message_with_theme(
 
             // Create renderer with width and theme
             let content_width = width.saturating_sub(4); // Leave margin
-            let renderer =
-                MarkdownRenderer::with_theme(markdown_theme.clone()).with_width(content_width);
+            let renderer = MarkdownRenderer::cortex(markdown_theme.clone(), content_width);
 
             // Render markdown content
             let mut rendered_lines = renderer.render(&msg.content);
@@ -90,21 +71,26 @@ pub fn render_message_with_theme(
         MessageRole::System => {
             // Detect error messages - show in error color
             let is_error = msg.content.contains("Check your")
+                || msg.content.contains("temporarily unavailable")
                 || msg.content.contains("Access denied")
                 || msg.content.contains("timed out")
                 || msg.content.contains("failed")
                 || msg.content.contains("Invalid")
                 || msg.content.contains("limit")
+                || msg.content.contains("Stopped")
+                || msg.content.contains("quota exhausted")
+                || msg.content.contains("Sandbox denied")
+                || msg.content.contains("dropped")
                 || msg.content.starts_with("Error:")
                 || msg.content.contains("provider appears to be overloaded")
                 || msg.content.contains("internet connection")
                 || msg.content.contains("proxy is experiencing issues");
 
-            // No prefix for any system messages - use error color for errors, muted for info
+            // Errors in lock red; other system copy stays dim gray.
             let text_color = if is_error {
                 colors.error
             } else {
-                colors.text_muted
+                colors.text_dim
             };
 
             // Calculate available width for text (no prefix)
@@ -121,7 +107,7 @@ pub fn render_message_with_theme(
         }
         MessageRole::Tool => {
             // "[>] tool_name: result"
-            let prefix = Span::styled("[>] ", Style::default().fg(colors.accent));
+            let prefix = Span::styled("[>] ", Style::default().fg(colors.text_dim));
             let tool_name = msg.tool_name.as_deref().unwrap_or("tool");
             let name_span = Span::styled(
                 format!("{}: ", tool_name),
@@ -144,10 +130,36 @@ pub fn render_message_with_theme(
         }
     }
 
-    if !compact {
+    // System notices stack tightly (an error and its next step belong
+    // together); conversation turns keep their breathing room.
+    if !compact && msg.role != MessageRole::System {
         lines.push(Line::from(""));
     }
 
+    lines
+}
+
+/// A past user turn as full-width bar rows: `> text` on the first row, the
+/// wrapped continuation indented under the copy, every row padded to `width`
+/// so the gray bar spans the terminal.
+pub fn user_turn_lines(content: &str, width: u16, colors: &AdaptiveColors) -> Vec<Line<'static>> {
+    let bar = Style::default().fg(colors.text).bg(colors.user_bg);
+    let width = width.max(3) as usize;
+    let text_width = width.saturating_sub(3);
+    let mut lines = Vec::new();
+    let wrapped = wrap_text(content, text_width);
+    let rows: Vec<String> = if wrapped.is_empty() {
+        vec![String::new()]
+    } else {
+        wrapped
+    };
+    for (i, row) in rows.iter().enumerate() {
+        let prefix = if i == 0 { "> " } else { "  " };
+        let mut text = format!("{prefix}{row}");
+        let used = unicode_width::UnicodeWidthStr::width(text.as_str());
+        text.push_str(&" ".repeat(width.saturating_sub(used)));
+        lines.push(Line::from(Span::styled(text, bar)));
+    }
     lines
 }
 
@@ -165,12 +177,12 @@ pub fn render_tool_call(
         ToolStatus::Pending => (None, colors.text_muted),
         ToolStatus::Running => {
             let frame = TOOL_SPINNER_FRAMES[call.spinner_frame % TOOL_SPINNER_FRAMES.len()];
-            // Spinners stay gray — mint is reserved for markers and success.
+            // Spinners stay dim gray.
             (Some(frame.to_string()), colors.text_dim)
         }
-        // Completed tiles carry the mint status dot, same as the locked Grep
-        // tile; the label stays white.
-        ToolStatus::Completed => (Some("●".to_string()), colors.accent),
+        // Completed tiles carry a white status dot; the label stays white.
+        // Violet is the selection accent only, green is `✓` and `+diff` only.
+        ToolStatus::Completed => (Some("●".to_string()), colors.text),
         ToolStatus::Failed => (Some("●".to_string()), colors.error),
     };
 
@@ -199,6 +211,21 @@ pub fn render_tool_call(
             .fg(colors.text)
             .add_modifier(Modifier::BOLD),
     ));
+    // A diff result carries its `+N -N` stat on the tile header: the `+N`
+    // is the diff green, the `-N` stays dim.
+    if let Some(result) = call.result.as_ref() {
+        if crate::views::diff::looks_like_diff(&result.output) {
+            let (adds, dels) = crate::views::diff::count_changes(&result.output);
+            header_spans.push(Span::styled(
+                format!(" +{adds}"),
+                Style::default().fg(colors.diff_add),
+            ));
+            header_spans.push(Span::styled(
+                format!(" -{dels}"),
+                Style::default().fg(colors.text_dim),
+            ));
+        }
+    }
     lines.push(Line::from(header_spans));
 
     if call.status == ToolStatus::Running && call.result.is_none() && !call.live_output.is_empty() {
@@ -218,53 +245,76 @@ pub fn render_tool_call(
         .map(|r| r.output.as_str())
         .unwrap_or("");
     if !body.is_empty() {
-        let max_body = if width < 50 { 4 } else { 8 };
-        let mut emitted = 0usize;
-        for raw in body.lines() {
-            if emitted >= max_body {
-                break;
-            }
-            let is_add = raw.starts_with('+') && !raw.starts_with("+++");
-            let is_del = raw.starts_with('-') && !raw.starts_with("---");
-            let color = if is_add {
-                colors.accent
-            } else if is_del {
-                colors.error
-            } else {
-                colors.text_dim
-            };
-            let wrapped = wrap_or_drop(raw, inner);
-            if wrapped.is_empty() {
-                continue;
-            }
-            for wrapped_line in wrapped {
+        let max_body = if width < 50 { 6 } else { 14 };
+        if crate::views::diff::looks_like_diff(body) {
+            // An Edit / Write result that is a unified diff renders as a
+            // reviewer's hunk: dim gutter, white context, red `-`, green `+`,
+            // and word-level colour on a changed line.
+            let rendered = crate::views::diff::render_unified_diff(body, width, colors);
+            lines.extend(rendered.into_iter().take(max_body));
+        } else {
+            let mut emitted = 0usize;
+            for raw in body.lines() {
                 if emitted >= max_body {
                     break;
                 }
-                lines.push(Line::from(Span::styled(
-                    wrapped_line,
-                    Style::default().fg(color),
-                )));
-                emitted += 1;
+                let wrapped = wrap_or_drop(raw, inner);
+                if wrapped.is_empty() {
+                    continue;
+                }
+                for wrapped_line in wrapped {
+                    if emitted >= max_body {
+                        break;
+                    }
+                    lines.push(Line::from(Span::styled(
+                        wrapped_line,
+                        Style::default().fg(colors.text_dim),
+                    )));
+                    emitted += 1;
+                }
             }
         }
     } else if let Some(ref result) = call.result {
         let summary = result.summary.trim();
-        let mint_diff = summary.contains('+') || summary.contains('−') || summary.contains('-');
         for line in wrap_or_drop(summary, inner) {
-            lines.push(Line::from(Span::styled(
-                line,
-                Style::default().fg(if mint_diff {
-                    colors.accent
-                } else {
-                    colors.text_dim
-                }),
-            )));
+            lines.push(Line::from(diff_stat_spans(&line, colors)));
         }
     }
 
     lines.push(Line::from(""));
     lines
+}
+
+/// Style a summary such as `Edit src/a.ts · +58 -0`: every `+N` token is the
+/// diff green, `-N` / `−N` tokens and the rest stay dim. Green never covers a
+/// deletion count or a word.
+pub fn diff_stat_spans(text: &str, colors: &AdaptiveColors) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let next_space = rest.find(' ').unwrap_or(rest.len());
+        let (token, tail) = rest.split_at(next_space);
+        let is_add = token.len() > 1
+            && token.starts_with('+')
+            && token[1..].chars().all(|c| c.is_ascii_digit());
+        spans.push(Span::styled(
+            token.to_string(),
+            Style::default().fg(if is_add {
+                colors.diff_add
+            } else {
+                colors.text_dim
+            }),
+        ));
+        let spaces_end = tail.find(|c: char| c != ' ').unwrap_or(tail.len());
+        if spaces_end > 0 {
+            spans.push(Span::styled(
+                tail[..spaces_end].to_string(),
+                Style::default().fg(colors.text_dim),
+            ));
+        }
+        rest = &tail[spaces_end..];
+    }
+    spans
 }
 
 /// Renders a subagent task with todos in Factory-style format
@@ -288,12 +338,13 @@ pub fn render_subagent(
     let content_width = (width as usize).saturating_sub(6); // 6 chars for prefix/indent
     let line_width = (width as usize).saturating_sub(8); // 8 chars for nested content
 
-    // Status indicator with color
+    // Status indicator: a dim dot while running, white when done, red when
+    // failed — the tile label stays white.
     let (indicator, indicator_color) = match &task.status {
         SubagentDisplayStatus::Starting
         | SubagentDisplayStatus::Thinking
-        | SubagentDisplayStatus::ExecutingTool(_) => ("●", colors.accent),
-        SubagentDisplayStatus::Completed => ("●", colors.success),
+        | SubagentDisplayStatus::ExecutingTool(_) => ("●", colors.text_dim),
+        SubagentDisplayStatus::Completed => ("●", colors.text),
         SubagentDisplayStatus::Failed => ("●", colors.error),
     };
 
@@ -304,7 +355,7 @@ pub fn render_subagent(
         Span::styled(
             format!("Task {}", task.agent_type),
             Style::default()
-                .fg(colors.accent)
+                .fg(colors.text)
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
@@ -337,9 +388,9 @@ pub fn render_subagent(
         // Display todos if any - use ⎿ prefix for first, space for rest
         for (i, todo) in task.todos.iter().enumerate() {
             let (status_text, status_color) = match todo.status {
-                SubagentTodoStatus::Completed => ("[completed]", colors.success),
-                SubagentTodoStatus::InProgress => ("[in_progress]", colors.accent),
-                SubagentTodoStatus::Pending => ("[pending]", colors.text_muted),
+                SubagentTodoStatus::Completed => ("✓", colors.success),
+                SubagentTodoStatus::InProgress => ("›", colors.text),
+                SubagentTodoStatus::Pending => ("○", colors.text_muted),
             };
             // Calculate max content width (accounting for status text)
             let max_content = content_width.saturating_sub(status_text.len() + 1);
@@ -390,37 +441,67 @@ pub fn render_subagent(
     lines
 }
 
-/// Generates welcome card as styled lines using TUI components.
+/// Keystroke hints shown under the splash while the session is empty.
+pub const EMPTY_SESSION_HINTS: &str = "/ commands · @ files · ! shell · & cloud";
+
+/// Generates the launch header as styled lines: the workspace (`~/cortex-api
+/// main*`, dim), the `> cortex` invocation, the bold `Cortex CLI v…` splash
+/// and — while the session is empty — the keystroke hints.
 pub fn generate_welcome_lines(
     width: u16,
     colors: &AdaptiveColors,
     app_state: &AppState,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
+    let w = width as usize;
 
-    let version = if app_state.cli_version.is_empty() {
-        VERSION
-    } else {
-        app_state.cli_version.as_str()
-    };
-    let welcome_card = WelcomeCard::new()
-        .version(version)
-        .text_color(colors.text)
-        .dim_color(colors.text_dim)
-        .border_color(colors.text_dim);
-
-    lines.extend(welcome_card.to_lines(width));
-
-    let empty = app_state.messages.is_empty()
-        && !app_state.streaming.is_streaming
-        && app_state.tool_calls.is_empty();
-    if empty && width >= 48 {
-        let hints = "/ commands · @ files · ! shell · shift+tab modes";
-        for line in crate::ui::text_utils::wrap_or_drop(hints, width as usize) {
+    if !app_state.footer_cwd.is_empty() {
+        let dirty = if app_state.git_dirty { "*" } else { "" };
+        let workspace = if app_state.git_branch.is_empty() {
+            app_state.footer_cwd.clone()
+        } else {
+            format!("{} {}{dirty}", app_state.footer_cwd, app_state.git_branch)
+        };
+        let shown = crate::ui::text_utils::first_fitting_line(&workspace, w);
+        if !shown.is_empty() {
             lines.push(Line::from(Span::styled(
-                line,
+                shown,
                 Style::default().fg(colors.text_dim),
             )));
+        }
+        lines.push(Line::from(Span::styled(
+            "> cortex",
+            Style::default().fg(colors.text),
+        )));
+    }
+
+    if app_state.show_launch_splash {
+        let version = if app_state.cli_version.is_empty() {
+            VERSION
+        } else {
+            app_state.cli_version.as_str()
+        };
+        let welcome_card = WelcomeCard::new()
+            .version(version)
+            .text_color(colors.text)
+            .dim_color(colors.text_dim)
+            .border_color(colors.text_dim);
+
+        lines.extend(welcome_card.to_lines(width));
+
+        let empty = app_state.messages.is_empty()
+            && !app_state.streaming.is_streaming
+            && app_state.tool_calls.is_empty();
+        if empty {
+            // The keystroke hints are part of the launch splash at every
+            // width; narrow terminals show the leading keys that fit.
+            let line = crate::ui::text_utils::first_fitting_line(EMPTY_SESSION_HINTS, w);
+            if !line.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    line,
+                    Style::default().fg(colors.text_dim),
+                )));
+            }
         }
     }
 
@@ -572,7 +653,7 @@ pub fn render_text_content_with_theme(
     use cortex_core::markdown::MarkdownRenderer;
 
     let content_width = width.saturating_sub(4);
-    let renderer = MarkdownRenderer::with_theme(markdown_theme.clone()).with_width(content_width);
+    let renderer = MarkdownRenderer::cortex(markdown_theme.clone(), content_width);
 
     // No cursor for finalized content
     renderer.render(content)
@@ -589,7 +670,7 @@ pub fn render_streaming_content_with_theme(
     use cortex_core::markdown::MarkdownRenderer;
 
     let content_width = width.saturating_sub(4);
-    let renderer = MarkdownRenderer::with_theme(markdown_theme.clone()).with_width(content_width);
+    let renderer = MarkdownRenderer::cortex(markdown_theme.clone(), content_width);
     let mut rendered_lines = renderer.render(content);
 
     // Add streaming cursor to the last line
@@ -749,7 +830,6 @@ pub fn _render_motd(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, app_s
 /// Renders the welcome text next to the brain (legacy).
 #[allow(dead_code)]
 pub fn render_welcome_text(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors, model: &str) {
-    let accent = colors.accent;
     let text_color = colors.text;
     let dim = colors.text_dim;
 
@@ -758,7 +838,7 @@ pub fn render_welcome_text(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             "Welcome to Cortex",
-            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            Style::default().fg(text_color).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled("─────────────────", Style::default().fg(dim))),
         Line::from(""),
@@ -790,13 +870,14 @@ pub fn _render_welcome_text_centered(
     colors: &AdaptiveColors,
     _app_state: &AppState,
 ) {
-    let accent = colors.accent;
     let dim = colors.text_dim;
 
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             "Welcome to Cortex",
-            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(colors.text)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
@@ -827,37 +908,32 @@ pub fn render_update_banner(
         return;
     }
 
-    let (icon, text, style) = match update_status {
-        UpdateStatus::Available { version } => {
-            let icon = "↑";
-            let text = format!(" A new version ({}) is available ", version);
-            let style = Style::default()
-                .fg(colors.accent)
-                .add_modifier(Modifier::BOLD);
-            (icon, text, style)
-        }
+    // Gray copy throughout; only the `✓` of a finished download is green.
+    let (icon, icon_style, text) = match update_status {
+        UpdateStatus::Available { version } => (
+            "↑",
+            Style::default().fg(colors.text),
+            format!(" A new version ({}) is available ", version),
+        ),
         UpdateStatus::Downloading {
             version: _,
             progress,
-        } => {
-            let icon = "⟳";
-            let text = format!(" Downloading update... {}% ", progress);
-            let style = Style::default().fg(colors.warning);
-            (icon, text, style)
-        }
-        UpdateStatus::ReadyToRestart { version: _ } => {
-            let icon = "✓";
-            let text = " You must restart to run the latest version ".to_string();
-            let style = Style::default()
-                .fg(colors.success)
-                .add_modifier(Modifier::BOLD);
-            (icon, text, style)
-        }
+        } => (
+            "⟳",
+            Style::default().fg(colors.text_dim),
+            format!(" Downloading update... {}% ", progress),
+        ),
+        UpdateStatus::ReadyToRestart { version: _ } => (
+            "✓",
+            Style::default().fg(colors.success),
+            " You must restart to run the latest version ".to_string(),
+        ),
         _ => return, // Don't render for other states
     };
+    let text_style = Style::default().fg(colors.text);
 
     // Calculate banner width
-    let banner_width = (icon.len() + text.len() + 2) as u16; // +2 for spacing
+    let banner_width = (icon.chars().count() + text.len() + 2) as u16; // +2 for spacing
 
     // Position at left side of the area with some padding
     let x = area.x + 2;
@@ -869,8 +945,8 @@ pub fn render_update_banner(
     }
 
     // Render icon
-    buf.set_string(x, y, icon, style);
+    buf.set_string(x, y, icon, icon_style);
 
     // Render text
-    buf.set_string(x + icon.len() as u16 + 1, y, &text, style);
+    buf.set_string(x + icon.chars().count() as u16 + 1, y, &text, text_style);
 }

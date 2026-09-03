@@ -673,14 +673,41 @@ impl AppState {
 // ============================================================================
 
 impl AppState {
-    /// Toggle the operation mode (Build -> Plan -> Spec -> Build)
+    /// Toggle the operation mode (Agent -> Plan -> Ask -> Agent).
     pub fn toggle_operation_mode(&mut self) {
         self.operation_mode = self.operation_mode.next();
+        self.sync_agent_mode_label();
     }
 
     /// Set the operation mode directly
     pub fn set_operation_mode(&mut self, mode: OperationMode) {
         self.operation_mode = mode;
+        self.sync_agent_mode_label();
+    }
+
+    /// Map Build/Plan/Spec onto the locked Agent/Plan/Ask footer labels.
+    pub fn sync_agent_mode_label(&mut self) {
+        self.agent_mode_label = match self.operation_mode {
+            OperationMode::Build => "Agent",
+            OperationMode::Plan => "Plan",
+            OperationMode::Spec => "Ask",
+        }
+        .to_string();
+    }
+
+    /// Apply an Agent / Plan / Ask id from `/mode` or Shift+Tab.
+    pub fn set_agent_mode(&mut self, id: &str) {
+        let mode = match id.to_ascii_lowercase().as_str() {
+            "plan" => OperationMode::Plan,
+            "ask" => OperationMode::Spec,
+            _ => OperationMode::Build,
+        };
+        self.set_operation_mode(mode);
+    }
+
+    /// Cycle Agent → Plan → Ask → Agent.
+    pub fn cycle_agent_mode(&mut self) {
+        self.toggle_operation_mode();
     }
 
     /// Get the current operation mode
@@ -710,6 +737,40 @@ impl AppState {
 
     /// Get the mode name for display
     pub fn mode_name(&self) -> &'static str {
-        self.operation_mode.name()
+        match self.operation_mode {
+            OperationMode::Build => "Agent",
+            OperationMode::Plan => "Plan",
+            OperationMode::Spec => "Ask",
+        }
+    }
+}
+
+#[cfg(test)]
+mod agent_mode_tests {
+    use super::*;
+
+    #[test]
+    fn cycle_agent_mode_walks_agent_plan_ask() {
+        let mut state = AppState::new();
+        assert_eq!(state.agent_mode_label, "Agent");
+        state.cycle_agent_mode();
+        assert_eq!(state.agent_mode_label, "Plan");
+        assert!(state.is_plan_mode());
+        state.cycle_agent_mode();
+        assert_eq!(state.agent_mode_label, "Ask");
+        assert!(state.is_spec_mode());
+        state.cycle_agent_mode();
+        assert_eq!(state.agent_mode_label, "Agent");
+        assert!(state.can_write());
+    }
+
+    #[test]
+    fn set_agent_mode_maps_ask_to_spec() {
+        let mut state = AppState::new();
+        state.set_agent_mode("ask");
+        assert_eq!(state.agent_mode_label, "Ask");
+        assert!(state.is_spec_mode());
+        state.set_agent_mode("agent");
+        assert!(state.can_write());
     }
 }

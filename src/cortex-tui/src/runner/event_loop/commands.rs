@@ -171,7 +171,7 @@ impl EventLoop {
     }
 
     /// Handle open modal command
-    async fn handle_open_modal(&mut self, modal_type: ModalType) {
+    pub(super) async fn handle_open_modal(&mut self, modal_type: ModalType) {
         match modal_type {
             ModalType::Help(topic) => {
                 use crate::modal::HelpModal;
@@ -266,6 +266,12 @@ impl EventLoop {
                 }
                 "scroll" => {
                     let interactive = crate::interactive::builders::build_scroll_selector();
+                    self.app_state.enter_interactive_mode(interactive);
+                }
+                "sandbox" => {
+                    let interactive = crate::interactive::builders::build_sandbox_selector(
+                        self.app_state.sandbox_mode,
+                    );
                     self.app_state.enter_interactive_mode(interactive);
                 }
                 _ => {
@@ -370,14 +376,25 @@ impl EventLoop {
                 self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::Mode => {
-                self.app_state.toasts.info("Mode: Agent · Plan · Ask");
+                let interactive = crate::interactive::builders::build_mode_selector(
+                    &self.app_state.agent_mode_label,
+                );
+                self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::Plan => {
-                self.app_state.operation_mode = crate::app::OperationMode::Plan;
-                self.app_state.toasts.info("Plan mode");
+                self.app_state.set_agent_mode("plan");
+                self.sync_agent_mode_harness();
+                self.app_state.toasts.info("Mode: Plan");
             }
             ModalType::Effort => {
-                self.app_state.toasts.info("Effort");
+                let interactive = crate::interactive::builders::build_effort_selector(
+                    self.app_state.thinking_budget.as_deref(),
+                );
+                self.app_state.enter_interactive_mode(interactive);
+            }
+            ModalType::Skills => {
+                let interactive = self.build_skills_picker().await;
+                self.app_state.enter_interactive_mode(interactive);
             }
             _ => {
                 self.app_state
@@ -426,6 +443,18 @@ impl EventLoop {
                 }
                 // Now open the modal with freshly fetched (or cached) models
                 self.handle_open_modal(ModalType::ModelPicker).await;
+            }
+            cmd if cmd.starts_with("billing:usage") => {
+                let (from, to) = parse_usage_range(cmd);
+                crate::runner::billing_handlers::spawn_usage_fetch(
+                    self.tool_event_tx.clone(),
+                    from,
+                    to,
+                );
+                self.app_state.toasts.info("Fetching usage…");
+            }
+            cmd if cmd.starts_with("skill:invoke:") => {
+                self.invoke_skill_command(cmd).await;
             }
             _ => {
                 self.app_state
@@ -660,6 +689,29 @@ impl EventLoop {
                     self.app_state.toasts.error("Invalid temperature value");
                 }
             }
+            "sandbox" => {
+                self.app_state.sandbox_mode = value == "true" || value == "on";
+                let state = if self.app_state.sandbox_mode {
+                    "on"
+                } else {
+                    "off"
+                };
+                self.app_state
+                    .toasts
+                    .info(format!("Sandbox mode: {}", state));
+            }
+            "approval" => {
+                self.app_state.permission_mode = match value.to_ascii_lowercase().as_str() {
+                    "always" | "yolo" | "never" => crate::permissions::PermissionMode::Yolo,
+                    "session" | "medium" => crate::permissions::PermissionMode::Medium,
+                    "auto" | "low" => crate::permissions::PermissionMode::Low,
+                    _ => crate::permissions::PermissionMode::High,
+                };
+                self.sync_permission_mode();
+                self.app_state
+                    .toasts
+                    .info(format!("Permissions: {}", value));
+            }
             _ => {
                 self.app_state
                     .settings
@@ -667,4 +719,80 @@ impl EventLoop {
             }
         }
     }
+
+    async fn build_skills_picker(&self) -> crate::interactive::InteractiveState {
+        let items = discover_skills().await;
+        crate::interactive::builders::build_skills_selector(&items)
+    }
+
+    pub(super) async fn invoke_skill_command(&mut self, cmd: &str) {
+        let rest = cmd.strip_prefix("skill:invoke:").unwrap_or(cmd);
+        let (name, args) = match rest.split_once(':') {
+            Some((n, a)) => (n, Some(a)),
+            None => (rest, None),
+        };
+        match load_skill_by_name(name).await {
+            Ok(skill) => {
+                self.add_system_message(&format!(
+                    "Loaded skill /{}.\n\n{}",
+                    skill.metadata.name, skill.content
+                ));
+                if let Some(args) = args.filter(|a| !a.is_empty()) {
+                    self.add_system_message(&format!("Skill args: {args}"));
+                }
+                self.app_state
+                    .toasts
+                    .success(format!("Skill /{} loaded", skill.metadata.name));
+            }
+            Err(err) => {
+                self.add_system_message(&format!("Skill /{name}: {err}"));
+            }
+        }
+    }
+}
+
+fn parse_usage_range(cmd: &str) -> (Option<String>, Option<String>) {
+    let mut from = None;
+    let mut to = None;
+    for part in cmd.split(':') {
+        if let Some(value) = part.strip_prefix("from=") {
+            from = Some(value.to_string());
+        } else if let Some(value) = part.strip_prefix("to=") {
+            to = Some(value.to_string());
+        }
+    }
+    (from, to)
+}
+
+fn cortex_home_and_project() -> (std::path::PathBuf, Option<std::path::PathBuf>) {
+    let home = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".cortex");
+    let project = std::env::current_dir().ok();
+    (home, project)
+}
+
+async fn discover_skills() -> Vec<crate::interactive::builders::SkillListItem> {
+    let (home, project) = cortex_home_and_project();
+    let registry = cortex_engine::skills::SkillRegistry::new(&home, project.as_deref());
+    registry
+        .scan()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|skill| crate::interactive::builders::SkillListItem {
+            name: skill.metadata.name,
+            description: skill.metadata.description,
+        })
+        .collect()
+}
+
+async fn load_skill_by_name(name: &str) -> anyhow::Result<cortex_engine::skills::Skill> {
+    let (home, project) = cortex_home_and_project();
+    let registry = cortex_engine::skills::SkillRegistry::new(&home, project.as_deref());
+    let skills = registry.scan().await?;
+    skills
+        .into_iter()
+        .find(|s| s.metadata.name == name)
+        .ok_or_else(|| anyhow::anyhow!("not found. Add SKILL.md under ~/.cortex/skills."))
 }

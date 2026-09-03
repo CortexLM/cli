@@ -14,6 +14,7 @@ pub mod model;
 // pub mod provider; // REMOVED (single Cortex provider)
 pub mod resume_picker;
 pub mod scroll;
+pub mod session;
 pub mod sessions;
 pub mod settings;
 pub mod temperature;
@@ -35,12 +36,17 @@ pub use login::{
 };
 pub use mcp::{
     build_mcp_add_server_form, build_mcp_http_form, build_mcp_registry_browser, build_mcp_selector,
-    build_mcp_source_selector, build_mcp_stdio_form, build_mcp_transport_selector,
+    build_mcp_server_actions, build_mcp_source_selector, build_mcp_stdio_form,
+    build_mcp_transport_selector,
 };
 pub use model::build_model_selector;
 // pub use provider::build_provider_selector; // REMOVED (single Cortex provider)
 pub use resume_picker::build_resume_picker;
 pub use scroll::build_scroll_selector;
+pub use session::{
+    SkillListItem, build_effort_selector, build_mode_selector, build_sandbox_selector,
+    build_skills_selector,
+};
 pub use sessions::build_sessions_selector;
 pub use settings::{
     SettingsSnapshot, build_settings_hub, build_settings_section, build_settings_selector,

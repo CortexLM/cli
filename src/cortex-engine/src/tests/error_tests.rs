@@ -208,6 +208,11 @@ fn test_sandbox_denied() {
         command: "rm -rf /".to_string(),
     };
     assert!(err.to_string().contains("rm -rf /"));
+    assert!(err.to_string().contains("Sandbox denied"));
+    assert_eq!(
+        err.user_friendly_message(),
+        "Sandbox denied — rm -rf / was blocked by the workspace sandbox."
+    );
 }
 
 #[test]
@@ -290,4 +295,12 @@ fn test_auth_message_does_not_name_providers() {
     assert!(msg.contains("cortex login") || msg.contains("CORTEX_API_KEY"));
     assert!(!msg.to_lowercase().contains("openai"));
     assert!(!msg.to_lowercase().contains("grok"));
+}
+
+#[test]
+fn test_quota_message_is_product_facing() {
+    assert_eq!(
+        CortexError::RateLimitExceeded.user_friendly_message(),
+        "Agent quota exhausted"
+    );
 }

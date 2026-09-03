@@ -8,11 +8,11 @@ None of these values belong in git. Do not add AWS access keys or an IAM user fo
 
 No secrets. `fmt`, `clippy`, `test`, `audit`, and TUI jobs use the public crates.io index and `GITHUB_TOKEN`.
 
-## Version bump (`.github/workflows/version-bump.yml`)
+## Version bump / tag (`.github/workflows/version-bump.yml`)
 
 | Secret | Used for |
 |--------|----------|
-| `GITHUB_TOKEN` | Commit the bump on `main` and push tag `vX.Y.Z` (default Actions token is enough if repo settings allow) |
+| `GITHUB_TOKEN` | Open version-bump PRs and push release tags `vX.Y.Z` (no direct commits to protected `main`) |
 
 ## Release artifacts (`.github/workflows/release.yml`)
 

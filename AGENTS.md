@@ -6,7 +6,7 @@ Short contract for agents working in this repository. Prefer linking over restat
 
 **Do not** write `Grok`, `Grok Bot`, or `Grok-core` in code, docs, PR titles, or UI copy.
 
-Working branch: **`main`**. Releases are annotated tags `v*.*.*` cut on `main` by `.github/workflows/version-bump.yml` (patch bump + tag on merge; `workflow_dispatch` for minor/major).
+Working branch: **`main`**. Version bumps land on `main` via PR; `.github/workflows/version-bump.yml` tags `v*.*.*` after a `chore: bump version to …` merge (or `workflow_dispatch` to tag `VERSION_CLI` / open a bump PR). Tags trigger `release.yml`.
 
 ## Workspace map
 

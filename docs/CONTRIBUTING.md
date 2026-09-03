@@ -107,9 +107,11 @@ update the matching reference page in the same PR.
 
 ## Releases
 
-Merging to `main` triggers `.github/workflows/version-bump.yml`, which
-patch-bumps the version and tags it. Minor and major bumps are a manual
-`workflow_dispatch`. The version lives in `VERSION_CLI`,
+Bump the version in a PR (`./scripts/bump-version.sh patch|minor|major`, commit
+`chore: bump version to X.Y.Z`). Merging that PR runs
+`.github/workflows/version-bump.yml`, which tags `vX.Y.Z` and triggers
+`release.yml`. Use `workflow_dispatch` on the same workflow to open an automated
+bump PR or tag the current `VERSION_CLI`. The version lives in `VERSION_CLI`,
 `[workspace.package].version` and `src/cortex-cli/VERSION`, and
 `./scripts/check-cli-version.sh` verifies the three agree — do not introduce a
 second scheme.

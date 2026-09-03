@@ -179,12 +179,12 @@ through `generate_tui_demo` and rasterises the frames into `docs/media/intro.gif
 
 ## Release and CI secrets
 
-Merges to `main` run [`.github/workflows/version-bump.yml`](.github/workflows/version-bump.yml),
-which patch-bumps the version and tags it. Tags run
-[`release.yml`](.github/workflows/release.yml), which builds GitHub Release
-assets and **automatically** publishes them to Cloudflare R2 /
-[software.cortex.foundation](https://software.cortex.foundation) via
-[`publish-r2.yml`](.github/workflows/publish-r2.yml).
+Version bumps merge to `main` in a normal PR (`chore: bump version to …`).
+That merge runs [`.github/workflows/version-bump.yml`](.github/workflows/version-bump.yml),
+which tags `v*.*.*`. Tags run [`release.yml`](.github/workflows/release.yml),
+which builds GitHub Release assets and **automatically** publishes them to
+Cloudflare R2 / [software.cortex.foundation](https://software.cortex.foundation)
+via [`publish-r2.yml`](.github/workflows/publish-r2.yml).
 
 This repository does not invent cloud accounts. The secret *names* CI expects are
 listed in [docs/CI_SECRETS.md](./docs/CI_SECRETS.md). Values never go in git.

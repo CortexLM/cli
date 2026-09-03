@@ -9,6 +9,6 @@
   - tests added
   - no secrets
 - CI on PRs to `main` is required: fmt, clippy `-D warnings`, test, audit, TUI checks.
-- Versioning: `.github/workflows/version-bump.yml` patch-bumps and tags on merge to `main`. Do not add another version bot.
+- Versioning: bump `VERSION_CLI` / `Cargo.toml` / `src/cortex-cli/VERSION` in a PR; merge tags `v*.*.*` via `.github/workflows/version-bump.yml`. Do not add another version bot or push directly to `main`.
 - Do not commit `Cargo.lock` deletions. This is a binary workspace; the lockfile is source of truth.
 - PR titles and bodies: Cortex CLI / Cortex Code. Never Grok.

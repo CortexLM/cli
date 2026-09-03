@@ -1874,6 +1874,7 @@ dependencies = [
  "tokio-test",
  "tracing",
  "windows-sys 0.59.0",
+ "wiremock",
  "zip",
 ]
 

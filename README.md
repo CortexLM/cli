@@ -49,11 +49,21 @@ in your OS keyring.
 
 ### Linux and macOS
 
+The installer downloads the matching archive from
+[software.cortex.foundation](https://software.cortex.foundation), verifies its
+SHA-256, and installs to `~/.local/bin`. Review it first if you prefer:
+
 ```bash
+curl -fsSL https://software.cortex.foundation/install.sh | less
 curl -fsSL https://software.cortex.foundation/install.sh | sh
 ```
 
+Update an existing install with `cortex upgrade`. Pin a version with
+`CORTEX_VERSION=0.1.4` when running the installer.
+
 ### Windows
+
+Windows installs into `%LOCALAPPDATA%\Cortex\bin` after the same checksum check:
 
 ```powershell
 irm https://software.cortex.foundation/install.ps1 | iex
@@ -171,7 +181,8 @@ through `generate_tui_demo` and rasterises the frames into `docs/media/intro.gif
 
 Merges to `main` run [`.github/workflows/version-bump.yml`](.github/workflows/version-bump.yml),
 which patch-bumps the version and tags it. Tags run
-[`release.yml`](.github/workflows/release.yml), which can publish to
+[`release.yml`](.github/workflows/release.yml), which builds GitHub Release
+assets and **automatically** publishes them to Cloudflare R2 /
 [software.cortex.foundation](https://software.cortex.foundation) via
 [`publish-r2.yml`](.github/workflows/publish-r2.yml).
 

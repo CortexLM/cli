@@ -374,4 +374,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ==========================================================================
+  # Publish binaries to software.cortex.foundation (Cloudflare R2)
+  # ==========================================================================
+  publish:
+    name: Publish to software.cortex.foundation
+    needs: [prepare, release]
+    if: success() && needs.release.result == 'success'
+    uses: ./.github/workflows/publish-r2.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      channel: ${{ contains(needs.prepare.outputs.version, '-') && 'beta' || 'stable' }}
+      release_run_id: ${{ github.run_id }}
+    secrets:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    permissions:
+      contents: read
+      actions: read
+
 

@@ -235,30 +235,30 @@ impl Installer {
     /// Find the cortex binary in the extracted directory.
     async fn find_binary(&self, dir: &Path) -> UpdateResult<PathBuf> {
         #[cfg(windows)]
-        let binary_name = "cortex.exe";
+        const CANDIDATES: &[&str] = &["Cortex.exe", "cortex.exe"];
         #[cfg(not(windows))]
-        let binary_name = "cortex";
+        const CANDIDATES: &[&str] = &["Cortex", "cortex"];
 
-        // Check direct in directory
-        let direct = dir.join(binary_name);
-        if direct.exists() {
-            return Ok(direct);
+        for name in CANDIDATES {
+            let direct = dir.join(name);
+            if direct.exists() {
+                return Ok(direct);
+            }
+            let in_bin = dir.join("bin").join(name);
+            if in_bin.exists() {
+                return Ok(in_bin);
+            }
         }
 
-        // Check in bin/ subdirectory
-        let in_bin = dir.join("bin").join(binary_name);
-        if in_bin.exists() {
-            return Ok(in_bin);
-        }
-
-        // Search recursively (one level)
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
-                let in_subdir = path.join(binary_name);
-                if in_subdir.exists() {
-                    return Ok(in_subdir);
+                for name in CANDIDATES {
+                    let in_subdir = path.join(name);
+                    if in_subdir.exists() {
+                        return Ok(in_subdir);
+                    }
                 }
             }
         }
@@ -386,5 +386,18 @@ mod tests {
         assert!(!download.verified);
         download.mark_verified();
         assert!(download.verified);
+    }
+
+    #[tokio::test]
+    async fn find_binary_accepts_capital_c_cortex() {
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let name = "Cortex.exe";
+        #[cfg(not(windows))]
+        let name = "Cortex";
+        std::fs::write(dir.path().join(name), b"#!/bin/sh\n").unwrap();
+        let installer = Installer::new(InstallMethod::CurlScript);
+        let found = installer.find_binary(dir.path()).await.unwrap();
+        assert_eq!(found.file_name().unwrap(), name);
     }
 }

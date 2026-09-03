@@ -33,7 +33,7 @@ mod method;
 mod verify;
 mod version;
 
-pub use api::{CortexSoftwareClient, ReleaseAsset, ReleaseInfo};
+pub use api::{CortexSoftwareClient, ReleaseAsset, ReleaseInfo, ReleaseManifest};
 pub use config::{ReleaseChannel, UpdateConfig, UpdateMode};
 pub use download::DownloadProgress;
 pub use error::{UpdateError, UpdateResult};

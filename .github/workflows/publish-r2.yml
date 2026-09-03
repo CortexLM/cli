@@ -1,5 +1,21 @@
 name: Publish CLI Release to R2
 
+# Production publisher for https://software.cortex.foundation
+# (Cloudflare R2 bucket `cortex-software`).
+#
+# Called automatically from release.yml after a successful GitHub Release.
+# Can also be dispatched to republish an existing release's artifacts.
+#
+# Public object layout (bucket root = host root):
+#   v1/assets/<platform>/<version>/cortex.tar.gz|zip + .sha256
+#   releases/<version>.json
+#   releases/manifest.json
+#   v1/releases/<version>.json          (alias for cortex-update)
+#   v1/releases/latest.json             (this channel's ReleaseInfo)
+#   v1/releases/manifest.json           (alias)
+#   install.sh
+#   install.ps1
+
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +24,7 @@ on:
         required: true
         type: string
       release_run_id:
-        description: "Release workflow run ID to download artifacts from (leave empty if called from release workflow)"
+        description: "Release workflow run ID to download artifacts from"
         required: false
         type: string
       channel:
@@ -39,6 +55,12 @@ on:
         description: "Brief release notes"
         required: false
         type: string
+        default: ""
+      release_run_id:
+        description: "Caller workflow run ID whose build artifacts to publish"
+        required: false
+        type: string
+        default: ""
     secrets:
       R2_ACCESS_KEY_ID:
         required: true
@@ -49,15 +71,14 @@ on:
 
 env:
   BINARY_NAME: Cortex
+  PUBLIC_HOST: https://software.cortex.foundation
+  R2_BUCKET: cortex-software
 
 permissions:
   contents: read
   actions: read
 
 jobs:
-  # ==========================================================================
-  # Download artifacts from Release workflow and publish to R2 (lightweight - 4 vCPU)
-  # ==========================================================================
   publish:
     name: Publish to R2
     runs-on: ubuntu-latest
@@ -65,19 +86,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download artifacts from Release run (workflow_dispatch with run_id)
-        if: github.event_name == 'workflow_dispatch' && inputs.release_run_id != ''
+      - name: Require R2 secrets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          mkdir -p artifacts
-          echo "Downloading artifacts from run ${{ inputs.release_run_id }}..."
-          gh run download ${{ inputs.release_run_id }} --dir artifacts
-          echo "Downloaded artifacts:"
-          ls -la artifacts/
+          missing=0
+          if [ -z "$R2_ACCESS_KEY_ID" ]; then
+            echo "::error::R2_ACCESS_KEY_ID is not set on this repository."
+            missing=1
+          fi
+          if [ -z "$R2_SECRET_ACCESS_KEY" ]; then
+            echo "::error::R2_SECRET_ACCESS_KEY is not set on this repository."
+            missing=1
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID is not set on this repository."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "Configure the R2 secrets listed in docs/CI_SECRETS.md."
+            exit 1
+          fi
 
-      - name: Download artifacts from current workflow
-        if: github.event_name == 'workflow_call' || (github.event_name == 'workflow_dispatch' && inputs.release_run_id == '')
+      - name: Download artifacts from a release workflow run
+        if: inputs.release_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download artifacts from this workflow
+        if: inputs.release_run_id == ''
         uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -97,190 +139,205 @@ jobs:
           for artifact in "${EXPECTED_ARTIFACTS[@]}"; do
             if [ ! -d "artifacts/$artifact" ]; then
               echo "ERROR: Missing artifact: $artifact"
+              ls -la artifacts/ || true
               exit 1
             fi
             echo "Found: $artifact"
           done
 
-      - name: Prepare archives and calculate checksums
-        id: checksums
+      - name: Install rclone and jq
+        run: sudo apt-get update && sudo apt-get install -y rclone jq
+
+      - name: Prepare archives and checksums
         run: |
           mkdir -p dist
 
-          # Unix platforms - artifacts are already .tar.gz
           for mapping in linux-x86_64:cortex-cli-linux-x64 linux-aarch64:cortex-cli-linux-arm64 darwin-x86_64:cortex-cli-macos-x64 darwin-aarch64:cortex-cli-macos-arm64; do
             IFS=':' read -r platform artifact <<< "$mapping"
-            
-            # Find the archive file
+
             ARCHIVE=$(find "artifacts/$artifact" -name "*.tar.gz" | head -1)
             if [ -z "$ARCHIVE" ]; then
               echo "ERROR: No .tar.gz found in artifacts/$artifact"
               ls -la "artifacts/$artifact/"
               exit 1
             fi
-            
+
             mkdir -p "dist/$platform"
             cp "$ARCHIVE" "dist/$platform/cortex.tar.gz"
-            
-            SHA=$(sha256sum "dist/$platform/cortex.tar.gz" | awk '{print $1}')
-            echo "${platform}=$SHA" >> $GITHUB_OUTPUT
-            echo "$platform: $SHA"
+            sha256sum "dist/$platform/cortex.tar.gz" | awk '{print $1 "  cortex.tar.gz"}' > "dist/$platform/cortex.tar.gz.sha256"
+            echo "$platform: $(cat "dist/$platform/cortex.tar.gz.sha256")"
           done
 
-          # Windows platforms - artifacts are already .zip
-          # Temporarily disabled: Windows ARM64 build has LLVM/clang issues
           for mapping in windows-x86_64:cortex-cli-windows-x64; do
             IFS=':' read -r platform artifact <<< "$mapping"
-            
+
             ARCHIVE=$(find "artifacts/$artifact" -name "*.zip" | head -1)
             if [ -z "$ARCHIVE" ]; then
               echo "ERROR: No .zip found in artifacts/$artifact"
               ls -la "artifacts/$artifact/"
               exit 1
             fi
-            
+
             mkdir -p "dist/$platform"
             cp "$ARCHIVE" "dist/$platform/cortex.zip"
-            
-            SHA=$(sha256sum "dist/$platform/cortex.zip" | awk '{print $1}')
-            echo "${platform}=$SHA" >> $GITHUB_OUTPUT
-            echo "$platform: $SHA"
+            sha256sum "dist/$platform/cortex.zip" | awk '{print $1 "  cortex.zip"}' > "dist/$platform/cortex.zip.sha256"
+            echo "$platform: $(cat "dist/$platform/cortex.zip.sha256")"
           done
 
           echo "Prepared archives:"
           find dist -type f
 
-      - name: Setup rclone
+      - name: Generate release JSON and update manifest
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          RELEASE_NOTES: ${{ inputs.release_notes || '' }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          curl https://rclone.org/install.sh | sudo bash
-          mkdir -p ~/.config/rclone
-          cat > ~/.config/rclone/rclone.conf << EOF
-          [r2]
-          type = s3
-          provider = Cloudflare
-          access_key_id = ${{ secrets.R2_ACCESS_KEY_ID }}
-          secret_access_key = ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          endpoint = https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
-          acl = private
-          no_check_bucket = true
-          EOF
-
-      - name: Create checksum files
-        run: |
-          for platform in linux-x86_64 linux-aarch64 darwin-x86_64 darwin-aarch64; do
-            sha256sum "dist/$platform/cortex.tar.gz" | awk '{print $1 "  cortex.tar.gz"}' > "dist/$platform/cortex.tar.gz.sha256"
-            echo "$platform: $(cat dist/$platform/cortex.tar.gz.sha256)"
-          done
-
-          # Temporarily disabled: Windows ARM64 build has LLVM/clang issues
-          for platform in windows-x86_64; do
-            sha256sum "dist/$platform/cortex.zip" | awk '{print $1 "  cortex.zip"}' > "dist/$platform/cortex.zip.sha256"
-            echo "$platform: $(cat dist/$platform/cortex.zip.sha256)"
-          done
-
-      - name: Upload assets to R2
-        run: |
-          VERSION="${{ inputs.version }}"
-
-          for platform in linux-x86_64 linux-aarch64 darwin-x86_64 darwin-aarch64; do
-            echo "Uploading $platform..."
-            rclone copy "dist/$platform/cortex.tar.gz" "r2:cortex-software/assets/$platform/$VERSION/" --progress
-            rclone copy "dist/$platform/cortex.tar.gz.sha256" "r2:cortex-software/assets/$platform/$VERSION/" --progress
-          done
-
-          # Temporarily disabled: Windows ARM64 build has LLVM/clang issues
-          for platform in windows-x86_64; do
-            echo "Uploading $platform..."
-            rclone copy "dist/$platform/cortex.zip" "r2:cortex-software/assets/$platform/$VERSION/" --progress
-            rclone copy "dist/$platform/cortex.zip.sha256" "r2:cortex-software/assets/$platform/$VERSION/" --progress
-          done
-
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Generate release manifest
-        run: |
-          VERSION="${{ inputs.version }}"
-          CHANNEL="${{ inputs.channel }}"
-          RELEASE_NOTES="${{ inputs.release_notes }}"
+          set -euo pipefail
           RELEASED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          BASE_URL="https://software.cortex.foundation/v1/assets"
+          BASE_URL="${PUBLIC_HOST}/v1/assets"
 
-          cat > release.json << EOF
-          {
-            "version": "$VERSION",
-            "channel": "$CHANNEL",
-            "released_at": "$RELEASED_AT",
-            "changelog_url": "https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md",
-            "release_notes": "$RELEASE_NOTES",
-            "assets": {
-              "linux-x86_64": {
-                "url": "$BASE_URL/linux-x86_64/$VERSION/cortex.tar.gz",
-                "sha256": "${{ steps.checksums.outputs.linux-x86_64 }}",
-                "size": $(stat -c%s dist/linux-x86_64/cortex.tar.gz 2>/dev/null || echo 0)
-              },
-              "linux-aarch64": {
-                "url": "$BASE_URL/linux-aarch64/$VERSION/cortex.tar.gz",
-                "sha256": "${{ steps.checksums.outputs.linux-aarch64 }}",
-                "size": $(stat -c%s dist/linux-aarch64/cortex.tar.gz 2>/dev/null || echo 0)
-              },
-              "darwin-x86_64": {
-                "url": "$BASE_URL/darwin-x86_64/$VERSION/cortex.tar.gz",
-                "sha256": "${{ steps.checksums.outputs.darwin-x86_64 }}",
-                "size": $(stat -c%s dist/darwin-x86_64/cortex.tar.gz 2>/dev/null || echo 0)
-              },
-              "darwin-aarch64": {
-                "url": "$BASE_URL/darwin-aarch64/$VERSION/cortex.tar.gz",
-                "sha256": "${{ steps.checksums.outputs.darwin-aarch64 }}",
-                "size": $(stat -c%s dist/darwin-aarch64/cortex.tar.gz 2>/dev/null || echo 0)
-              },
-              "windows-x86_64": {
-                "url": "$BASE_URL/windows-x86_64/$VERSION/cortex.zip",
-                "sha256": "${{ steps.checksums.outputs.windows-x86_64 }}",
-                "size": $(stat -c%s dist/windows-x86_64/cortex.zip 2>/dev/null || echo 0)
-              }
-            }
+          asset_obj() {
+            local platform="$1"
+            local file="$2"
+            local url="$BASE_URL/$platform/$VERSION/$file"
+            local sha
+            sha=$(awk '{print $1}' "dist/$platform/${file}.sha256")
+            local size
+            size=$(stat -c%s "dist/$platform/$file")
+            jq -n --arg url "$url" --arg sha256 "$sha" --argjson size "$size" \
+              '{url: $url, sha256: $sha256, size: $size}'
           }
-          EOF
 
+          jq -n \
+            --arg version "$VERSION" \
+            --arg channel "$CHANNEL" \
+            --arg released_at "$RELEASED_AT" \
+            --arg changelog_url "https://github.com/${REPOSITORY}/blob/main/CHANGELOG.md" \
+            --arg release_notes "$RELEASE_NOTES" \
+            --argjson linux_x86_64 "$(asset_obj linux-x86_64 cortex.tar.gz)" \
+            --argjson linux_aarch64 "$(asset_obj linux-aarch64 cortex.tar.gz)" \
+            --argjson darwin_x86_64 "$(asset_obj darwin-x86_64 cortex.tar.gz)" \
+            --argjson darwin_aarch64 "$(asset_obj darwin-aarch64 cortex.tar.gz)" \
+            --argjson windows_x86_64 "$(asset_obj windows-x86_64 cortex.zip)" \
+            '{
+              version: $version,
+              channel: $channel,
+              released_at: $released_at,
+              changelog_url: $changelog_url,
+              release_notes: (if $release_notes == "" then null else $release_notes end),
+              assets: {
+                "linux-x86_64": $linux_x86_64,
+                "linux-aarch64": $linux_aarch64,
+                "darwin-x86_64": $darwin_x86_64,
+                "darwin-aarch64": $darwin_aarch64,
+                "windows-x86_64": $windows_x86_64
+              }
+            }' > release.json
+
+          echo "Release JSON:"
           cat release.json
 
-      - name: Upload release manifest to R2
+      - name: Configure rclone for R2
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          VERSION="${{ inputs.version }}"
-          CHANNEL="${{ inputs.channel }}"
+          mkdir -p ~/.config/rclone
+          {
+            printf '[r2]\n'
+            printf 'type = s3\n'
+            printf 'provider = Cloudflare\n'
+            printf 'access_key_id = %s\n' "$R2_ACCESS_KEY_ID"
+            printf 'secret_access_key = %s\n' "$R2_SECRET_ACCESS_KEY"
+            printf 'endpoint = https://%s.r2.cloudflarestorage.com\n' "$CLOUDFLARE_ACCOUNT_ID"
+            printf 'acl = private\n'
+            printf 'no_check_bucket = true\n'
+          } > ~/.config/rclone/rclone.conf
 
-          rclone copyto release.json "r2:cortex-software/releases/$VERSION.json" --progress
+      - name: Upload assets, release JSON, and installers
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          REMOTE="r2:${R2_BUCKET}"
 
-          # Try to download existing manifest, create empty one if not found
-          rclone copy "r2:cortex-software/releases/manifest.json" . 2>/dev/null || true
+          r2_copy() {
+            local src="$1"
+            local dest="$2"
+            rclone copyto "$src" "$REMOTE/$dest" --progress
+          }
+
+          for platform in linux-x86_64 linux-aarch64 darwin-x86_64 darwin-aarch64; do
+            echo "Uploading $platform..."
+            r2_copy "dist/$platform/cortex.tar.gz" "v1/assets/$platform/$VERSION/cortex.tar.gz"
+            r2_copy "dist/$platform/cortex.tar.gz.sha256" "v1/assets/$platform/$VERSION/cortex.tar.gz.sha256"
+          done
+
+          for platform in windows-x86_64; do
+            echo "Uploading $platform..."
+            r2_copy "dist/$platform/cortex.zip" "v1/assets/$platform/$VERSION/cortex.zip"
+            r2_copy "dist/$platform/cortex.zip.sha256" "v1/assets/$platform/$VERSION/cortex.zip.sha256"
+          done
+
+          r2_copy release.json "releases/${VERSION}.json"
+          r2_copy release.json "v1/releases/${VERSION}.json"
+          r2_copy release.json "v1/releases/latest.json"
+
+          # Merge this release into the channel manifest (create if missing).
+          rclone copyto "${REMOTE}/releases/manifest.json" ./manifest.json 2>/dev/null || true
+          if [ ! -f manifest.json ]; then
+            rclone copyto "${REMOTE}/v1/releases/manifest.json" ./manifest.json 2>/dev/null || true
+          fi
           if [ ! -f manifest.json ]; then
             echo '{"stable":null,"beta":null,"nightly":null,"all_versions":[]}' > manifest.json
           fi
 
-          RELEASE_JSON=$(cat release.json)
-          jq --argjson release "$RELEASE_JSON" --arg channel "$CHANNEL" --arg version "$VERSION" '
-            .[$channel] = $release |
+          jq --slurpfile release release.json --arg channel "$CHANNEL" --arg version "$VERSION" '
+            .[$channel] = $release[0] |
             .all_versions = ([$version] + (.all_versions // []) | unique | reverse)
           ' manifest.json > manifest_new.json
           mv manifest_new.json manifest.json
 
-          rclone copyto manifest.json "r2:cortex-software/releases/manifest.json" --progress
+          r2_copy manifest.json "releases/manifest.json"
+          r2_copy manifest.json "v1/releases/manifest.json"
+
+          if [ -f scripts/install.sh ]; then
+            r2_copy scripts/install.sh install.sh
+          else
+            echo "ERROR: scripts/install.sh is missing"
+            exit 1
+          fi
+          if [ -f scripts/install.ps1 ]; then
+            r2_copy scripts/install.ps1 install.ps1
+          else
+            echo "ERROR: scripts/install.ps1 is missing"
+            exit 1
+          fi
 
           echo "Updated manifest:"
           cat manifest.json
 
       - name: Summary
         run: |
-          echo "## CLI Release Published" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | ${{ inputs.version }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Channel | ${{ inputs.channel }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Source Run | [${{ inputs.release_run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ inputs.release_run_id }}) |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Download URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- Linux x64: https://software.cortex.foundation/v1/assets/linux-x86_64/${{ inputs.version }}/cortex.tar.gz" >> $GITHUB_STEP_SUMMARY
-          echo "- macOS ARM64: https://software.cortex.foundation/v1/assets/darwin-aarch64/${{ inputs.version }}/cortex.tar.gz" >> $GITHUB_STEP_SUMMARY
-          echo "- Windows x64: https://software.cortex.foundation/v1/assets/windows-x86_64/${{ inputs.version }}/cortex.zip" >> $GITHUB_STEP_SUMMARY
+          echo "## CLI release published to software.cortex.foundation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | ${{ inputs.version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Channel | ${{ inputs.channel }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Bucket | \`${R2_BUCKET}\` |" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${{ inputs.release_run_id }}" ]; then
+            echo "| Source run | [${{ inputs.release_run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ inputs.release_run_id }}) |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Public URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Install (Unix): ${PUBLIC_HOST}/install.sh" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Install (Windows): ${PUBLIC_HOST}/install.ps1" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest: ${PUBLIC_HOST}/releases/manifest.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Linux x64: ${PUBLIC_HOST}/v1/assets/linux-x86_64/${{ inputs.version }}/cortex.tar.gz" >> "$GITHUB_STEP_SUMMARY"
+          echo "- macOS ARM64: ${PUBLIC_HOST}/v1/assets/darwin-aarch64/${{ inputs.version }}/cortex.tar.gz" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Windows x64: ${PUBLIC_HOST}/v1/assets/windows-x86_64/${{ inputs.version }}/cortex.zip" >> "$GITHUB_STEP_SUMMARY"

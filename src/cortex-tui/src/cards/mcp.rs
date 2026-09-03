@@ -817,7 +817,7 @@ mod tests {
         let server = McpServerInfo::new("broken").with_error("Connection refused");
 
         let display = server.format_display();
-        assert!(display.contains("✗"));
+        assert!(display.contains("x"));
         assert!(display.contains("broken"));
         assert!(display.contains("Error"));
         assert!(display.contains("Connection refused"));

@@ -6,6 +6,9 @@ name: Version Bump
 on:
   push:
     branches: [main]
+    paths:
+      - VERSION_CLI
+      - src/cortex-cli/VERSION
   workflow_dispatch:
     inputs:
       action:
@@ -30,6 +33,17 @@ permissions:
   pull-requests: write
 
 jobs:
+  # Always-green job so skipped tag/PR jobs do not fail the workflow.
+  gate:
+    name: Workflow started
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "Tagging runs only for 'chore: bump version to …' merges or workflow_dispatch."
+
   tag-on-version-bump-merge:
     name: Tag release on version-bump merge
     runs-on: ubuntu-latest

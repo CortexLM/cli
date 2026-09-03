@@ -262,8 +262,8 @@ else
         echo "Next steps:"
         echo "  1. Review the changes: git diff"
         echo "  2. Commit: git commit -am \"chore: bump version to $NEW_VERSION\""
-        echo "  3. Tag for release: git tag v$NEW_VERSION"
-        echo "  4. Push: git push && git push --tags"
+        echo "  3. Open a PR to main (do not push commits to main directly)"
+        echo "  4. After merge, version-bump.yml tags v$NEW_VERSION and release.yml runs"
     else
         echo ""
         echo -e "${RED}ERROR: Version consistency check failed!${NC}"

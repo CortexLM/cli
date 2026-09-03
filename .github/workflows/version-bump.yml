@@ -129,23 +129,12 @@ jobs:
           git add VERSION_CLI src/cortex-cli/VERSION Cargo.toml Cargo.lock
           git commit -m "chore: bump version to ${NEW_VERSION}"
           git push -u origin "$BRANCH"
+          BODY="Automated version bump from ${{ steps.bump.outputs.old_version }} to ${NEW_VERSION}. Merge this PR (do not push to main). version-bump.yml then tags v${NEW_VERSION}; release.yml builds artifacts. Publish to R2 with publish-r2.yml workflow_dispatch."
           gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "chore: bump version to ${NEW_VERSION}" \
-            --body "$(cat <<EOF
-## Summary
-
-Automated version bump from ${{ steps.bump.outputs.old_version }} to ${NEW_VERSION}.
-
-## Release path
-
-1. Merge this PR (no direct pushes to \`main\`).
-2. \`version-bump.yml\` tags \`v${NEW_VERSION}\` on merge.
-3. The tag triggers \`release.yml\` to build artifacts and create the GitHub Release.
-4. Publish to R2 manually via \`publish-r2.yml\` workflow_dispatch when ready.
-EOF
-)"
+            --body "$BODY"
 
   tag-current-version:
     name: Tag current VERSION_CLI

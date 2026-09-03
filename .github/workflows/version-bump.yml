@@ -2,7 +2,8 @@ name: Version Bump
 
 # Version bumps land on main through normal PRs (protected branch / ruleset safe).
 # After a version-bump PR merges, this workflow tags v{VERSION_CLI}, which triggers
-# release.yml. workflow_dispatch can open a bump PR or tag the current VERSION_CLI.
+# release.yml (GitHub Release + automatic R2 publish). workflow_dispatch can open a
+# bump PR or tag the current VERSION_CLI. This workflow never pushes commits to main.
 on:
   push:
     branches: [main]
@@ -39,9 +40,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Note
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
         run: |
-          echo "event=${{ github.event_name }}"
-          echo "ref=${{ github.ref }}"
+          echo "event=${EVENT_NAME}"
+          echo "ref=${GIT_REF}"
           echo "Tagging runs only for 'chore: bump version to …' merges or workflow_dispatch."
 
   tag-on-version-bump-merge:
@@ -62,19 +66,21 @@ jobs:
         id: version
         run: |
           VERSION=$(tr -d '[:space:]' < VERSION_CLI)
-          if [ -z "$VERSION" ]; then
-            echo "::error::VERSION_CLI is empty"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::VERSION_CLI is missing or not a valid version"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release version from VERSION_CLI: $VERSION"
 
       - name: Verify bump commit message
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          MSG="${{ github.event.head_commit.message }}"
-          if ! echo "$MSG" | grep -q "chore: bump version to ${VERSION}"; then
-            echo "::error::Head commit must be 'chore: bump version to ${VERSION}' (got: ${MSG})"
+          expected="chore: bump version to ${VERSION}"
+          MSG=$(git log -1 --pretty=%B)
+          if ! printf '%s\n' "$MSG" | grep -F -q "$expected"; then
+            echo "::error::Head commit must contain '${expected}'"
             exit 1
           fi
           ./scripts/check-cli-version.sh
@@ -109,19 +115,29 @@ jobs:
 
       - name: Bump version
         id: bump
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
         run: |
+          case "$BUMP_TYPE" in
+            patch|minor|major) ;;
+            *)
+              echo "::error::bump_type must be patch, minor, or major"
+              exit 1
+              ;;
+          esac
           OLD_VERSION=$(tr -d '[:space:]' < VERSION_CLI)
           echo "old_version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           chmod +x ./scripts/bump-version.sh
-          ./scripts/bump-version.sh "${{ inputs.bump_type }}"
+          ./scripts/bump-version.sh "$BUMP_TYPE"
           NEW_VERSION=$(tr -d '[:space:]' < VERSION_CLI)
           echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          OLD_VERSION: ${{ steps.bump.outputs.old_version }}
         run: |
-          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
           BRANCH="chore/bump-version-${NEW_VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -129,7 +145,7 @@ jobs:
           git add VERSION_CLI src/cortex-cli/VERSION Cargo.toml Cargo.lock
           git commit -m "chore: bump version to ${NEW_VERSION}"
           git push -u origin "$BRANCH"
-          BODY="Automated version bump from ${{ steps.bump.outputs.old_version }} to ${NEW_VERSION}. Merge this PR (do not push to main). version-bump.yml then tags v${NEW_VERSION}; release.yml builds artifacts. Publish to R2 with publish-r2.yml workflow_dispatch."
+          BODY="Automated version bump from ${OLD_VERSION} to ${NEW_VERSION}. Merge this PR (do not push to main). version-bump.yml then tags v${NEW_VERSION}; release.yml builds artifacts and publish-r2.yml publishes to software.cortex.foundation."
           gh pr create \
             --base main \
             --head "$BRANCH" \
@@ -149,6 +165,10 @@ jobs:
         id: version
         run: |
           VERSION=$(tr -d '[:space:]' < VERSION_CLI)
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::VERSION_CLI is missing or not a valid version"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           ./scripts/check-cli-version.sh
 
@@ -174,10 +194,15 @@ jobs:
     if: always() && needs.tag-on-version-bump-merge.result != 'skipped'
     steps:
       - name: Summary
+        env:
+          VERSION: ${{ needs.tag-on-version-bump-merge.outputs.version }}
+          TAGGED: ${{ needs.tag-on-version-bump-merge.outputs.tagged }}
         run: |
-          echo "## Version tag" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Version** | ${{ needs.tag-on-version-bump-merge.outputs.version }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Tagged** | ${{ needs.tag-on-version-bump-merge.outputs.tagged }} |" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Version tag"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Version** | ${VERSION} |"
+            echo "| **Tagged** | ${TAGGED} |"
+          } >> "$GITHUB_STEP_SUMMARY"

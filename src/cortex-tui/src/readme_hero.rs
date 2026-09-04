@@ -148,7 +148,8 @@ mod tests {
         let recording = recording();
         let first = &recording.frames[0];
         for needle in [
-            "Cortex CLI v1.0.0",
+            "Welcome to",
+            "the coding agent CLI",
             "Plan, search, build anything",
             "/ commands",
             "Cortex Mini 1",
@@ -178,7 +179,7 @@ mod tests {
         let lines: Vec<&str> = first.plain.lines().collect();
         let composer = lines
             .iter()
-            .position(|line| line.contains("> Plan, search, build anything"))
+            .position(|line| line.contains("> █Plan, search, build anything"))
             .expect("composer");
         assert!(
             lines[composer - 1].contains('─'),

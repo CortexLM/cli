@@ -623,6 +623,15 @@ pub enum PluginSubcommand {
 
     /// Prepare plugin for publication (dry-run)
     Publish(PluginPublishArgs),
+
+    /// Search the plugin registry
+    Search(PluginSearchArgs),
+
+    /// Browse plugins in the registry
+    Browse(PluginBrowseArgs),
+
+    /// Update an installed plugin from the registry
+    Update(PluginUpdateArgs),
 }
 
 /// Arguments for plugin list command.
@@ -781,6 +790,32 @@ pub struct PluginPublishArgs {
     /// Output tarball path (defaults to plugin-name-version.tar.gz)
     #[arg(long, short = 'o')]
     pub output: Option<PathBuf>,
+}
+
+/// Arguments for plugin search.
+#[derive(Debug, Parser)]
+pub struct PluginSearchArgs {
+    /// Search query
+    pub query: String,
+
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// Arguments for plugin browse.
+#[derive(Debug, Parser)]
+pub struct PluginBrowseArgs {
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// Arguments for plugin update.
+#[derive(Debug, Parser)]
+pub struct PluginUpdateArgs {
+    /// Plugin name to update
+    pub name: String,
 }
 
 /// Plugin information for display.
@@ -1049,6 +1084,9 @@ impl PluginCli {
             PluginSubcommand::Build(args) => run_build(args).await,
             PluginSubcommand::Validate(args) => run_validate(args).await,
             PluginSubcommand::Publish(args) => run_publish(args).await,
+            PluginSubcommand::Search(args) => run_search(args).await,
+            PluginSubcommand::Browse(args) => run_browse(args).await,
+            PluginSubcommand::Update(args) => run_update(args).await,
         }
     }
 }
@@ -1186,36 +1224,16 @@ async fn run_install(args: PluginInstallArgs) -> Result<()> {
         println!("  Version: {}", version);
     }
 
-    // For now, we support local directory installation or create a placeholder
-    // In a full implementation, this would fetch from a plugin registry
     if std::path::Path::new(&args.name).exists() {
-        // Install from local path
         let src_path = std::path::Path::new(&args.name);
         if src_path.is_dir() {
-            // Copy directory
             copy_dir_recursive(src_path, &plugin_path)?;
             println!("Plugin installed from local directory.");
         } else {
             bail!("Source path is not a directory: {}", args.name);
         }
     } else {
-        // Create placeholder plugin structure
-        std::fs::create_dir_all(&plugin_path)?;
-
-        let version = args.version.as_deref().unwrap_or("1.0.0");
-        let manifest = format!(
-            r#"# Plugin manifest
-name = "{}"
-version = "{}"
-description = "Placeholder plugin - replace with actual implementation"
-enabled = true
-"#,
-            args.name, version
-        );
-
-        std::fs::write(plugin_path.join("plugin.toml"), manifest)?;
-        println!("Created placeholder plugin structure.");
-        println!("Edit {} to configure your plugin.", plugin_path.display());
+        fetch_and_install_from_registry(&args.name, args.version.as_deref(), &plugin_path).await?;
     }
 
     println!("Plugin '{}' installed successfully.", args.name);
@@ -1237,6 +1255,165 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
         }
     }
 
+    Ok(())
+}
+
+const DEFAULT_PLUGIN_REGISTRY: &str = "https://software.cortex.foundation/plugins";
+
+fn plugin_registry_base() -> String {
+    std::env::var("CORTEX_PLUGIN_REGISTRY")
+        .unwrap_or_else(|_| DEFAULT_PLUGIN_REGISTRY.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+async fn registry_get(path_and_query: &str) -> Result<reqwest::Response> {
+    let url = format!("{}{path_and_query}", plugin_registry_base());
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("Failed to create HTTP client")?;
+    client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|_| anyhow::anyhow!("The plugin registry is temporarily unavailable"))
+}
+
+fn print_registry_plugins(value: &serde_json::Value, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(value)?);
+        return Ok(());
+    }
+    let plugins = if let Some(arr) = value.as_array() {
+        arr.clone()
+    } else if let Some(arr) = value.get("plugins").and_then(|v| v.as_array()) {
+        arr.clone()
+    } else {
+        Vec::new()
+    };
+    if plugins.is_empty() {
+        println!("No plugins found.");
+        return Ok(());
+    }
+    for plugin in plugins {
+        let name = plugin.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+        let version = plugin
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("-");
+        let description = plugin
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if description.is_empty() {
+            println!("{name} {version}");
+        } else {
+            println!("{name} {version}  {description}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_search(args: PluginSearchArgs) -> Result<()> {
+    let q = urlencoding_query(&args.query);
+    let response = registry_get(&format!("/search?q={q}")).await?;
+    if !response.status().is_success() {
+        bail!("The plugin registry is temporarily unavailable");
+    }
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| anyhow::anyhow!("The plugin registry is temporarily unavailable"))?;
+    print_registry_plugins(&value, args.json)
+}
+
+async fn run_browse(args: PluginBrowseArgs) -> Result<()> {
+    let response = registry_get("").await?;
+    if !response.status().is_success() {
+        bail!("The plugin registry is temporarily unavailable");
+    }
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| anyhow::anyhow!("The plugin registry is temporarily unavailable"))?;
+    print_registry_plugins(&value, args.json)
+}
+
+async fn run_update(args: PluginUpdateArgs) -> Result<()> {
+    run_install(PluginInstallArgs {
+        name: args.name,
+        version: None,
+        force: true,
+    })
+    .await
+}
+
+fn urlencoding_query(raw: &str) -> String {
+    let mut out = String::new();
+    for b in raw.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+async fn fetch_and_install_from_registry(
+    name: &str,
+    version: Option<&str>,
+    dest: &Path,
+) -> Result<()> {
+    let path = if let Some(version) = version {
+        format!("/{name}?version={version}")
+    } else {
+        format!("/{name}")
+    };
+    let response = registry_get(&path).await?;
+    if response.status().as_u16() == 404 {
+        bail!("Plugin '{name}' was not found in the plugin registry.");
+    }
+    if !response.status().is_success() {
+        bail!("The plugin registry is temporarily unavailable");
+    }
+    let listing: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| anyhow::anyhow!("The plugin registry is temporarily unavailable"))?;
+    let tarball = listing
+        .get("tarball_url")
+        .or_else(|| listing.get("package_url"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            anyhow::anyhow!("Plugin '{name}' has no installable package in the registry.")
+        })?;
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .context("Failed to create HTTP client")?;
+    let bytes = client
+        .get(tarball)
+        .send()
+        .await
+        .map_err(|_| anyhow::anyhow!("The plugin registry is temporarily unavailable"))?
+        .bytes()
+        .await
+        .map_err(|_| anyhow::anyhow!("The plugin registry is temporarily unavailable"))?;
+
+    if dest.exists() {
+        std::fs::remove_dir_all(dest)?;
+    }
+    std::fs::create_dir_all(dest)?;
+    let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
+    let mut archive = tar::Archive::new(decoder);
+    archive
+        .unpack(dest)
+        .context("Failed to unpack plugin archive")?;
+    println!("Installed '{name}' from the plugin registry.");
     Ok(())
 }
 
@@ -4293,8 +4470,9 @@ mod tests {
         let cmd = PluginCli::command();
         let subcommand_count = cmd.get_subcommands().count();
 
-        // Expected: list, install, remove, enable, disable, show, new, dev, build, validate, publish = 11
-        assert_eq!(subcommand_count, 11, "PluginCli should have 11 subcommands");
+        // list, install, remove, enable, disable, show, new, dev, build,
+        // validate, publish, search, browse, update
+        assert_eq!(subcommand_count, 14, "PluginCli should have 14 subcommands");
     }
 
     // ==========================================================================

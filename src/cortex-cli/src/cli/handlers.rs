@@ -96,17 +96,26 @@ async fn run_tui(args: InteractiveArgs) -> Result<()> {
         );
     }
 
-    let mut config = cortex_engine::Config::default();
+    if args.model.as_ref().is_some_and(|m| m.trim().is_empty()) {
+        bail!(
+            "Error: Model name cannot be empty. Please provide a valid model name \
+             (e.g., 'gpt-4', 'claude-sonnet-4-20250514')."
+        );
+    }
 
-    // Apply model override if specified
-    if let Some(ref model) = args.model {
-        if model.trim().is_empty() {
-            bail!(
-                "Error: Model name cannot be empty. Please provide a valid model name \
-                 (e.g., 'gpt-4', 'claude-sonnet-4-20250514')."
-            );
-        }
-        config.model = resolve_model_alias(model).to_string();
+    let mut config = cortex_engine::Config::load_sync(cortex_engine::ConfigOverrides {
+        model: args
+            .model
+            .as_ref()
+            .map(|m| resolve_model_alias(m).to_string()),
+        cwd: args.cwd.clone(),
+        alternate_screen: args.alternate_screen.then_some(true),
+        ..Default::default()
+    })
+    .unwrap_or_else(|_| cortex_engine::Config::default());
+
+    if args.alternate_screen {
+        config.alternate_screen = true;
     }
 
     // Apply working directory override if specified

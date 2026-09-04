@@ -55,7 +55,7 @@ impl EventLoop {
             }
 
             EngineEvent::Suspend => {
-                self.handle_suspend();
+                self.handle_suspend(terminal);
             }
 
             EngineEvent::Resume => {
@@ -553,7 +553,8 @@ impl EventLoop {
     }
 
     /// Handle Ctrl+Z suspend (Unix only)
-    fn handle_suspend(&mut self) {
+    #[cfg_attr(not(unix), allow(unused_variables))]
+    fn handle_suspend(&mut self, terminal: &CortexTerminal) {
         #[cfg(unix)]
         {
             use crossterm::{
@@ -566,7 +567,9 @@ impl EventLoop {
             let _ = execute!(stdout, cursor::Show);
             let _ = execute!(stdout, DisableBracketedPaste);
             let _ = execute!(stdout, DisableMouseCapture);
-            let _ = execute!(stdout, LeaveAlternateScreen);
+            if terminal.uses_alternate_screen() {
+                let _ = execute!(stdout, LeaveAlternateScreen);
+            }
             let _ = disable_raw_mode();
 
             // Send SIGSTOP to ourselves to actually suspend
@@ -588,7 +591,9 @@ impl EventLoop {
             };
             let mut stdout = std::io::stdout();
             let _ = enable_raw_mode();
-            let _ = execute!(stdout, EnterAlternateScreen);
+            if terminal.uses_alternate_screen() {
+                let _ = execute!(stdout, EnterAlternateScreen);
+            }
             let _ = execute!(stdout, EnableMouseCapture);
             let _ = execute!(stdout, EnableBracketedPaste);
             let _ = execute!(stdout, cursor::Hide);

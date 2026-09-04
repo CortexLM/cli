@@ -3,7 +3,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
 use super::rendering::{
@@ -13,6 +13,7 @@ use crate::app::AppState;
 use crate::commands::PALETTE_HOME_LIMIT;
 use crate::ui::colors::AdaptiveColors;
 use crate::widgets::{HintContext, KeyHints, StatusIndicator};
+use cortex_core::style::{ACCENT, TEXT, TEXT_BRIGHT, TEXT_DIM};
 
 // Re-export for convenience
 pub use cortex_core::widgets::Message as ChatMessage;
@@ -20,17 +21,100 @@ pub use cortex_core::widgets::Message as ChatMessage;
 /// Rows the composer occupies: hairline, `> ` prompt, hairline.
 pub const COMPOSER_ROWS: u16 = 3;
 
+/// White block caret. Occupies one cell; never a glyph after the placeholder.
+pub const BLOCK_CURSOR: char = '█';
+
 /// Composer placeholder while idle.
 pub const PLACEHOLDER_IDLE: &str = "Plan, search, build anything";
 /// Composer placeholder while a run is live — stdin stays alive and a
 /// submitted follow-up is queued.
 pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up ↵ to queue";
 
+/// Paint the composer input row (after `> `) to the lock:
+/// empty = block cursor at input col 0, dim placeholder after that cell;
+/// blink-off = no block, placeholder from col 0; typing = `#F5F5F5` + block at caret.
+pub fn paint_composer_contents(
+    buf: &mut Buffer,
+    x: u16,
+    y: u16,
+    width: u16,
+    input: &str,
+    caret: usize,
+    caret_visible: bool,
+    placeholder: Option<&str>,
+) {
+    if width == 0 {
+        return;
+    }
+    buf.set_string(
+        x,
+        y,
+        "> ",
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    );
+    if width < 3 {
+        return;
+    }
+    let col0 = x + 2;
+    let budget = width.saturating_sub(2) as usize;
+
+    if input.is_empty() {
+        let mut col = col0;
+        let mut rest = budget;
+        if caret_visible {
+            buf.set_string(
+                col,
+                y,
+                BLOCK_CURSOR.to_string(),
+                Style::default().fg(TEXT_BRIGHT),
+            );
+            col = col.saturating_add(1);
+            rest = rest.saturating_sub(1);
+        }
+        if let Some(ph) = placeholder {
+            let shown = crate::ui::text_utils::first_fitting_line(ph, rest);
+            if !shown.is_empty() {
+                buf.set_string(col, y, &shown, Style::default().fg(TEXT_DIM));
+            }
+        }
+        return;
+    }
+
+    let shown = crate::ui::text_utils::first_fitting_line(input, budget.saturating_sub(1));
+    let chars: Vec<char> = shown.chars().collect();
+    let caret = caret.min(chars.len());
+    let mut col = col0;
+    for (i, ch) in chars.iter().enumerate() {
+        if caret_visible && i == caret {
+            buf.set_string(
+                col,
+                y,
+                BLOCK_CURSOR.to_string(),
+                Style::default().fg(TEXT_BRIGHT),
+            );
+        } else {
+            buf.set_string(col, y, ch.to_string(), Style::default().fg(TEXT));
+        }
+        col = col.saturating_add(1);
+        if col >= x + width {
+            return;
+        }
+    }
+    if caret_visible && caret == chars.len() && col < x + width {
+        buf.set_string(
+            col,
+            y,
+            BLOCK_CURSOR.to_string(),
+            Style::default().fg(TEXT_BRIGHT),
+        );
+    }
+}
+
 /// Minimalist session view for the chat interface.
 ///
 /// The view is frameless: content, composer and footer sit directly on the
 /// host terminal background and bleed to the terminal edges. The composer is
-/// the Devin-style bar — a full-width gray hairline above the `> ` prompt and
+/// the hairline-framed composer — a full-width gray hairline above the `> ` prompt and
 /// another below it — and follows the transcript until the transcript fills
 /// the screen, after which it stays pinned above the footer.
 ///
@@ -42,7 +126,7 @@ pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up ↵ to queue";
 ///
 /// ⠇ Working · 12s · esc to interrupt
 /// ────────────────────────────────────
-/// > Add a follow-up ↵ to queue █
+/// > █Add a follow-up ↵ to queue
 /// ────────────────────────────────────
 /// Cortex Mini 1 · Agent · 92% context      shift+tab to cycle modes
 /// ```
@@ -181,38 +265,33 @@ impl<'a> MinimalSessionView<'a> {
                 badge_cols = indicator.len() as u16 + 1;
             }
         }
-        let text_budget = content_width.saturating_sub(3 + badge_cols) as usize;
-
-        // Violet focused `>`; dim placeholder while idle; white copy and block cursor.
-        let mut spans = vec![Span::styled(
-            "> ",
-            Style::default()
-                .fg(self.colors.accent)
-                .add_modifier(Modifier::BOLD),
-        )];
-        if input_text.is_empty() {
-            let ghost_copy = if self.app_state.quota_held {
+        let text_budget = content_width.saturating_sub(2 + badge_cols);
+        let placeholder = if input_text.is_empty() {
+            Some(if self.app_state.quota_held {
                 crate::ui::consts::PLACEHOLDER_QUOTA
             } else if self.is_task_running() {
                 PLACEHOLDER_RUNNING
             } else {
                 PLACEHOLDER_IDLE
-            };
-            let ghost = crate::ui::text_utils::first_fitting_line(ghost_copy, text_budget);
-            if !ghost.is_empty() {
-                spans.push(Span::styled(
-                    format!("{ghost} "),
-                    Style::default().fg(self.colors.text_dim),
-                ));
-            }
+            })
         } else {
-            let shown = crate::ui::text_utils::first_fitting_line(&input_text, text_budget);
-            spans.push(Span::styled(shown, Style::default().fg(self.colors.text)));
-        }
-        spans.push(Span::styled("█", Style::default().fg(self.colors.text)));
-
-        let text_area = Rect::new(area.x, content_y, content_width, 1);
-        Paragraph::new(Line::from(spans)).render(text_area, buf);
+            None
+        };
+        let caret = if input_text.is_empty() {
+            0
+        } else {
+            self.app_state.input.cursor_pos()
+        };
+        paint_composer_contents(
+            buf,
+            area.x,
+            content_y,
+            text_budget,
+            &input_text,
+            caret,
+            self.app_state.caret_visible,
+            placeholder,
+        );
     }
 
     /// Returns the cursor position for the input field.

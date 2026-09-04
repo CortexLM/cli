@@ -103,6 +103,9 @@ pub struct AppState {
     pub autocomplete: AutocompleteState,
     pub streaming: StreamingState,
     pub typewriter: Option<Typewriter>,
+    /// Composer caret on/off for blink (true in snapshots).
+    pub caret_visible: bool,
+    pub(crate) caret_blink_at: Instant,
     pub brain_pulse: Pulse,
     pub spinner: Spinner,
     pub brain_frame: u64,
@@ -170,11 +173,10 @@ pub struct AppState {
     pub markdown_theme: MarkdownTheme,
     /// Compact display mode
     pub compact_mode: bool,
-    /// Version shown on the empty-session splash (`Cortex CLI v{cli_version}`).
+    /// Version shown on the empty-session splash (`v{cli_version} · / commands`).
     pub cli_version: String,
-    /// When true, an empty session paints the launch splash (`Cortex CLI v…`
-    /// and the `/ commands` legend). An already-open empty session turns this
-    /// off so it is not the same frame as splash.
+    /// When true, an empty session paints the welcome splash. Cleared after the
+    /// first user turn and not restored by `/clear`.
     pub show_launch_splash: bool,
     /// Short cwd shown in the session footer (`~/cli`).
     pub footer_cwd: String,
@@ -280,6 +282,8 @@ impl AppState {
             autocomplete: AutocompleteState::new(),
             streaming: StreamingState::default(),
             typewriter: None,
+            caret_visible: true,
+            caret_blink_at: Instant::now(),
             brain_pulse: Pulse::new(2000),
             spinner: Spinner::dots(),
             brain_frame: 0,
@@ -341,7 +345,7 @@ impl AppState {
             syntax_highlight_enabled: true,
             auto_scroll_enabled: true,
             sound_enabled: false,
-            streaming_enabled: false,
+            streaming_enabled: true,
             context_aware_enabled: true,
             co_author_enabled: true,
             auto_commit_enabled: false,
@@ -512,6 +516,9 @@ impl AppState {
 impl AppState {
     /// Add a message to the chat
     pub fn add_message(&mut self, message: Message) {
+        if message.role == cortex_core::widgets::MessageRole::User {
+            self.show_launch_splash = false;
+        }
         self.messages.push(message);
         if self.chat_scroll_pinned_bottom {
             self.scroll_chat_to_bottom();
@@ -836,5 +843,24 @@ impl AppState {
                 progress,
             };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cortex_core::widgets::Message;
+
+    #[test]
+    fn first_user_turn_drops_the_launch_splash() {
+        let mut state = AppState::default();
+        assert!(state.show_launch_splash);
+        state.add_message(Message::user("hello"));
+        assert!(!state.show_launch_splash);
+        state.clear_messages();
+        assert!(
+            !state.show_launch_splash,
+            "/clear must not restore the splash"
+        );
     }
 }

@@ -1,6 +1,8 @@
-//! Welcome Card components for the Cortex TUI welcome screen.
+//! Welcome splash for an empty Cortex session.
 //!
-//! Provides reusable card widgets for displaying welcome messages and user info.
+//! Two lines, no mascot, no boxes, no painted shell prompt:
+//! `Welcome to Cortex, the coding agent CLI` then
+//! `v{version} · / commands · @ files · ! shell · & cloud`.
 
 use crate::borders::ROUNDED_BORDER;
 use cortex_core::style::{BORDER, TEXT, TEXT_DIM};
@@ -16,7 +18,11 @@ pub trait ToLines {
     fn to_lines(&self, width: u16) -> Vec<Line<'static>>;
 }
 
-/// Empty-session splash: one line, `Cortex CLI v{version}`. No mascot or logo.
+const WELCOME_LEAD: &str = "Welcome to ";
+const WELCOME_PRODUCT: &str = "Cortex";
+const WELCOME_TAIL: &str = ", the coding agent CLI";
+
+/// Empty-session splash: welcome line plus version/hints. No mascot or logo.
 pub struct WelcomeCard<'a> {
     user_name: Option<&'a str>,
     subtitle: Option<&'a str>,
@@ -93,7 +99,7 @@ impl<'a> WelcomeCard<'a> {
 
     /// Calculate the required height for this card.
     pub fn required_height(&self) -> u16 {
-        1
+        2
     }
 }
 
@@ -105,29 +111,65 @@ impl Default for WelcomeCard<'_> {
 
 impl ToLines for WelcomeCard<'_> {
     fn to_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let _ = width;
         let _ = (
             self.user_name,
             self.subtitle,
             self.tips.len(),
             self.accent_color,
-            self.dim_color,
             self.border_color,
         );
-        vec![Line::from(Span::styled(
-            splash_title(self.version),
-            Style::default()
-                .fg(self.text_color)
-                .add_modifier(Modifier::BOLD),
-        ))]
+        welcome_lines(self.version, width, self.text_color, self.dim_color)
     }
 }
 
-fn splash_title(version: Option<&str>) -> String {
-    match version {
-        Some(v) => format!("Cortex CLI v{v}"),
-        None => "Cortex CLI".to_string(),
+/// `v{version} · / commands · @ files · ! shell · & cloud`, shortened to fit.
+pub fn splash_hint_line(version: &str, width: usize) -> String {
+    let full = format!("v{version} · / commands · @ files · ! shell · & cloud");
+    if full.chars().count() <= width {
+        return full;
     }
+    let mid = format!("v{version} · / commands · @ files · ! shell");
+    if mid.chars().count() <= width {
+        return mid;
+    }
+    let short = format!("v{version} · / commands");
+    if short.chars().count() <= width {
+        return short;
+    }
+    let bare = format!("v{version}");
+    if bare.chars().count() <= width {
+        bare
+    } else {
+        String::new()
+    }
+}
+
+fn welcome_lines(version: Option<&str>, width: u16, text: Color, dim: Color) -> Vec<Line<'static>> {
+    let w = width as usize;
+    let dim_st = Style::default().fg(dim);
+    let bold_st = Style::default().fg(text).add_modifier(Modifier::BOLD);
+    let mut lines = Vec::new();
+    let title_w = WELCOME_LEAD.len() + WELCOME_PRODUCT.len() + WELCOME_TAIL.len();
+    if title_w <= w {
+        lines.push(Line::from(vec![
+            Span::styled(WELCOME_LEAD, dim_st),
+            Span::styled(WELCOME_PRODUCT, bold_st),
+            Span::styled(WELCOME_TAIL, dim_st),
+        ]));
+    } else if WELCOME_LEAD.len() + WELCOME_PRODUCT.len() <= w {
+        lines.push(Line::from(vec![
+            Span::styled(WELCOME_LEAD, dim_st),
+            Span::styled(WELCOME_PRODUCT, bold_st),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled(WELCOME_PRODUCT, bold_st)));
+    }
+    let ver = version.unwrap_or(env!("CARGO_PKG_VERSION"));
+    let hint = splash_hint_line(ver, w);
+    if !hint.is_empty() {
+        lines.push(Line::from(Span::styled(hint, dim_st)));
+    }
+    lines
 }
 
 impl Widget for WelcomeCard<'_> {
@@ -135,14 +177,14 @@ impl Widget for WelcomeCard<'_> {
         if area.height == 0 || area.width == 0 {
             return;
         }
-        buf.set_string(
-            area.x,
-            area.y,
-            splash_title(self.version),
-            Style::default()
-                .fg(self.text_color)
-                .add_modifier(Modifier::BOLD),
-        );
+        let lines = welcome_lines(self.version, area.width, self.text_color, self.dim_color);
+        for (i, line) in lines.into_iter().enumerate() {
+            let y = area.y + i as u16;
+            if y >= area.bottom() {
+                break;
+            }
+            buf.set_line(area.x, y, &line, area.width);
+        }
     }
 }
 
@@ -452,7 +494,7 @@ mod tests {
     #[test]
     fn test_welcome_card_height() {
         let card = WelcomeCard::new().version("1.0.0");
-        assert_eq!(card.required_height(), 1);
+        assert_eq!(card.required_height(), 2);
     }
 
     fn buffer_text(buf: &Buffer) -> String {
@@ -478,50 +520,59 @@ mod tests {
     }
 
     #[test]
-    fn welcome_card_is_one_line_splash() {
-        let card = WelcomeCard::new().version("1.0.0");
+    fn welcome_card_is_two_line_splash() {
+        let card = WelcomeCard::new().version("0.1.7");
         let text = card
             .to_lines(80)
             .into_iter()
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(text.lines().filter(|l| !l.trim().is_empty()).count(), 1);
-        assert_eq!(text.trim(), "Cortex CLI v1.0.0");
+        assert!(text.contains("Welcome to "));
+        assert!(text.contains("Cortex"));
+        assert!(text.contains("the coding agent CLI"));
+        assert!(text.contains("v0.1.7 · / commands"));
+        assert!(text.contains("& cloud"));
         assert_no_mascot(&text);
         assert!(!text.contains("Welcome!"));
+        assert!(!text.contains("> cortex"));
+        assert!(!text.contains("~/"));
     }
 
     #[test]
-    fn welcome_card_widget_renders_one_line() {
+    fn welcome_card_widget_renders_welcome_lock() {
         let mut buf = Buffer::empty(Rect::new(0, 0, 80, 16));
         WelcomeCard::new()
-            .version("1.0.0")
+            .version("0.1.7")
             .render(Rect::new(0, 0, 80, 16), &mut buf);
         let text = buffer_text(&buf);
-        assert!(text.contains("Cortex CLI v1.0.0"));
+        assert!(text.contains("Welcome to "));
+        assert!(text.contains("the coding agent CLI"));
+        assert!(text.contains("v0.1.7"));
         assert_no_mascot(&text);
     }
 
     #[test]
     fn welcome_card_narrow_and_wide_viewports_keep_the_splash() {
         for (width, height) in [(40, 12), (120, 40)] {
-            let card = WelcomeCard::new().version("1.0.0");
+            let card = WelcomeCard::new().version("0.1.7");
             let text = card
                 .to_lines(width)
                 .into_iter()
                 .map(|line| line.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
-            assert!(text.contains("Cortex CLI v1.0.0"));
+            assert!(text.contains("Cortex"));
+            assert!(text.contains("v0.1.7"));
             assert_no_mascot(&text);
+            assert!(!text.contains("> cortex"));
 
             let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
             WelcomeCard::new()
-                .version("1.0.0")
+                .version("0.1.7")
                 .render(Rect::new(0, 0, width, height), &mut buf);
             let rendered = buffer_text(&buf);
-            assert!(rendered.contains("Cortex CLI v1.0.0"));
+            assert!(rendered.contains("Cortex"));
             assert_no_mascot(&rendered);
         }
     }

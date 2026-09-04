@@ -45,8 +45,12 @@ mod harness_snapshots {
         dump_snapshot("home", &text);
         assert!(!text.to_lowercase().contains("grok"));
         assert!(
-            text.contains("Cortex CLI"),
+            text.contains("Welcome to") && text.contains("the coding agent CLI"),
             "home session should render splash: {text}"
+        );
+        assert!(
+            text.contains("/ commands"),
+            "home session should render keystroke hints: {text}"
         );
         assert!(
             !text.contains("Directory") && !text.contains("Computer"),
@@ -294,17 +298,25 @@ mod harness_snapshots {
             }
             assert_eq!(buf[(0, turn as u16)].style().fg, Some(TEXT));
 
-            // Composer: hairline, `> Plan, search, build anything █`, hairline.
+            // Composer: hairline, `> █Plan, search, build anything`, hairline.
             let prompt = rows
                 .iter()
-                .position(|r| r.starts_with("> Plan, search"))
+                .position(|r| r.starts_with("> █Plan, search"))
                 .unwrap_or_else(|| panic!("no composer at {w}x{h}:\n{text}"));
             assert!(rows[prompt - 1].chars().all(|c| c == '─'), "{text}");
             assert!(rows[prompt + 1].chars().all(|c| c == '─'), "{text}");
             assert_eq!(buf[(0, prompt as u16 - 1)].style().fg, Some(HAIRLINE));
             assert_eq!(buf[(0, prompt as u16)].style().fg, Some(ACCENT));
-            assert_eq!(buf[(2, prompt as u16)].style().fg, Some(TEXT_DIM));
+            assert_eq!(
+                buf[(2, prompt as u16)].style().fg,
+                Some(cortex_core::style::TEXT_BRIGHT)
+            );
+            assert_eq!(buf[(3, prompt as u16)].style().fg, Some(TEXT_DIM));
             assert!(rows[prompt].contains('█'), "{text}");
+            assert!(
+                !rows[prompt].contains("anything█"),
+                "cursor after placeholder:\n{text}"
+            );
             // The composer follows the transcript instead of hugging the footer.
             assert!(prompt + 2 < rows.len() - 1 || h == 12, "{text}");
 
@@ -316,7 +328,6 @@ mod harness_snapshots {
                     footer.trim_end().ends_with("shift+tab to cycle modes"),
                     "{footer}"
                 );
-                assert!(rows[0].starts_with("~/cortex-api main*"), "{text}");
             }
         }
     }

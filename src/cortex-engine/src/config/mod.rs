@@ -77,8 +77,10 @@ pub struct Config {
     pub check_for_update_on_startup: bool,
     /// Disable paste burst detection.
     pub disable_paste_burst: bool,
-    /// Enable animations.
+    /// Enable TUI animations.
     pub animations: bool,
+    /// Opt in to the alternate screen buffer. Default is inline (`never`).
+    pub alternate_screen: bool,
     /// Current agent profile.
     pub current_agent: Option<String>,
     /// Granular permission configuration.
@@ -89,6 +91,8 @@ pub struct Config {
     /// Temperature for generation (0.0-2.0).
     /// CLI override takes precedence over agent default.
     pub temperature: Option<f32>,
+    /// Custom providers defined in config.toml.
+    pub providers: HashMap<String, CustomProviderConfig>,
     /// Execution configuration for runtime behavior.
     pub execution: ExecutionConfig,
 }
@@ -117,10 +121,12 @@ impl Default for Config {
             check_for_update_on_startup: true,
             disable_paste_burst: false,
             animations: true,
+            alternate_screen: false,
             current_agent: None,
             permission: PermissionConfig::default(),
             small_model: None, // Auto-detected based on available providers
             temperature: None,
+            providers: HashMap::new(),
             execution: ExecutionConfig::default(),
         }
     }
@@ -213,10 +219,12 @@ impl Config {
             })
             .unwrap_or_default();
 
+        let model_provider = resolve_model_provider(&model_provider_id, &toml.providers);
+
         Self {
             model,
             model_provider_id,
-            model_provider: ModelProviderInfo::default(),
+            model_provider,
             model_context_window: toml.model_context_window,
             model_auto_compact_token_limit: toml.model_auto_compact_token_limit,
             approval_policy,
@@ -233,14 +241,71 @@ impl Config {
             show_raw_agent_reasoning: toml.show_raw_agent_reasoning.unwrap_or(false),
             check_for_update_on_startup: toml.check_for_update_on_startup.unwrap_or(true),
             disable_paste_burst: toml.disable_paste_burst.unwrap_or(false),
-            animations: toml.tui.map(|t| t.animations).unwrap_or(true),
+            animations: toml.tui.as_ref().map(|t| t.animations).unwrap_or(true),
+            alternate_screen: overrides.alternate_screen.unwrap_or_else(|| {
+                toml.tui
+                    .as_ref()
+                    .map(|t| t.alternate_screen)
+                    .unwrap_or(false)
+            }),
             current_agent: toml.current_agent,
             permission: toml.permission,
             small_model: toml.small_model,
             // CLI temperature override takes precedence
             temperature: overrides.temperature,
+            providers: toml.providers,
             execution: toml.execution,
         }
+    }
+}
+
+fn resolve_model_provider(
+    id: &str,
+    providers: &HashMap<String, CustomProviderConfig>,
+) -> ModelProviderInfo {
+    if let Some(custom) = providers.get(id) {
+        return ModelProviderInfo {
+            id: id.to_string(),
+            name: if custom.name.is_empty() {
+                id.to_string()
+            } else {
+                custom.name.clone()
+            },
+            base_url: custom.base_url.clone(),
+            api_type: ApiType::from_config(&custom.api_type),
+            api_key_env: custom.api_key_env.clone(),
+        };
+    }
+    match id {
+        "anthropic" | "anthropic-compatible" => ModelProviderInfo {
+            id: id.to_string(),
+            name: "Anthropic-compatible".into(),
+            base_url: "https://api.anthropic.com".into(),
+            api_type: ApiType::Anthropic,
+            api_key_env: Some("ANTHROPIC_API_KEY".into()),
+        },
+        "azure" => ModelProviderInfo {
+            id: id.to_string(),
+            name: "Azure".into(),
+            base_url: String::new(),
+            api_type: ApiType::Azure,
+            api_key_env: Some("AZURE_OPENAI_API_KEY".into()),
+        },
+        "local" | "ollama" => ModelProviderInfo {
+            id: id.to_string(),
+            name: "Local".into(),
+            base_url: "http://127.0.0.1:11434/v1".into(),
+            api_type: ApiType::Local,
+            api_key_env: None,
+        },
+        "openai" | "openai-compatible" => ModelProviderInfo {
+            id: id.to_string(),
+            name: "OpenAI-compatible".into(),
+            base_url: "https://api.openai.com/v1".into(),
+            api_type: ApiType::OpenAiCompatible,
+            api_key_env: Some("OPENAI_API_KEY".into()),
+        },
+        _ => ModelProviderInfo::default(),
     }
 }
 
@@ -255,4 +320,47 @@ pub struct ConfigOverrides {
     pub additional_writable_roots: Vec<PathBuf>,
     /// Temperature override from CLI (0.0-2.0).
     pub temperature: Option<f32>,
+    /// When `Some(true)`, enter the alternate screen. Default (None/false) is inline.
+    pub alternate_screen: Option<bool>,
+}
+
+#[cfg(test)]
+mod alternate_screen_tests {
+    use super::*;
+    use types::ConfigToml;
+
+    #[test]
+    fn from_toml_keeps_alternate_screen_off_by_default() {
+        assert!(
+            !Config::default().alternate_screen,
+            "default must be inline (never alt-screen)"
+        );
+        let toml: ConfigToml = toml::from_str("").unwrap();
+        let cfg = Config::from_toml(toml, ConfigOverrides::default(), PathBuf::from("/tmp"));
+        assert!(
+            !cfg.alternate_screen,
+            "default must be inline (never alt-screen)"
+        );
+    }
+
+    #[test]
+    fn from_toml_honors_tui_alternate_screen_opt_in() {
+        let toml: ConfigToml = toml::from_str("[tui]\nalternate_screen = true\n").unwrap();
+        let cfg = Config::from_toml(toml, ConfigOverrides::default(), PathBuf::from("/tmp"));
+        assert!(cfg.alternate_screen);
+    }
+
+    #[test]
+    fn cli_override_can_force_alternate_screen() {
+        let toml: ConfigToml = toml::from_str("[tui]\nalternate_screen = false\n").unwrap();
+        let cfg = Config::from_toml(
+            toml,
+            ConfigOverrides {
+                alternate_screen: Some(true),
+                ..Default::default()
+            },
+            PathBuf::from("/tmp"),
+        );
+        assert!(cfg.alternate_screen);
+    }
 }

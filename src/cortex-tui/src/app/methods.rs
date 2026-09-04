@@ -117,6 +117,14 @@ impl AppState {
         if let Some(ref mut typewriter) = self.typewriter {
             typewriter.tick();
         }
+
+        let blink_ms = crate::ui::consts::get_system_cursor_blink_interval();
+        if blink_ms == 0 {
+            self.caret_visible = true;
+        } else if self.caret_blink_at.elapsed() >= Duration::from_millis(blink_ms) {
+            self.caret_visible = !self.caret_visible;
+            self.caret_blink_at = Instant::now();
+        }
     }
 
     /// Set the terminal size

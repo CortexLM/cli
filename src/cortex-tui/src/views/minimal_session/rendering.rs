@@ -444,68 +444,35 @@ pub fn render_subagent(
 /// Keystroke hints shown under the splash while the session is empty.
 pub const EMPTY_SESSION_HINTS: &str = "/ commands · @ files · ! shell · & cloud";
 
-/// Generates the launch header as styled lines: the workspace (`~/cortex-api
-/// main*`, dim), the `> cortex` invocation, the bold `Cortex CLI v…` splash
-/// and — while the session is empty — the keystroke hints.
+/// Generates the launch header: `Welcome to Cortex, the coding agent CLI`
+/// and `v{version} · / commands · …`. Shown only before the first user turn.
+/// No fake shell prompt or painted cwd.
 pub fn generate_welcome_lines(
     width: u16,
     colors: &AdaptiveColors,
     app_state: &AppState,
 ) -> Vec<Line<'static>> {
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    let w = width as usize;
-
-    if !app_state.footer_cwd.is_empty() {
-        let dirty = if app_state.git_dirty { "*" } else { "" };
-        let workspace = if app_state.git_branch.is_empty() {
-            app_state.footer_cwd.clone()
-        } else {
-            format!("{} {}{dirty}", app_state.footer_cwd, app_state.git_branch)
-        };
-        let shown = crate::ui::text_utils::first_fitting_line(&workspace, w);
-        if !shown.is_empty() {
-            lines.push(Line::from(Span::styled(
-                shown,
-                Style::default().fg(colors.text_dim),
-            )));
-        }
-        lines.push(Line::from(Span::styled(
-            "> cortex",
-            Style::default().fg(colors.text),
-        )));
+    if !app_state.show_launch_splash {
+        return Vec::new();
+    }
+    let empty = app_state.messages.is_empty()
+        && !app_state.streaming.is_streaming
+        && app_state.tool_calls.is_empty();
+    if !empty {
+        return Vec::new();
     }
 
-    if app_state.show_launch_splash {
-        let version = if app_state.cli_version.is_empty() {
-            VERSION
-        } else {
-            app_state.cli_version.as_str()
-        };
-        let welcome_card = WelcomeCard::new()
-            .version(version)
-            .text_color(colors.text)
-            .dim_color(colors.text_dim)
-            .border_color(colors.text_dim);
-
-        lines.extend(welcome_card.to_lines(width));
-
-        let empty = app_state.messages.is_empty()
-            && !app_state.streaming.is_streaming
-            && app_state.tool_calls.is_empty();
-        if empty {
-            // The keystroke hints are part of the launch splash at every
-            // width; narrow terminals show the leading keys that fit.
-            let line = crate::ui::text_utils::first_fitting_line(EMPTY_SESSION_HINTS, w);
-            if !line.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    line,
-                    Style::default().fg(colors.text_dim),
-                )));
-            }
-        }
-    }
-
-    lines
+    let version = if app_state.cli_version.is_empty() {
+        VERSION
+    } else {
+        app_state.cli_version.as_str()
+    };
+    WelcomeCard::new()
+        .version(version)
+        .text_color(colors.text)
+        .dim_color(colors.text_dim)
+        .border_color(colors.text_dim)
+        .to_lines(width)
 }
 
 /// Generates message lines for scrollable content.

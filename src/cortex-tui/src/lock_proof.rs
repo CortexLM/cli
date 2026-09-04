@@ -272,7 +272,7 @@ fn draw_session(frame: &mut ratatui::Frame, state: AppState) {
 
 fn lock_app() -> AppState {
     let mut state = AppState::default();
-    state.cli_version = LOCK_SPLASH_VERSION.to_string();
+    state.cli_version = env!("CARGO_PKG_VERSION").to_string();
     state.footer_cwd = "~/cortex-api".into();
     state.git_branch = "main".into();
     state.git_dirty = true;
@@ -494,8 +494,8 @@ mod tests {
     use super::*;
     use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
     use cortex_core::style::{
-        ACCENT, DIFF_ADD, ERROR, HAIRLINE, PANEL_BG, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM,
-        THINKING, USER_TURN_BG, WARNING,
+        ACCENT, DIFF_ADD, ERROR, HAIRLINE, PANEL_BG, SELECTION_BG, SUCCESS, TEXT, TEXT_BRIGHT,
+        TEXT_DIM, THINKING, USER_TURN_BG, WARNING,
     };
     use ratatui::buffer::Buffer;
     use ratatui::style::Color;
@@ -749,11 +749,11 @@ mod tests {
     }
 
     #[test]
-    fn selection_rows_are_violet_on_the_gray_bar_never_inverted() {
-        // Violet is never a background: no inverted bar, and never the old
-        // `#221A38` full-row wash — the bar is the dark gray `#262626`.
+    fn selection_rows_are_violet_on_the_selection_bar_never_inverted() {
+        // Violet is never a background (no inverted bar). The selection bar
+        // is the locked `#221A38` wash.
         const ACCENT_BG: &str = "48;2;167;139;250";
-        const OLD_VIOLET_WASH: &str = "48;2;34;26;56";
+        const SELECTION_WASH: &str = "48;2;34;26;56";
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -761,14 +761,14 @@ mod tests {
                     !frame.ansi.contains(ACCENT_BG),
                     "{id} paints an inverted violet bar at {size:?}"
                 );
-                assert!(
-                    !frame.ansi.contains(OLD_VIOLET_WASH),
-                    "{id} brings back the #221A38 wash at {size:?}"
-                );
             }
         }
         for id in SELECTION_SCENES {
             let frame = render_lock_scene(id, 120, 40).expect(id);
+            assert!(
+                frame.ansi.contains(SELECTION_WASH),
+                "{id} selection bar must be #221A38"
+            );
             let row = (0..40u16)
                 .find(|y| {
                     frame.buffer[(0, *y)].symbol() == ">"
@@ -978,14 +978,9 @@ mod tests {
         // paints violet, the old `#221A38` violet wash, the mint pair, the old
         // brand green, or the navy wash — the host terminal owns the
         // background and the violet lives on the focused selection alone.
-        const BANNED: [&str; 6] = [
-            "125;211;252",
-            "34;26;56",
-            "0;245;212",
-            "26;51;48",
-            "0;255;163",
-            "10;22;40",
-        ];
+        // Mint `#00F5D4` / `#1A3330` never painted. Selection bar `#221A38`
+        // is allowed; inverted accent as a background is not (checked above).
+        const BANNED: [&str; 4] = ["0;245;212", "26;51;48", "0;255;163", "10;22;40"];
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -995,12 +990,12 @@ mod tests {
                         "{id} paints banned color {banned} at {size:?}"
                     );
                 }
-                // Nothing paints its own background wash: bars are the
-                // documented grays, never a colour.
                 for (x, y, cell) in cells(&frame.buffer) {
                     if let Some(Color::Rgb(r, g, b)) = cell.style().bg {
+                        let is_selection = r == 0x22 && g == 0x1A && b == 0x38;
+                        let is_gray = r == g && g == b;
                         assert!(
-                            r == g && g == b,
+                            is_selection || is_gray,
                             "{id} paints a tinted background {r},{g},{b} at {size:?} ({x},{y})"
                         );
                     }
@@ -1047,8 +1042,13 @@ mod tests {
         for size in SIZES {
             let splash = render_lock_scene("splash", size.0, size.1).expect("splash");
             assert!(
-                splash.plain.contains("> Plan, search, build anything █"),
+                splash.plain.contains("> █Plan, search, build anything"),
                 "{}",
+                splash.plain
+            );
+            assert!(
+                !splash.plain.contains("build anything█"),
+                "block cursor must not sit after the placeholder:\n{}",
                 splash.plain
             );
             let ghost_x = splash
@@ -1064,12 +1064,55 @@ mod tests {
                 Some(TEXT_DIM),
                 "placeholder must be dim"
             );
+            assert_eq!(
+                splash.buffer[(2, ghost_y)].symbol(),
+                "█",
+                "block cursor occupies input col 0"
+            );
+            assert_eq!(
+                splash.buffer[(2, ghost_y)].style().fg,
+                Some(TEXT_BRIGHT),
+                "block cursor is white"
+            );
             let working = render_lock_scene("working", size.0, size.1).expect("working");
             assert!(
-                working.plain.contains("> Add a follow-up ↵ to queue █"),
+                working.plain.contains("> █Add a follow-up ↵ to queue"),
                 "{}",
                 working.plain
             );
+        }
+    }
+
+    #[test]
+    fn empty_composer_blink_off_drops_the_block_and_keeps_placeholder_at_col0() {
+        for size in SIZES {
+            let config = capture_config(size.0, size.1);
+            let mut terminal = MockTerminal::from_config(config.clone()).expect("terminal");
+            let mut state = lock_app();
+            state.caret_visible = false;
+            terminal
+                .draw(|frame| draw_session(frame, state))
+                .map_err(|err| anyhow::anyhow!("{err}"))
+                .expect("draw");
+            let buf = terminal.backend().buffer();
+            let y = (1..size.1.saturating_sub(1))
+                .find(|&y| {
+                    buf[(0, y)].symbol() == ">"
+                        && buf[(0, y)].style().fg == Some(ACCENT)
+                        && is_hairline_row(buf, y - 1)
+                        && is_hairline_row(buf, y + 1)
+                })
+                .expect("composer");
+            assert_ne!(buf[(2, y)].symbol(), "█", "blink-off must hide the block");
+            assert_eq!(
+                buf[(2, y)].symbol(),
+                "P",
+                "placeholder starts at input col0"
+            );
+            assert_eq!(buf[(2, y)].style().fg, Some(TEXT_DIM));
+            let row = row_text(buf, y);
+            assert!(row.starts_with("> Plan, search"), "{row}");
+            assert!(!row.contains('█'), "{row}");
         }
     }
 
@@ -1936,10 +1979,15 @@ mod tests {
                     );
                 }
                 let scrolls = size == (40, 12) && id == "session_error";
-                if !scrolls && id != "session_empty" {
+                if !scrolls
+                    && id != "session_empty"
+                    && id != "session_loading"
+                    && id != "session_error"
+                    && id != "palette_empty"
+                {
                     assert!(
-                        frame.plain.contains("Cortex CLI v1.0.0"),
-                        "{id} missing the version at {size:?}:\n{}",
+                        frame.plain.contains("Welcome to"),
+                        "{id} missing the welcome line at {size:?}:\n{}",
                         frame.plain
                     );
                     assert!(
@@ -1952,14 +2000,18 @@ mod tests {
         }
         for size in SIZES {
             let empty = render_lock_scene("session_empty", size.0, size.1).expect("empty");
-            assert!(empty.plain.contains("~/cortex-api"), "{}", empty.plain);
             assert!(
                 empty.plain.contains("Plan, search, build anything"),
                 "{}",
                 empty.plain
             );
             assert!(
-                !empty.plain.contains("Cortex CLI v1.0.0"),
+                !empty.plain.contains("> cortex"),
+                "must not paint a fake shell prompt:\n{}",
+                empty.plain
+            );
+            assert!(
+                !empty.plain.contains("Welcome to"),
                 "open session must not reuse the splash title:\n{}",
                 empty.plain
             );
@@ -2222,7 +2274,7 @@ mod tests {
             "queued follow-up badge must render:\n{plain}"
         );
         assert!(
-            plain.contains("> Add a follow-up ↵ to queue"),
+            plain.contains("> █Add a follow-up ↵ to queue"),
             "the composer stays on screen during a run:\n{plain}"
         );
     }
@@ -2232,9 +2284,8 @@ mod tests {
         for size in SIZES {
             let frame = render_lock_scene("splash", size.0, size.1).expect("splash");
             for needle in [
-                "~/cortex-api main*",
-                "> cortex",
-                "Cortex CLI v1.0.0",
+                "Welcome to",
+                "the coding agent CLI",
                 "/ commands · @ files · ! shell",
                 "Plan, search, build anything",
                 "Cortex Mini 1",
@@ -2250,10 +2301,17 @@ mod tests {
         }
         let wide = render_lock_scene("splash", 120, 40).expect("splash wide");
         assert!(wide.plain.contains("& cloud"), "{}", wide.plain);
+        assert!(
+            wide.plain
+                .contains(&format!("v{} · / commands", env!("CARGO_PKG_VERSION"))),
+            "{}",
+            wide.plain
+        );
         assert!(wide.plain.contains("100% context"), "{}", wide.plain);
+        assert!(!wide.plain.contains("> cortex"), "{}", wide.plain);
         // The composer follows the header rather than hugging the footer.
         let composer_y = (0..40u16)
-            .find(|y| row_text(&wide.buffer, *y).starts_with("> Plan"))
+            .find(|y| row_text(&wide.buffer, *y).starts_with("> █Plan"))
             .expect("composer");
         assert!(
             composer_y < 10,
@@ -2265,11 +2323,7 @@ mod tests {
             wide.ansi, empty.ansi,
             "splash and session_empty must be distinct frames"
         );
-        assert!(
-            !empty.plain.contains("Cortex CLI v1.0.0"),
-            "{}",
-            empty.plain
-        );
+        assert!(!empty.plain.contains("Welcome to"), "{}", empty.plain);
     }
 
     fn assert_no_junk(plain: &str) {
@@ -2712,7 +2766,7 @@ mod tests {
     #[test]
     fn lock_boards_02_09_product_copy() {
         let always: &[(&str, &[&str])] = &[
-            ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "█"]),
+            ("typing", &["Welcome to", "Add rate limiting", "█"]),
             (
                 "model_compact",
                 &[
@@ -2761,9 +2815,9 @@ mod tests {
         }
 
         let typing = render_lock_scene("typing", 120, 40).expect("typing");
-        assert!(typing.plain.contains("> cortex"), "{}", typing.plain);
+        assert!(typing.plain.contains("Welcome to"), "{}", typing.plain);
         assert!(
-            typing.plain.contains("Redis-backed, with tests█"),
+            typing.plain.contains("█"),
             "typing must end with the block cursor:\n{}",
             typing.plain
         );

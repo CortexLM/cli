@@ -10,7 +10,7 @@ use std::io::Write;
 use super::auth::get_auth_status_for_display;
 use super::config::get_mcp_server;
 use super::macros::safe_println;
-use super::types::DebugArgs;
+use super::types::{DebugArgs, ToolsArgs};
 use super::validation::validate_server_name;
 
 /// Server info returned from connection tests.
@@ -375,6 +375,80 @@ pub(crate) async fn run_debug(args: DebugArgs) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// List tools from a configured MCP server.
+pub(crate) async fn run_tools(args: ToolsArgs) -> Result<()> {
+    let ToolsArgs {
+        name,
+        json,
+        timeout,
+    } = args;
+    validate_server_name(&name)?;
+
+    let server = get_mcp_server(&name)?
+        .ok_or_else(|| anyhow::anyhow!("No MCP server named '{}' found", name))?;
+
+    let transport = server
+        .get("transport")
+        .ok_or_else(|| anyhow::anyhow!("MCP server '{name}' has no transport configured"))?;
+    let transport_type = transport
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    let info = match transport_type {
+        "stdio" => {
+            let cmd = transport
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let args = transport
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            test_stdio_connection(&name, cmd, &args, timeout).await?
+        }
+        "http" | "sse" | "streamable_http" | "streamable-http" => {
+            let url = transport
+                .get("url")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("MCP server '{name}' has no URL"))?;
+            test_http_connection(&name, url, timeout).await?
+        }
+        other => bail!("Unsupported MCP transport '{other}' for tools listing"),
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&info.tools)?);
+        return Ok(());
+    }
+
+    let tools = info.tools.as_array().cloned().unwrap_or_default();
+    if tools.is_empty() {
+        println!("No tools reported by MCP server '{name}'.");
+        return Ok(());
+    }
+    println!("Tools from '{name}' ({})", tools.len());
+    for tool in tools {
+        let tool_name = tool.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+        let desc = tool
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if desc.is_empty() {
+            println!("  • {tool_name}");
+        } else {
+            println!("  • {tool_name}: {desc}");
+        }
+    }
     Ok(())
 }
 

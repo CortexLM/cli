@@ -437,6 +437,7 @@ command = "{command_bin_escaped}"
                 Some(AddMcpStreamableHttpArgs {
                     url,
                     bearer_token_env_var,
+                    headers,
                 }),
             ..
         } => {
@@ -463,6 +464,15 @@ url = "{url_escaped}"
 
             if let Some(ref token_var) = bearer_token_env_var {
                 toml.push_str(&format!("bearer_token_env_var = \"{token_var}\"\n"));
+            }
+            if !headers.is_empty() {
+                toml.push_str("[mcp_servers.");
+                toml.push_str(&name);
+                toml.push_str(".transport.headers]\n");
+                for (key, value) in &headers {
+                    let escaped_value = value.replace('\\', "\\\\").replace('"', "\\\"");
+                    toml.push_str(&format!("{key} = \"{escaped_value}\"\n"));
+                }
             }
 
             // Build success message but defer printing until config write succeeds
@@ -918,6 +928,7 @@ mod tests {
                 streamable_http: Some(AddMcpStreamableHttpArgs {
                     url: "https://example.com/mcp".to_string(),
                     bearer_token_env_var: None,
+                    headers: vec![],
                 }),
                 sse_transport: None,
             },
@@ -937,6 +948,7 @@ mod tests {
                 streamable_http: Some(AddMcpStreamableHttpArgs {
                     url: "http://localhost:8080/mcp".to_string(),
                     bearer_token_env_var: None,
+                    headers: vec![],
                 }),
                 sse_transport: None,
             },
@@ -956,6 +968,7 @@ mod tests {
         let args = AddMcpStreamableHttpArgs {
             url: "https://api.example.com/mcp".to_string(),
             bearer_token_env_var: None,
+            headers: vec![],
         };
         assert_eq!(args.url, "https://api.example.com/mcp");
         assert!(args.bearer_token_env_var.is_none());
@@ -966,6 +979,7 @@ mod tests {
         let args = AddMcpStreamableHttpArgs {
             url: "https://api.example.com/mcp".to_string(),
             bearer_token_env_var: Some("MY_API_TOKEN".to_string()),
+            headers: vec![],
         };
         assert_eq!(args.bearer_token_env_var, Some("MY_API_TOKEN".to_string()));
     }
@@ -1056,6 +1070,7 @@ mod tests {
             streamable_http: Some(AddMcpStreamableHttpArgs {
                 url: "https://example.com".to_string(),
                 bearer_token_env_var: None,
+                headers: vec![],
             }),
             sse_transport: None,
         };

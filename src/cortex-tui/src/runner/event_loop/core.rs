@@ -193,7 +193,7 @@ impl EventLoop {
         Self {
             app_state,
             session_bridge: None,
-            stream_controller: StreamController::new(),
+            stream_controller: StreamController::with_typewriter(80.0),
             action_mapper: ActionMapper::default(),
             click_zones: ClickZoneRegistry::new(),
             mouse_handler: MouseHandler::new(),
@@ -852,12 +852,14 @@ pub fn open_browser_url(url: &str) -> Result<()> {
 }
 
 impl EventLoop {
-    /// Loads MCP server configurations from storage and starts enabled ones.
+    /// Loads MCP server configurations from storage and `config.toml`, then
+    /// starts enabled ones.
     pub fn load_mcp_servers(&mut self) {
+        let mut configs = Vec::new();
+
         match crate::mcp_storage::McpStorage::new() {
             Ok(storage) => match storage.list_servers() {
                 Ok(stored_servers) => {
-                    let mut configs = Vec::new();
                     for stored in stored_servers {
                         let server_info = crate::modal::mcp_manager::McpServerInfo {
                             name: stored.name.clone(),
@@ -879,23 +881,6 @@ impl EventLoop {
                             configs.push(stored.to_engine_config());
                         }
                     }
-                    if !self.app_state.mcp_servers.is_empty() {
-                        tracing::info!(
-                            "Loaded {} MCP server(s) from storage",
-                            self.app_state.mcp_servers.len()
-                        );
-                    }
-                    let manager = self.mcp_manager.clone();
-                    tokio::spawn(async move {
-                        for config in configs {
-                            let auto = config.auto_start;
-                            let name = config.name.clone();
-                            manager.add_server(config).await;
-                            if auto && let Err(e) = manager.connect(&name).await {
-                                tracing::warn!("MCP connect {name}: {e}");
-                            }
-                        }
-                    });
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load MCP servers from storage: {}", e);
@@ -905,5 +890,49 @@ impl EventLoop {
                 tracing::warn!("Failed to initialize MCP storage: {}", e);
             }
         }
+
+        if let Ok(home) = cortex_engine::config::find_cortex_home()
+            && let Ok(toml) = cortex_engine::config::load_config_sync(&home)
+        {
+            for (name, server) in toml.mcp_servers {
+                if !self.app_state.mcp_servers.iter().any(|s| s.name == name) {
+                    self.app_state
+                        .mcp_servers
+                        .push(crate::modal::mcp_manager::McpServerInfo {
+                            name: name.clone(),
+                            status: crate::modal::mcp_manager::McpStatus::Stopped,
+                            tool_count: 0,
+                            error: None,
+                            requires_auth: server.bearer_token_env_var.is_some()
+                                || server
+                                    .transport
+                                    .as_ref()
+                                    .and_then(|t| t.bearer_token_env_var.as_ref())
+                                    .is_some(),
+                        });
+                }
+                if server.enabled {
+                    configs.push(server.to_engine(&name));
+                }
+            }
+        }
+
+        if !self.app_state.mcp_servers.is_empty() {
+            tracing::info!("Loaded {} MCP server(s)", self.app_state.mcp_servers.len());
+        }
+        if configs.is_empty() {
+            return;
+        }
+        let manager = self.mcp_manager.clone();
+        tokio::spawn(async move {
+            for config in configs {
+                let auto = config.auto_start;
+                let name = config.name.clone();
+                manager.add_server(config).await;
+                if auto && let Err(e) = manager.connect(&name).await {
+                    tracing::warn!("MCP connect {name}: {e}");
+                }
+            }
+        });
     }
 }

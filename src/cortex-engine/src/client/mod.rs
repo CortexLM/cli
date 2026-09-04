@@ -91,9 +91,9 @@ fn get_auth_token() -> Result<String> {
 ///
 /// All requests go through the Cortex backend with OAuth authentication.
 ///
-/// # Legacy signature compatibility
-/// The `_provider_id` and `_base_url` parameters are ignored - all requests
-/// go through Cortex backend. The `api_key` parameter is used as the auth token.
+/// # Named providers
+/// `base_url` from `[providers.<id>]` is passed through as `_base_url`.
+/// Auth still uses the Cortex session / `CORTEX_API_KEY`.
 pub fn create_client(
     _provider_id: &str,
     model: &str,
@@ -107,9 +107,12 @@ pub fn create_client(
         get_auth_token()?
     };
 
-    let base_url = std::env::var("CORTEX_API_URL").ok();
+    let resolved_url = _base_url
+        .filter(|url| !url.is_empty())
+        .map(str::to_string)
+        .or_else(|| std::env::var("CORTEX_API_URL").ok());
     Ok(Box::new(
-        CortexClient::new(model.to_string(), base_url).with_auth_token(auth_token),
+        CortexClient::new(model.to_string(), resolved_url).with_auth_token(auth_token),
     ))
 }
 

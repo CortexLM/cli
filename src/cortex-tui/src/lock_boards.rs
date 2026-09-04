@@ -24,7 +24,6 @@ use crate::ui::text_utils::{
 /// Prompt typed in the README hero GIF and the typing lock board.
 pub const USER_PROMPT: &str = "Add rate limiting to POST /v1/completions – 60 req/min per API key, sliding window, Redis-backed, with tests";
 const CWD: &str = "~/cortex-api";
-const GIT: &str = "main*";
 /// English product name — the TUI never shows the served `cortex-1-mini` slug.
 const MODEL: &str = "Cortex Mini 1";
 /// Command rows (`$ npm install …`, the sudo password) sit on the user-turn gray.
@@ -199,13 +198,13 @@ fn fill_row(buf: &mut Buffer, area: Rect, y: u16, bg: Color) {
 
 /// What the composer shows between its hairlines.
 enum Composer<'a> {
-    /// Idle or running: dim placeholder, then the block cursor.
+    /// Idle or running: block cursor at input col 0, dim placeholder after it.
     Ghost(&'a str),
-    /// Typed copy with the block cursor at its end; wraps whole.
+    /// Typed copy with the white block caret at end of line; wraps whole.
     Typed(&'a str),
 }
 
-/// The Devin-style prompt bar: a hairline, `> …`, a hairline. Starts on
+/// The lock prompt bar: a hairline, `> …`, a hairline. Starts on
 /// row `y`; returns the rows used (3, more when typed copy wraps).
 fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) -> u16 {
     let w = inner_width(area);
@@ -213,19 +212,16 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
     let mut row = y + 1;
     match composer {
         Composer::Ghost(ghost) => {
-            buf.set_string(
+            crate::views::minimal_session::paint_composer_contents(
+                buf,
                 area.x,
                 row,
-                "> ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                area.width,
+                "",
+                0,
+                true,
+                Some(ghost),
             );
-            let shown = first_fitting_line(ghost, w.saturating_sub(4));
-            let mut x = area.x + 2;
-            if !shown.is_empty() {
-                buf.set_string(x, row, &shown, Style::default().fg(TEXT_DIM));
-                x += shown.chars().count() as u16 + 1;
-            }
-            buf.set_string(x, row, "█", Style::default().fg(TEXT));
             row += 1;
         }
         Composer::Typed(text) => {
@@ -236,31 +232,48 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
             };
             let last = parts.len().saturating_sub(1);
             for (i, part) in parts.iter().enumerate() {
+                if i == 0 && parts.len() == 1 {
+                    crate::views::minimal_session::paint_composer_contents(
+                        buf,
+                        area.x,
+                        row,
+                        area.width,
+                        part,
+                        part.chars().count(),
+                        true,
+                        None,
+                    );
+                    row += 1;
+                    continue;
+                }
                 let prefix = if i == 0 { "> " } else { "  " };
-                let caret = if i == 0 { ACCENT } else { TEXT };
                 let prefix_style = if i == 0 {
-                    Style::default().fg(caret).add_modifier(Modifier::BOLD)
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(caret)
+                    Style::default().fg(TEXT)
                 };
                 buf.set_string(area.x, row, prefix, prefix_style);
-                let cursor = if i == last { "█" } else { "" };
                 buf.set_string(
                     area.x + prefix.chars().count() as u16,
                     row,
-                    format!("{part}{cursor}"),
+                    part,
                     Style::default().fg(TEXT),
                 );
+                if i == last {
+                    let x = area.x + prefix.chars().count() as u16 + part.chars().count() as u16;
+                    buf.set_string(
+                        x,
+                        row,
+                        crate::views::minimal_session::BLOCK_CURSOR.to_string(),
+                        Style::default().fg(cortex_core::style::TEXT_BRIGHT),
+                    );
+                }
                 row += 1;
             }
             if parts.is_empty() {
-                buf.set_string(
-                    area.x,
-                    row,
-                    "> ",
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                crate::views::minimal_session::paint_composer_contents(
+                    buf, area.x, row, area.width, "", 0, true, None,
                 );
-                buf.set_string(area.x + 2, row, "█", Style::default().fg(TEXT));
                 row += 1;
             }
         }
@@ -773,40 +786,33 @@ fn bar(filled: u16, total: u16) -> String {
     s
 }
 
-/// History chrome shared by splash, typing and slash: cwd/git, `> cortex`,
-/// version, keystroke hints. Narrow palettes drop the cwd and hints rows.
+/// Launch header: `Welcome to Cortex, the coding agent CLI` then
+/// `v{version} · / commands · …`. No fake `> cortex` or painted cwd.
 fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
     let w = inner_width(area);
     let mut y = area.y;
-    if full {
-        buf.set_string(
-            area.x,
-            y,
-            first_fitting_line(&format!("{CWD} {GIT}"), w),
-            Style::default().fg(TEXT_DIM),
-        );
-        y += 1;
-    }
-    buf.set_string(area.x, y, "> cortex", Style::default().fg(TEXT));
-    y += 1;
-    buf.set_string(
-        area.x,
-        y,
-        first_fitting_line("Cortex CLI v1.0.0", w),
-        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-    );
+    let dim = Style::default().fg(TEXT_DIM);
+    let bold = Style::default().fg(TEXT).add_modifier(Modifier::BOLD);
+    buf.set_string(area.x, y, "Welcome to ", dim);
+    buf.set_string(area.x + 11, y, "Cortex", bold);
+    buf.set_string(area.x + 17, y, ", the coding agent CLI", dim);
     y += 1;
     if full {
-        let hints = if LAUNCH_HINTS.chars().count() <= w {
-            LAUNCH_HINTS
+        let version = env!("CARGO_PKG_VERSION");
+        let full_h = format!("v{version} · {LAUNCH_HINTS}");
+        let mid_h = format!("v{version} · {LAUNCH_HINTS_NARROW}");
+        let hints = if full_h.chars().count() <= w {
+            full_h
+        } else if mid_h.chars().count() <= w {
+            mid_h
         } else {
-            LAUNCH_HINTS_NARROW
+            format!("v{version} · / commands")
         };
         buf.set_string(
             area.x,
             y,
-            trim_dangling_separator(&first_fitting_line(hints, w)),
-            Style::default().fg(TEXT_DIM),
+            trim_dangling_separator(&first_fitting_line(&hints, w)),
+            dim,
         );
         y += 1;
     }

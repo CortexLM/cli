@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn snapshot_empty_loading_error_success_surfaces() {
         for (label, copy) in [
-            ("empty", "Cortex CLI v1.0.0"),
+            ("empty", "Welcome to Cortex"),
             ("loading", "Waiting for browser authentication"),
             ("error", "The coding service is temporarily unavailable"),
             ("success", "Signed in."),
@@ -166,8 +166,13 @@ mod tests {
             capture.capture_ratatui(terminal.backend().buffer(), Some("splash"));
             let frame = capture.latest_frame().expect("frame");
             assert!(
-                frame.ascii_content.contains("Cortex CLI v1.0.0"),
+                frame.ascii_content.contains("Welcome to"),
                 "splash missing at {w}x{h}:\n{}",
+                frame.ascii_content
+            );
+            assert!(
+                frame.ascii_content.contains("v1.0.0"),
+                "splash missing version at {w}x{h}:\n{}",
                 frame.ascii_content
             );
             assert!(!frame.ascii_content.contains("▄█▀▀▀▀█▄"));

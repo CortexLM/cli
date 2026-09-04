@@ -43,6 +43,21 @@ const DEFAULT_CORTEX_URL: &str = "https://api.cortex.foundation";
 const CHUNK_TIMEOUT_SECS: u64 = 60;
 const GUEST_COOKIE_NAME: &str = "cortex_gt";
 
+/// Product-facing copy for a true outage / unreachable API.
+pub const SERVICE_UNAVAILABLE: &str = "The coding service is temporarily unavailable";
+/// Auth failures: tell the user how to recover. Never dump tokens.
+pub const AUTH_REQUIRED: &str =
+    "Not signed in. Run `cortex login` or set CORTEX_API_KEY, then try again.";
+/// Wrong origin, missing route, or a session the API no longer has.
+pub const ENDPOINT_NOT_FOUND: &str = "The coding endpoint was not found. Check CORTEX_API_URL (default https://api.cortex.foundation) or run `cortex login`.";
+/// Quota / 429.
+pub const TOO_MANY_REQUESTS: &str = "Too many requests. Please wait and try again.";
+
+/// Strip a trailing slash so `/v1/...` is not doubled as `//v1`.
+pub fn normalize_api_base(url: &str) -> String {
+    url.trim().trim_end_matches('/').to_string()
+}
+
 /// Guest-cookie token prefix stored in the keyring / env.
 pub const GUEST_TOKEN_PREFIX: &str = "gt:";
 
@@ -325,9 +340,9 @@ impl CodeAgentClient {
                 .unwrap_or_else(|_| Client::new());
         Self {
             http,
-            base_url: base_url.unwrap_or_else(|| {
+            base_url: normalize_api_base(&base_url.unwrap_or_else(|| {
                 std::env::var("CORTEX_API_URL").unwrap_or_else(|_| DEFAULT_CORTEX_URL.to_string())
-            }),
+            })),
             auth: Arc::new(Mutex::new(auth)),
             session_id: Arc::new(Mutex::new(load_cached_session_id(
                 &std::env::current_dir()
@@ -576,6 +591,19 @@ impl CodeAgentClient {
         self.ensure_auth().await?;
         let ctx = self.turn_context();
         let mode = ctx.turn_mode.unwrap_or(mode);
+        match self.post_turn(message, mode).await {
+            Ok(stream) => Ok(stream),
+            Err(e) if is_not_found_error(&e) => {
+                tracing::debug!("Code session turn returned 404; creating a new session");
+                *self.session_id.lock().await = None;
+                self.post_turn(message, mode).await
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn post_turn(&self, message: &str, mode: CodeTurnMode) -> Result<ResponseStream> {
+        let ctx = self.turn_context();
         let session_id = self.ensure_session().await?;
         let url = format!("{}/v1/code/sessions/{session_id}/turns", self.base_url);
         let body = serde_json::json!({
@@ -761,6 +789,10 @@ async fn parse_json<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Re
     })
 }
 
+fn is_not_found_error(err: &CortexError) -> bool {
+    err.to_string().contains("not found")
+}
+
 fn map_api_error(status: reqwest::StatusCode, body: &str) -> CortexError {
     let detail = serde_json::from_str::<serde_json::Value>(body)
         .ok()
@@ -769,15 +801,46 @@ fn map_api_error(status: reqwest::StatusCode, body: &str) -> CortexError {
                 .and_then(|d| d.as_str())
                 .map(str::to_string)
                 .or_else(|| v.get("title").and_then(|d| d.as_str()).map(str::to_string))
+                .or_else(|| v.get("error").and_then(|d| d.as_str()).map(str::to_string))
         });
-    let message = match status.as_u16() {
-        401 | 403 => "Sign in to continue, or start a guest session.".to_string(),
-        404 => "The coding service is temporarily unavailable".to_string(),
-        429 => "Too many requests. Please wait and try again.".to_string(),
-        500..=599 => "The coding service is temporarily unavailable".to_string(),
-        _ => detail.unwrap_or_else(|| "The coding service is temporarily unavailable".to_string()),
+    match status.as_u16() {
+        401 | 403 => CortexError::AuthenticationError {
+            message: AUTH_REQUIRED.to_string(),
+        },
+        404 => CortexError::BackendError {
+            message: ENDPOINT_NOT_FOUND.to_string(),
+        },
+        429 => CortexError::RateLimit(TOO_MANY_REQUESTS.to_string()),
+        500..=599 => CortexError::BackendUnavailable(SERVICE_UNAVAILABLE.to_string()),
+        _ => CortexError::BackendError {
+            message: sanitize_api_detail(detail),
+        },
+    }
+}
+
+/// Keep operator/API detail when it is already product-safe; otherwise the
+/// generic outage line. Never pass through SDK or transport names.
+fn sanitize_api_detail(detail: Option<String>) -> String {
+    let Some(raw) = detail.filter(|s| !s.trim().is_empty()) else {
+        return SERVICE_UNAVAILABLE.to_string();
     };
-    CortexError::BackendError { message }
+    let lower = raw.to_lowercase();
+    if lower.contains("reqwest")
+        || lower.contains("hyper")
+        || lower.contains("openai")
+        || lower.contains("anthropic")
+        || lower.contains("tokio")
+    {
+        return SERVICE_UNAVAILABLE.to_string();
+    }
+    if lower.contains("unauthorized")
+        || lower.contains("unauthenticated")
+        || lower.contains("invalid api key")
+        || lower.contains("invalid token")
+    {
+        return AUTH_REQUIRED.to_string();
+    }
+    raw
 }
 
 async fn pump_sse<S>(stream: S, tx: mpsc::Sender<Result<ResponseEvent>>, execute_local: bool)
@@ -800,11 +863,7 @@ where
             Ok(Some(result)) => result,
             Ok(None) => break,
             Err(_) => {
-                let _ = tx
-                    .send(Err(CortexError::BackendError {
-                        message: "The coding service is temporarily unavailable".into(),
-                    }))
-                    .await;
+                let _ = tx.send(Err(CortexError::Timeout)).await;
                 break;
             }
         };
@@ -926,11 +985,7 @@ where
                 } else {
                     message
                 };
-                let mapped = if raw.to_lowercase().contains("unavailable") || raw.is_empty() {
-                    "The coding service is temporarily unavailable".to_string()
-                } else {
-                    raw
-                };
+                let mapped = map_sse_error_copy(&raw);
                 Some(ResponseEvent::Error(mapped))
             }
             CodeTurnEvent::Question {
@@ -951,6 +1006,33 @@ where
             break;
         }
     }
+}
+
+fn map_sse_error_copy(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return SERVICE_UNAVAILABLE.to_string();
+    }
+    let lower = trimmed.to_lowercase();
+    if lower.contains("unauthorized")
+        || lower.contains("unauthenticated")
+        || lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("invalid api key")
+        || lower.contains("invalid token")
+    {
+        return AUTH_REQUIRED.to_string();
+    }
+    if lower.contains("not found") || lower.contains("404") {
+        return ENDPOINT_NOT_FOUND.to_string();
+    }
+    if lower.contains("429") || lower.contains("rate limit") || lower.contains("quota") {
+        return TOO_MANY_REQUESTS.to_string();
+    }
+    if lower.contains("reqwest") || lower.contains("hyper") {
+        return SERVICE_UNAVAILABLE.to_string();
+    }
+    trimmed.to_string()
 }
 
 #[cfg(test)]
@@ -1043,14 +1125,69 @@ mod tests {
 
     #[test]
     fn api_errors_are_product_facing() {
-        let err = map_api_error(reqwest::StatusCode::NOT_FOUND, r#"{"detail":"nope"}"#);
-        let msg = err.to_string();
+        let err = map_api_error(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"detail":"nope"}"#,
+        );
+        let msg = err.user_friendly_message();
         assert!(
             msg.contains("temporarily unavailable"),
             "expected product error, got {msg}"
         );
         assert!(!msg.to_lowercase().contains("reqwest"));
         assert!(!msg.contains("nope"));
+    }
+
+    #[test]
+    fn api_401_asks_the_user_to_login() {
+        let err = map_api_error(reqwest::StatusCode::UNAUTHORIZED, r#"{"detail":"nope"}"#);
+        let msg = err.user_friendly_message();
+        assert!(
+            msg.contains("cortex login") || msg.contains("CORTEX_API_KEY"),
+            "{msg}"
+        );
+        assert!(!msg.contains("temporarily unavailable"), "{msg}");
+        assert!(!msg.contains("nope"));
+    }
+
+    #[test]
+    fn api_404_is_not_a_false_outage() {
+        let err = map_api_error(reqwest::StatusCode::NOT_FOUND, r#"{"detail":"missing"}"#);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not found") || msg.contains("CORTEX_API_URL"),
+            "{msg}"
+        );
+        assert!(!msg.contains("temporarily unavailable"), "{msg}");
+        assert!(!msg.contains("missing"));
+    }
+
+    #[test]
+    fn backend_error_display_keeps_actionable_copy() {
+        let err = CortexError::BackendError {
+            message: AUTH_REQUIRED.to_string(),
+        };
+        assert_eq!(err.to_string(), AUTH_REQUIRED);
+        assert_eq!(err.user_friendly_message(), AUTH_REQUIRED);
+    }
+
+    #[test]
+    fn normalize_api_base_strips_trailing_slash() {
+        assert_eq!(
+            normalize_api_base("https://api.cortex.foundation/"),
+            "https://api.cortex.foundation"
+        );
+        assert_eq!(
+            CodeAgentClient::new(Some("https://api.cortex.foundation/".into()), None).base_url(),
+            "https://api.cortex.foundation"
+        );
+    }
+
+    #[test]
+    fn sse_error_maps_auth_without_outage_copy() {
+        assert_eq!(map_sse_error_copy("unauthorized"), AUTH_REQUIRED);
+        assert_eq!(map_sse_error_copy(""), SERVICE_UNAVAILABLE);
+        assert_eq!(map_sse_error_copy("rate limit 429"), TOO_MANY_REQUESTS);
     }
 
     #[test]

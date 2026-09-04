@@ -9,7 +9,7 @@
 //! ```rust,ignore
 //! use cortex_tui::runner::terminal::{CortexTerminal, TerminalOptions};
 //!
-//! // Create with default options (alternate screen, mouse capture, etc.)
+//! // Create with default options (inline, no alternate screen)
 //! let mut terminal = CortexTerminal::new()?;
 //!
 //! // Or with custom options
@@ -116,8 +116,7 @@ impl Drop for TerminalGuard {
 /// Configuration options for terminal initialization.
 ///
 /// This struct uses the builder pattern to allow flexible configuration
-/// of terminal features. All features are enabled by default for the
-/// best user experience.
+/// of terminal features. Alternate screen is **off** by default (inline).
 ///
 /// # Example
 ///
@@ -147,12 +146,13 @@ pub struct TerminalOptions {
 
 impl Default for TerminalOptions {
     fn default() -> Self {
+        // Interactive start is inline: never enter the alternate screen.
         Self {
-            alternate_screen: true,
+            alternate_screen: false,
             mouse_capture: true,
             bracketed_paste: true,
             title: Some("Cortex".to_string()),
-            clear_on_start: true,
+            clear_on_start: false,
         }
     }
 }
@@ -160,12 +160,12 @@ impl Default for TerminalOptions {
 impl TerminalOptions {
     /// Create a new `TerminalOptions` with default settings.
     ///
-    /// Default settings enable all features for the best TUI experience:
-    /// - Alternate screen: enabled (preserves scrollback)
+    /// Default settings stay **inline** (never alternate screen):
+    /// - Alternate screen: off (set `[tui] alternate_screen = true` to opt in)
     /// - Mouse capture: enabled
     /// - Bracketed paste: enabled
     /// - Title: "Cortex"
-    /// - Clear on start: enabled
+    /// - Clear on start: off
     pub fn new() -> Self {
         Self::default()
     }
@@ -260,13 +260,15 @@ pub struct CortexTerminal {
     pub terminal: Terminal<CrosstermBackend<Stdout>>,
     /// RAII guard for cleanup
     _guard: TerminalGuard,
+    /// Whether this session entered the alternate screen.
+    alternate_screen: bool,
 }
 
 impl CortexTerminal {
-    /// Create a new terminal with default full-screen mode.
+    /// Create a new terminal with default **inline** mode (no alternate screen).
     ///
     /// This initializes the terminal with:
-    /// - Alternate screen buffer
+    /// - Inline buffer (host shell prompt stays visible above the app)
     /// - Mouse capture
     /// - Bracketed paste mode
     /// - Hidden cursor
@@ -306,7 +308,13 @@ impl CortexTerminal {
         Ok(Self {
             terminal,
             _guard: guard,
+            alternate_screen: options.alternate_screen,
         })
+    }
+
+    /// Whether this TUI session is using the alternate screen buffer.
+    pub fn uses_alternate_screen(&self) -> bool {
+        self.alternate_screen
     }
 
     /// Get the current terminal size.
@@ -978,11 +986,14 @@ mod tests {
     #[test]
     fn test_terminal_options_default() {
         let options = TerminalOptions::default();
-        assert!(options.alternate_screen);
+        assert!(
+            !options.alternate_screen,
+            "default must be inline (never alt-screen)"
+        );
         assert!(options.mouse_capture);
         assert!(options.bracketed_paste);
         assert_eq!(options.title, Some("Cortex".to_string()));
-        assert!(options.clear_on_start);
+        assert!(!options.clear_on_start);
     }
 
     #[test]

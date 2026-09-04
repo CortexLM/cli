@@ -322,9 +322,7 @@ mod tests {
             "server1".to_string(),
             McpServerConfig {
                 command: "cmd1".to_string(),
-                args: vec![],
-                env: HashMap::new(),
-                timeout_seconds: None,
+                ..Default::default()
             },
         );
 
@@ -333,9 +331,7 @@ mod tests {
             "server2".to_string(),
             McpServerConfig {
                 command: "cmd2".to_string(),
-                args: vec![],
-                env: HashMap::new(),
-                timeout_seconds: None,
+                ..Default::default()
             },
         );
 

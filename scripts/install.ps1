@@ -15,6 +15,67 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# RuntimeInformation.OSArchitecture is missing on Windows PowerShell 5.1 / older
+# .NET. Reading that static property under Set-StrictMode throws
+# PropertyNotFoundStrict, so probe with Get-Member / GetProperty instead.
+function Get-CortexRuntimeOsArchitecture {
+    try {
+        $riType = [System.Runtime.InteropServices.RuntimeInformation]
+    } catch {
+        return $null
+    }
+    if ($null -eq $riType) {
+        return $null
+    }
+
+    $member = Get-Member -InputObject $riType -MemberType Property -Name OSArchitecture -Static -ErrorAction SilentlyContinue
+    if ($null -eq $member) {
+        return $null
+    }
+
+    $flags = [System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::Static
+    $property = $riType.GetProperty("OSArchitecture", $flags)
+    if ($null -eq $property) {
+        return $null
+    }
+    try {
+        $value = $property.GetValue($null, $null)
+    } catch {
+        return $null
+    }
+    if ($null -eq $value) {
+        return $null
+    }
+    return [string]$value
+}
+
+function Resolve-CortexInstallPlatform {
+    param(
+        [string]$RuntimeOsArchitecture,
+        [string]$ProcessorArchitecture,
+        [bool]$Is64BitOperatingSystem
+    )
+
+    $arch = $RuntimeOsArchitecture
+    if (-not $arch) {
+        $arch = $ProcessorArchitecture
+    }
+
+    switch -Regex ([string]$arch) {
+        '^(?i:X64|AMD64)$' { return "windows-x86_64" }
+        '^(?i:ARM64)$' {
+            throw "install.ps1: Windows ARM64 builds are not published yet. Use an x64 machine or the GitHub Release."
+        }
+    }
+
+    if ($Is64BitOperatingSystem) {
+        return "windows-x86_64"
+    }
+
+    $label = if ($arch) { $arch } else { "unknown" }
+    throw "install.ps1: unsupported architecture: $label"
+}
+
 $SoftwareUrl = if ($env:CORTEX_SOFTWARE_URL) { $env:CORTEX_SOFTWARE_URL.TrimEnd("/") } else { "https://software.cortex.foundation" }
 $Channel = if ($env:CORTEX_CHANNEL) { $env:CORTEX_CHANNEL } else { "stable" }
 $Prefix = if ($env:CORTEX_INSTALL_DIR) { $env:CORTEX_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Cortex" }
@@ -25,12 +86,15 @@ if ($Channel -notin @("stable", "beta", "nightly")) {
     throw "install.ps1: invalid CORTEX_CHANNEL='$Channel' (use stable, beta, or nightly)"
 }
 
-$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-switch ($arch) {
-    "X64" { $Platform = "windows-x86_64" }
-    "Arm64" { throw "install.ps1: Windows ARM64 builds are not published yet. Use an x64 machine or the GitHub Release." }
-    default { throw "install.ps1: unsupported architecture: $arch" }
+$processorArchitecture = $env:PROCESSOR_ARCHITECTURE
+if ($env:PROCESSOR_ARCHITEW6432) {
+    $processorArchitecture = $env:PROCESSOR_ARCHITEW6432
 }
+
+$Platform = Resolve-CortexInstallPlatform `
+    -RuntimeOsArchitecture (Get-CortexRuntimeOsArchitecture) `
+    -ProcessorArchitecture $processorArchitecture `
+    -Is64BitOperatingSystem ([Environment]::Is64BitOperatingSystem)
 
 function Get-Json($Url) {
     return Invoke-RestMethod -Uri $Url -Method Get

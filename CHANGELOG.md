@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guest session as an explicit TUI login choice
 
 ### Fixed
+- Windows `install.ps1` detects CPU architecture without reading `RuntimeInformation.OSArchitecture` under StrictMode, which threw `PropertyNotFoundStrict` on Windows PowerShell 5.1
 - Cancel aborts the local SSE stream and best-effort POSTs cancel (API route is still 404)
 - Task without a live ModelClient reports failure instead of a fake success
 - Remote tool rows keep their label instead of dropping arguments

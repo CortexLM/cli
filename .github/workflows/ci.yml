@@ -26,6 +26,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify CLI version consistency
         run: ./scripts/check-cli-version.sh
+      - name: Verify Windows installer arch detection
+        shell: pwsh
+        run: ./scripts/test-install-ps1.ps1
 
   fmt:
     name: Format

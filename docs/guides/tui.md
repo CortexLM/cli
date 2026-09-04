@@ -73,8 +73,12 @@ stage the turn is in — `Thinking`, `Executing <tool>`, `Streaming..`,
 
 ### Composer
 
-The empty composer keeps the caret at column 0 after `> `; the placeholder
-(`Plan, search, build anything`) sits after the caret. `Enter` sends.
+The empty composer keeps a white block cursor at input column 0 after `> `;
+the dim placeholder (`Plan, search, build anything`) sits in the next cell.
+The placeholder is paint-only and does not move the caret. While typing, the
+placeholder is hidden, copy is `#F5F5F5`, and the block follows the caret.
+Blink (~530ms) hides the block; the placeholder then starts at column 0.
+`Enter` sends.
 `Shift+Enter` inserts a newline. `Up` and `Down` walk your prompt
 history. If you submit while a turn is running the message is queued, and the
 composer shows how many are waiting.

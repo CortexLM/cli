@@ -494,8 +494,8 @@ mod tests {
     use super::*;
     use crate::commands::{PALETTE_HOME_COMMANDS, SLASH_VISIBLE};
     use cortex_core::style::{
-        ACCENT, DIFF_ADD, ERROR, HAIRLINE, PANEL_BG, SELECTION_BG, SUCCESS, TEXT, TEXT_DIM,
-        THINKING, USER_TURN_BG, WARNING,
+        ACCENT, DIFF_ADD, ERROR, HAIRLINE, PANEL_BG, SELECTION_BG, SUCCESS, TEXT, TEXT_BRIGHT,
+        TEXT_DIM, THINKING, USER_TURN_BG, WARNING,
     };
     use ratatui::buffer::Buffer;
     use ratatui::style::Color;
@@ -1027,8 +1027,8 @@ mod tests {
                 assert_eq!(buf[(0, y)].style().fg, Some(ACCENT), "{id} at {size:?}");
                 let row = row_text(buf, y);
                 assert!(
-                    row.contains('|'),
-                    "{id} composer needs its blinking caret: {row}"
+                    row.contains('█'),
+                    "{id} composer needs its block cursor: {row}"
                 );
                 assert!(
                     !row.contains("▐"),
@@ -1042,8 +1042,13 @@ mod tests {
         for size in SIZES {
             let splash = render_lock_scene("splash", size.0, size.1).expect("splash");
             assert!(
-                splash.plain.contains("> |Plan, search, build anything"),
+                splash.plain.contains("> █Plan, search, build anything"),
                 "{}",
+                splash.plain
+            );
+            assert!(
+                !splash.plain.contains("build anything█"),
+                "block cursor must not sit after the placeholder:\n{}",
                 splash.plain
             );
             let ghost_x = splash
@@ -1059,12 +1064,55 @@ mod tests {
                 Some(TEXT_DIM),
                 "placeholder must be dim"
             );
+            assert_eq!(
+                splash.buffer[(2, ghost_y)].symbol(),
+                "█",
+                "block cursor occupies input col 0"
+            );
+            assert_eq!(
+                splash.buffer[(2, ghost_y)].style().fg,
+                Some(TEXT_BRIGHT),
+                "block cursor is white"
+            );
             let working = render_lock_scene("working", size.0, size.1).expect("working");
             assert!(
-                working.plain.contains("> |Add a follow-up ↵ to queue"),
+                working.plain.contains("> █Add a follow-up ↵ to queue"),
                 "{}",
                 working.plain
             );
+        }
+    }
+
+    #[test]
+    fn empty_composer_blink_off_drops_the_block_and_keeps_placeholder_at_col0() {
+        for size in SIZES {
+            let config = capture_config(size.0, size.1);
+            let mut terminal = MockTerminal::from_config(config.clone()).expect("terminal");
+            let mut state = lock_app();
+            state.caret_visible = false;
+            terminal
+                .draw(|frame| draw_session(frame, state))
+                .map_err(|err| anyhow::anyhow!("{err}"))
+                .expect("draw");
+            let buf = terminal.backend().buffer();
+            let y = (1..size.1.saturating_sub(1))
+                .find(|&y| {
+                    buf[(0, y)].symbol() == ">"
+                        && buf[(0, y)].style().fg == Some(ACCENT)
+                        && is_hairline_row(buf, y - 1)
+                        && is_hairline_row(buf, y + 1)
+                })
+                .expect("composer");
+            assert_ne!(buf[(2, y)].symbol(), "█", "blink-off must hide the block");
+            assert_eq!(
+                buf[(2, y)].symbol(),
+                "P",
+                "placeholder starts at input col0"
+            );
+            assert_eq!(buf[(2, y)].style().fg, Some(TEXT_DIM));
+            let row = row_text(buf, y);
+            assert!(row.starts_with("> Plan, search"), "{row}");
+            assert!(!row.contains('█'), "{row}");
         }
     }
 
@@ -2221,7 +2269,7 @@ mod tests {
             "queued follow-up badge must render:\n{plain}"
         );
         assert!(
-            plain.contains("> |Add a follow-up ↵ to queue"),
+            plain.contains("> █Add a follow-up ↵ to queue"),
             "the composer stays on screen during a run:\n{plain}"
         );
     }
@@ -2250,7 +2298,7 @@ mod tests {
         assert!(wide.plain.contains("100% context"), "{}", wide.plain);
         // The composer follows the header rather than hugging the footer.
         let composer_y = (0..40u16)
-            .find(|y| row_text(&wide.buffer, *y).starts_with("> |Plan"))
+            .find(|y| row_text(&wide.buffer, *y).starts_with("> █Plan"))
             .expect("composer");
         assert!(
             composer_y < 10,
@@ -2709,7 +2757,7 @@ mod tests {
     #[test]
     fn lock_boards_02_09_product_copy() {
         let always: &[(&str, &[&str])] = &[
-            ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "|"]),
+            ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "█"]),
             (
                 "model_compact",
                 &[
@@ -2764,7 +2812,7 @@ mod tests {
             typing.plain
         );
         assert!(
-            typing.plain.contains("|"),
+            typing.plain.contains("█"),
             "typing must end with the block cursor:\n{}",
             typing.plain
         );
@@ -3012,7 +3060,7 @@ mod tests {
         );
         // The typed mention sits in the hairline composer.
         assert!(
-            files_n.plain.contains("> Add integration tests for @rate|"),
+            files_n.plain.contains("> Add integration tests for @rate█"),
             "{}",
             files_n.plain
         );
@@ -3061,7 +3109,7 @@ mod tests {
         assert!(max.plain.contains("+214"));
         assert!(max.plain.contains("-9"));
         assert!(max.plain.contains("38% context left"));
-        assert!(max.plain.contains("> Add a follow-up|"));
+        assert!(max.plain.contains("> Add a follow-up█"));
     }
 
     #[test]

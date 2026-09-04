@@ -95,7 +95,7 @@ pub const SPINNER_INTERVAL_MS: u64 = 80;
 pub const TOOL_SPINNER_FRAMES: &[char] = &['◐', '◑', '◒', '◓'];
 
 /// Default cursor blink interval in milliseconds.
-pub const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
+pub const CURSOR_BLINK_INTERVAL_MS: u64 = 530;
 
 /// Gets the cursor blink interval respecting system accessibility settings.
 ///

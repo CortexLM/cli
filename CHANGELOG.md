@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The TUI runs **inline** in the host terminal by default (`alternate_screen = false`). It does not enter the alternate screen on start; the real shell prompt stays in scrollback above the app. Opt in with `cortex --alternate-screen` or `[tui] alternate_screen = true` in `~/.cortex/config.toml`.
+- Composer lock: empty is `> ` + white block at input col 0 + dim `Plan, search, build anything` after that cell (never a white rect after the placeholder). Blink-off (~530ms) hides the block so the placeholder starts at col 0. Typed copy is `#F5F5F5` with the block at the caret.
 
 ### Changed
 - README `docs/media/intro.gif` is the signed lock TUI at 120×40 (1232×912): splash (`Cortex CLI v1.0.0`, dual hairline, violet `>`, “Plan, search, build anything”) → typing the rate-limit prompt → working (`Cortex Mini 1 · Agent`). The retired mint-mascot welcome card is gone from the banner.

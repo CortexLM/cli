@@ -198,13 +198,13 @@ fn fill_row(buf: &mut Buffer, area: Rect, y: u16, bg: Color) {
 
 /// What the composer shows between its hairlines.
 enum Composer<'a> {
-    /// Idle or running: dim placeholder, then the blinking `|` caret.
+    /// Idle or running: block cursor at input col 0, dim placeholder after it.
     Ghost(&'a str),
-    /// Typed copy with the caret at its end; wraps whole.
+    /// Typed copy with the white block caret at end of line; wraps whole.
     Typed(&'a str),
 }
 
-/// The Devin-style prompt bar: a hairline, `> …`, a hairline. Starts on
+/// The lock prompt bar: a hairline, `> …`, a hairline. Starts on
 /// row `y`; returns the rows used (3, more when typed copy wraps).
 fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) -> u16 {
     let w = inner_width(area);
@@ -212,19 +212,16 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
     let mut row = y + 1;
     match composer {
         Composer::Ghost(ghost) => {
-            buf.set_string(
+            crate::views::minimal_session::paint_composer_contents(
+                buf,
                 area.x,
                 row,
-                "> ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                area.width,
+                "",
+                0,
+                true,
+                Some(ghost),
             );
-            let mut x = area.x + 2;
-            buf.set_string(x, row, "|", Style::default().fg(TEXT));
-            x += 1;
-            let shown = first_fitting_line(ghost, w.saturating_sub(4));
-            if !shown.is_empty() {
-                buf.set_string(x, row, &shown, Style::default().fg(TEXT_DIM));
-            }
             row += 1;
         }
         Composer::Typed(text) => {
@@ -235,31 +232,48 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
             };
             let last = parts.len().saturating_sub(1);
             for (i, part) in parts.iter().enumerate() {
+                if i == 0 && parts.len() == 1 {
+                    crate::views::minimal_session::paint_composer_contents(
+                        buf,
+                        area.x,
+                        row,
+                        area.width,
+                        part,
+                        part.chars().count(),
+                        true,
+                        None,
+                    );
+                    row += 1;
+                    continue;
+                }
                 let prefix = if i == 0 { "> " } else { "  " };
-                let caret = if i == 0 { ACCENT } else { TEXT };
                 let prefix_style = if i == 0 {
-                    Style::default().fg(caret).add_modifier(Modifier::BOLD)
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(caret)
+                    Style::default().fg(TEXT)
                 };
                 buf.set_string(area.x, row, prefix, prefix_style);
-                let cursor = if i == last { "|" } else { "" };
                 buf.set_string(
                     area.x + prefix.chars().count() as u16,
                     row,
-                    format!("{part}{cursor}"),
+                    part,
                     Style::default().fg(TEXT),
                 );
+                if i == last {
+                    let x = area.x + prefix.chars().count() as u16 + part.chars().count() as u16;
+                    buf.set_string(
+                        x,
+                        row,
+                        crate::views::minimal_session::BLOCK_CURSOR.to_string(),
+                        Style::default().fg(cortex_core::style::TEXT_BRIGHT),
+                    );
+                }
                 row += 1;
             }
             if parts.is_empty() {
-                buf.set_string(
-                    area.x,
-                    row,
-                    "> ",
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                crate::views::minimal_session::paint_composer_contents(
+                    buf, area.x, row, area.width, "", 0, true, None,
                 );
-                buf.set_string(area.x + 2, row, "|", Style::default().fg(TEXT));
                 row += 1;
             }
         }

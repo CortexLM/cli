@@ -63,10 +63,10 @@ plus `v{CARGO_PKG_VERSION} · / commands · …`. After the first user turn,
 | `diagnostics.png` | Diagnostics tile |
 | `multi_diff.png` | `/diff` files changed this turn |
 | `compact.png` | `/compact` — thread compacted (same board as `compacted.png`) |
-| `interrupt.png` | Interrupt — tiles stay on screen, `× Stopped` in error red |
+| `interrupt.png` | Interrupt — tiles stay on screen, `× Stopped` in error red (same board as `stopped.png`: the UI after ctrl+c) |
 | `quota.png` | Agent quota exhausted (title in error red) |
 | `clear.png` | `/clear` confirm (same board as `clear_confirm.png`) |
-| `session_empty.png` | Empty session |
+| `session_empty.png` | After first user turn: composer + footer only (no welcome) |
 | `session_loading.png` | Loading / streaming |
 | `session_error.png` | Error |
 | `session_success.png` | Success |

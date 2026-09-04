@@ -100,12 +100,13 @@ gutter and monochrome (bold-keyword) highlighting, nested bullets indent
 hunks with a dim old/new gutter, white context, red `-`, green `+`, and
 word-level colour on a changed line.
 
-Splash copy in these frames is the lock line `Cortex CLI v1.0.0`. The shipped
-binary still reports the crate version.
+Splash copy in these frames is `Welcome to Cortex, the coding agent CLI`
+plus `v{CARGO_PKG_VERSION} · / commands · …`. After the first user turn,
+`session_empty` is composer and footer only.
 
 | File | Surface |
 |------|---------|
-| `splash.png` | Launch splash: cwd, `> cortex`, `Cortex CLI v1.0.0`, `/ commands` legend, hairline composer |
+| `splash.png` | Empty-session splash: welcome + version hints, hairline composer |
 | `typing.png` | Prompt typed in the composer, block cursor |
 | `model_compact.png` | `/model` compact picker, hairline search field |
 | `model_full.png` | `/model` full picker: search field, descriptions, effort, billing note |
@@ -128,7 +129,7 @@ binary still reports the crate version.
 | `interrupt.png` | Interrupt — tiles stay on screen, `× Stopped` in error red (same board as `stopped.png`: the UI after ctrl+c) |
 | `quota.png` | Agent quota exhausted (title in error red) |
 | `clear.png` | `/clear` confirm (same board as `clear_confirm.png`) |
-| `session_empty.png` | Open session without splash title/legend: cwd, dual-bar composer, footer |
+| `session_empty.png` | After first user turn: composer + footer only (no welcome) |
 | `session_loading.png` | Loading / streaming |
 | `session_error.png` | Error |
 | `session_success.png` | Success |

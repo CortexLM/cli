@@ -4470,8 +4470,9 @@ mod tests {
         let cmd = PluginCli::command();
         let subcommand_count = cmd.get_subcommands().count();
 
-        // Expected: list, install, remove, enable, disable, show, new, dev, build, validate, publish = 11
-        assert_eq!(subcommand_count, 11, "PluginCli should have 11 subcommands");
+        // list, install, remove, enable, disable, show, new, dev, build,
+        // validate, publish, search, browse, update
+        assert_eq!(subcommand_count, 14, "PluginCli should have 14 subcommands");
     }
 
     // ==========================================================================

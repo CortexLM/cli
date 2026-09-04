@@ -16,23 +16,22 @@ cortex --profile work           # load a profile from config.toml
 The TUI needs a terminal on both stdin and stdout. If either is redirected it
 refuses to start and points you at [`cortex run` or `cortex exec`](exec.md).
 
-The session runs **inline** in the host terminal. Cortex does not enter the
-alternate screen buffer on start, so your shell prompt and scrollback stay
-visible above the app. The welcome line is `Cortex CLI v{version}` — it does
-not paint a fake shell prompt or working directory.
+The session starts on the **alternate screen**, so the host shell prompt
+and the typed `cortex` command are hidden. The welcome splash is two lines:
+`Welcome to **Cortex**, the coding agent CLI` then
+`v{version} · / commands · @ files · ! shell · & cloud`. It does
+not paint a fake shell prompt or working directory. After the first user
+turn the splash is dropped; an empty session is composer and footer only.
 
-To opt in to a full-screen buffer instead:
+To stay inline in the host terminal instead:
 
 ```bash
-cortex --alternate-screen
-```
-
-or in `~/.cortex/config.toml`:
-
-```toml
+# config.toml
 [tui]
-alternate_screen = true
+alternate_screen = false
 ```
+
+`--alternate-screen` forces the alternate buffer on (already the default).
 
 ## The session view
 
@@ -59,7 +58,7 @@ The timeline is the transcript. It renders several kinds of row:
 | Tool call | `◐`/`●` then the tool name and a short argument summary | A tool the agent invoked |
 | Tool result | `⎿ …` indented under the call | What the tool returned |
 | Subagent task | `● Task <type>` with a todo list underneath | Work delegated to a subagent |
-| Welcome | One line: `Cortex CLI v{version}`. No fake `> cortex` prompt and no painted cwd — the host shell stays above the app. | Shown while the session is empty |
+| Welcome | Two lines: `Welcome to Cortex, the coding agent CLI` then `v{version} · / commands · …`. No mascot, no boxes, no fake `> cortex` prompt. Dropped after the first user turn. | Shown only before the first user turn |
 
 Tool rows collapse to a summary. Press `e` while the timeline has focus to
 expand or collapse the details of the selected tool call.

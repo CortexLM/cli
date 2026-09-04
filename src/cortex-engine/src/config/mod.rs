@@ -121,7 +121,7 @@ impl Default for Config {
             check_for_update_on_startup: true,
             disable_paste_burst: false,
             animations: true,
-            alternate_screen: false,
+            alternate_screen: true,
             current_agent: None,
             permission: PermissionConfig::default(),
             small_model: None, // Auto-detected based on available providers
@@ -246,7 +246,7 @@ impl Config {
                 toml.tui
                     .as_ref()
                     .map(|t| t.alternate_screen)
-                    .unwrap_or(false)
+                    .unwrap_or(true)
             }),
             current_agent: toml.current_agent,
             permission: toml.permission,
@@ -330,22 +330,22 @@ mod alternate_screen_tests {
     use types::ConfigToml;
 
     #[test]
-    fn from_toml_keeps_alternate_screen_off_by_default() {
+    fn from_toml_enables_alternate_screen_by_default() {
         let toml: ConfigToml = toml::from_str("").unwrap();
-        let cfg = Config::from_toml(toml, ConfigOverrides::default(), PathBuf::from("/tmp"));
-        assert!(!cfg.alternate_screen);
-    }
-
-    #[test]
-    fn from_toml_honors_tui_alternate_screen_opt_in() {
-        let toml: ConfigToml = toml::from_str("[tui]\nalternate_screen = true\n").unwrap();
         let cfg = Config::from_toml(toml, ConfigOverrides::default(), PathBuf::from("/tmp"));
         assert!(cfg.alternate_screen);
     }
 
     #[test]
+    fn from_toml_honors_tui_alternate_screen_opt_out() {
+        let toml: ConfigToml = toml::from_str("[tui]\nalternate_screen = false\n").unwrap();
+        let cfg = Config::from_toml(toml, ConfigOverrides::default(), PathBuf::from("/tmp"));
+        assert!(!cfg.alternate_screen);
+    }
+
+    #[test]
     fn cli_override_can_force_alternate_screen() {
-        let toml: ConfigToml = toml::from_str("").unwrap();
+        let toml: ConfigToml = toml::from_str("[tui]\nalternate_screen = false\n").unwrap();
         let cfg = Config::from_toml(
             toml,
             ConfigOverrides {

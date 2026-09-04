@@ -39,6 +39,7 @@ impl McpCli {
             McpSubcommand::Auth(cmd) => auth::run_auth_command(cmd).await,
             McpSubcommand::Logout(args) => auth::run_logout(args).await,
             McpSubcommand::Debug(args) => debug::run_debug(args).await,
+            McpSubcommand::Tools(args) => debug::run_tools(args).await,
         }
     }
 }

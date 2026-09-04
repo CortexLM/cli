@@ -148,7 +148,8 @@ mod tests {
         let recording = recording();
         let first = &recording.frames[0];
         for needle in [
-            "Cortex CLI v1.0.0",
+            "Welcome to",
+            "the coding agent CLI",
             "Plan, search, build anything",
             "/ commands",
             "Cortex Mini 1",

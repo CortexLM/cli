@@ -1,7 +1,7 @@
 //! Login Screen
 //!
-//! Inline TUI (no alternate screen) so the host shell prompt stays in
-//! scrollback above the picker.
+//! Enters the alternate screen so the host shell prompt is hidden while
+//! the picker is open.
 
 use std::io::stdout;
 use std::path::{Path, PathBuf};
@@ -191,19 +191,26 @@ impl LoginScreen {
     pub async fn run(&mut self) -> Result<LoginResult> {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = stdout();
-        crossterm::execute!(stdout, crossterm::event::EnableMouseCapture)?;
+        crossterm::execute!(
+            stdout,
+            crossterm::terminal::EnterAlternateScreen,
+            crossterm::event::EnableMouseCapture,
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+        )?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
+        terminal.hide_cursor()?;
 
         let result = self.run_loop(&mut terminal).await;
 
-        crossterm::terminal::disable_raw_mode()?;
-        crossterm::execute!(
+        let _ = crossterm::execute!(
             terminal.backend_mut(),
             crossterm::event::DisableMouseCapture,
-        )?;
-        terminal.show_cursor()?;
+            crossterm::terminal::LeaveAlternateScreen,
+        );
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = terminal.show_cursor();
 
         result
     }
@@ -1006,8 +1013,8 @@ mod tests {
         assert_eq!(buf[(0, other)].style().fg, Some(TEXT_DIM));
         assert_eq!(buf[(4, other)].style().fg, Some(TEXT));
         assert_ne!(buf[(4, other)].style().bg, Some(SELECTION_BG));
-        // Nothing on screen is the interim violet, and the violet is never a
-        // background — no inverted bar, no `#221A38` wash.
+        // The selected row uses the locked selection wash `#221A38`.
+        // Violet is never a background — no inverted bar.
         for y in 0..24u16 {
             for x in 0..80u16 {
                 let cell = &buf[(x, y)];
@@ -1016,10 +1023,6 @@ mod tests {
                     Some(ratatui::style::Color::Rgb(125, 211, 252))
                 );
                 assert_ne!(cell.style().bg, Some(ACCENT));
-                assert_ne!(
-                    cell.style().bg,
-                    Some(ratatui::style::Color::Rgb(34, 26, 56))
-                );
             }
         }
     }

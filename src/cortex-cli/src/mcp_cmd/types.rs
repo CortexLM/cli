@@ -51,6 +51,9 @@ pub enum McpSubcommand {
 
     /// Debug and test an MCP server connection.
     Debug(DebugArgs),
+
+    /// List tools exposed by a configured MCP server.
+    Tools(ToolsArgs),
 }
 
 /// Arguments for list command.
@@ -157,6 +160,11 @@ pub struct AddMcpStreamableHttpArgs {
         requires = "url"
     )]
     pub bearer_token_env_var: Option<String>,
+
+    /// Extra HTTP headers (`KEY=VALUE`). Repeatable. Do not put secrets in
+    /// the value — prefer `env:VAR` style refs or `--bearer-token-env-var`.
+    #[arg(long = "header", value_parser = parse_env_pair, value_name = "KEY=VALUE")]
+    pub headers: Vec<(String, String)>,
 }
 
 /// SSE (Server-Sent Events) transport arguments.
@@ -285,6 +293,21 @@ pub struct DebugArgs {
     /// Displays the age of cached health status if available.
     #[arg(long)]
     pub show_cache_info: bool,
+}
+
+/// Arguments for the tools listing command.
+#[derive(Debug, Parser)]
+pub struct ToolsArgs {
+    /// Name of the MCP server whose tools to list.
+    pub name: String,
+
+    /// Output as JSON.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Timeout in seconds for the connection.
+    #[arg(long, default_value = "30")]
+    pub timeout: u64,
 }
 
 #[cfg(test)]
@@ -455,6 +478,7 @@ mod tests {
         let http = AddMcpStreamableHttpArgs {
             url: "https://api.example.com".to_string(),
             bearer_token_env_var: None,
+            headers: vec![],
         };
         let args = AddMcpTransportArgs {
             stdio: None,
@@ -541,6 +565,7 @@ mod tests {
         let args = AddMcpStreamableHttpArgs {
             url: "https://example.com/mcp".to_string(),
             bearer_token_env_var: None,
+            headers: vec![],
         };
         assert_eq!(args.url, "https://example.com/mcp");
         assert!(args.bearer_token_env_var.is_none());
@@ -551,6 +576,7 @@ mod tests {
         let args = AddMcpStreamableHttpArgs {
             url: "https://api.example.com".to_string(),
             bearer_token_env_var: Some("MY_TOKEN".to_string()),
+            headers: vec![],
         };
         assert_eq!(args.url, "https://api.example.com");
         assert_eq!(args.bearer_token_env_var, Some("MY_TOKEN".to_string()));

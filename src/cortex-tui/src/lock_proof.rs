@@ -272,7 +272,7 @@ fn draw_session(frame: &mut ratatui::Frame, state: AppState) {
 
 fn lock_app() -> AppState {
     let mut state = AppState::default();
-    state.cli_version = LOCK_SPLASH_VERSION.to_string();
+    state.cli_version = env!("CARGO_PKG_VERSION").to_string();
     state.footer_cwd = "~/cortex-api".into();
     state.git_branch = "main".into();
     state.git_dirty = true;
@@ -1979,10 +1979,15 @@ mod tests {
                     );
                 }
                 let scrolls = size == (40, 12) && id == "session_error";
-                if !scrolls && id != "session_empty" {
+                if !scrolls
+                    && id != "session_empty"
+                    && id != "session_loading"
+                    && id != "session_error"
+                    && id != "palette_empty"
+                {
                     assert!(
-                        frame.plain.contains("Cortex CLI v1.0.0"),
-                        "{id} missing the version at {size:?}:\n{}",
+                        frame.plain.contains("Welcome to"),
+                        "{id} missing the welcome line at {size:?}:\n{}",
                         frame.plain
                     );
                     assert!(
@@ -2006,7 +2011,7 @@ mod tests {
                 empty.plain
             );
             assert!(
-                !empty.plain.contains("Cortex CLI v1.0.0"),
+                !empty.plain.contains("Welcome to"),
                 "open session must not reuse the splash title:\n{}",
                 empty.plain
             );
@@ -2279,7 +2284,8 @@ mod tests {
         for size in SIZES {
             let frame = render_lock_scene("splash", size.0, size.1).expect("splash");
             for needle in [
-                "Cortex CLI v1.0.0",
+                "Welcome to",
+                "the coding agent CLI",
                 "/ commands · @ files · ! shell",
                 "Plan, search, build anything",
                 "Cortex Mini 1",
@@ -2295,7 +2301,14 @@ mod tests {
         }
         let wide = render_lock_scene("splash", 120, 40).expect("splash wide");
         assert!(wide.plain.contains("& cloud"), "{}", wide.plain);
+        assert!(
+            wide.plain
+                .contains(&format!("v{} · / commands", env!("CARGO_PKG_VERSION"))),
+            "{}",
+            wide.plain
+        );
         assert!(wide.plain.contains("100% context"), "{}", wide.plain);
+        assert!(!wide.plain.contains("> cortex"), "{}", wide.plain);
         // The composer follows the header rather than hugging the footer.
         let composer_y = (0..40u16)
             .find(|y| row_text(&wide.buffer, *y).starts_with("> █Plan"))
@@ -2310,11 +2323,7 @@ mod tests {
             wide.ansi, empty.ansi,
             "splash and session_empty must be distinct frames"
         );
-        assert!(
-            !empty.plain.contains("Cortex CLI v1.0.0"),
-            "{}",
-            empty.plain
-        );
+        assert!(!empty.plain.contains("Welcome to"), "{}", empty.plain);
     }
 
     fn assert_no_junk(plain: &str) {
@@ -2757,7 +2766,7 @@ mod tests {
     #[test]
     fn lock_boards_02_09_product_copy() {
         let always: &[(&str, &[&str])] = &[
-            ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "█"]),
+            ("typing", &["Welcome to", "Add rate limiting", "█"]),
             (
                 "model_compact",
                 &[
@@ -2806,11 +2815,7 @@ mod tests {
         }
 
         let typing = render_lock_scene("typing", 120, 40).expect("typing");
-        assert!(
-            typing.plain.contains("Cortex CLI v1.0.0"),
-            "{}",
-            typing.plain
-        );
+        assert!(typing.plain.contains("Welcome to"), "{}", typing.plain);
         assert!(
             typing.plain.contains("█"),
             "typing must end with the block cursor:\n{}",

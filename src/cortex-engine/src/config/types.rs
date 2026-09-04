@@ -323,13 +323,13 @@ pub enum ReasoningSummary {
 }
 
 /// TUI configuration.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct TuiConfig {
     #[serde(default = "default_animations")]
     pub animations: bool,
-    /// When true, the TUI enters the alternate screen buffer. Default false
-    /// so the session stays inline in the host terminal.
-    #[serde(default)]
+    /// Interactive start always uses the alternate screen so the host
+    /// shell prompt is hidden. Set `false` only to stay inline.
+    #[serde(default = "default_alternate_screen")]
     pub alternate_screen: bool,
     #[serde(default)]
     pub notifications: NotificationsConfig,
@@ -337,7 +337,22 @@ pub struct TuiConfig {
     pub theme: ThemeConfig,
 }
 
+impl Default for TuiConfig {
+    fn default() -> Self {
+        Self {
+            animations: true,
+            alternate_screen: true,
+            notifications: NotificationsConfig::default(),
+            theme: ThemeConfig::default(),
+        }
+    }
+}
+
 fn default_animations() -> bool {
+    true
+}
+
+fn default_alternate_screen() -> bool {
     true
 }
 
@@ -473,17 +488,17 @@ mod tui_alternate_screen_tests {
     use super::*;
 
     #[test]
-    fn tui_alternate_screen_defaults_off() {
-        assert!(!TuiConfig::default().alternate_screen);
+    fn tui_alternate_screen_defaults_on() {
+        assert!(TuiConfig::default().alternate_screen);
 
         let parsed: ConfigToml = toml::from_str("").expect("empty config");
         assert!(parsed.tui.is_none());
 
         let parsed: ConfigToml = toml::from_str("[tui]\n").expect("empty tui table");
-        assert!(!parsed.tui.expect("tui").alternate_screen);
+        assert!(parsed.tui.expect("tui").alternate_screen);
 
         let parsed: ConfigToml =
-            toml::from_str("[tui]\nalternate_screen = true\n").expect("opt-in");
-        assert!(parsed.tui.expect("tui").alternate_screen);
+            toml::from_str("[tui]\nalternate_screen = false\n").expect("opt-out");
+        assert!(!parsed.tui.expect("tui").alternate_screen);
     }
 }

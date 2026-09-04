@@ -147,14 +147,13 @@ pub struct TerminalOptions {
 
 impl Default for TerminalOptions {
     fn default() -> Self {
-        // Inline in the host terminal. Alternate screen is opt-in via
-        // `tui.alternate_screen` / `--alternate-screen`.
+        // Interactive start uses the alternate screen by default.
         Self {
-            alternate_screen: false,
+            alternate_screen: true,
             mouse_capture: true,
             bracketed_paste: true,
             title: Some("Cortex".to_string()),
-            clear_on_start: false,
+            clear_on_start: true,
         }
     }
 }
@@ -162,12 +161,12 @@ impl Default for TerminalOptions {
 impl TerminalOptions {
     /// Create a new `TerminalOptions` with default settings.
     ///
-    /// Default settings keep the TUI **inline** in the host terminal:
-    /// - Alternate screen: off (opt in with `tui.alternate_screen`)
+    /// Default settings enter the alternate screen so the host shell is hidden:
+    /// - Alternate screen: on (set `tui.alternate_screen = false` to stay inline)
     /// - Mouse capture: enabled
     /// - Bracketed paste: enabled
     /// - Title: "Cortex"
-    /// - Clear on start: off (host scrollback stays visible)
+    /// - Clear on start: on
     pub fn new() -> Self {
         Self::default()
     }
@@ -988,11 +987,11 @@ mod tests {
     #[test]
     fn test_terminal_options_default() {
         let options = TerminalOptions::default();
-        assert!(!options.alternate_screen);
+        assert!(options.alternate_screen);
         assert!(options.mouse_capture);
         assert!(options.bracketed_paste);
         assert_eq!(options.title, Some("Cortex".to_string()));
-        assert!(!options.clear_on_start);
+        assert!(options.clear_on_start);
     }
 
     #[test]

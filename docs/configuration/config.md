@@ -150,9 +150,9 @@ max_bytes = 10000000
 [tui]
 animations = true
 notifications = true
-# Stay inline in the host terminal (default). Set true only to take over
-# the alternate screen buffer. Equivalent CLI flag: --alternate-screen
-alternate_screen = false
+# Enter the alternate screen (default). Set false to stay inline in the host
+# terminal. Equivalent CLI flag: --alternate-screen
+alternate_screen = true
 
 [tui.theme]
 name = "dark"              # dark, light, ocean_dark, monokai

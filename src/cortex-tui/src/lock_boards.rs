@@ -786,29 +786,33 @@ fn bar(filled: u16, total: u16) -> String {
     s
 }
 
-/// Launch header: splash `Cortex CLI v…` and keystroke hints. No fake
-/// `> cortex` or painted cwd — the host shell stays visible above the app.
+/// Launch header: `Welcome to Cortex, the coding agent CLI` then
+/// `v{version} · / commands · …`. No fake `> cortex` or painted cwd.
 fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
     let w = inner_width(area);
     let mut y = area.y;
-    buf.set_string(
-        area.x,
-        y,
-        first_fitting_line("Cortex CLI v1.0.0", w),
-        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-    );
+    let dim = Style::default().fg(TEXT_DIM);
+    let bold = Style::default().fg(TEXT).add_modifier(Modifier::BOLD);
+    buf.set_string(area.x, y, "Welcome to ", dim);
+    buf.set_string(area.x + 11, y, "Cortex", bold);
+    buf.set_string(area.x + 17, y, ", the coding agent CLI", dim);
     y += 1;
     if full {
-        let hints = if LAUNCH_HINTS.chars().count() <= w {
-            LAUNCH_HINTS
+        let version = env!("CARGO_PKG_VERSION");
+        let full_h = format!("v{version} · {LAUNCH_HINTS}");
+        let mid_h = format!("v{version} · {LAUNCH_HINTS_NARROW}");
+        let hints = if full_h.chars().count() <= w {
+            full_h
+        } else if mid_h.chars().count() <= w {
+            mid_h
         } else {
-            LAUNCH_HINTS_NARROW
+            format!("v{version} · / commands")
         };
         buf.set_string(
             area.x,
             y,
-            trim_dangling_separator(&first_fitting_line(hints, w)),
-            Style::default().fg(TEXT_DIM),
+            trim_dangling_separator(&first_fitting_line(&hints, w)),
+            dim,
         );
         y += 1;
     }

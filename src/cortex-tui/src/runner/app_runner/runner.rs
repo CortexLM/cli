@@ -79,9 +79,8 @@ impl AppRunner {
 
     /// Create a new app runner with the given configuration.
     ///
-    /// The TUI starts **inline** (no alternate screen) so the host shell
-    /// remains in the scrollback. Set `tui.alternate_screen = true` in
-    /// config to opt in to a full-screen buffer.
+    /// The TUI starts on the **alternate screen** so the host shell prompt
+    /// is hidden. Set `tui.alternate_screen = false` to stay inline.
     ///
     /// # Arguments
     ///
@@ -94,10 +93,13 @@ impl AppRunner {
     /// let runner = AppRunner::new(config);
     /// ```
     pub fn new(config: Config) -> Self {
-        let mut terminal_options = TerminalOptions::default();
-        if config.alternate_screen {
-            terminal_options = terminal_options.alternate_screen(true).clear_on_start(true);
-        }
+        let terminal_options = if config.alternate_screen {
+            TerminalOptions::default()
+                .alternate_screen(true)
+                .clear_on_start(true)
+        } else {
+            TerminalOptions::inline()
+        };
         Self {
             config,
             initial_prompt: None,
@@ -1051,16 +1053,16 @@ mod tests {
     fn test_app_runner_terminal_options() {
         let config = Config::default();
 
-        // Default options: inline, no alternate screen
+        // Default: alternate screen
         let runner = AppRunner::new(config.clone());
-        assert!(!runner.terminal_options.alternate_screen);
-        assert!(!runner.terminal_options.clear_on_start);
-
-        let mut opted = config.clone();
-        opted.alternate_screen = true;
-        let runner = AppRunner::new(opted);
         assert!(runner.terminal_options.alternate_screen);
         assert!(runner.terminal_options.clear_on_start);
+
+        let mut inline = config.clone();
+        inline.alternate_screen = false;
+        let runner = AppRunner::new(inline);
+        assert!(!runner.terminal_options.alternate_screen);
+        assert!(!runner.terminal_options.clear_on_start);
 
         // Custom options
         let custom_options = TerminalOptions::new()

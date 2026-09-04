@@ -444,46 +444,35 @@ pub fn render_subagent(
 /// Keystroke hints shown under the splash while the session is empty.
 pub const EMPTY_SESSION_HINTS: &str = "/ commands · @ files · ! shell · & cloud";
 
-/// Generates the launch header: one-line splash `Cortex CLI v…` and, while
-/// the session is empty, the keystroke hints. The host shell prompt stays
-/// visible above the app — we do not paint a fake `> cortex` or cwd line.
+/// Generates the launch header: `Welcome to Cortex, the coding agent CLI`
+/// and `v{version} · / commands · …`. Shown only before the first user turn.
+/// No fake shell prompt or painted cwd.
 pub fn generate_welcome_lines(
     width: u16,
     colors: &AdaptiveColors,
     app_state: &AppState,
 ) -> Vec<Line<'static>> {
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    let w = width as usize;
-
-    if app_state.show_launch_splash {
-        let version = if app_state.cli_version.is_empty() {
-            VERSION
-        } else {
-            app_state.cli_version.as_str()
-        };
-        let welcome_card = WelcomeCard::new()
-            .version(version)
-            .text_color(colors.text)
-            .dim_color(colors.text_dim)
-            .border_color(colors.text_dim);
-
-        lines.extend(welcome_card.to_lines(width));
-
-        let empty = app_state.messages.is_empty()
-            && !app_state.streaming.is_streaming
-            && app_state.tool_calls.is_empty();
-        if empty {
-            let line = crate::ui::text_utils::first_fitting_line(EMPTY_SESSION_HINTS, w);
-            if !line.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    line,
-                    Style::default().fg(colors.text_dim),
-                )));
-            }
-        }
+    if !app_state.show_launch_splash {
+        return Vec::new();
+    }
+    let empty = app_state.messages.is_empty()
+        && !app_state.streaming.is_streaming
+        && app_state.tool_calls.is_empty();
+    if !empty {
+        return Vec::new();
     }
 
-    lines
+    let version = if app_state.cli_version.is_empty() {
+        VERSION
+    } else {
+        app_state.cli_version.as_str()
+    };
+    WelcomeCard::new()
+        .version(version)
+        .text_color(colors.text)
+        .dim_color(colors.text_dim)
+        .border_color(colors.text_dim)
+        .to_lines(width)
 }
 
 /// Generates message lines for scrollable content.

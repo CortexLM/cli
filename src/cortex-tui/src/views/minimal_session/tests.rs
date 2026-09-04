@@ -45,8 +45,12 @@ mod harness_snapshots {
         dump_snapshot("home", &text);
         assert!(!text.to_lowercase().contains("grok"));
         assert!(
-            text.contains("Cortex CLI"),
+            text.contains("Welcome to") && text.contains("the coding agent CLI"),
             "home session should render splash: {text}"
+        );
+        assert!(
+            text.contains("/ commands"),
+            "home session should render keystroke hints: {text}"
         );
         assert!(
             !text.contains("Directory") && !text.contains("Computer"),

@@ -1,7 +1,7 @@
 //! Login Screen
 //!
-//! Enters the alternate screen so the host shell prompt is hidden while
-//! the picker is open.
+//! Inline TUI (no alternate screen) so the host shell prompt stays in
+//! scrollback above the picker.
 
 use std::io::stdout;
 use std::path::{Path, PathBuf};
@@ -191,26 +191,19 @@ impl LoginScreen {
     pub async fn run(&mut self) -> Result<LoginResult> {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = stdout();
-        crossterm::execute!(
-            stdout,
-            crossterm::terminal::EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture,
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-        )?;
+        crossterm::execute!(stdout, crossterm::event::EnableMouseCapture)?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
-        terminal.hide_cursor()?;
 
         let result = self.run_loop(&mut terminal).await;
 
-        let _ = crossterm::execute!(
+        crossterm::terminal::disable_raw_mode()?;
+        crossterm::execute!(
             terminal.backend_mut(),
             crossterm::event::DisableMouseCapture,
-            crossterm::terminal::LeaveAlternateScreen,
-        );
-        let _ = crossterm::terminal::disable_raw_mode();
-        let _ = terminal.show_cursor();
+        )?;
+        terminal.show_cursor()?;
 
         result
     }

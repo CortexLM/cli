@@ -116,8 +116,7 @@ impl Drop for TerminalGuard {
 /// Configuration options for terminal initialization.
 ///
 /// This struct uses the builder pattern to allow flexible configuration
-/// of terminal features. All features are enabled by default for the
-/// best user experience.
+/// of terminal features. Alternate screen is **off** by default (inline).
 ///
 /// # Example
 ///
@@ -147,13 +146,13 @@ pub struct TerminalOptions {
 
 impl Default for TerminalOptions {
     fn default() -> Self {
-        // Interactive start uses the alternate screen by default.
+        // Interactive start is inline: never enter the alternate screen.
         Self {
-            alternate_screen: true,
+            alternate_screen: false,
             mouse_capture: true,
             bracketed_paste: true,
             title: Some("Cortex".to_string()),
-            clear_on_start: true,
+            clear_on_start: false,
         }
     }
 }
@@ -161,12 +160,12 @@ impl Default for TerminalOptions {
 impl TerminalOptions {
     /// Create a new `TerminalOptions` with default settings.
     ///
-    /// Default settings enter the alternate screen so the host shell is hidden:
-    /// - Alternate screen: on (set `tui.alternate_screen = false` to stay inline)
+    /// Default settings stay **inline** (never alternate screen):
+    /// - Alternate screen: off (set `[tui] alternate_screen = true` to opt in)
     /// - Mouse capture: enabled
     /// - Bracketed paste: enabled
     /// - Title: "Cortex"
-    /// - Clear on start: on
+    /// - Clear on start: off
     pub fn new() -> Self {
         Self::default()
     }
@@ -266,10 +265,10 @@ pub struct CortexTerminal {
 }
 
 impl CortexTerminal {
-    /// Create a new terminal with default full-screen mode.
+    /// Create a new terminal with default **inline** mode (no alternate screen).
     ///
     /// This initializes the terminal with:
-    /// - Alternate screen buffer
+    /// - Inline buffer (host shell prompt stays visible above the app)
     /// - Mouse capture
     /// - Bracketed paste mode
     /// - Hidden cursor
@@ -987,11 +986,14 @@ mod tests {
     #[test]
     fn test_terminal_options_default() {
         let options = TerminalOptions::default();
-        assert!(options.alternate_screen);
+        assert!(
+            !options.alternate_screen,
+            "default must be inline (never alt-screen)"
+        );
         assert!(options.mouse_capture);
         assert!(options.bracketed_paste);
         assert_eq!(options.title, Some("Cortex".to_string()));
-        assert!(options.clear_on_start);
+        assert!(!options.clear_on_start);
     }
 
     #[test]

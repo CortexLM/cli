@@ -208,8 +208,9 @@ pub struct InteractiveArgs {
     #[arg(long = "search", default_value_t = false, help_heading = "Features")]
     pub web_search: bool,
 
-    /// Force the alternate screen buffer. Default is already on; use
-    /// `[tui] alternate_screen = false` to stay inline in the host terminal.
+    /// Opt in to the alternate screen buffer. Default is **never** (inline):
+    /// the host shell prompt stays visible above the app. Same as
+    /// `[tui] alternate_screen = true`.
     #[arg(
         long = "alternate-screen",
         default_value_t = false,
@@ -1197,7 +1198,7 @@ mod tests {
         let cli = Cli::try_parse_from(["cortex"]).expect("should parse");
         assert!(
             !cli.interactive.alternate_screen,
-            "the flag is force-on; config already enables alt-screen"
+            "the flag is opt-in; default TUI is inline (never alt-screen)"
         );
         let cli = Cli::try_parse_from(["cortex", "--alternate-screen"])
             .expect("should parse --alternate-screen");

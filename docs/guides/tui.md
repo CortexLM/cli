@@ -16,22 +16,27 @@ cortex --profile work           # load a profile from config.toml
 The TUI needs a terminal on both stdin and stdout. If either is redirected it
 refuses to start and points you at [`cortex run` or `cortex exec`](exec.md).
 
-The session starts on the **alternate screen**, so the host shell prompt
-and the typed `cortex` command are hidden. The welcome splash is two lines:
+The session runs **inline** in the host terminal (`alternate_screen` is
+never on by default). Cortex does not enter the alternate screen buffer
+on start, so your shell prompt and the typed command stay visible above
+the app. The welcome splash is two lines:
 `Welcome to **Cortex**, the coding agent CLI` then
 `v{version} · / commands · @ files · ! shell · & cloud`. It does
 not paint a fake shell prompt or working directory. After the first user
 turn the splash is dropped; an empty session is composer and footer only.
 
-To stay inline in the host terminal instead:
+To opt in to a full-screen alternate buffer:
 
 ```bash
-# config.toml
-[tui]
-alternate_screen = false
+cortex --alternate-screen
 ```
 
-`--alternate-screen` forces the alternate buffer on (already the default).
+or in `~/.cortex/config.toml`:
+
+```toml
+[tui]
+alternate_screen = true
+```
 
 ## The session view
 

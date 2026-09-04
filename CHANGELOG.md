@@ -10,8 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Changed
-### Changed
-- The TUI enters the **alternate screen** on interactive start so the host shell prompt is hidden. Opt out with `[tui] alternate_screen = false`.
+- The TUI runs **inline** by default (`alternate_screen` never). It does not enter the alternate screen on start; the real shell prompt stays in scrollback above the app. Opt in with `cortex --alternate-screen` or `[tui] alternate_screen = true`.
 - Empty-session splash is `Welcome to Cortex, the coding agent CLI` plus `v{package version} · / commands · @ files · ! shell · & cloud`. After the first user turn the splash is dropped (composer + footer only). No mascot, no painted `> cortex` shell lines.
 - Composer lock: empty is `> ` + white block at input col 0 + dim `Plan, search, build anything` after that cell (never a white rect after the placeholder). Blink-off (~530ms) hides the block so the placeholder starts at col 0. Typed copy is `#F5F5F5` with the block at the caret.
 

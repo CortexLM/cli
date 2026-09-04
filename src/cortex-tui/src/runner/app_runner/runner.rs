@@ -79,8 +79,9 @@ impl AppRunner {
 
     /// Create a new app runner with the given configuration.
     ///
-    /// The TUI starts on the **alternate screen** so the host shell prompt
-    /// is hidden. Set `tui.alternate_screen = false` to stay inline.
+    /// The TUI starts **inline** (never alternate screen) so the host shell
+    /// prompt stays visible above the app. Set `tui.alternate_screen = true`
+    /// to opt in to the alternate screen buffer.
     ///
     /// # Arguments
     ///
@@ -1053,16 +1054,19 @@ mod tests {
     fn test_app_runner_terminal_options() {
         let config = Config::default();
 
-        // Default: alternate screen
+        // Default: inline (never alternate screen)
         let runner = AppRunner::new(config.clone());
+        assert!(
+            !runner.terminal_options.alternate_screen,
+            "default must be inline (never alt-screen)"
+        );
+        assert!(!runner.terminal_options.clear_on_start);
+
+        let mut fullscreen = config.clone();
+        fullscreen.alternate_screen = true;
+        let runner = AppRunner::new(fullscreen);
         assert!(runner.terminal_options.alternate_screen);
         assert!(runner.terminal_options.clear_on_start);
-
-        let mut inline = config.clone();
-        inline.alternate_screen = false;
-        let runner = AppRunner::new(inline);
-        assert!(!runner.terminal_options.alternate_screen);
-        assert!(!runner.terminal_options.clear_on_start);
 
         // Custom options
         let custom_options = TerminalOptions::new()

@@ -79,7 +79,7 @@ pub struct Config {
     pub disable_paste_burst: bool,
     /// Enable TUI animations.
     pub animations: bool,
-    /// Opt in to the alternate screen buffer. Default is inline (false).
+    /// Opt in to the alternate screen buffer. Default is inline (`never`).
     pub alternate_screen: bool,
     /// Current agent profile.
     pub current_agent: Option<String>,
@@ -121,7 +121,7 @@ impl Default for Config {
             check_for_update_on_startup: true,
             disable_paste_burst: false,
             animations: true,
-            alternate_screen: true,
+            alternate_screen: false,
             current_agent: None,
             permission: PermissionConfig::default(),
             small_model: None, // Auto-detected based on available providers
@@ -246,7 +246,7 @@ impl Config {
                 toml.tui
                     .as_ref()
                     .map(|t| t.alternate_screen)
-                    .unwrap_or(true)
+                    .unwrap_or(false)
             }),
             current_agent: toml.current_agent,
             permission: toml.permission,
@@ -330,17 +330,24 @@ mod alternate_screen_tests {
     use types::ConfigToml;
 
     #[test]
-    fn from_toml_enables_alternate_screen_by_default() {
+    fn from_toml_keeps_alternate_screen_off_by_default() {
+        assert!(
+            !Config::default().alternate_screen,
+            "default must be inline (never alt-screen)"
+        );
         let toml: ConfigToml = toml::from_str("").unwrap();
         let cfg = Config::from_toml(toml, ConfigOverrides::default(), PathBuf::from("/tmp"));
-        assert!(cfg.alternate_screen);
+        assert!(
+            !cfg.alternate_screen,
+            "default must be inline (never alt-screen)"
+        );
     }
 
     #[test]
-    fn from_toml_honors_tui_alternate_screen_opt_out() {
-        let toml: ConfigToml = toml::from_str("[tui]\nalternate_screen = false\n").unwrap();
+    fn from_toml_honors_tui_alternate_screen_opt_in() {
+        let toml: ConfigToml = toml::from_str("[tui]\nalternate_screen = true\n").unwrap();
         let cfg = Config::from_toml(toml, ConfigOverrides::default(), PathBuf::from("/tmp"));
-        assert!(!cfg.alternate_screen);
+        assert!(cfg.alternate_screen);
     }
 
     #[test]

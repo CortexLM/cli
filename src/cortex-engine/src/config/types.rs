@@ -327,8 +327,8 @@ pub enum ReasoningSummary {
 pub struct TuiConfig {
     #[serde(default = "default_animations")]
     pub animations: bool,
-    /// Interactive start always uses the alternate screen so the host
-    /// shell prompt is hidden. Set `false` only to stay inline.
+    /// Default is **never** (inline). The host shell prompt stays visible
+    /// above the app. Set `true` only to take over the alternate screen.
     #[serde(default = "default_alternate_screen")]
     pub alternate_screen: bool,
     #[serde(default)]
@@ -341,7 +341,7 @@ impl Default for TuiConfig {
     fn default() -> Self {
         Self {
             animations: true,
-            alternate_screen: true,
+            alternate_screen: false,
             notifications: NotificationsConfig::default(),
             theme: ThemeConfig::default(),
         }
@@ -353,7 +353,7 @@ fn default_animations() -> bool {
 }
 
 fn default_alternate_screen() -> bool {
-    true
+    false
 }
 
 /// Theme configuration.
@@ -488,17 +488,20 @@ mod tui_alternate_screen_tests {
     use super::*;
 
     #[test]
-    fn tui_alternate_screen_defaults_on() {
-        assert!(TuiConfig::default().alternate_screen);
+    fn tui_alternate_screen_defaults_never() {
+        assert!(
+            !TuiConfig::default().alternate_screen,
+            "default must be inline (never alt-screen)"
+        );
 
         let parsed: ConfigToml = toml::from_str("").expect("empty config");
         assert!(parsed.tui.is_none());
 
         let parsed: ConfigToml = toml::from_str("[tui]\n").expect("empty tui table");
-        assert!(parsed.tui.expect("tui").alternate_screen);
+        assert!(!parsed.tui.expect("tui").alternate_screen);
 
         let parsed: ConfigToml =
-            toml::from_str("[tui]\nalternate_screen = false\n").expect("opt-out");
-        assert!(!parsed.tui.expect("tui").alternate_screen);
+            toml::from_str("[tui]\nalternate_screen = true\n").expect("opt-in");
+        assert!(parsed.tui.expect("tui").alternate_screen);
     }
 }

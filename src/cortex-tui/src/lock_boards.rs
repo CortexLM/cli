@@ -24,7 +24,6 @@ use crate::ui::text_utils::{
 /// Prompt typed in the README hero GIF and the typing lock board.
 pub const USER_PROMPT: &str = "Add rate limiting to POST /v1/completions – 60 req/min per API key, sliding window, Redis-backed, with tests";
 const CWD: &str = "~/cortex-api";
-const GIT: &str = "main*";
 /// English product name — the TUI never shows the served `cortex-1-mini` slug.
 const MODEL: &str = "Cortex Mini 1";
 /// Command rows (`$ npm install …`, the sudo password) sit on the user-turn gray.
@@ -199,9 +198,9 @@ fn fill_row(buf: &mut Buffer, area: Rect, y: u16, bg: Color) {
 
 /// What the composer shows between its hairlines.
 enum Composer<'a> {
-    /// Idle or running: dim placeholder, then the block cursor.
+    /// Idle or running: dim placeholder, then the blinking `|` caret.
     Ghost(&'a str),
-    /// Typed copy with the block cursor at its end; wraps whole.
+    /// Typed copy with the caret at its end; wraps whole.
     Typed(&'a str),
 }
 
@@ -219,13 +218,13 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
                 "> ",
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             );
-            let shown = first_fitting_line(ghost, w.saturating_sub(4));
             let mut x = area.x + 2;
+            buf.set_string(x, row, "|", Style::default().fg(TEXT));
+            x += 1;
+            let shown = first_fitting_line(ghost, w.saturating_sub(4));
             if !shown.is_empty() {
                 buf.set_string(x, row, &shown, Style::default().fg(TEXT_DIM));
-                x += shown.chars().count() as u16 + 1;
             }
-            buf.set_string(x, row, "█", Style::default().fg(TEXT));
             row += 1;
         }
         Composer::Typed(text) => {
@@ -244,7 +243,7 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
                     Style::default().fg(caret)
                 };
                 buf.set_string(area.x, row, prefix, prefix_style);
-                let cursor = if i == last { "█" } else { "" };
+                let cursor = if i == last { "|" } else { "" };
                 buf.set_string(
                     area.x + prefix.chars().count() as u16,
                     row,
@@ -260,7 +259,7 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
                     "> ",
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 );
-                buf.set_string(area.x + 2, row, "█", Style::default().fg(TEXT));
+                buf.set_string(area.x + 2, row, "|", Style::default().fg(TEXT));
                 row += 1;
             }
         }
@@ -773,22 +772,11 @@ fn bar(filled: u16, total: u16) -> String {
     s
 }
 
-/// History chrome shared by splash, typing and slash: cwd/git, `> cortex`,
-/// version, keystroke hints. Narrow palettes drop the cwd and hints rows.
+/// Launch header: splash `Cortex CLI v…` and keystroke hints. No fake
+/// `> cortex` or painted cwd — the host shell stays visible above the app.
 fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
     let w = inner_width(area);
     let mut y = area.y;
-    if full {
-        buf.set_string(
-            area.x,
-            y,
-            first_fitting_line(&format!("{CWD} {GIT}"), w),
-            Style::default().fg(TEXT_DIM),
-        );
-        y += 1;
-    }
-    buf.set_string(area.x, y, "> cortex", Style::default().fg(TEXT));
-    y += 1;
     buf.set_string(
         area.x,
         y,

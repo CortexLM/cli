@@ -158,9 +158,15 @@ pub struct SandboxWorkspaceWrite {
     pub exclude_slash_tmp: bool,
 }
 
-/// MCP server configuration.
-#[derive(Debug, Clone, Deserialize)]
+/// MCP server configuration as stored in `config.toml`.
+///
+/// Accepts both the nested transport form written by `cortex mcp add`
+/// and a legacy flat `{ command, args, env }` table.
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct McpServerConfig {
+    #[serde(default = "default_mcp_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -168,6 +174,114 @@ pub struct McpServerConfig {
     pub env: HashMap<String, String>,
     #[serde(default)]
     pub timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub transport: Option<McpTransportSpec>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub bearer_token_env_var: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<PathBuf>,
+}
+
+fn default_mcp_enabled() -> bool {
+    true
+}
+
+/// Nested transport block under `[mcp_servers.<name>.transport]`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct McpTransportSpec {
+    #[serde(rename = "type", default = "default_transport_type")]
+    pub transport_type: String,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub bearer_token_env_var: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<PathBuf>,
+}
+
+fn default_transport_type() -> String {
+    "stdio".to_string()
+}
+
+impl McpServerConfig {
+    /// Convert this config entry into the engine connection config.
+    pub fn to_engine(&self, name: &str) -> crate::mcp::McpServerConfig {
+        use crate::mcp::TransportType;
+
+        let (kind, command, args, env, url, headers, bearer, cwd) = if let Some(t) = &self.transport
+        {
+            (
+                t.transport_type.as_str(),
+                t.command.clone().unwrap_or_else(|| self.command.clone()),
+                if t.args.is_empty() {
+                    self.args.clone()
+                } else {
+                    t.args.clone()
+                },
+                if t.env.is_empty() {
+                    self.env.clone()
+                } else {
+                    t.env.clone()
+                },
+                t.url.clone().or_else(|| self.url.clone()),
+                if t.headers.is_empty() {
+                    self.headers.clone()
+                } else {
+                    t.headers.clone()
+                },
+                t.bearer_token_env_var
+                    .clone()
+                    .or_else(|| self.bearer_token_env_var.clone()),
+                t.cwd.clone().or_else(|| self.cwd.clone()),
+            )
+        } else {
+            (
+                if self.url.is_some() { "http" } else { "stdio" },
+                self.command.clone(),
+                self.args.clone(),
+                self.env.clone(),
+                self.url.clone(),
+                self.headers.clone(),
+                self.bearer_token_env_var.clone(),
+                self.cwd.clone(),
+            )
+        };
+
+        let transport = match kind {
+            "http" | "streamable_http" | "streamable-http" => TransportType::Http,
+            "sse" => TransportType::Sse,
+            "web_socket" | "websocket" => TransportType::WebSocket,
+            _ => TransportType::Stdio,
+        };
+
+        let mut cfg = if matches!(transport, TransportType::Http | TransportType::Sse) {
+            crate::mcp::McpServerConfig::new_sse(name, url.clone().unwrap_or_default())
+        } else {
+            crate::mcp::McpServerConfig::new(name, command).args(args)
+        };
+        cfg.env = env;
+        cfg.cwd = cwd;
+        cfg.transport = transport;
+        cfg.headers = headers;
+        cfg.bearer_token_env_var = bearer;
+        cfg.auto_start = self.enabled;
+        if let Some(url) = url {
+            cfg.sse_url = Some(url);
+        }
+        cfg
+    }
 }
 
 /// History configuration.
@@ -213,6 +327,10 @@ pub enum ReasoningSummary {
 pub struct TuiConfig {
     #[serde(default = "default_animations")]
     pub animations: bool,
+    /// When true, the TUI enters the alternate screen buffer. Default false
+    /// so the session stays inline in the host terminal.
+    #[serde(default)]
+    pub alternate_screen: bool,
     #[serde(default)]
     pub notifications: NotificationsConfig,
     #[serde(default)]
@@ -249,15 +367,18 @@ pub struct ModelProviderInfo {
     pub name: String,
     pub base_url: String,
     pub api_type: ApiType,
+    /// Environment variable that holds the API key. Never log its value.
+    pub api_key_env: Option<String>,
 }
 
 impl Default for ModelProviderInfo {
     fn default() -> Self {
         Self {
-            id: "openai".to_string(),
-            name: "OpenAI".to_string(),
-            base_url: "https://api.openai.com/v1".to_string(),
-            api_type: ApiType::OpenAi,
+            id: "cortex".to_string(),
+            name: "Cortex".to_string(),
+            base_url: "https://api.cortex.foundation".to_string(),
+            api_type: ApiType::Cortex,
+            api_key_env: Some("CORTEX_API_KEY".to_string()),
         }
     }
 }
@@ -266,9 +387,25 @@ impl Default for ModelProviderInfo {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ApiType {
     #[default]
+    Cortex,
     OpenAi,
     Anthropic,
     OpenAiCompatible,
+    Azure,
+    Local,
+}
+
+impl ApiType {
+    pub fn from_config(value: &str) -> Self {
+        match value.to_ascii_lowercase().as_str() {
+            "cortex" => Self::Cortex,
+            "anthropic" | "anthropic-compatible" => Self::Anthropic,
+            "azure" => Self::Azure,
+            "local" | "ollama" => Self::Local,
+            "openai" => Self::OpenAi,
+            _ => Self::OpenAiCompatible,
+        }
+    }
 }
 
 /// Feature flags.
@@ -329,4 +466,24 @@ pub enum Feature {
     RmcpClient,
     SandboxCommandAssessment,
     WindowsSandbox,
+}
+
+#[cfg(test)]
+mod tui_alternate_screen_tests {
+    use super::*;
+
+    #[test]
+    fn tui_alternate_screen_defaults_off() {
+        assert!(!TuiConfig::default().alternate_screen);
+
+        let parsed: ConfigToml = toml::from_str("").expect("empty config");
+        assert!(parsed.tui.is_none());
+
+        let parsed: ConfigToml = toml::from_str("[tui]\n").expect("empty tui table");
+        assert!(!parsed.tui.expect("tui").alternate_screen);
+
+        let parsed: ConfigToml =
+            toml::from_str("[tui]\nalternate_screen = true\n").expect("opt-in");
+        assert!(parsed.tui.expect("tui").alternate_screen);
+    }
 }

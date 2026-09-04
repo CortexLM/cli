@@ -1,7 +1,7 @@
-//! Login Screen - Full-screen TUI
+//! Login Screen
 //!
-//! Full-screen login screen using ratatui and alternate screen buffer for reliable
-//! rendering across all terminal emulators.
+//! Inline TUI (no alternate screen) so the host shell prompt stays in
+//! scrollback above the picker.
 
 use std::io::stdout;
 use std::path::{Path, PathBuf};
@@ -189,26 +189,18 @@ impl LoginScreen {
     }
 
     pub async fn run(&mut self) -> Result<LoginResult> {
-        // Enter alternate screen mode for reliable rendering
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = stdout();
-        crossterm::execute!(
-            stdout,
-            crossterm::terminal::EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture,
-        )?;
+        crossterm::execute!(stdout, crossterm::event::EnableMouseCapture)?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
-        terminal.clear()?;
 
         let result = self.run_loop(&mut terminal).await;
 
-        // Cleanup - leave alternate screen
         crossterm::terminal::disable_raw_mode()?;
         crossterm::execute!(
             terminal.backend_mut(),
-            crossterm::terminal::LeaveAlternateScreen,
             crossterm::event::DisableMouseCapture,
         )?;
         terminal.show_cursor()?;

@@ -28,7 +28,6 @@ impl EventLoop {
                 && typewriter.visible_text() != display_text
             {
                 typewriter.set_text(display_text.to_string());
-                typewriter.skip_to_end();
             }
         }
 

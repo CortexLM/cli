@@ -308,7 +308,7 @@ impl EventLoop {
                                 }
                             }
                             Ok(Some(Err(e))) => {
-                                let _ = tx.send(StreamEvent::Error(e.to_string())).await;
+                                let _ = tx.send(StreamEvent::Error(e.user_friendly_message())).await;
                                 break;
                             }
                             Ok(None) => {
@@ -599,16 +599,22 @@ impl EventLoop {
                 .warning("Agent quota exhausted. Follow-ups are held until it resets.");
         } else {
             // Product-facing copy only — never raw provider or transport names.
-            let service_down = e.to_lowercase().contains("unavailable")
-                || e.to_lowercase().contains("connection")
-                || e.to_lowercase().contains("timed out")
-                || e.to_lowercase().contains("timeout")
-                || e.to_lowercase().contains("dns")
-                || e.to_lowercase().contains("reqwest")
-                || e.to_lowercase().contains("hyper");
+            let lower = e.to_lowercase();
+            let actionable = lower.contains("cortex login")
+                || lower.contains("cortex_api")
+                || lower.contains("not signed in")
+                || lower.contains("not found")
+                || lower.contains("sign in");
+            let service_down = !actionable
+                && (lower.contains("unavailable")
+                    || lower.contains("connection")
+                    || lower.contains("timed out")
+                    || lower.contains("timeout")
+                    || lower.contains("dns")
+                    || lower.contains("reqwest")
+                    || lower.contains("hyper"));
             if service_down {
                 self.add_system_message("The coding service is temporarily unavailable");
-                // Error plus what to do next — never a lone error line.
                 self.add_system_message(crate::ui::consts::SERVICE_UNAVAILABLE_NEXT_STEP);
             } else {
                 self.add_system_message(&e);
@@ -979,7 +985,7 @@ impl EventLoop {
                                 }
                             }
                             Ok(Some(Err(e))) => {
-                                let _ = tx.send(StreamEvent::Error(e.to_string())).await;
+                                let _ = tx.send(StreamEvent::Error(e.user_friendly_message())).await;
                                 break;
                             }
                             Ok(None) => {

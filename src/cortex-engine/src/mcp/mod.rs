@@ -96,9 +96,15 @@ pub struct McpServerConfig {
     /// SSE endpoint URL (for SSE transport).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sse_url: Option<String>,
-    /// HTTP POST URL for SSE transport (defaults to sse_url if not specified).
+    /// SSE POST URL for SSE transport (defaults to sse_url if not specified).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sse_post_url: Option<String>,
+    /// Extra HTTP headers (values may be `env:VAR` refs — never log secrets).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub headers: HashMap<String, String>,
+    /// Name of the environment variable holding a bearer token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bearer_token_env_var: Option<String>,
 }
 
 impl McpServerConfig {
@@ -117,6 +123,8 @@ impl McpServerConfig {
             max_restarts: 3,
             sse_url: None,
             sse_post_url: None,
+            headers: HashMap::new(),
+            bearer_token_env_var: None,
         }
     }
 
@@ -135,6 +143,8 @@ impl McpServerConfig {
             max_restarts: 3,
             sse_url: Some(sse_url.into()),
             sse_post_url: None,
+            headers: HashMap::new(),
+            bearer_token_env_var: None,
         }
     }
 

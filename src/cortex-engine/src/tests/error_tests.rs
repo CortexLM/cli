@@ -281,8 +281,12 @@ fn test_service_unavailable_is_product_facing() {
         message
     );
     assert_eq!(
-        CortexError::BackendUnavailable("hyper inner".into()).to_string(),
-        message
+        CortexError::BackendError {
+            message: "Not signed in. Run `cortex login` or set CORTEX_API_KEY, then try again."
+                .into()
+        }
+        .user_friendly_message(),
+        "Not signed in. Run `cortex login` or set CORTEX_API_KEY, then try again."
     );
 }
 

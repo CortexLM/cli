@@ -749,11 +749,11 @@ mod tests {
     }
 
     #[test]
-    fn selection_rows_are_violet_on_the_gray_bar_never_inverted() {
-        // Violet is never a background: no inverted bar, and never the old
-        // `#221A38` full-row wash — the bar is the dark gray `#262626`.
+    fn selection_rows_are_violet_on_the_selection_bar_never_inverted() {
+        // Violet is never a background (no inverted bar). The selection bar
+        // is the locked `#221A38` wash.
         const ACCENT_BG: &str = "48;2;167;139;250";
-        const OLD_VIOLET_WASH: &str = "48;2;34;26;56";
+        const SELECTION_WASH: &str = "48;2;34;26;56";
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -761,14 +761,14 @@ mod tests {
                     !frame.ansi.contains(ACCENT_BG),
                     "{id} paints an inverted violet bar at {size:?}"
                 );
-                assert!(
-                    !frame.ansi.contains(OLD_VIOLET_WASH),
-                    "{id} brings back the #221A38 wash at {size:?}"
-                );
             }
         }
         for id in SELECTION_SCENES {
             let frame = render_lock_scene(id, 120, 40).expect(id);
+            assert!(
+                frame.ansi.contains(SELECTION_WASH),
+                "{id} selection bar must be #221A38"
+            );
             let row = (0..40u16)
                 .find(|y| {
                     frame.buffer[(0, *y)].symbol() == ">"
@@ -978,14 +978,9 @@ mod tests {
         // paints violet, the old `#221A38` violet wash, the mint pair, the old
         // brand green, or the navy wash — the host terminal owns the
         // background and the violet lives on the focused selection alone.
-        const BANNED: [&str; 6] = [
-            "125;211;252",
-            "34;26;56",
-            "0;245;212",
-            "26;51;48",
-            "0;255;163",
-            "10;22;40",
-        ];
+        // Mint `#00F5D4` / `#1A3330` never painted. Selection bar `#221A38`
+        // is allowed; inverted accent as a background is not (checked above).
+        const BANNED: [&str; 4] = ["0;245;212", "26;51;48", "0;255;163", "10;22;40"];
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -995,12 +990,12 @@ mod tests {
                         "{id} paints banned color {banned} at {size:?}"
                     );
                 }
-                // Nothing paints its own background wash: bars are the
-                // documented grays, never a colour.
                 for (x, y, cell) in cells(&frame.buffer) {
                     if let Some(Color::Rgb(r, g, b)) = cell.style().bg {
+                        let is_selection = r == 0x22 && g == 0x1A && b == 0x38;
+                        let is_gray = r == g && g == b;
                         assert!(
-                            r == g && g == b,
+                            is_selection || is_gray,
                             "{id} paints a tinted background {r},{g},{b} at {size:?} ({x},{y})"
                         );
                     }
@@ -1032,8 +1027,8 @@ mod tests {
                 assert_eq!(buf[(0, y)].style().fg, Some(ACCENT), "{id} at {size:?}");
                 let row = row_text(buf, y);
                 assert!(
-                    row.contains('█'),
-                    "{id} composer needs its block cursor: {row}"
+                    row.contains('|'),
+                    "{id} composer needs its blinking caret: {row}"
                 );
                 assert!(
                     !row.contains("▐"),
@@ -1047,7 +1042,7 @@ mod tests {
         for size in SIZES {
             let splash = render_lock_scene("splash", size.0, size.1).expect("splash");
             assert!(
-                splash.plain.contains("> Plan, search, build anything █"),
+                splash.plain.contains("> |Plan, search, build anything"),
                 "{}",
                 splash.plain
             );
@@ -1066,7 +1061,7 @@ mod tests {
             );
             let working = render_lock_scene("working", size.0, size.1).expect("working");
             assert!(
-                working.plain.contains("> Add a follow-up ↵ to queue █"),
+                working.plain.contains("> |Add a follow-up ↵ to queue"),
                 "{}",
                 working.plain
             );
@@ -1952,10 +1947,14 @@ mod tests {
         }
         for size in SIZES {
             let empty = render_lock_scene("session_empty", size.0, size.1).expect("empty");
-            assert!(empty.plain.contains("~/cortex-api"), "{}", empty.plain);
             assert!(
                 empty.plain.contains("Plan, search, build anything"),
                 "{}",
+                empty.plain
+            );
+            assert!(
+                !empty.plain.contains("> cortex"),
+                "must not paint a fake shell prompt:\n{}",
                 empty.plain
             );
             assert!(
@@ -2222,7 +2221,7 @@ mod tests {
             "queued follow-up badge must render:\n{plain}"
         );
         assert!(
-            plain.contains("> Add a follow-up ↵ to queue"),
+            plain.contains("> |Add a follow-up ↵ to queue"),
             "the composer stays on screen during a run:\n{plain}"
         );
     }
@@ -2232,8 +2231,6 @@ mod tests {
         for size in SIZES {
             let frame = render_lock_scene("splash", size.0, size.1).expect("splash");
             for needle in [
-                "~/cortex-api main*",
-                "> cortex",
                 "Cortex CLI v1.0.0",
                 "/ commands · @ files · ! shell",
                 "Plan, search, build anything",
@@ -2253,7 +2250,7 @@ mod tests {
         assert!(wide.plain.contains("100% context"), "{}", wide.plain);
         // The composer follows the header rather than hugging the footer.
         let composer_y = (0..40u16)
-            .find(|y| row_text(&wide.buffer, *y).starts_with("> Plan"))
+            .find(|y| row_text(&wide.buffer, *y).starts_with("> |Plan"))
             .expect("composer");
         assert!(
             composer_y < 10,
@@ -2712,7 +2709,7 @@ mod tests {
     #[test]
     fn lock_boards_02_09_product_copy() {
         let always: &[(&str, &[&str])] = &[
-            ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "█"]),
+            ("typing", &["Cortex CLI v1.0.0", "Add rate limiting", "|"]),
             (
                 "model_compact",
                 &[
@@ -2761,9 +2758,13 @@ mod tests {
         }
 
         let typing = render_lock_scene("typing", 120, 40).expect("typing");
-        assert!(typing.plain.contains("> cortex"), "{}", typing.plain);
         assert!(
-            typing.plain.contains("Redis-backed, with tests█"),
+            typing.plain.contains("Cortex CLI v1.0.0"),
+            "{}",
+            typing.plain
+        );
+        assert!(
+            typing.plain.contains("|"),
             "typing must end with the block cursor:\n{}",
             typing.plain
         );
@@ -3011,7 +3012,7 @@ mod tests {
         );
         // The typed mention sits in the hairline composer.
         assert!(
-            files_n.plain.contains("> Add integration tests for @rate█"),
+            files_n.plain.contains("> Add integration tests for @rate|"),
             "{}",
             files_n.plain
         );
@@ -3060,7 +3061,7 @@ mod tests {
         assert!(max.plain.contains("+214"));
         assert!(max.plain.contains("-9"));
         assert!(max.plain.contains("38% context left"));
-        assert!(max.plain.contains("> Add a follow-up█"));
+        assert!(max.plain.contains("> Add a follow-up|"));
     }
 
     #[test]

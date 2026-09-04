@@ -66,23 +66,16 @@ impl TrustScreen {
     pub async fn run(&mut self) -> Result<TrustResult> {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = stdout();
-        crossterm::execute!(
-            stdout,
-            crossterm::terminal::EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture,
-        )?;
+        crossterm::execute!(stdout, crossterm::event::EnableMouseCapture)?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
-        terminal.clear()?;
 
         let result = self.run_loop(&mut terminal).await;
 
-        // Cleanup
         crossterm::terminal::disable_raw_mode()?;
         crossterm::execute!(
             terminal.backend_mut(),
-            crossterm::terminal::LeaveAlternateScreen,
             crossterm::event::DisableMouseCapture,
         )?;
         terminal.show_cursor()?;

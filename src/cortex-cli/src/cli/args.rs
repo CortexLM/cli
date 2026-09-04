@@ -208,6 +208,16 @@ pub struct InteractiveArgs {
     #[arg(long = "search", default_value_t = false, help_heading = "Features")]
     pub web_search: bool,
 
+    /// Opt in to the alternate screen buffer. Default is inline: the TUI
+    /// stays in the host terminal scrollback and does not take over a
+    /// full-screen buffer. Same as `[tui] alternate_screen = true`.
+    #[arg(
+        long = "alternate-screen",
+        default_value_t = false,
+        help_heading = "Features"
+    )]
+    pub alternate_screen: bool,
+
     /// Maximum number of concurrent agent threads
     #[arg(
         long = "max-agent-threads",
@@ -1181,6 +1191,18 @@ mod tests {
     fn test_cli_debug_flag() {
         let cli = Cli::try_parse_from(["cortex", "--debug"]).expect("should parse --debug");
         assert!(cli.interactive.debug);
+    }
+
+    #[test]
+    fn test_cli_alternate_screen_opt_in_default_off() {
+        let cli = Cli::try_parse_from(["cortex"]).expect("should parse");
+        assert!(
+            !cli.interactive.alternate_screen,
+            "TUI must stay inline unless --alternate-screen is passed"
+        );
+        let cli = Cli::try_parse_from(["cortex", "--alternate-screen"])
+            .expect("should parse --alternate-screen");
+        assert!(cli.interactive.alternate_screen);
     }
 
     #[test]

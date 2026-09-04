@@ -193,7 +193,7 @@ impl EventLoop {
         Self {
             app_state,
             session_bridge: None,
-            stream_controller: StreamController::new(),
+            stream_controller: StreamController::with_typewriter(80.0),
             action_mapper: ActionMapper::default(),
             click_zones: ClickZoneRegistry::new(),
             mouse_handler: MouseHandler::new(),

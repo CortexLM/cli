@@ -32,6 +32,7 @@ A positional prompt seeds that session. Without a terminal, use
 | `--add-dir <DIR>` | Extra writable directory; repeatable |
 | `-i`, `--image <PATH>` | Attach an image to the initial prompt |
 | `--search` | Enable web search |
+| `--alternate-screen` | Opt in to the alternate screen buffer. Default is inline (host scrollback stays visible). Same as `[tui] alternate_screen = true`. |
 | `--max-agent-threads <N>` | Concurrent agent threads |
 | `--max-tool-threads <N>` | Concurrent tool executions |
 | `--command-timeout <SECONDS>` | Shell command timeout |

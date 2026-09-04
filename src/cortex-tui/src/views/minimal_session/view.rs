@@ -42,7 +42,7 @@ pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up ↵ to queue";
 ///
 /// ⠇ Working · 12s · esc to interrupt
 /// ────────────────────────────────────
-/// > Add a follow-up ↵ to queue █
+/// > |Add a follow-up ↵ to queue
 /// ────────────────────────────────────
 /// Cortex Mini 1 · Agent · 92% context      shift+tab to cycle modes
 /// ```
@@ -183,13 +183,17 @@ impl<'a> MinimalSessionView<'a> {
         }
         let text_budget = content_width.saturating_sub(3 + badge_cols) as usize;
 
-        // Violet focused `>`; dim placeholder while idle; white copy and block cursor.
+        // Violet focused `>`; blinking caret at column 0 when empty, then
+        // the dim placeholder — never a white block after the hint.
         let mut spans = vec![Span::styled(
             "> ",
             Style::default()
                 .fg(self.colors.accent)
                 .add_modifier(Modifier::BOLD),
         )];
+        if self.app_state.caret_visible {
+            spans.push(Span::styled("|", Style::default().fg(self.colors.text)));
+        }
         if input_text.is_empty() {
             let ghost_copy = if self.app_state.quota_held {
                 crate::ui::consts::PLACEHOLDER_QUOTA
@@ -201,7 +205,7 @@ impl<'a> MinimalSessionView<'a> {
             let ghost = crate::ui::text_utils::first_fitting_line(ghost_copy, text_budget);
             if !ghost.is_empty() {
                 spans.push(Span::styled(
-                    format!("{ghost} "),
+                    ghost,
                     Style::default().fg(self.colors.text_dim),
                 ));
             }
@@ -209,7 +213,6 @@ impl<'a> MinimalSessionView<'a> {
             let shown = crate::ui::text_utils::first_fitting_line(&input_text, text_budget);
             spans.push(Span::styled(shown, Style::default().fg(self.colors.text)));
         }
-        spans.push(Span::styled("█", Style::default().fg(self.colors.text)));
 
         let text_area = Rect::new(area.x, content_y, content_width, 1);
         Paragraph::new(Line::from(spans)).render(text_area, buf);

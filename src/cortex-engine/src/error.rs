@@ -53,7 +53,9 @@ pub enum CortexError {
     #[error("The coding service is temporarily unavailable")]
     BackendUnavailable(String),
 
-    #[error("The coding service is temporarily unavailable")]
+    /// Product-facing API failure. `message` is shown to the user — never
+    /// put provider, SDK, or transport names in it.
+    #[error("{message}")]
     BackendError { message: String },
 
     #[error("Authentication error: {message}")]
@@ -312,7 +314,10 @@ impl CortexError {
                 | Self::ApiKeyNotFound { .. }
                 | Self::TokenExpired
                 | Self::AuthenticationError { .. }
-        )
+        ) || matches!(self, Self::BackendError { message } if {
+            let lower = message.to_lowercase();
+            lower.contains("sign in") || lower.contains("cortex login")
+        })
     }
 
     /// Check if this error is due to an invalid or expired API key.
@@ -337,8 +342,16 @@ impl CortexError {
             }
             Self::BackendError { message } => {
                 let lower = message.to_lowercase();
-                (lower.contains("401") || lower.contains("unauthorized"))
+                let looks_like_bad_key = (lower.contains("invalid")
+                    || lower.contains("expired")
+                    || lower.contains("revoked"))
+                    && (lower.contains("key") || lower.contains("token") || lower.contains("api"));
+                let looks_like_http_auth = (lower.contains("401")
+                    || lower.contains("unauthorized"))
                     && (lower.contains("api") || lower.contains("key") || lower.contains("token"))
+                    && !lower.contains("sign in")
+                    && !lower.contains("cortex login");
+                looks_like_bad_key || looks_like_http_auth
             }
             _ => false,
         }
@@ -351,6 +364,12 @@ impl CortexError {
             "Your Cortex API key may be invalid, expired, or revoked.\n\
              Run 'cortex login' or set CORTEX_API_KEY, then try again."
                 .to_string()
+        } else if let Self::BackendError { message } = self {
+            if is_transient_service_copy(message) {
+                SERVICE_UNAVAILABLE.to_string()
+            } else {
+                message.clone()
+            }
         } else if self.is_auth_error() {
             "Authentication required. Run 'cortex login' to authenticate with Cortex.".to_string()
         } else {
@@ -359,7 +378,6 @@ impl CortexError {
                 | Self::ConnectionFailed { .. }
                 | Self::Timeout
                 | Self::BackendUnavailable(_)
-                | Self::BackendError { .. }
                 | Self::ProxyError { .. } => SERVICE_UNAVAILABLE.to_string(),
                 Self::RateLimit(_)
                 | Self::RateLimitWithRetryAfter { .. }
@@ -371,6 +389,14 @@ impl CortexError {
             }
         }
     }
+}
+
+/// True when `message` is the generic outage copy (or empty), not an
+/// actionable auth / config error.
+pub fn is_transient_service_copy(message: &str) -> bool {
+    let trimmed = message.trim();
+    trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("The coding service is temporarily unavailable")
 }
 
 /// Suggest a replacement model for deprecated models.

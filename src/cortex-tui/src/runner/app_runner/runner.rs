@@ -79,8 +79,9 @@ impl AppRunner {
 
     /// Create a new app runner with the given configuration.
     ///
-    /// This creates a runner with default terminal options (full-screen mode
-    /// with alternate screen, mouse capture, etc.).
+    /// The TUI starts **inline** (no alternate screen) so the host shell
+    /// remains in the scrollback. Set `tui.alternate_screen = true` in
+    /// config to opt in to a full-screen buffer.
     ///
     /// # Arguments
     ///
@@ -93,12 +94,16 @@ impl AppRunner {
     /// let runner = AppRunner::new(config);
     /// ```
     pub fn new(config: Config) -> Self {
+        let mut terminal_options = TerminalOptions::default();
+        if config.alternate_screen {
+            terminal_options = terminal_options.alternate_screen(true).clear_on_start(true);
+        }
         Self {
             config,
             initial_prompt: None,
             conversation_id: None,
             cortex_session_id: None,
-            terminal_options: TerminalOptions::default(),
+            terminal_options,
             use_direct_provider: true, // Default to direct provider mode
         }
     }
@@ -1046,9 +1051,16 @@ mod tests {
     fn test_app_runner_terminal_options() {
         let config = Config::default();
 
-        // Default options
+        // Default options: inline, no alternate screen
         let runner = AppRunner::new(config.clone());
+        assert!(!runner.terminal_options.alternate_screen);
+        assert!(!runner.terminal_options.clear_on_start);
+
+        let mut opted = config.clone();
+        opted.alternate_screen = true;
+        let runner = AppRunner::new(opted);
         assert!(runner.terminal_options.alternate_screen);
+        assert!(runner.terminal_options.clear_on_start);
 
         // Custom options
         let custom_options = TerminalOptions::new()

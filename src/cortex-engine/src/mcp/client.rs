@@ -419,13 +419,9 @@ impl McpClient {
             .or(self.config.sse_url.as_ref())
             .ok_or_else(|| anyhow!("No HTTP URL configured"))?;
 
-        let response = self
-            .http_client
-            .post(url)
-            .json(request)
-            .send()
-            .await
-            .context("HTTP request failed")?;
+        let mut req = self.http_client.post(url).json(request);
+        req = apply_mcp_http_auth(req, &self.config);
+        let response = req.send().await.context("HTTP request failed")?;
 
         if !response.status().is_success() {
             return Err(anyhow!("HTTP error: {}", response.status()));
@@ -446,13 +442,9 @@ impl McpClient {
             .or(self.config.sse_url.as_ref())
             .ok_or_else(|| anyhow!("No HTTP URL configured"))?;
 
-        let response = self
-            .http_client
-            .post(url)
-            .json(notification)
-            .send()
-            .await
-            .context("HTTP notification failed")?;
+        let mut req = self.http_client.post(url).json(notification);
+        req = apply_mcp_http_auth(req, &self.config);
+        let response = req.send().await.context("HTTP notification failed")?;
 
         if !response.status().is_success() {
             warn!("HTTP notification returned error: {}", response.status());
@@ -460,6 +452,30 @@ impl McpClient {
 
         Ok(())
     }
+}
+
+fn resolve_header_value(raw: &str) -> String {
+    if let Some(var) = raw.strip_prefix("env:") {
+        std::env::var(var).unwrap_or_default()
+    } else {
+        raw.to_string()
+    }
+}
+
+fn apply_mcp_http_auth(
+    mut req: reqwest::RequestBuilder,
+    config: &super::McpServerConfig,
+) -> reqwest::RequestBuilder {
+    for (key, value) in &config.headers {
+        req = req.header(key, resolve_header_value(value));
+    }
+    if let Some(var) = &config.bearer_token_env_var
+        && let Ok(token) = std::env::var(var)
+        && !token.is_empty()
+    {
+        req = req.bearer_auth(token);
+    }
+    req
 }
 
 impl Drop for McpClient {

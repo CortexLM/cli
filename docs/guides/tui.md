@@ -16,6 +16,24 @@ cortex --profile work           # load a profile from config.toml
 The TUI needs a terminal on both stdin and stdout. If either is redirected it
 refuses to start and points you at [`cortex run` or `cortex exec`](exec.md).
 
+The session runs **inline** in the host terminal. Cortex does not enter the
+alternate screen buffer on start, so your shell prompt and scrollback stay
+visible above the app. The welcome line is `Cortex CLI v{version}` — it does
+not paint a fake shell prompt or working directory.
+
+To opt in to a full-screen buffer instead:
+
+```bash
+cortex --alternate-screen
+```
+
+or in `~/.cortex/config.toml`:
+
+```toml
+[tui]
+alternate_screen = true
+```
+
 ## The session view
 
 ```
@@ -41,7 +59,7 @@ The timeline is the transcript. It renders several kinds of row:
 | Tool call | `◐`/`●` then the tool name and a short argument summary | A tool the agent invoked |
 | Tool result | `⎿ …` indented under the call | What the tool returned |
 | Subagent task | `● Task <type>` with a todo list underneath | Work delegated to a subagent |
-| Welcome | One line: `Cortex CLI v{version}`. Directory and Computer cards sit under it. | Shown while the session is empty |
+| Welcome | One line: `Cortex CLI v{version}`. No fake `> cortex` prompt and no painted cwd — the host shell stays above the app. | Shown while the session is empty |
 
 Tool rows collapse to a summary. Press `e` while the timeline has focus to
 expand or collapse the details of the selected tool call.
@@ -55,7 +73,9 @@ stage the turn is in — `Thinking`, `Executing <tool>`, `Streaming..`,
 
 ### Composer
 
-`Enter` sends. `Shift+Enter` inserts a newline. `Up` and `Down` walk your prompt
+The empty composer keeps the caret at column 0 after `> `; the placeholder
+(`Plan, search, build anything`) sits after the caret. `Enter` sends.
+`Shift+Enter` inserts a newline. `Up` and `Down` walk your prompt
 history. If you submit while a turn is running the message is queued, and the
 composer shows how many are waiting.
 

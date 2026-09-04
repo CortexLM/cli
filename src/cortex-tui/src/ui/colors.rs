@@ -118,7 +118,7 @@ impl AdaptiveColors {
         let border_rgb = blend((0x3A, 0x3A, 0x3A), bg, 0.9);
         let user_bg_rgb = blend((0x1C, 0x1C, 0x1C), bg, 0.8);
         let panel_rgb = blend((0x14, 0x14, 0x14), bg, 0.8);
-        let selection_rgb = blend((0x26, 0x26, 0x26), bg, 0.9);
+        let selection_rgb = blend((0x22, 0x1A, 0x38), bg, 0.9);
 
         Self {
             accent: cortex_core::style::ACCENT,
@@ -183,7 +183,7 @@ impl AdaptiveColors {
             error: cortex_core::style::ERROR,            // #F87171
             warning: cortex_core::style::WARNING,        // #FFC857
             thinking: cortex_core::style::THINKING,      // #C9A95C
-            selection: cortex_core::style::SELECTION_BG, // #262626
+            selection: cortex_core::style::SELECTION_BG, // #221A38
         }
     }
 }
@@ -268,9 +268,8 @@ mod tests {
         // Green covers `✓` and diff additions alike.
         assert!(matches!(colors.diff_add, Color::Rgb(0x4A, 0xDE, 0x80)));
         assert_eq!(colors.success, colors.diff_add);
-        // The selection bar is the dark gray bar, the user turn a lighter
-        // gray, the tips panel charcoal, the hairline gray.
-        assert!(matches!(colors.selection, Color::Rgb(0x26, 0x26, 0x26)));
+        // The selection bar is `#221A38`.
+        assert!(matches!(colors.selection, Color::Rgb(0x22, 0x1A, 0x38)));
         assert!(matches!(colors.user_bg, Color::Rgb(0x1C, 0x1C, 0x1C)));
         assert!(matches!(colors.panel_bg, Color::Rgb(0x14, 0x14, 0x14)));
         assert!(matches!(colors.border, Color::Rgb(0x3A, 0x3A, 0x3A)));
@@ -284,7 +283,7 @@ mod tests {
         let colors = AdaptiveColors::dark_theme((0x1A, 0x1A, 0x1A));
         assert!(matches!(colors.accent, Color::Rgb(0xA7, 0x8B, 0xFA)));
         // Structural grays stay neutral after blending with the background.
-        for color in [colors.selection, colors.user_bg, colors.border] {
+        for color in [colors.user_bg, colors.border] {
             let Color::Rgb(r, g, b) = color else {
                 panic!("{color:?} must be RGB");
             };
@@ -307,7 +306,7 @@ mod tests {
         // Dark themes carry the locked selection bar.
         assert!(matches!(
             dark_colors.selection,
-            Color::Rgb(0x26, 0x26, 0x26)
+            Color::Rgb(0x22, 0x1A, 0x38)
         ));
 
         let light_colors = AdaptiveColors::from_theme_name("light");

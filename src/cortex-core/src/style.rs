@@ -4,10 +4,10 @@
 //! (`Color::Reset`, black by default). Structure comes from gray — hairlines,
 //! filled charcoal panels, dim secondary copy, white primary copy. The one
 //! accent is the Cortex violet `#A78BFA`, reserved for the focused selection:
-//! the `>` caret and the selected label on the dark gray selection bar (the
-//! bar itself stays gray — never a violet wash). Green exists only for `✓`
-//! success and `+` diff additions; red and amber only on diagnostics; a muted
-//! gold only on the Thinking status.
+//! the `>` caret and the selected label on the `#221A38` selection bar.
+//! Green exists only for `✓` success and `+` diff additions; red and amber
+//! only on diagnostics; a muted gold only on the Thinking status. Mint
+//! `#00F5D4` / `#1A3330` is never painted.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -102,10 +102,10 @@ pub const INFO: Color = DEEP_CYAN; // #9CA3AF
 /// Highlight - near-white for emphasis (legacy name)
 pub const HIGHLIGHT: Color = ELECTRIC_BLUE; // #E5E7EB
 
-/// Selected-row background - dark gray bar; the caret and label on it are
-/// violet, everything else stays white/dim. Never inverted onto the accent,
-/// never the old `#221A38` violet wash.
-pub const SELECTION_BG: Color = SURFACE_2; // #262626
+/// Selected-row background — violet-tinted bar `#221A38`. The caret and
+/// label on it are `#A78BFA`; everything else stays white/dim. Never invert
+/// onto the accent.
+pub const SELECTION_BG: Color = Color::Rgb(34, 26, 56); // #221A38
 
 // ============================================================
 // BORDER COLORS
@@ -658,18 +658,16 @@ mod tests {
         assert_eq!(VOID, Color::Reset);
         assert_eq!(PANEL_BG, Color::Rgb(0x14, 0x14, 0x14));
         assert_eq!(TEXT_DIM, Color::Rgb(0x6B, 0x72, 0x80));
-        for gray in [HAIRLINE, SELECTION_BG, USER_TURN_BG, BORDER_FOCUS] {
+        for gray in [HAIRLINE, USER_TURN_BG, BORDER_FOCUS] {
             let Color::Rgb(r, g, b) = gray else {
                 panic!("{gray:?} must be an RGB gray");
             };
             assert!(r == g && g == b, "{gray:?} is not neutral");
         }
-        // The violet lives in `ACCENT` alone: no other semantic slot carries
-        // it, the old `#221A38` wash and the mint are gone, and the interim
-        // violet highlight is banned.
+        assert_eq!(SELECTION_BG, Color::Rgb(0x22, 0x1A, 0x38));
+        // The violet lives in `ACCENT` plus the selection bar. Mint is banned.
         for color in [
             SUCCESS,
-            SELECTION_BG,
             BORDER_FOCUS,
             INFO,
             HIGHLIGHT,
@@ -679,7 +677,6 @@ mod tests {
             TEAL,
         ] {
             assert_ne!(color, ACCENT, "violet leaked off the accent");
-            assert_ne!(color, Color::Rgb(0x22, 0x1A, 0x38), "violet bar leaked");
             assert_ne!(color, Color::Rgb(0x00, 0xF5, 0xD4), "mint leaked");
             assert_ne!(color, Color::Rgb(0x7D, 0xD3, 0xFC), "cyan leaked");
         }
@@ -687,11 +684,6 @@ mod tests {
             ACCENT,
             Color::Rgb(0x7D, 0xD3, 0xFC),
             "the accent is not cyan"
-        );
-        assert_ne!(
-            SELECTION_BG,
-            Color::Rgb(0x22, 0x1A, 0x38),
-            "the bar is gray"
         );
         // Thinking is the only gold.
         assert_eq!(CortexStyle::thinking().fg, Some(THINKING));

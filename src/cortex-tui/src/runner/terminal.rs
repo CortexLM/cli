@@ -9,13 +9,13 @@
 //! ```rust,ignore
 //! use cortex_tui::runner::terminal::{CortexTerminal, TerminalOptions};
 //!
-//! // Create with default options (inline, no alternate screen)
+//! // Create with default options (alternate screen, full viewport)
 //! let mut terminal = CortexTerminal::new()?;
 //!
 //! // Or with custom options
 //! let mut terminal = CortexTerminal::with_options(
 //!     TerminalOptions::new()
-//!         .alternate_screen(true)
+//!         .alternate_screen(false)
 //!         .mouse_capture(false)
 //!         .title("My App")
 //! )?;
@@ -116,7 +116,7 @@ impl Drop for TerminalGuard {
 /// Configuration options for terminal initialization.
 ///
 /// This struct uses the builder pattern to allow flexible configuration
-/// of terminal features. Alternate screen is **off** by default (inline).
+/// of terminal features. Alternate screen is **on** by default (always).
 ///
 /// # Example
 ///
@@ -146,13 +146,13 @@ pub struct TerminalOptions {
 
 impl Default for TerminalOptions {
     fn default() -> Self {
-        // Interactive start is inline: never enter the alternate screen.
+        // Interactive start takes the full viewport (always alternate screen).
         Self {
-            alternate_screen: false,
+            alternate_screen: true,
             mouse_capture: true,
             bracketed_paste: true,
             title: Some("Cortex".to_string()),
-            clear_on_start: false,
+            clear_on_start: true,
         }
     }
 }
@@ -160,12 +160,12 @@ impl Default for TerminalOptions {
 impl TerminalOptions {
     /// Create a new `TerminalOptions` with default settings.
     ///
-    /// Default settings stay **inline** (never alternate screen):
-    /// - Alternate screen: off (set `[tui] alternate_screen = true` to opt in)
+    /// Default settings enter the **alternate screen** (always):
+    /// - Alternate screen: on (set `[tui] alternate_screen = false` to stay inline)
     /// - Mouse capture: enabled
     /// - Bracketed paste: enabled
     /// - Title: "Cortex"
-    /// - Clear on start: off
+    /// - Clear on start: on
     pub fn new() -> Self {
         Self::default()
     }
@@ -265,10 +265,10 @@ pub struct CortexTerminal {
 }
 
 impl CortexTerminal {
-    /// Create a new terminal with default **inline** mode (no alternate screen).
+    /// Create a new terminal with default **alternate screen** mode.
     ///
     /// This initializes the terminal with:
-    /// - Inline buffer (host shell prompt stays visible above the app)
+    /// - Alternate screen buffer (full viewport)
     /// - Mouse capture
     /// - Bracketed paste mode
     /// - Hidden cursor
@@ -987,13 +987,13 @@ mod tests {
     fn test_terminal_options_default() {
         let options = TerminalOptions::default();
         assert!(
-            !options.alternate_screen,
-            "default must be inline (never alt-screen)"
+            options.alternate_screen,
+            "default must enter the alternate screen (always)"
         );
         assert!(options.mouse_capture);
         assert!(options.bracketed_paste);
         assert_eq!(options.title, Some("Cortex".to_string()));
-        assert!(!options.clear_on_start);
+        assert!(options.clear_on_start);
     }
 
     #[test]

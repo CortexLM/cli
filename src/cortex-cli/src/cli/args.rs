@@ -208,15 +208,26 @@ pub struct InteractiveArgs {
     #[arg(long = "search", default_value_t = false, help_heading = "Features")]
     pub web_search: bool,
 
-    /// Opt in to the alternate screen buffer. Default is **never** (inline):
-    /// the host shell prompt stays visible above the app. Same as
-    /// `[tui] alternate_screen = true`.
+    /// Enter the alternate screen buffer. Default is **always** (full
+    /// viewport). Same as `[tui] alternate_screen = true`. Use
+    /// `--no-alternate-screen` to stay inline.
     #[arg(
         long = "alternate-screen",
         default_value_t = false,
+        conflicts_with = "no_alternate_screen",
         help_heading = "Features"
     )]
     pub alternate_screen: bool,
+
+    /// Stay inline in the host terminal (never alternate screen). Same as
+    /// `[tui] alternate_screen = false`.
+    #[arg(
+        long = "no-alternate-screen",
+        default_value_t = false,
+        conflicts_with = "alternate_screen",
+        help_heading = "Features"
+    )]
+    pub no_alternate_screen: bool,
 
     /// Maximum number of concurrent agent threads
     #[arg(
@@ -974,6 +985,8 @@ mod tests {
         assert!(args.add_dir.is_empty());
         assert!(args.images.is_empty());
         assert!(!args.web_search);
+        assert!(!args.alternate_screen);
+        assert!(!args.no_alternate_screen);
         assert_eq!(args.log_level, LogLevel::Info);
         assert!(!args.debug);
         assert!(args.prompt.is_empty());
@@ -1194,15 +1207,39 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_alternate_screen_flag_defaults_off() {
+    fn test_cli_alternate_screen_flag_defaults_unset() {
         let cli = Cli::try_parse_from(["cortex"]).expect("should parse");
         assert!(
             !cli.interactive.alternate_screen,
-            "the flag is opt-in; default TUI is inline (never alt-screen)"
+            "the flag is unset unless passed; config default is always"
+        );
+        assert!(
+            !cli.interactive.no_alternate_screen,
+            "inline opt-out is unset unless --no-alternate-screen is passed"
         );
         let cli = Cli::try_parse_from(["cortex", "--alternate-screen"])
             .expect("should parse --alternate-screen");
         assert!(cli.interactive.alternate_screen);
+        assert!(!cli.interactive.no_alternate_screen);
+        let cli = Cli::try_parse_from(["cortex", "--no-alternate-screen"])
+            .expect("should parse --no-alternate-screen");
+        assert!(cli.interactive.no_alternate_screen);
+        assert!(!cli.interactive.alternate_screen);
+    }
+
+    #[test]
+    fn test_cli_alternate_screen_conflicts_with_no_alternate_screen() {
+        let result = Cli::try_parse_from(["cortex", "--alternate-screen", "--no-alternate-screen"]);
+        match result {
+            Err(err) => {
+                let rendered = err.to_string();
+                assert!(
+                    rendered.contains("cannot be used with") || rendered.contains("conflict"),
+                    "unexpected clap error: {rendered}"
+                );
+            }
+            Ok(_) => panic!("--alternate-screen and --no-alternate-screen must conflict"),
+        }
     }
 
     #[test]

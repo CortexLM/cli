@@ -557,7 +557,7 @@ pub fn generate_welcome_lines(
     } else {
         app_state.cli_version.as_str()
     };
-    WelcomeCard::new()
+    let mut lines: Vec<Line<'static>> = WelcomeCard::new()
         .version(version)
         .agent(app_state.agent_entrypoint)
         .text_color(colors.text)
@@ -566,7 +566,28 @@ pub fn generate_welcome_lines(
         .to_lines(width.saturating_sub(indent))
         .into_iter()
         .map(|line| indent_line(line, indent))
-        .collect()
+        .collect();
+    if app_state
+        .settings
+        .get("first_run_tips")
+        .is_some_and(|v| v != "0")
+    {
+        let dim = Style::default().fg(colors.text_dim);
+        lines.push(Line::from(""));
+        for tip in [
+            "A few tips to get the most out of this tool:",
+            "1. Use /model to switch between models and adjust reasoning effort.",
+            "2. Add @ files to give Cortex the right context.",
+            "3. Press Shift+Tab anytime to cycle Agent / Plan / Ask.",
+            "4. Ctrl+x lists every shortcut · F2 opens settings.",
+        ] {
+            lines.push(indent_line(
+                Line::from(Span::styled(tip.to_string(), dim)),
+                indent,
+            ));
+        }
+    }
+    lines
 }
 
 fn indent_span_prefix(n: u16) -> Span<'static> {

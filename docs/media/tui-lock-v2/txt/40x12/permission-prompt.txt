@@ -1,0 +1,12 @@
+                             14K / 500K
+   ● Cortex wants to run
+   $ npm install ioredis && npm insta…
+   > 1 Yes, run once
+     2 Yes, always allow npm install …
+     3 Edit command
+     4 No — tell Cortex what to do in…
+ ╭─ Agent ────────────────────────────╮
+ │ > Choose an option above           │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:confirm | Esc:cancel

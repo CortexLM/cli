@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+
+
+   > hey                                                                                                      12:49 AM
+
+   ♦ Thought for 0.4s
+
+   Hey — what do you want to work on?                                                                         12:49 AM
+
+   Worked for 1.8s
+
+   > tell me about yourself                                                                                   12:49 AM
+
+   ♦ Thought for 0.4s
+
+   I'm Cortex, a coding agent that runs in your terminal.                                                     12:49 AM
+
+   I mostly help you build and debug software: code, architecture, debugging, reviews, docs, and a bit of research.
+   Here I run in an interactive terminal, so I can read your files, run commands, and change the project.
+
+   In practice:
+   • I get straight to the point
+   • I prefer concrete work over long explanations
+   • I can also discuss, explain, or help you plan
+
+   Tell me what you'd like to do.
+
+   Worked for 4.6s
+
+   Permissions · how Cortex asks before acting
+
+   > ● Smart        auto-approve safe reads · ask before edits · current
+     ○ Read-only    never edit files or run commands
+     ○ Full access  only ask when leaving the sandbox
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > /permissions                                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:apply  |  Esc:close

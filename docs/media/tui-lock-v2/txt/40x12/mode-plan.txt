@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   > add retry with backoff to the ap…
+
+   ♦ Thought for 5.8s
+
+
+ ╭─ Plan · no edits ──────────────────╮
+ │ > Describe what you want — Cortex… │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

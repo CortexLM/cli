@@ -1,0 +1,12 @@
+                               0 / 500K
+
+   Welcome to Cortex
+   v0.1.7  ·  / commands  ·  @ files
+
+
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

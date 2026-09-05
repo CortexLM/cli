@@ -1,0 +1,12 @@
+                             14K / 500K
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────╮
+ │ > add retry with backoff to the ap │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:send | Ctrl+x:shortcuts

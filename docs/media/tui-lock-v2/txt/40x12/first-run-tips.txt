@@ -1,0 +1,12 @@
+                               0 / 500K
+
+   Welcome to Cortex
+   v0.1.7  ·  / commands  ·  @ files
+
+  A few tips to get started:
+  1. /model switches model + effort.
+ ╭─ Agent ────────────────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+            ╭─ Settings ───────────────────────────────────────────────────────────────────────────── [x] ─╮
+   > hey    │ / scro                                                                                       │  12:49 AM
+            │ ──────────────────────────────────────────────────────────────────────────────────────────── │
+   ♦ Thought│                                                                                              │
+            │ Mouse ────────────────────────────────────────────────────────────────────────────────────── │
+   Hey — wha│  ▸ Scroll lines                                                                           3  │  12:49 AM
+            │  ▸ Invert scroll                                                                        off  │
+   Worked fo│                                                                                              │
+            │ Behavior ─────────────────────────────────────────────────────────────────────────────────── │
+   > tell me│  ▸ Auto scroll                                                                           on  │  12:49 AM
+            │                                                                                              │
+   ♦ Thought│                                                                                              │
+            │                                                                                              │
+   I'm Corte│                                                                                              │  12:49 AM
+            │                                                                                              │
+   I mostly │                                                                                              │search.
+   Here I ru│                                                                                              │
+            │                                                                                              │
+   In practi│                                                                                              │
+   • I get s│                                                                                              │
+   • I prefe│                                                                                              │
+   • I can a│                                                                                              │
+            │                                                                                              │
+   Tell me w│                                                                                              │
+            │                                                                                              │
+   Worked fo│                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+ ╭─ Agent ──│        Tip · Ask Cortex: "change theme to Cortex Day" or "what does compact mode do?"        │──────────╮
+ │ > Plan, s│   ↑/↓/j/k nav | g/G top/btm | Space toggle | Enter toggle | → expand | / search | d reset    │          │
+ ╰──────────│                                         F2/Esc close                                         │(medium) ─╯
+            ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

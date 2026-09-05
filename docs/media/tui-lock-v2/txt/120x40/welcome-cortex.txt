@@ -1,0 +1,40 @@
+                                                                                                               0 / 500K
+
+   Welcome to Cortex, the coding agent CLI
+   v0.1.7  ·  / commands  ·  @ files  ·  ! shell  ·  & cloud
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

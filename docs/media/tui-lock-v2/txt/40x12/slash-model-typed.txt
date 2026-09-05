@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   Worked for 4.6s
+
+   > /model            Choose the mod…
+     /mode             Switch between…
+     /mcp-reload       Reconnect ever…
+ ╭─ Agent ────────────────────────────╮
+ │ > /model                           │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:send | Ctrl+x:shortcuts

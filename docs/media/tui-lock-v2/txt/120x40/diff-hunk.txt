@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > move the model chip into the composer border                                                             04:11 PM
+
+   ♦ Thought for 2.6s
+
+   ● Edit  src/cortex-tui/src/composer.rs · +2 −1
+     @@ -41,7 +41,8 @@
+     41  41      let chip = model_chip(state);
+     42      -   footer.push(chip);
+         42  +   border.push_right(chip);
+         43  +   footer.push(hints);
+     43  44      Ok(())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

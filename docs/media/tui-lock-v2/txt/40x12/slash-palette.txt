@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   Worked for 4.6s
+
+   > /model          Choose the model…
+     /mode           Switch between A…
+     /permissions    Set the approval…
+ ╭─ Agent ────────────────────────────╮
+ │ > /                                │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:send | Ctrl+x:shortcuts

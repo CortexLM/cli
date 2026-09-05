@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   Worked for 4.6s
+
+   > High Effort    Deepest reasoning…
+     Medium Effort  Balanced reasonin…
+     Low Effort     Fastest responses…
+ ╭─ Agent ────────────────────────────╮
+ │ > /model Cortex Mini 1             │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:apply | Esc:close

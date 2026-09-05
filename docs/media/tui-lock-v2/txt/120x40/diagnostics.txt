@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > wire the model chip into the composer border                                                             04:11 PM
+
+   ♦ Thought for 2.6s
+
+   ● Edit  src/cortex-tui/src/composer.rs · +12 −3
+   ● Diagnostics  src/cortex-tui/src/composer.rs · 2
+     error E0308 mismatched types — expected `Span`, found `String`   composer.rs:42:9
+     warn  unused variable `hints`   composer.rs:57:13
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

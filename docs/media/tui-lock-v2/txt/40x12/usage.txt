@@ -1,0 +1,12 @@
+                             14K / 500K
+
+
+   Usage · Cortex Pro · renews Oct 1
+   Agent requests       42 / 500    8%
+   Tokens this month  8.4M / 12M   70%
+   Cloud agent minutes 132 / 400   33%
+ ╭─ Agent ────────────────────────────╮
+ │ > /usage                           │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Esc:close

@@ -72,6 +72,12 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
         KeyCode::Left if !state.tabs.is_empty() => InteractiveResult::SwitchTab { direction: -1 },
         KeyCode::Right if !state.tabs.is_empty() => InteractiveResult::SwitchTab { direction: 1 },
 
+        // `/model` Effort radios: Tab cycles Low → Medium → High.
+        KeyCode::Tab if state.effort.is_some() => {
+            state.cycle_effort();
+            InteractiveResult::Continue
+        }
+
         // Selection
         KeyCode::Enter => {
             if let Some(item) = state.selected_item() {
@@ -320,5 +326,30 @@ mod tests {
         let result = handle_interactive_key(&mut state, key);
 
         assert!(matches!(result, InteractiveResult::Cancelled));
+    }
+
+    #[test]
+    fn tab_cycles_model_effort_radios() {
+        let items = vec![InteractiveItem::new("mini", "Cortex Mini 1")];
+        let mut state = InteractiveState::new("Model", items, InteractiveAction::SetModel)
+            .with_effort(crate::interactive::EffortLevel::Medium);
+        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Medium));
+
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        handle_interactive_key(&mut state, tab);
+        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::High));
+        handle_interactive_key(&mut state, tab);
+        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Low));
+        handle_interactive_key(&mut state, tab);
+        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Medium));
+    }
+
+    #[test]
+    fn tab_is_a_no_op_without_effort_radios() {
+        let mut state = create_test_state();
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let result = handle_interactive_key(&mut state, tab);
+        assert!(matches!(result, InteractiveResult::Continue));
+        assert!(state.effort.is_none());
     }
 }

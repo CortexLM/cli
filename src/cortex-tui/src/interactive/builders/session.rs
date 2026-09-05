@@ -19,21 +19,10 @@ pub fn build_mode_selector(current: &str) -> InteractiveState {
     InteractiveState::new("Mode", items, InteractiveAction::Custom("mode".to_string()))
 }
 
-/// Build Low / Medium / High / MAX effort picker.
+/// Build Low / Medium / High effort radios for tests that still construct
+/// a standalone effort list. Live `/effort` opens `/model` instead.
 pub fn build_effort_selector(current: Option<&str>) -> InteractiveState {
-    let current = current.unwrap_or("Medium");
-    let items = vec![
-        InteractiveItem::new("Low", "Low").with_current(current.eq_ignore_ascii_case("low")),
-        InteractiveItem::new("Medium", "Medium")
-            .with_current(current.eq_ignore_ascii_case("medium")),
-        InteractiveItem::new("High", "High").with_current(current.eq_ignore_ascii_case("high")),
-        InteractiveItem::new("MAX", "MAX").with_current(current.eq_ignore_ascii_case("max")),
-    ];
-    InteractiveState::new(
-        "Effort",
-        items,
-        InteractiveAction::Custom("effort".to_string()),
-    )
+    crate::interactive::builders::build_model_selector(Vec::new(), None, current)
 }
 
 /// Build sandbox on/off picker.
@@ -100,5 +89,14 @@ mod tests {
     fn skills_selector_empty_is_disabled() {
         let state = build_skills_selector(&[]);
         assert!(state.items[0].disabled);
+    }
+
+    #[test]
+    fn effort_alias_opens_model_radios_not_a_star_picker() {
+        let state = build_effort_selector(Some("low"));
+        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Low));
+        let line = state.effort.expect("effort").radios_line();
+        assert_eq!(line, "● Low   ○ Medium   ○ High");
+        assert!(!line.contains('★') && !line.contains("MAX"), "{line}");
     }
 }

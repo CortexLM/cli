@@ -210,6 +210,60 @@ pub struct InteractiveState {
     pub hovered_tab: Option<usize>,
     /// Click zones for tabs (calculated during render).
     pub tab_click_zones: Vec<(ratatui::layout::Rect, usize)>,
+    /// Optional Low / Medium / High effort radios (used by `/model`).
+    /// Tab cycles the selection. Absent on pickers that are not the model list.
+    pub effort: Option<EffortLevel>,
+}
+
+/// Reasoning effort shown as `/model` radios: `○ Low   ● Medium   ○ High`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffortLevel {
+    Low,
+    Medium,
+    High,
+}
+
+impl EffortLevel {
+    /// Parse a stored budget label. Unknown / empty values are Medium.
+    pub fn parse(value: Option<&str>) -> Self {
+        match value
+            .unwrap_or("medium")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "low" => Self::Low,
+            "high" => Self::High,
+            _ => Self::Medium,
+        }
+    }
+
+    /// Product label stored on the session (`Low` / `Medium` / `High`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "Low",
+            Self::Medium => "Medium",
+            Self::High => "High",
+        }
+    }
+
+    /// Cycle Low → Medium → High → Low (Tab).
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Low => Self::Medium,
+            Self::Medium => Self::High,
+            Self::High => Self::Low,
+        }
+    }
+
+    /// Lock-board radio row: filled `●` on the current level.
+    pub fn radios_line(self) -> &'static str {
+        match self {
+            Self::Low => "● Low   ○ Medium   ○ High",
+            Self::Medium => "○ Low   ● Medium   ○ High",
+            Self::High => "○ Low   ○ Medium   ● High",
+        }
+    }
 }
 
 impl InteractiveState {
@@ -240,6 +294,20 @@ impl InteractiveState {
             active_tab: 0,
             hovered_tab: None,
             tab_click_zones: Vec::new(),
+            effort: None,
+        }
+    }
+
+    /// Show Low / Medium / High effort radios and bind Tab to cycling them.
+    pub fn with_effort(mut self, effort: EffortLevel) -> Self {
+        self.effort = Some(effort);
+        self
+    }
+
+    /// Advance the effort radio (Low → Medium → High → Low).
+    pub fn cycle_effort(&mut self) {
+        if let Some(current) = self.effort {
+            self.effort = Some(current.cycle());
         }
     }
 
@@ -802,5 +870,27 @@ mod tests {
         // select_prev should skip disabled (3) and go to Item 2 (2)
         state.select_prev();
         assert_eq!(state.selected, 2);
+    }
+
+    #[test]
+    fn effort_level_cycles_low_medium_high() {
+        assert_eq!(EffortLevel::parse(None), EffortLevel::Medium);
+        assert_eq!(EffortLevel::parse(Some("LOW")), EffortLevel::Low);
+        assert_eq!(EffortLevel::parse(Some("max")), EffortLevel::Medium);
+        assert_eq!(EffortLevel::Low.cycle(), EffortLevel::Medium);
+        assert_eq!(EffortLevel::Medium.cycle(), EffortLevel::High);
+        assert_eq!(EffortLevel::High.cycle(), EffortLevel::Low);
+        assert_eq!(
+            EffortLevel::Medium.radios_line(),
+            "○ Low   ● Medium   ○ High"
+        );
+        for level in [EffortLevel::Low, EffortLevel::Medium, EffortLevel::High] {
+            let line = level.radios_line();
+            assert!(!line.contains('★') && !line.contains("A★"), "{line}");
+        }
+        let mut state = InteractiveState::new("Model", Vec::new(), InteractiveAction::SetModel)
+            .with_effort(EffortLevel::Low);
+        state.cycle_effort();
+        assert_eq!(state.effort, Some(EffortLevel::Medium));
     }
 }

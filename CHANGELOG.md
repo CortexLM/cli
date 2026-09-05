@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Changed
+- `/model` shows Effort radios **Low | Medium | High**; **Tab** cycles them. `/effort` opens that same picker (no A★ / standalone effort list).
 - The TUI enters the **alternate screen** by default (`alternate_screen` always). Interactive launch takes the full viewport. Opt out with `cortex --no-alternate-screen` or `[tui] alternate_screen = false` to stay inline.
 - Empty-session splash is `Welcome to Cortex, the coding agent CLI` plus `v{package version} · / commands · @ files · ! shell · & cloud`. After the first user turn the splash is dropped (composer + footer only). No mascot, no painted `> cortex` shell lines.
 - Composer lock: empty is `> ` + white block at input col 0 + dim `Plan, search, build anything` after that cell (never a white rect after the placeholder). Blink-off (~530ms) hides the block so the placeholder starts at col 0. Typed copy is `#F5F5F5` with the block at the caret.

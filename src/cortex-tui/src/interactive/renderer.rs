@@ -88,7 +88,10 @@ impl<'a> InteractiveWidget<'a> {
             0
         };
         let hints_height = 1;
-        let items_height = inner.height.saturating_sub(search_height + hints_height);
+        let effort_height = if state.effort.is_some() { 2 } else { 0 };
+        let items_height = inner
+            .height
+            .saturating_sub(search_height + hints_height + effort_height);
 
         let items_y = inner.y + search_height;
         let items_area = Rect::new(inner.x, items_y, inner.width, items_height);
@@ -135,8 +138,9 @@ impl<'a> InteractiveWidget<'a> {
             0
         };
         let hints_height = 1;
+        let effort_height = if self.state.effort.is_some() { 2 } else { 0 };
 
-        (items_count as u16) + header_height + search_height + hints_height
+        (items_count as u16) + header_height + search_height + hints_height + effort_height
     }
 }
 
@@ -202,12 +206,16 @@ impl<'a> Widget for InteractiveWidget<'a> {
             return;
         }
 
-        // Layout: search (optional, framed by two hairlines) + items + hints
+        // Layout: search (optional, framed by two hairlines) + items +
+        // optional Effort radios + hints
         let mut constraints = Vec::new();
         if self.state.searchable {
             constraints.push(Constraint::Length(SEARCH_FIELD_ROWS));
         }
         constraints.push(Constraint::Min(1)); // Items
+        if self.state.effort.is_some() {
+            constraints.push(Constraint::Length(2)); // Effort title + radios
+        }
         constraints.push(Constraint::Length(1)); // Hints
 
         let chunks = Layout::vertical(constraints).split(inner);
@@ -226,6 +234,12 @@ impl<'a> Widget for InteractiveWidget<'a> {
         chunk_idx += 1;
 
         self.render_items(items_area, buf);
+
+        if self.state.effort.is_some() {
+            let effort_area = chunks[chunk_idx];
+            chunk_idx += 1;
+            self.render_effort_radios(effort_area, buf);
+        }
 
         // Render hints
         let hints_area = chunks[chunk_idx];
@@ -445,6 +459,30 @@ impl<'a> InteractiveWidget<'a> {
                     buf.set_string(desc_x, area.y, &desc_text, desc_style);
                 }
             }
+        }
+    }
+
+    /// Paint `Effort` plus `○ Low   ● Medium   ○ High`. No A★ / star picker.
+    fn render_effort_radios(&self, area: Rect, buf: &mut Buffer) {
+        let Some(effort) = self.state.effort else {
+            return;
+        };
+        if area.height < 1 {
+            return;
+        }
+        buf.set_string(
+            area.x,
+            area.y,
+            "Effort",
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        );
+        if area.height >= 2 {
+            buf.set_string(
+                area.x,
+                area.y + 1,
+                effort.radios_line(),
+                Style::default().fg(TEXT),
+            );
         }
     }
 
@@ -715,5 +753,37 @@ mod tests {
         // Hints in the locked format.
         assert!(rows[7].contains("↑↓ select · ↵ confirm"), "{text}");
         assert!(rows[7].contains("esc close"), "{text}");
+    }
+
+    #[test]
+    fn model_picker_paints_effort_radios_and_tab_hint() {
+        let items = vec![
+            InteractiveItem::new("mini", "Cortex Mini 1")
+                .with_description("Fast default for everyday coding."),
+            InteractiveItem::new("one", "Cortex 1")
+                .with_description("Deeper reasoning for hard changes."),
+        ];
+        let state = InteractiveState::new("Model", items, InteractiveAction::SetModel)
+            .with_search()
+            .with_effort(crate::interactive::EffortLevel::Medium)
+            .with_hints(vec![
+                ("↑↓".into(), "select".into()),
+                ("↵".into(), "confirm".into()),
+                ("tab".into(), "effort".into()),
+                ("esc".into(), "close".into()),
+            ]);
+        let widget = InteractiveWidget::new(&state);
+        let area = Rect::new(0, 0, 72, 12);
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+        let text = buffer_text(&buf);
+
+        assert!(text.contains("Effort"), "{text}");
+        assert!(text.contains("○ Low   ● Medium   ○ High"), "{text}");
+        assert!(text.contains("tab effort"), "{text}");
+        assert!(
+            !text.contains('★') && !text.contains("A★") && !text.contains("/effort"),
+            "model picker must not be an A★ /effort picker:\n{text}"
+        );
     }
 }

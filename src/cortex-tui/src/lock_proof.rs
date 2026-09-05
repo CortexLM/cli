@@ -2,7 +2,8 @@
 //!
 //! Renders the real session, login, palette, and settings widgets through
 //! [`cortex_tui_capture::MockTerminal`] and writes ANSI frames a rasteriser
-//! turns into PNGs.
+//! turns into PNGs. Frames are full-viewport (40×12 and 120×40), matching
+//! the default alternate-screen launch — no fake `> cortex` / cwd chrome.
 
 use std::path::{Path, PathBuf};
 
@@ -2297,6 +2298,11 @@ mod tests {
                 );
             }
             assert!(!frame.plain.contains("▄█▀▀▀▀█▄"), "{}", frame.plain);
+            assert!(
+                !frame.plain.contains("> cortex"),
+                "splash must not paint a fake shell prompt at {size:?}:\n{}",
+                frame.plain
+            );
             assert_no_junk(&frame.plain);
         }
         let wide = render_lock_scene("splash", 120, 40).expect("splash wide");

@@ -109,12 +109,20 @@ async fn run_tui(args: InteractiveArgs) -> Result<()> {
             .as_ref()
             .map(|m| resolve_model_alias(m).to_string()),
         cwd: args.cwd.clone(),
-        alternate_screen: args.alternate_screen.then_some(true),
+        alternate_screen: if args.no_alternate_screen {
+            Some(false)
+        } else if args.alternate_screen {
+            Some(true)
+        } else {
+            None
+        },
         ..Default::default()
     })
     .unwrap_or_else(|_| cortex_engine::Config::default());
 
-    if args.alternate_screen {
+    if args.no_alternate_screen {
+        config.alternate_screen = false;
+    } else if args.alternate_screen {
         config.alternate_screen = true;
     }
 

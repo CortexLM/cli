@@ -32,7 +32,8 @@ A positional prompt seeds that session. Without a terminal, use
 | `--add-dir <DIR>` | Extra writable directory; repeatable |
 | `-i`, `--image <PATH>` | Attach an image to the initial prompt |
 | `--search` | Enable web search |
-| `--alternate-screen` | Opt in to the alternate screen buffer. Default is inline (`never`): the host shell prompt stays visible above the app. Same as `[tui] alternate_screen = true`. |
+| `--alternate-screen` | Enter the alternate screen buffer. Default is always (`true`): Cortex takes the full viewport. Same as `[tui] alternate_screen = true`. |
+| `--no-alternate-screen` | Stay inline in the host terminal. Same as `[tui] alternate_screen = false`. |
 | `--max-agent-threads <N>` | Concurrent agent threads |
 | `--max-tool-threads <N>` | Concurrent tool executions |
 | `--command-timeout <SECONDS>` | Shell command timeout |

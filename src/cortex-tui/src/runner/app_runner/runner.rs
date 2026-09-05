@@ -79,9 +79,9 @@ impl AppRunner {
 
     /// Create a new app runner with the given configuration.
     ///
-    /// The TUI starts **inline** (never alternate screen) so the host shell
-    /// prompt stays visible above the app. Set `tui.alternate_screen = true`
-    /// to opt in to the alternate screen buffer.
+    /// The TUI starts on the **alternate screen** (always) so the session
+    /// takes the full viewport. Set `tui.alternate_screen = false` or pass
+    /// `--no-alternate-screen` to stay inline.
     ///
     /// # Arguments
     ///
@@ -96,8 +96,6 @@ impl AppRunner {
     pub fn new(config: Config) -> Self {
         let terminal_options = if config.alternate_screen {
             TerminalOptions::default()
-                .alternate_screen(true)
-                .clear_on_start(true)
         } else {
             TerminalOptions::inline()
         };
@@ -1054,19 +1052,19 @@ mod tests {
     fn test_app_runner_terminal_options() {
         let config = Config::default();
 
-        // Default: inline (never alternate screen)
+        // Default: alternate screen (always)
         let runner = AppRunner::new(config.clone());
         assert!(
-            !runner.terminal_options.alternate_screen,
-            "default must be inline (never alt-screen)"
+            runner.terminal_options.alternate_screen,
+            "default must enter the alternate screen (always)"
         );
-        assert!(!runner.terminal_options.clear_on_start);
-
-        let mut fullscreen = config.clone();
-        fullscreen.alternate_screen = true;
-        let runner = AppRunner::new(fullscreen);
-        assert!(runner.terminal_options.alternate_screen);
         assert!(runner.terminal_options.clear_on_start);
+
+        let mut inline = config.clone();
+        inline.alternate_screen = false;
+        let runner = AppRunner::new(inline);
+        assert!(!runner.terminal_options.alternate_screen);
+        assert!(!runner.terminal_options.clear_on_start);
 
         // Custom options
         let custom_options = TerminalOptions::new()

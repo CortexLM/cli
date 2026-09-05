@@ -39,7 +39,9 @@ word-level colour on a changed line.
 
 Splash copy in these frames is `Welcome to Cortex, the coding agent CLI`
 plus `v{CARGO_PKG_VERSION} · / commands · …`. After the first user turn,
-`session_empty` is composer and footer only.
+`session_empty` is composer and footer only. Captures are full-viewport
+(matching the default alternate-screen launch); they do not paint a fake
+`> cortex` prompt or cwd line.
 
 | File | Surface |
 |------|---------|

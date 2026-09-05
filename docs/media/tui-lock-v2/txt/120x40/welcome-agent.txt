@@ -1,0 +1,40 @@
+                                                                                                               0 / 500K
+
+   Welcome to Cortex Agent — describe a task, it does the work
+   v0.1.7  ·  / commands  ·  @ files  ·  ! shell  ·  & cloud
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Describe a task for the agent                                                                                    │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

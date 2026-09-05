@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > tell me about yourself                                                                                   12:49 AM
+
+   × The coding service is temporarily unavailable
+     Try again in a moment — your work so far is saved in this session.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Try again — your work so far is saved                                                                            │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:retry  |  Ctrl+x:shortcuts

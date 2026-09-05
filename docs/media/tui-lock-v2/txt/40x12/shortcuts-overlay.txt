@@ -1,0 +1,12 @@
+╭─ Shortcuts ──────────────────── [x] ─╮
+│                                      │
+│ Shift+Tab cycle Agent / Plan / Ask   │
+│ @         mention files              │
+│ !         bash mode                  │
+│ &         hand off to Cortex Cloud   │
+│ Ctrl+c    stop                       │
+│ F2        settings                   │
+│ Esc       interrupt / close          │
+│                                      │
+│           Ctrl+x/Esc close           │
+╰──────────────────────────────────────╯

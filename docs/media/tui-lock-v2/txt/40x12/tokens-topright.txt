@@ -1,0 +1,12 @@
+                            142K / 500K
+
+   > run the tui tests and fix whatev…
+
+   ♦ Thought for 2.1s
+
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

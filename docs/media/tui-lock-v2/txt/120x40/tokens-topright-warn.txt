@@ -1,0 +1,40 @@
+                                                                                                            462K / 500K
+
+   > run the tui tests and fix whatever fails                                                                 09:14 AM
+
+   ♦ Thought for 2.1s
+
+   ● Shell  $ cargo test -p cortex-tui · ✓ 0 · 41s
+   ● Read  src/cortex-tui/src/composer.rs · 212 lines
+   ● Grep  "alternate_screen" in src/ · 6 hits in 4 files
+
+   Context is 92% full — /compact summarizes the thread to free room.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

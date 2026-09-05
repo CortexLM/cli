@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > move the model chip into the composer border                                                             04:11 PM
+
+   ♦ Thought for 2.6s
+
+   ⠇ Working 2/5  ·  38s · 6.1k tokens
+     ✓ Read composer.rs and footer.rs
+     ✓ Locate the chip painter
+     › Move the chip into the bottom hairline
+     ○ Drop the model from the footer
+     ○ Run the TUI snapshot tests
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Add a follow-up — Enter to queue                                                                                 │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Esc:interrupt  |  Enter:queue follow-up  |  Ctrl+x:shortcuts

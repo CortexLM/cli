@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+                  ╭─ Shortcuts ──────────────────────────────────────────────────────────────── [x] ─╮
+   > hey          │                                                                                  │        12:49 AM
+                  │  Shift+Tab   cycle Agent / Plan / Ask    Ctrl+p       command palette            │
+   ♦ Thought for 0│  @           mention files               Ctrl+r       search past sessions       │
+                  │  !           bash mode                   Ctrl+c       stop the current turn      │
+   Hey — what do y│  &           hand off to Cortex Cloud    Esc          interrupt · close          │        12:49 AM
+                  │  /           slash commands              F2           settings                   │
+   Worked for 1.8s│  Alt+Enter   newline in the composer     PgUp / PgDn  scroll the transcript      │
+                  │  ↑ / ↓       edit last · browse history  Ctrl+x       this overlay               │
+   > tell me about│                                                                                  │        12:49 AM
+                  │ ──────────────────────────────────────────────────────────────────────────────── │
+   ♦ Thought for 0│            Docs & guides: cortex.foundation/docs · Cortex CLI v0.1.7             │
+                  │                                 Ctrl+x/Esc close                                 │
+   I'm Cortex, a c╰──────────────────────────────────────────────────────────────────────────────────╯        12:49 AM
+
+   I mostly help you build and debug software: code, architecture, debugging, reviews, docs, and a bit of research.
+   Here I run in an interactive terminal, so I can read your files, run commands, and change the project.
+
+   In practice:
+   • I get straight to the point
+   • I prefer concrete work over long explanations
+   • I can also discuss, explain, or help you plan
+
+   Tell me what you'd like to do.
+
+   Worked for 4.6s
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

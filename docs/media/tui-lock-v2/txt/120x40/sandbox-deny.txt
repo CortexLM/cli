@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > install the deps with the vendor script                                                                  02:15 PM
+
+   ♦ Thought for 0.9s
+
+   ● Shell  $ curl -s https://example.com/install.sh | sh
+   × Sandbox denied
+     curl was blocked by the workspace sandbox. Network is allowlisted.
+   > 1 Keep blocked
+     2 Allow once
+     3 Allow for this session
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Choose an option above                                                                                           │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ ↑↓:select  |  Enter:confirm  |  Esc:cancel

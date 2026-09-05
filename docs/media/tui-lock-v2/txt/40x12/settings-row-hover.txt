@@ -1,0 +1,12 @@
+╭─ Settings ───────────────────── [x] ─╮
+│ / to search                          │
+│ ──────────────────────────────────── │
+│ Appearance ───────────────────────── │
+│  ▸ Compact mode                 off  │
+│  ▸ Default screen mode            >  │
+│  ▸ Show timestamps               on  │
+│  ▸ Show thinking blocks          on  │
+│  ▸ Group tool calls              on  │
+│   ↑↓ nav | Space toggle | / search   │
+│             F2/Esc close             │
+╰──────────────────────────────────────╯

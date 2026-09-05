@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > why does the composer lose focus after /model?                                                           10:02 AM
+
+   ♦ Thought for 3.2s
+
+   The picker steals focus and never hands it back. `close_picker()` returns early when the effort radios     10:02 AM
+   are open.
+
+   Worked for 6.0s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

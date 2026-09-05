@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > why do tests fail on the composer?                                                                       09:14 AM
+
+   ♦ Thought for 2.1s
+
+   ▸ 3 tool calls  Read ×2 · Grep ×1
+   ● Shell  $ cargo test -p cortex-tui composer · × 101 · 12s
+
+   The chip is painted before the model name resolves, so the border shows an empty label on the first        09:15 AM
+   frame.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

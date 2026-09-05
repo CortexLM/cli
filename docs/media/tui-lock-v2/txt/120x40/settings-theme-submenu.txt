@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+            ╭─ Settings ───────────────────────────────────────────────────────────────────────────── [x] ─╮
+   > hey    │ Appearance › Theme                                                                           │  12:49 AM
+            │ ──────────────────────────────────────────────────────────────────────────────────────────── │
+   ♦ Thought│                                                                                              │
+            │  ● Cortex Night   Default inky chrome · violet on focus only                        current  │
+   Hey — wha│  ○ Cortex Day     Light chrome for bright rooms                                              │  12:49 AM
+            │  ○ Ocean Dark     Deep blue and cyan accents                                                 │
+   Worked fo│  ○ Monokai        Classic code-editor colors                                                 │
+            │                                                                                              │
+   > tell me│                                                                                              │  12:49 AM
+            │                                                                                              │
+   ♦ Thought│                                                                                              │
+            │                                                                                              │
+   I'm Corte│                                                                                              │  12:49 AM
+            │                                                                                              │
+   I mostly │                                                                                              │search.
+   Here I ru│                                                                                              │
+            │                                                                                              │
+   In practi│                                                                                              │
+   • I get s│                                                                                              │
+   • I prefe│                                                                                              │
+   • I can a│                                                                                              │
+            │                                                                                              │
+   Tell me w│                                                                                              │
+            │                                                                                              │
+   Worked fo│                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+            │                                                                                              │
+ ╭─ Agent ──│                  Themes never change the accent rule: violet on focus only.                  │──────────╮
+ │ > Plan, s│                        ↑/↓/j/k nav | Enter select | ← back | d reset                         │          │
+ ╰──────────│                                         F2/Esc close                                         │(medium) ─╯
+            ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

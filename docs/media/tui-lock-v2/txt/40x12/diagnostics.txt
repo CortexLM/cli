@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   > wire the model chip into the com…
+
+   ♦ Thought for 2.6s
+
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

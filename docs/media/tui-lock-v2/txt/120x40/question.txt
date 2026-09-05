@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > add retry with backoff to the api client                                                                 11:20 AM
+
+   ♦ Thought for 1.9s
+
+   ● Which failures should be retried?
+   > 1 Timeouts and 5xx only (recommended)
+     2 Every network error
+     3 Let me decide per call site
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Choose an option above, or type your own answer                                                                  │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ ↑↓:select  |  Enter:answer  |  Esc:skip

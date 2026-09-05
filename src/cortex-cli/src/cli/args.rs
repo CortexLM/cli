@@ -1229,13 +1229,17 @@ mod tests {
 
     #[test]
     fn test_cli_alternate_screen_conflicts_with_no_alternate_screen() {
-        let err = Cli::try_parse_from(["cortex", "--alternate-screen", "--no-alternate-screen"])
-            .expect_err("flags conflict");
-        let rendered = err.to_string();
-        assert!(
-            rendered.contains("cannot be used with") || rendered.contains("conflict"),
-            "unexpected clap error: {rendered}"
-        );
+        let result = Cli::try_parse_from(["cortex", "--alternate-screen", "--no-alternate-screen"]);
+        match result {
+            Err(err) => {
+                let rendered = err.to_string();
+                assert!(
+                    rendered.contains("cannot be used with") || rendered.contains("conflict"),
+                    "unexpected clap error: {rendered}"
+                );
+            }
+            Ok(_) => panic!("--alternate-screen and --no-alternate-screen must conflict"),
+        }
     }
 
     #[test]

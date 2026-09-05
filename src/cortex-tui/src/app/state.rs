@@ -254,6 +254,31 @@ pub struct AppState {
     pub update_info: Option<cortex_update::UpdateInfo>,
     /// Agent quota is exhausted — follow-ups stay in the composer until it resets.
     pub quota_held: bool,
+    /// Launched via the `agent` binary / alias.
+    pub agent_entrypoint: bool,
+    /// Token counter used / window.
+    pub tokens_used: u64,
+    pub context_window: u64,
+    /// Composer box hovered.
+    pub composer_hovered: bool,
+    /// Footer shortcut chunk under the mouse.
+    pub footer_hover: Option<usize>,
+    /// Settings modal (F2 / `/settings`).
+    pub settings_modal: Option<crate::widgets::SettingsModalState>,
+    /// Ctrl+x shortcuts overlay.
+    pub shortcuts_open: bool,
+    /// Show the Help improve Cortex banner.
+    pub opt_in_banner: bool,
+    /// Hovered opt-in button: 0 = Opt out, 1 = Opt in.
+    pub opt_in_hover: Option<u8>,
+    pub show_thinking_blocks: bool,
+    pub group_tool_calls: bool,
+    pub collapsed_edit_blocks: bool,
+    pub mouse_capture: bool,
+    pub scroll_lines: u16,
+    pub invert_scroll: bool,
+    pub copy_on_select: bool,
+    pub notifications_enabled: bool,
 }
 
 impl AppState {
@@ -339,7 +364,7 @@ impl AppState {
             max_tokens: None,
             command_history: Vec::new(),
             // Extended settings with sensible defaults
-            timestamps_enabled: false,
+            timestamps_enabled: true,
             line_numbers_enabled: true,
             word_wrap_enabled: true,
             syntax_highlight_enabled: true,
@@ -367,6 +392,23 @@ impl AppState {
             update_status: UpdateStatus::default(),
             update_info: None,
             quota_held: false,
+            agent_entrypoint: false,
+            tokens_used: 0,
+            context_window: 500_000,
+            composer_hovered: false,
+            footer_hover: None,
+            settings_modal: None,
+            shortcuts_open: false,
+            opt_in_banner: false,
+            opt_in_hover: None,
+            show_thinking_blocks: true,
+            group_tool_calls: true,
+            collapsed_edit_blocks: false,
+            mouse_capture: true,
+            scroll_lines: 3,
+            invert_scroll: false,
+            copy_on_select: false,
+            notifications_enabled: false,
         }
     }
 
@@ -519,6 +561,10 @@ impl AppState {
         if message.role == cortex_core::widgets::MessageRole::User {
             self.show_launch_splash = false;
         }
+        let mut message = message;
+        if self.timestamps_enabled && message.timestamp.is_none() {
+            message.timestamp = Some(crate::ui::chrome::now_clock_12h());
+        }
         self.messages.push(message);
         if self.chat_scroll_pinned_bottom {
             self.scroll_chat_to_bottom();
@@ -562,6 +608,110 @@ impl AppState {
     /// Get number of queued messages
     pub fn queued_count(&self) -> usize {
         self.message_queue.len()
+    }
+
+    /// Apply `[tui]` config keys (SPEC §9).
+    pub fn apply_tui_config(&mut self, tui: &cortex_engine::config::TuiConfig) {
+        self.compact_mode = tui.compact_mode;
+        self.timestamps_enabled = tui.timestamps;
+        self.show_thinking_blocks = tui.show_thinking_blocks;
+        self.group_tool_calls = tui.group_tool_calls;
+        self.collapsed_edit_blocks = tui.collapsed_edit_blocks;
+        self.line_numbers_enabled = tui.line_numbers;
+        self.word_wrap_enabled = tui.word_wrap;
+        self.syntax_highlight_enabled = tui.syntax_highlight;
+        self.mouse_capture = tui.mouse.capture;
+        self.scroll_lines = tui.mouse.scroll_lines;
+        self.invert_scroll = tui.mouse.invert_scroll;
+        self.copy_on_select = tui.mouse.copy_on_select;
+        self.notifications_enabled = tui.notifications.enabled;
+        self.opt_in_banner = !tui.opt_in_banner_dismissed;
+        if !tui.theme.name.is_empty() {
+            self.active_theme = tui.theme.name.clone();
+        }
+    }
+
+    /// Snapshot for the Settings modal.
+    pub fn settings_values(&self) -> crate::widgets::SettingsValues {
+        crate::widgets::SettingsValues {
+            compact_mode: self.compact_mode,
+            alternate_screen: true,
+            timestamps: self.timestamps_enabled,
+            show_thinking_blocks: self.show_thinking_blocks,
+            group_tool_calls: self.group_tool_calls,
+            collapsed_edit_blocks: self.collapsed_edit_blocks,
+            line_numbers: self.line_numbers_enabled,
+            word_wrap: self.word_wrap_enabled,
+            syntax_highlight: self.syntax_highlight_enabled,
+            animations: true,
+            theme: self.active_theme.clone(),
+            mouse_capture: self.mouse_capture,
+            scroll_lines: self.scroll_lines,
+            invert_scroll: self.invert_scroll,
+            copy_on_select: self.copy_on_select,
+            auto_approve: matches!(
+                self.permission_mode,
+                crate::permissions::PermissionMode::Yolo
+            ),
+            sandbox_mode: self.sandbox_mode,
+            streaming: self.streaming_enabled,
+            auto_scroll: self.auto_scroll_enabled,
+            sound: self.sound_enabled,
+            notifications: self.notifications_enabled,
+            thinking_mode: self.thinking_budget.is_some(),
+            context_aware: self.context_aware_enabled,
+            debug_mode: self.debug_mode,
+            co_author: self.co_author_enabled,
+            auto_commit: self.auto_commit_enabled,
+            sign_commits: self.sign_commits_enabled,
+            cloud_sync: self.cloud_sync_enabled,
+            auto_save: self.auto_save_enabled,
+            session_history: self.session_history_enabled,
+            telemetry: self.telemetry_enabled,
+            analytics: self.analytics_enabled,
+        }
+    }
+
+    /// Open the categorised Settings modal (F2 / `/settings`).
+    pub fn open_settings_modal(&mut self) {
+        let mut modal = crate::widgets::SettingsModalState::default();
+        modal.values = self.settings_values();
+        self.settings_modal = Some(modal);
+        self.shortcuts_open = false;
+    }
+
+    /// Copy modal values back onto the session.
+    pub fn apply_settings_values(&mut self, v: &crate::widgets::SettingsValues) {
+        self.compact_mode = v.compact_mode;
+        self.timestamps_enabled = v.timestamps;
+        self.show_thinking_blocks = v.show_thinking_blocks;
+        self.group_tool_calls = v.group_tool_calls;
+        self.collapsed_edit_blocks = v.collapsed_edit_blocks;
+        self.line_numbers_enabled = v.line_numbers;
+        self.word_wrap_enabled = v.word_wrap;
+        self.syntax_highlight_enabled = v.syntax_highlight;
+        self.mouse_capture = v.mouse_capture;
+        self.scroll_lines = v.scroll_lines;
+        self.invert_scroll = v.invert_scroll;
+        self.copy_on_select = v.copy_on_select;
+        self.sandbox_mode = v.sandbox_mode;
+        self.streaming_enabled = v.streaming;
+        self.auto_scroll_enabled = v.auto_scroll;
+        self.sound_enabled = v.sound;
+        self.notifications_enabled = v.notifications;
+        self.context_aware_enabled = v.context_aware;
+        self.debug_mode = v.debug_mode;
+        self.co_author_enabled = v.co_author;
+        self.auto_commit_enabled = v.auto_commit;
+        self.sign_commits_enabled = v.sign_commits;
+        self.cloud_sync_enabled = v.cloud_sync;
+        self.auto_save_enabled = v.auto_save;
+        self.session_history_enabled = v.session_history;
+        self.telemetry_enabled = v.telemetry;
+        self.analytics_enabled = v.analytics;
+        if v.theme != self.active_theme {
+            self.set_theme(&v.theme);
+        }
     }
 
     /// Check if there are queued messages

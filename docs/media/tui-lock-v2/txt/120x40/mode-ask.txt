@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > where is the alternate-screen default decided?                                                           11:31 AM
+
+   ♦ Thought for 1.1s
+
+   `TuiConfig::default()` in `src/cortex-engine/src/config/types.rs` sets `alternate_screen: true`; the       11:31 AM
+   launcher reads it before entering the viewport.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Ask · read-only ──────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Ask about the codebase — read-only                                                                               │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

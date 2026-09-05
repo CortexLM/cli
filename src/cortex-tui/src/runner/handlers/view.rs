@@ -1,7 +1,5 @@
 //! View management handlers.
 
-use crate::app::AppView;
-
 use anyhow::Result;
 
 use super::ActionHandler;
@@ -15,7 +13,7 @@ impl<'a> ActionHandler<'a> {
 
     /// Handle settings action - show settings view.
     pub(crate) fn handle_settings(&mut self) -> Result<bool> {
-        self.state.set_view(AppView::Settings);
+        self.state.open_settings_modal();
         Ok(true)
     }
 

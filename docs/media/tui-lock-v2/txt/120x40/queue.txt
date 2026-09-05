@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > run the tui tests and fix whatever fails                                                                 09:14 AM
+
+   ♦ Thought for 2.1s
+
+   ⠇ Shell  $ cargo test -p cortex-tui · running · 8s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   Queued · 2 — sent when the current step finishes
+     1  also update the README screenshots
+     2  run the full test suite before you finish
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Add a follow-up — Enter to queue                                                                                 │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:queue  |  ↑:edit queued  |  Ctrl+c:stop  |  Ctrl+x:shortcuts

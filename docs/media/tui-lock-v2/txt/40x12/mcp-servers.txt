@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   MCP servers · 2 of 4 connected
+
+   > ✓ github       12 tools · connec…
+     ✓ filesystem   8 tools · connect…
+     ⠇ linear       authenticating…
+ ╭─ Agent ────────────────────────────╮
+ │ > /mcp                             │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:details | Esc:close

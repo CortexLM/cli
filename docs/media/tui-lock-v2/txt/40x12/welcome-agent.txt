@@ -1,0 +1,12 @@
+                               0 / 500K
+
+   Welcome to Cortex Agent
+   v0.1.7  ·  / commands  ·  @ files
+
+
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Describe a task for the agent    │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

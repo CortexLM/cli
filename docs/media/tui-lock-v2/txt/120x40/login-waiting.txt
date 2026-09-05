@@ -1,0 +1,40 @@
+
+  Welcome to Cortex CLI!
+
+  ⠇ Waiting for browser authentication…
+
+  Your code  WXYZ-1234
+  If the browser didn't open, visit cortex.foundation/cli/auth and enter the code.
+
+ Esc:cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -539,6 +539,9 @@ impl AppRunner {
             .with_provider(provider.clone())
             .with_terminal_size(width, height);
 
+        app_state.apply_tui_config(&self.config.tui);
+        app_state.agent_entrypoint = launched_as_agent();
+
         // Set user info from pre-fetched data
         app_state.user_name = user_name;
         app_state.user_email = user_email;
@@ -1015,6 +1018,13 @@ impl AppRunner {
             }
         }
     }
+}
+
+fn launched_as_agent() -> bool {
+    std::env::args_os()
+        .next()
+        .and_then(|a| std::path::Path::new(&a).file_stem().map(|s| s == "agent"))
+        .unwrap_or(false)
 }
 
 // ============================================================================

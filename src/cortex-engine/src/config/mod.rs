@@ -81,6 +81,8 @@ pub struct Config {
     pub animations: bool,
     /// Enter the alternate screen buffer. Default is always (`true`).
     pub alternate_screen: bool,
+    /// Full TUI settings (appearance, mouse, theme, banner).
+    pub tui: TuiConfig,
     /// Current agent profile.
     pub current_agent: Option<String>,
     /// Granular permission configuration.
@@ -122,6 +124,7 @@ impl Default for Config {
             disable_paste_burst: false,
             animations: true,
             alternate_screen: true,
+            tui: TuiConfig::default(),
             current_agent: None,
             permission: PermissionConfig::default(),
             small_model: None, // Auto-detected based on available providers
@@ -248,6 +251,7 @@ impl Config {
                     .map(|t| t.alternate_screen)
                     .unwrap_or_else(|| TuiConfig::default().alternate_screen)
             }),
+            tui: toml.tui.clone().unwrap_or_default(),
             current_agent: toml.current_agent,
             permission: toml.permission,
             small_model: toml.small_model,

@@ -11,8 +11,11 @@ use super::rendering::{
 };
 use crate::app::AppState;
 use crate::commands::PALETTE_HOME_LIMIT;
+use crate::ui::chrome::{
+    FooterSet, composer_caret_style, composer_inner, fill_inky, model_chip, paint_composer_box,
+    paint_footer, paint_token_counter,
+};
 use crate::ui::colors::AdaptiveColors;
-use crate::widgets::{HintContext, KeyHints, StatusIndicator};
 use cortex_core::style::{ACCENT, TEXT, TEXT_BRIGHT, TEXT_DIM};
 
 // Re-export for convenience
@@ -28,7 +31,7 @@ pub const BLOCK_CURSOR: char = '█';
 pub const PLACEHOLDER_IDLE: &str = "Plan, search, build anything";
 /// Composer placeholder while a run is live — stdin stays alive and a
 /// submitted follow-up is queued.
-pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up ↵ to queue";
+pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up — Enter to queue";
 
 /// Paint the composer input row (after `> `) to the lock:
 /// empty = block cursor at input col 0, dim placeholder after that cell;
@@ -42,16 +45,12 @@ pub fn paint_composer_contents(
     caret: usize,
     caret_visible: bool,
     placeholder: Option<&str>,
+    focused: bool,
 ) {
     if width == 0 {
         return;
     }
-    buf.set_string(
-        x,
-        y,
-        "> ",
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-    );
+    buf.set_string(x, y, "> ", composer_caret_style(focused));
     if width < 3 {
         return;
     }
@@ -83,8 +82,14 @@ pub fn paint_composer_contents(
     let shown = crate::ui::text_utils::first_fitting_line(input, budget.saturating_sub(1));
     let chars: Vec<char> = shown.chars().collect();
     let caret = caret.min(chars.len());
+    let slash_end = if shown.starts_with('/') {
+        shown.find(' ').unwrap_or(shown.len())
+    } else {
+        0
+    };
     let mut col = col0;
     for (i, ch) in chars.iter().enumerate() {
+        let fg = if i < slash_end { ACCENT } else { TEXT };
         if caret_visible && i == caret {
             buf.set_string(
                 col,
@@ -93,7 +98,7 @@ pub fn paint_composer_contents(
                 Style::default().fg(TEXT_BRIGHT),
             );
         } else {
-            buf.set_string(col, y, ch.to_string(), Style::default().fg(TEXT));
+            buf.set_string(col, y, ch.to_string(), Style::default().fg(fg));
         }
         col = col.saturating_add(1);
         if col >= x + width {
@@ -227,6 +232,7 @@ impl<'a> MinimalSessionView<'a> {
     }
 
     /// Paints one full-width hairline on row `y`.
+    #[allow(dead_code)]
     fn hairline(&self, area: Rect, y: u16, buf: &mut Buffer) {
         if y >= area.bottom() {
             return;
@@ -235,27 +241,41 @@ impl<'a> MinimalSessionView<'a> {
         buf.set_string(area.x, y, rule, Style::default().fg(self.colors.border));
     }
 
-    /// Renders the composer: hairline, `> ` prompt, hairline. `area` is
-    /// `COMPOSER_ROWS` tall.
+    /// Renders the composer: rounded dual-hairline box with mode + model chips.
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() || area.height < COMPOSER_ROWS {
             return;
         }
 
-        self.hairline(area, area.y, buf);
-        self.hairline(area, area.y + 2, buf);
+        let focused = self.app_state.settings_modal.is_none() && !self.app_state.shortcuts_open;
+        let effort = self
+            .app_state
+            .thinking_budget
+            .as_deref()
+            .unwrap_or("medium");
+        let chip = model_chip(&self.app_state.model, Some(effort));
+        paint_composer_box(
+            area,
+            buf,
+            &self.app_state.agent_mode_label,
+            &chip,
+            self.app_state.composer_hovered,
+            focused,
+        );
 
-        let content_y = area.y + 1;
-        let content_width = area.width.max(1);
-        let input_text = self.app_state.input.text();
+        let inner = composer_inner(area);
+        if inner.width == 0 {
+            return;
+        }
+        let content_y = inner.y;
+        let input_text = composer_display_text(self.app_state);
 
-        // The pending badge sits at the right edge of the prompt row.
         let queue_count = self.app_state.queued_count();
         let mut badge_cols = 0u16;
         if queue_count > 0 {
             let indicator = format!("[{} pending]", queue_count);
-            let indicator_x = area.right().saturating_sub(indicator.len() as u16);
-            if indicator_x > area.x + 4 {
+            let indicator_x = inner.right().saturating_sub(indicator.len() as u16);
+            if indicator_x > inner.x + 4 {
                 buf.set_string(
                     indicator_x,
                     content_y,
@@ -265,12 +285,18 @@ impl<'a> MinimalSessionView<'a> {
                 badge_cols = indicator.len() as u16 + 1;
             }
         }
-        let text_budget = content_width.saturating_sub(2 + badge_cols);
+        let text_budget = inner.width.saturating_sub(badge_cols);
         let placeholder = if input_text.is_empty() {
             Some(if self.app_state.quota_held {
                 crate::ui::consts::PLACEHOLDER_QUOTA
             } else if self.is_task_running() {
                 PLACEHOLDER_RUNNING
+            } else if self.app_state.agent_entrypoint {
+                "Describe a task for the agent"
+            } else if self.app_state.agent_mode_label == "Ask" {
+                "Ask about the codebase — read-only"
+            } else if self.app_state.agent_mode_label == "Plan" {
+                "Describe what you want — Cortex drafts a plan first"
             } else {
                 PLACEHOLDER_IDLE
             })
@@ -284,13 +310,14 @@ impl<'a> MinimalSessionView<'a> {
         };
         paint_composer_contents(
             buf,
-            area.x,
+            inner.x,
             content_y,
             text_budget,
             &input_text,
             caret,
             self.app_state.caret_visible,
             placeholder,
+            focused,
         );
     }
 
@@ -318,6 +345,7 @@ impl<'a> MinimalSessionView<'a> {
     }
 
     /// Returns the status header text based on current state.
+    #[allow(dead_code)]
     fn status_header(&self) -> String {
         // Check for delegation/subagent first (highest priority)
         if self.app_state.streaming.is_delegating || self.app_state.has_active_subagents() {
@@ -341,12 +369,11 @@ impl<'a> MinimalSessionView<'a> {
         }
     }
 
-    /// Renders autocomplete suggestions inline below the composer.
+    /// Renders autocomplete suggestions inline above the composer.
     ///
-    /// The popup is frameless at every width: rows sit directly on the host
-    /// terminal background. The focused row is the dark gray selection bar
-    /// with a violet `>` and a violet label; every other row is a dim `·`, a
-    /// white label and a dim description.
+    /// Focused row: dark gray bar, violet `>` , label in text with matched
+    /// characters in violet. Hovered (not focused) row: `#1A1A1A` bar, no
+    /// violet. Trailer is muted.
     fn render_autocomplete_inline(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;
@@ -354,26 +381,32 @@ impl<'a> MinimalSessionView<'a> {
 
         let accent = self.colors.accent;
         let dim = self.colors.text_dim;
+        let muted = self.colors.text_muted;
         let text = self.colors.text;
         let bar = self.colors.selection;
+        let hover = self.colors.hover;
+        let compact = self.app_state.compact_mode || area.width < 40;
+        let indent = if compact { 0 } else { 3 };
 
-        // Calculate actual height based on items (top stays fixed, bottom varies)
-        let visible_items = self.app_state.autocomplete.visible_items();
-        let remaining = self
-            .app_state
-            .autocomplete
-            .items
-            .len()
-            .saturating_sub(self.app_state.autocomplete.scroll_offset + visible_items.len());
-        let more_rows = if remaining > 0 { 1_u16 } else { 0 };
+        let remaining = self.app_state.autocomplete.items.len().saturating_sub(
+            self.app_state.autocomplete.scroll_offset
+                + self.app_state.autocomplete.visible_items().len(),
+        );
+        let more_rows = if remaining > 0 && area.height > 1 {
+            1_u16
+        } else {
+            0
+        };
         let max_items = area.height.saturating_sub(more_rows).max(1) as usize;
+        let visible_items = self.app_state.autocomplete.visible_items();
         let drawn = visible_items.len().min(max_items);
 
         let inner_y = area.y;
+        let query = self.app_state.autocomplete.query.trim_start_matches('/');
 
         if visible_items.is_empty() {
             buf.set_string(
-                area.x,
+                area.x + indent,
                 inner_y,
                 "No matching commands",
                 Style::default().fg(dim),
@@ -381,7 +414,6 @@ impl<'a> MinimalSessionView<'a> {
             return;
         }
 
-        // Descriptions line up in one column after the widest label.
         let widest = visible_items
             .iter()
             .take(drawn)
@@ -395,44 +427,56 @@ impl<'a> MinimalSessionView<'a> {
                 break;
             }
 
-            let is_selected = self.app_state.autocomplete.scroll_offset + i
-                == self.app_state.autocomplete.selected;
-            if is_selected {
+            let idx = self.app_state.autocomplete.scroll_offset + i;
+            let is_selected = idx == self.app_state.autocomplete.selected;
+            let is_hovered = self.app_state.autocomplete.hovered == Some(idx) && !is_selected;
+            let row_bg = if is_selected {
+                Some(bar)
+            } else if is_hovered {
+                Some(hover)
+            } else {
+                None
+            };
+
+            if let Some(bg) = row_bg {
                 for dx in 0..area.width {
                     if let Some(cell) = buf.cell_mut((area.x + dx, y)) {
-                        cell.set_bg(bar);
-                        cell.set_fg(text);
+                        cell.set_bg(bg);
                     }
                 }
-                buf.set_string(area.x, y, "> ", Style::default().fg(accent).bg(bar));
-            } else {
-                buf.set_string(area.x, y, "· ", Style::default().fg(dim));
             }
 
-            let mut x = area.x + 2;
-            let label_style = if is_selected {
-                Style::default()
-                    .fg(accent)
-                    .bg(bar)
-                    .add_modifier(Modifier::BOLD)
+            let marker_x = area.x + indent;
+            if is_selected {
+                buf.set_string(marker_x, y, "> ", Style::default().fg(accent).bg(bar));
             } else {
-                Style::default().fg(text)
-            };
-            let label = crate::ui::text_utils::first_fitting_line(
+                let st = Style::default()
+                    .fg(dim)
+                    .bg(row_bg.unwrap_or(self.colors.background));
+                buf.set_string(marker_x, y, "  ", st);
+            }
+
+            let mut x = marker_x + 2;
+            paint_matched_label(
+                buf,
+                x,
+                y,
                 &item.label,
-                area.right().saturating_sub(x + 1) as usize,
+                query,
+                is_selected,
+                row_bg,
+                text,
+                accent,
             );
-            buf.set_string(x, y, &label, label_style);
-            x += (widest as u16).max(label.chars().count() as u16);
+            x += (widest as u16).max(item.label.chars().count() as u16);
 
             if !item.description.is_empty() {
-                let remaining = area.right().saturating_sub(x + 3) as usize;
-                let desc = crate::ui::text_utils::first_fitting_line(&item.description, remaining);
+                let remaining_w = area.right().saturating_sub(x + 3) as usize;
+                let desc =
+                    crate::ui::text_utils::first_fitting_line(&item.description, remaining_w);
                 if !desc.is_empty() {
-                    // Descriptions stay dim even on the selection bar; only
-                    // the `>` and the label are violet.
-                    let desc_style = if is_selected {
-                        Style::default().fg(dim).bg(bar)
+                    let desc_style = if let Some(bg) = row_bg {
+                        Style::default().fg(dim).bg(bg)
                     } else {
                         Style::default().fg(dim)
                     };
@@ -447,17 +491,51 @@ impl<'a> MinimalSessionView<'a> {
             .items
             .len()
             .saturating_sub(self.app_state.autocomplete.scroll_offset + drawn);
-        if remaining > 0 {
+        if remaining > 0 && more_rows > 0 {
             let y = inner_y + drawn as u16;
             if y < area.y + area.height {
-                let more = format!("{remaining} more — keep typing to filter");
+                let more = format!("… {remaining} more — keep typing to filter");
                 let line = crate::ui::text_utils::first_fitting_line(
                     &more,
-                    area.width.saturating_sub(2) as usize,
+                    area.width.saturating_sub(indent + 1) as usize,
                 );
-                buf.set_string(area.x, y, &line, Style::default().fg(dim));
+                buf.set_string(area.x + indent, y, &line, Style::default().fg(muted));
             }
         }
+    }
+}
+
+/// Paint a slash-command label, highlighting fuzzy-matched characters in accent.
+fn paint_matched_label(
+    buf: &mut Buffer,
+    x: u16,
+    y: u16,
+    label: &str,
+    query: &str,
+    selected: bool,
+    bg: Option<ratatui::style::Color>,
+    text: ratatui::style::Color,
+    accent: ratatui::style::Color,
+) {
+    let q: Vec<char> = query.chars().flat_map(|c| c.to_lowercase()).collect();
+    let mut qi = 0usize;
+    let mut col = x;
+    for ch in label.chars() {
+        let lower = ch.to_lowercase().next().unwrap_or(ch);
+        let matched = qi < q.len() && lower == q[qi];
+        if matched {
+            qi += 1;
+        }
+        let fg = if matched { accent } else { text };
+        let mut style = Style::default().fg(fg);
+        if selected {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        if let Some(bg) = bg {
+            style = style.bg(bg);
+        }
+        buf.set_string(col, y, ch.to_string(), style);
+        col = col.saturating_add(1);
     }
 }
 
@@ -467,98 +545,105 @@ impl<'a> Widget for MinimalSessionView<'a> {
             return;
         }
 
+        fill_inky(area, buf);
+
         let is_task_running = self.is_task_running();
         let footer_height: u16 = 1;
+        let blank_before_footer: u16 = 1;
         let footer_y = area.bottom().saturating_sub(footer_height);
+        let composer_bottom = footer_y.saturating_sub(blank_before_footer);
+        let composer_y = composer_bottom.saturating_sub(COMPOSER_ROWS);
+        let composer_area = Rect::new(area.x, composer_y, area.width, COMPOSER_ROWS);
 
-        // ---- bottom stack sizes -------------------------------------------
+        let warn_tokens = self.app_state.context_window > 0
+            && self.app_state.tokens_used * 100 / self.app_state.context_window.max(1) >= 90;
+        paint_token_counter(
+            area,
+            area.y,
+            buf,
+            self.app_state.tokens_used,
+            self.app_state.context_window,
+            warn_tokens,
+        );
+
         let autocomplete_visible = self.app_state.autocomplete.visible;
+        let palette_cap = if area.height >= 20 {
+            PALETTE_HOME_LIMIT
+        } else {
+            3
+        };
         let remaining_cmds = self.app_state.autocomplete.items.len().saturating_sub(
             self.app_state
                 .autocomplete
                 .visible_items()
                 .len()
-                .min(PALETTE_HOME_LIMIT),
+                .min(palette_cap),
         );
         let ac_items = if autocomplete_visible {
             self.app_state
                 .autocomplete
                 .visible_items()
                 .len()
-                .min(PALETTE_HOME_LIMIT)
+                .min(palette_cap)
                 .max(if self.app_state.autocomplete.has_items() {
                     0
                 } else {
                     1
                 })
-                + if remaining_cmds > 0 { 1 } else { 0 }
+                + if remaining_cmds > 0 && area.height >= 20 {
+                    1
+                } else {
+                    0
+                }
         } else {
             0
         };
-        let status_height: u16 = if is_task_running { 1 } else { 0 };
+
+        let interactive = self.app_state.is_interactive_mode();
+        let effort_focused = self
+            .app_state
+            .get_interactive_state()
+            .map(|s| s.effort_focused)
+            .unwrap_or(false);
+        let picker_height: u16 = if interactive {
+            if let Some(state) = self.app_state.get_interactive_state() {
+                if effort_focused {
+                    3
+                } else {
+                    let n = if state.filtered_indices.is_empty() {
+                        1
+                    } else {
+                        state.filtered_indices.len().min(state.max_visible).min(8)
+                    };
+                    n as u16
+                }
+            } else {
+                0
+            }
+        } else if autocomplete_visible {
+            ac_items as u16
+        } else {
+            0
+        };
+
+        let show_optin = self.app_state.opt_in_banner && !self.app_state.messages.is_empty();
+        let optin_height: u16 = if show_optin {
+            if area.height >= 20 { 5 } else { 3 }
+        } else {
+            0
+        };
         let show_update_banner = self.app_state.should_show_update_banner();
         let update_banner_height: u16 = if show_update_banner { 1 } else { 0 };
 
-        let rows_above_footer = footer_y.saturating_sub(area.y);
-        let fixed_stack = status_height + update_banner_height + COMPOSER_ROWS;
-        let max_ac_height = rows_above_footer.saturating_sub(fixed_stack.saturating_add(1));
-        let autocomplete_height: u16 = if autocomplete_visible {
-            (ac_items as u16).min(max_ac_height).max(1)
-        } else {
-            0
-        };
-
-        // ---- interactive pickers replace the composer --------------------
-        if self.app_state.is_interactive_mode() {
-            if let Some(state) = self.app_state.get_interactive_state() {
-                // Always leave rows for the empty-state copy and one for the
-                // search filter, so "no matches" is never a blank panel.
-                let items_count = if state.filtered_indices.is_empty() {
-                    2
-                } else {
-                    state.filtered_indices.len().min(state.max_visible)
-                };
-                let search_rows: u16 = if state.searchable { 3 } else { 0 };
-                let required_height = (items_count as u16) + 3 + search_rows;
-                let max_height = rows_above_footer.max(3);
-                let widget_height = required_height.min(max_height);
-                let interactive_y = footer_y.saturating_sub(widget_height);
-                let content_area = Rect::new(
-                    area.x,
-                    area.y,
-                    area.width,
-                    interactive_y.saturating_sub(area.y),
-                );
-                let lines = self.content_lines(area.width, area.height);
-                self.render_scrollable_content(content_area, buf, lines);
-                let interactive_area = Rect::new(area.x, interactive_y, area.width, widget_height);
-                let widget = crate::interactive::InteractiveWidget::new(state);
-                widget.render(interactive_area, buf);
-            }
-            self.render_footer(area, footer_y, buf, is_task_running);
-            return;
-        }
-
-        // ---- transcript, then the composer right under it ---------------
+        let stack_below_transcript = picker_height + optin_height + update_banner_height;
+        let transcript_bottom = composer_y.saturating_sub(stack_below_transcript);
+        let content_y = area.y.saturating_add(1); // row 0 is the token chip
+        let content_height = transcript_bottom.saturating_sub(content_y);
+        let content_area = Rect::new(area.x, content_y, area.width, content_height);
         let lines = self.content_lines(area.width, area.height);
-        let stack = fixed_stack + autocomplete_height;
-        let max_content = rows_above_footer.saturating_sub(stack);
-        let content_height = (lines.len() as u16).min(max_content);
-        let content_area = Rect::new(area.x, area.y, area.width, content_height);
         self.render_scrollable_content(content_area, buf, lines);
 
-        let mut next_y = area.y + content_height;
-
-        if is_task_running {
-            let status_area = Rect::new(area.x, next_y, area.width, status_height);
-            let header = self.status_header();
-            let elapsed = self.app_state.streaming.prompt_elapsed_seconds();
-            let status = StatusIndicator::new(header)
-                .with_elapsed_secs(elapsed)
-                .with_interrupt_hint(true);
-            status.render(status_area, buf);
-            next_y += status_height;
-        }
+        let mut next_y = content_y.saturating_add(content_height);
 
         if show_update_banner {
             let banner_area = Rect::new(area.x, next_y, area.width, update_banner_height);
@@ -571,55 +656,105 @@ impl<'a> Widget for MinimalSessionView<'a> {
             next_y += update_banner_height;
         }
 
-        let input_area = Rect::new(area.x, next_y, area.width, COMPOSER_ROWS);
-        self.render_input(input_area, buf);
-        next_y += COMPOSER_ROWS;
-
-        if autocomplete_visible {
-            let autocomplete_area = Rect::new(area.x, next_y, area.width, autocomplete_height);
-            self.render_autocomplete_inline(autocomplete_area, buf);
+        if show_optin {
+            crate::ui::chrome::paint_opt_in_banner(
+                Rect::new(area.x, next_y, area.width, optin_height),
+                buf,
+                self.app_state.opt_in_hover,
+                None,
+            );
+            next_y += optin_height;
         }
 
+        if picker_height > 0 {
+            let picker_area = Rect::new(area.x, next_y, area.width, picker_height);
+            if interactive {
+                if let Some(state) = self.app_state.get_interactive_state() {
+                    crate::interactive::InteractiveWidget::new(state)
+                        .rows_only()
+                        .render(picker_area, buf);
+                }
+            } else if autocomplete_visible {
+                self.render_autocomplete_inline(picker_area, buf);
+            }
+        }
+
+        self.render_input(composer_area, buf);
         self.render_footer(area, footer_y, buf, is_task_running);
+
+        if let Some(ref modal) = self.app_state.settings_modal {
+            crate::widgets::SettingsModal::new(modal).render(area, buf);
+        }
+        if self.app_state.shortcuts_open {
+            crate::widgets::ShortcutsOverlay::new(self.app_state.cli_version.clone())
+                .render(area, buf);
+        }
+
+        let _ = next_y;
     }
 }
 
 /// Footer hint while the slash palette is open, and its narrow form.
-pub const PALETTE_FOOTER_HINT: &str = "↑↓ select · ↵ run · tab complete · esc close";
-pub const PALETTE_FOOTER_HINT_SHORT: &str = "↵ run · esc close";
+pub const PALETTE_FOOTER_HINT: &str =
+    "Enter:send | Alt+Enter:newline | Shift+Tab:mode | Ctrl+x:shortcuts";
+pub const PALETTE_FOOTER_HINT_SHORT: &str = "Enter:send | Ctrl+x:shortcuts";
 
 impl<'a> MinimalSessionView<'a> {
-    /// The session footer stays on screen in every mode, including the
-    /// interactive pickers: model · mode · context on the left, one shortcut
-    /// hint on the right, all gray. The hint follows the context — the
-    /// palette's keys while it is open, nothing while a picker panel shows
-    /// its own hints row, `shift+tab to cycle modes` otherwise.
+    fn footer_set(&self, is_task_running: bool, width: u16) -> FooterSet {
+        if self.app_state.quota_held {
+            return FooterSet::Unavailable;
+        }
+        if let Some(state) = self.app_state.get_interactive_state() {
+            if state.effort_focused {
+                return FooterSet::Effort;
+            }
+            let title = state.title.to_ascii_lowercase();
+            if title.contains("model") {
+                return FooterSet::ModelList;
+            }
+            if title.contains("mcp") {
+                return FooterSet::Mcp;
+            }
+            if title.contains("plugin") {
+                return FooterSet::Plugins;
+            }
+            if title.contains("resume") || title.contains("session") {
+                return FooterSet::Resume;
+            }
+            if title.contains("permission") || title.contains("approv") {
+                return FooterSet::Approval;
+            }
+        }
+        if self.app_state.agent_mode_label == "Bash" {
+            return FooterSet::Bash;
+        }
+        if is_task_running {
+            if self.app_state.queued_count() > 0 {
+                return FooterSet::Queue;
+            }
+            return FooterSet::Running;
+        }
+        if self.app_state.autocomplete.visible {
+            return FooterSet::Palette;
+        }
+        if !self.app_state.input.text().is_empty() {
+            if area_is_narrow(width) {
+                return FooterSet::TypedNarrow;
+            }
+            return FooterSet::Typed;
+        }
+        FooterSet::Idle
+    }
+
+    /// Contextual shortcut strip. Composer model/mode chips live on the box.
     fn render_footer(&self, area: Rect, footer_y: u16, buf: &mut Buffer, is_task_running: bool) {
         let hints_area = Rect::new(area.x, footer_y, area.width, 1);
-        let context = if self.app_state.is_viewing_subagent() {
-            HintContext::SubagentView
-        } else if is_task_running {
-            HintContext::TaskRunning
-        } else {
-            HintContext::Idle
-        };
-        let mut hints = KeyHints::new(context)
-            .with_colors(self.colors.clone())
-            .with_permission_mode(self.app_state.permission_mode)
-            .with_model(&self.app_state.model)
-            .with_session_footer(
-                &self.app_state.agent_mode_label,
-                self.app_state.context_percent,
-            );
-        if self.app_state.is_interactive_mode() {
-            hints = hints.with_footer_hint("", "");
-        } else if self.app_state.autocomplete.visible {
-            hints = hints.with_footer_hint(PALETTE_FOOTER_HINT, PALETTE_FOOTER_HINT_SHORT);
-        }
-        if let Some(ref budget) = self.app_state.thinking_budget {
-            hints = hints.with_thinking_budget(budget);
-        }
-        hints.render(hints_area, buf);
+        paint_footer(
+            hints_area,
+            buf,
+            self.footer_set(is_task_running, area.width),
+            self.app_state.footer_hover,
+        );
 
         if self.app_state.is_viewing_subagent() && !self.app_state.is_interactive_mode() {
             crate::views::minimal_session::rendering::render_back_to_main_hint(
@@ -629,4 +764,25 @@ impl<'a> MinimalSessionView<'a> {
             );
         }
     }
+}
+
+fn area_is_narrow(width: u16) -> bool {
+    width < 80
+}
+
+fn composer_display_text(state: &AppState) -> String {
+    if let Some(istate) = state.get_interactive_state() {
+        let title = istate.title.to_ascii_lowercase();
+        if title.contains("model") {
+            if istate.effort_focused {
+                let name = crate::ui::text_utils::model_display_name(&state.model);
+                return format!("/model {name}");
+            }
+            let typed = state.input.text();
+            if typed.is_empty() || typed == "/model" {
+                return "/model".into();
+            }
+        }
+    }
+    state.input.text()
 }

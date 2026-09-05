@@ -1,0 +1,40 @@
+
+  Welcome to Cortex CLI!
+
+  How would you like to log in?
+
+  > 1 Continue with browser    Opens cortex.foundation/cli/auth
+    2 Paste an API key         Enter your key to authenticate
+
+ ↑↓:select  |  Enter:confirm  |  Esc:quit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

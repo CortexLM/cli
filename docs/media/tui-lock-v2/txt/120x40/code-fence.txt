@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > show me a minimal retry helper                                                                           05:12 PM
+
+   ♦ Thought for 1.0s
+
+   ─ rust ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    1  pub async fn with_retry<F, T>(mut op: F) -> Result<T>
+    2  where F: FnMut() -> Fut<Result<T>>,
+    3  {
+    4      for attempt in 0..3 {
+    5          match op().await {
+    6              Ok(v) => return Ok(v),
+    7              Err(e) if attempt == 2 => return Err(e),
+    8              Err(_) => sleep(backoff(attempt)).await,
+    9          }
+   10      }
+   11      unreachable!()
+   12  }
+   ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

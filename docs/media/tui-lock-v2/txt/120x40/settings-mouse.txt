@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+            ╭─ Settings ───────────────────────────────────────────────────────────────────────────── [x] ─╮
+   > hey    │ / to search                                                                                  │  12:49 AM
+            │ ──────────────────────────────────────────────────────────────────────────────────────────── │
+   ♦ Thought│                                                                                              │
+            │ Mouse ────────────────────────────────────────────────────────────────────────────────────── │
+   Hey — wha│  ▸ Mouse capture                                                                         on  │  12:49 AM
+            │  ▸ Scroll lines                                                                           3  │
+   Worked fo│  ▸ Invert scroll                                                                        off  │
+            │  ▸ Copy on select                                                                       off  │
+   > tell me│                                                                                              │  12:49 AM
+            │ Behavior ─────────────────────────────────────────────────────────────────────────────────── │
+   ♦ Thought│  ▸ Auto approve                                                                         off  │
+            │  ▸ Sandbox mode                                                                          on  │
+   I'm Corte│  ▸ Streaming                                                                             on  │  12:49 AM
+            │  ▸ Auto scroll                                                                           on  │
+   I mostly │  ▸ Sound                                                                                off  │search.
+   Here I ru│  ▸ Notifications                                                                        off  │
+            │                                                                                              │
+   In practi│ AI ───────────────────────────────────────────────────────────────────────────────────────── │
+   • I get s│  ▸ Thinking mode                                                                         on  │
+   • I prefe│  ▸ Context aware                                                                         on  │
+   • I can a│  ▸ Debug mode                                                                           off  │
+            │                                                                                              │
+   Tell me w│ Git ──────────────────────────────────────────────────────────────────────────────────────── │
+            │  ▸ Co-author                                                                             on  │
+   Worked fo│  ▸ Auto commit                                                                          off  │
+            │  ▸ Sign commits                                                                         off  │
+            │                                                                                              │
+            │ Cloud ────────────────────────────────────────────────────────────────────────────────────── │
+            │  ▸ Cloud sync                                                                           off  │
+            │  ▸ Auto save                                                                             on  │
+            │  ▸ Session history                                                                       on  │
+            │                                                                                              │
+            │                                                                                              │
+ ╭─ Agent ──│        Tip · Ask Cortex: "change theme to Cortex Day" or "what does compact mode do?"        │──────────╮
+ │ > Plan, s│   ↑/↓/j/k nav | g/G top/btm | Space toggle | Enter toggle | → expand | / search | d reset    │          │
+ ╰──────────│                                         F2/Esc close                                         │(medium) ─╯
+            ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

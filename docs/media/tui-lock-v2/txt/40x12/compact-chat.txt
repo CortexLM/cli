@@ -1,0 +1,12 @@
+                             14K / 500K
+  > hey
+  ♦ Thought for 0.4s
+  Hey — what do you want to work on?
+  Worked for 1.8s
+  > tell me about yourself
+  ♦ Thought for 0.4s
+ ╭─ Agent ────────────────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

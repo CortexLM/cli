@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > & fix the flaky login redirect test and open a PR                                                        03:02 PM
+
+   ↑ Handed off to Cortex Cloud
+     agent    ag_4f2a · running
+     branch   cortex/fix-login-redirect
+     follow   cortex.foundation/agents/ag_4f2a · or /jobs right here
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

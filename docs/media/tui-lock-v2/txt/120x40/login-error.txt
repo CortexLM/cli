@@ -1,0 +1,40 @@
+
+  Welcome to Cortex CLI!
+
+  × Sign-in didn't complete
+  Your Cortex API key may be invalid, expired, or revoked.
+  Run 'cortex login' or set CORTEX_API_KEY, then try again.
+
+ Enter:try again  |  Esc:quit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

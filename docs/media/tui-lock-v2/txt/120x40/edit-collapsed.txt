@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > move the model chip into the composer border                                                             04:11 PM
+
+   ♦ Thought for 2.6s
+
+   ● Edit  src/cortex-tui/src/composer.rs · +2 −1 · ▸ show diff
+   ● Edit  src/cortex-tui/src/footer.rs · +4 −9 · ▸ show diff
+
+   Moved the chip into the bottom hairline and dropped it from the footer.                                    04:12 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

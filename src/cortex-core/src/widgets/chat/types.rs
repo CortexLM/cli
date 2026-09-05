@@ -61,6 +61,10 @@ pub struct Message {
     pub is_streaming: bool,
     /// Tool name (for Tool role messages)
     pub tool_name: Option<String>,
+    /// Collapsed thought duration in seconds (`♦ Thought for Xs`).
+    pub thought_secs: Option<f32>,
+    /// Work duration in seconds (`Worked for Xs`).
+    pub worked_secs: Option<f32>,
 }
 
 impl Message {
@@ -72,6 +76,8 @@ impl Message {
             timestamp: None,
             is_streaming: false,
             tool_name: None,
+            thought_secs: None,
+            worked_secs: None,
         }
     }
 
@@ -83,6 +89,8 @@ impl Message {
             timestamp: None,
             is_streaming: false,
             tool_name: None,
+            thought_secs: None,
+            worked_secs: None,
         }
     }
 
@@ -94,6 +102,8 @@ impl Message {
             timestamp: None,
             is_streaming: false,
             tool_name: None,
+            thought_secs: None,
+            worked_secs: None,
         }
     }
 
@@ -105,6 +115,8 @@ impl Message {
             timestamp: None,
             is_streaming: false,
             tool_name: Some(name.into()),
+            thought_secs: None,
+            worked_secs: None,
         }
     }
 
@@ -117,6 +129,18 @@ impl Message {
     /// Adds a timestamp to this message.
     pub fn with_timestamp(mut self, ts: impl Into<String>) -> Self {
         self.timestamp = Some(ts.into());
+        self
+    }
+
+    /// Attach a thought duration (`♦ Thought for Xs`).
+    pub fn with_thought_secs(mut self, secs: f32) -> Self {
+        self.thought_secs = Some(secs);
+        self
+    }
+
+    /// Attach a work duration (`Worked for Xs`).
+    pub fn with_worked_secs(mut self, secs: f32) -> Self {
+        self.worked_secs = Some(secs);
         self
     }
 

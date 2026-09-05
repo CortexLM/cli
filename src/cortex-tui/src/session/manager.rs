@@ -221,6 +221,8 @@ impl CortexSession {
                 timestamp: None,
                 is_streaming: false,
                 tool_name: None,
+                thought_secs: None,
+                worked_secs: None,
             });
         }
 
@@ -239,6 +241,8 @@ impl CortexSession {
                     timestamp: None,
                     is_streaming: false,
                     tool_name: None,
+                    thought_secs: None,
+                    worked_secs: None,
                 },
             );
         }

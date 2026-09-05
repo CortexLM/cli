@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > add retry with backoff to the api client                                                                 11:20 AM
+
+   ♦ Thought for 5.8s
+
+   Plan — no files change until you approve.                                                                  11:21 AM
+
+   1. Wrap `ApiClient::send` in a retry loop: 3 attempts, exponential backoff with jitter.
+   2. Retry only on timeouts and 5xx; never on 4xx.
+   3. Surface the final failure as product copy: 'The coding service is temporarily unavailable'.
+   4. Unit tests for the backoff schedule and the give-up path.
+
+   Implement this plan?
+   > 1 Yes, switch to Agent mode and implement
+     2 No, keep planning — tell Cortex what to change
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Plan · no edits ──────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Choose an option above                                                                                           │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:confirm  |  Esc:keep planning

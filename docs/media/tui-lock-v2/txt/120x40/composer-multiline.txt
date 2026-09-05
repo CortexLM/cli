@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > add retry with backoff to the api client:                                                                        │
+ │   - max 3 attempts, jitter                                                                                         │
+ │   - surface the final error as product copy                                                                        │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:send  |  Alt+Enter:newline  |  Shift+Tab:mode  |  Ctrl+x:shortcuts

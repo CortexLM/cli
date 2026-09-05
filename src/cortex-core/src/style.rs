@@ -1,13 +1,12 @@
-//! Cortex Theme - Gray chrome on the host terminal background.
+//! Cortex Theme — inky chrome on a painted `#000000` alternate screen.
 //!
-//! The chrome never paints its own background: the terminal shows through
-//! (`Color::Reset`, black by default). Structure comes from gray — hairlines,
-//! filled charcoal panels, dim secondary copy, white primary copy. The one
-//! accent is the Cortex violet `#A78BFA`, reserved for the focused selection:
-//! the `>` caret and the selected label on the `#221A38` selection bar.
-//! Green exists only for `✓` success and `+` diff additions; red and amber
-//! only on diagnostics; a muted gold only on the Thinking status. Mint
-//! `#00F5D4` / `#1A3330` is never painted.
+//! Structure comes from gray — hairlines, filled charcoal panels, dim
+//! secondary copy, white primary copy. The one accent is the Cortex violet
+//! `#A78BFA`, reserved for keyboard focus: the `>` caret, the focused row
+//! marker, and typed slash-command matches. Green exists only for `✓`
+//! success and `+` diff additions; red and amber only on diagnostics.
+//! Hover bars are `#1A1A1A` with no violet. Gold, mint, cyan, and the
+//! `#221A38` violet wash are never painted.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -36,12 +35,14 @@ pub const DEEP_CYAN: Color = Color::Rgb(156, 163, 175); // #9CA3AF
 pub const TEAL: Color = Color::Rgb(75, 85, 99); // #4B5563
 
 // ============================================================
-// BACKGROUND COLORS - the host terminal owns the canvas
+// BACKGROUND COLORS - the TUI paints the alternate screen
 // ============================================================
 
-/// Main background — never painted. The host terminal shows through
-/// (black by default). Do not swap this back to a solid fill.
-pub const VOID: Color = Color::Reset;
+/// Inky background — painted on the whole alternate screen (`#000000`).
+pub const VOID: Color = Color::Rgb(0, 0, 0);
+
+/// Hover bar — `#1A1A1A`, no violet. Distinct from the user-turn bar.
+pub const BAR_HOVER: Color = Color::Rgb(26, 26, 26); // #1A1A1A
 
 /// Filled charcoal panel for tips / info blocks
 pub const PANEL_BG: Color = Color::Rgb(20, 20, 20); // #141414
@@ -93,8 +94,8 @@ pub const WARNING: Color = Color::Rgb(255, 200, 87); // #FFC857
 /// Error - red (`error`, `× Stopped`, quota, failed MCP `x`)
 pub const ERROR: Color = Color::Rgb(248, 113, 113); // #F87171
 
-/// Thinking status - muted gold, nothing else uses it
-pub const THINKING: Color = Color::Rgb(201, 169, 92); // #C9A95C
+/// Thinking metadata — dim like other session chrome. Gold is retired.
+pub const THINKING: Color = TEXT_DIM;
 
 /// Info - mid gray for informational messages (legacy name)
 pub const INFO: Color = DEEP_CYAN; // #9CA3AF
@@ -102,10 +103,10 @@ pub const INFO: Color = DEEP_CYAN; // #9CA3AF
 /// Highlight - near-white for emphasis (legacy name)
 pub const HIGHLIGHT: Color = ELECTRIC_BLUE; // #E5E7EB
 
-/// Selected-row background — violet-tinted bar `#221A38`. The caret and
-/// label on it are `#A78BFA`; everything else stays white/dim. Never invert
-/// onto the accent.
-pub const SELECTION_BG: Color = Color::Rgb(34, 26, 56); // #221A38
+/// Focused-row background — dark gray `#262626`. The caret / `▸` on it
+/// are `#A78BFA`; the label stays white (bold in Settings). Never invert
+/// onto the accent, never a violet wash.
+pub const SELECTION_BG: Color = SURFACE_2; // #262626
 
 // ============================================================
 // BORDER COLORS
@@ -335,7 +336,7 @@ impl CortexStyle {
             .add_modifier(Modifier::BOLD)
     }
 
-    /// Selected item style: violet text on the dark gray bar — never inverted
+    /// Selected item style: violet marker on the dark gray bar — never inverted
     #[inline]
     pub fn selected() -> Style {
         Style::default().fg(ACCENT).bg(SELECTION_BG)
@@ -353,10 +354,10 @@ impl CortexStyle {
         Style::default().fg(SUCCESS)
     }
 
-    /// Thinking status style: the muted gold
+    /// Thinking metadata style: dim, not gold
     #[inline]
     pub fn thinking() -> Style {
-        Style::default().fg(THINKING)
+        Style::default().fg(TEXT_DIM)
     }
 
     /// Hairline style: the thin gray rule framing the prompt
@@ -652,20 +653,26 @@ mod tests {
         // Green covers `✓` and `+diff` — the same green.
         assert_eq!(SUCCESS, DIFF_ADD);
         assert_eq!(SUCCESS, Color::Rgb(0x4A, 0xDE, 0x80));
-        // Structure is gray: the host background shows through, panels are
-        // charcoal, hairlines and bars are neutral grays, secondary copy is
-        // the dim gray.
-        assert_eq!(VOID, Color::Reset);
+        // Structure is gray: inky `#000` fill, charcoal panels, hairlines
+        // and bars are neutral grays, secondary copy is the dim gray.
+        assert_eq!(VOID, Color::Rgb(0, 0, 0));
+        assert_eq!(BAR_HOVER, Color::Rgb(0x1A, 0x1A, 0x1A));
         assert_eq!(PANEL_BG, Color::Rgb(0x14, 0x14, 0x14));
         assert_eq!(TEXT_DIM, Color::Rgb(0x6B, 0x72, 0x80));
-        for gray in [HAIRLINE, USER_TURN_BG, BORDER_FOCUS] {
+        for gray in [
+            HAIRLINE,
+            USER_TURN_BG,
+            BORDER_FOCUS,
+            BAR_HOVER,
+            SELECTION_BG,
+        ] {
             let Color::Rgb(r, g, b) = gray else {
                 panic!("{gray:?} must be an RGB gray");
             };
             assert!(r == g && g == b, "{gray:?} is not neutral");
         }
-        assert_eq!(SELECTION_BG, Color::Rgb(0x22, 0x1A, 0x38));
-        // The violet lives in `ACCENT` plus the selection bar. Mint is banned.
+        assert_eq!(SELECTION_BG, Color::Rgb(0x26, 0x26, 0x26));
+        // The violet lives in `ACCENT` only. Mint is banned.
         for color in [
             SUCCESS,
             BORDER_FOCUS,
@@ -685,9 +692,9 @@ mod tests {
             Color::Rgb(0x7D, 0xD3, 0xFC),
             "the accent is not cyan"
         );
-        // Thinking is the only gold.
-        assert_eq!(CortexStyle::thinking().fg, Some(THINKING));
-        assert_ne!(THINKING, WARNING);
+        // Thinking metadata is dim; gold is retired.
+        assert_eq!(CortexStyle::thinking().fg, Some(TEXT_DIM));
+        assert_eq!(THINKING, TEXT_DIM);
     }
 
     #[test]

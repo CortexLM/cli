@@ -211,16 +211,18 @@ pub struct InteractiveState {
     /// Click zones for tabs (calculated during render).
     pub tab_click_zones: Vec<(ratatui::layout::Rect, usize)>,
     /// Optional Low / Medium / High effort radios (used by `/model`).
-    /// Tab cycles the selection. Absent on pickers that are not the model list.
+    /// Tab jumps between the model list and the effort pane.
     pub effort: Option<EffortLevel>,
+    /// When true, the effort radio pane has keyboard focus (Tab from the model list).
+    pub effort_focused: bool,
 }
 
-/// Reasoning effort shown as `/model` radios: `○ Low   ● Medium   ○ High`.
+/// Reasoning effort shown as `/model` radios: High → Medium → Low.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffortLevel {
-    Low,
-    Medium,
     High,
+    Medium,
+    Low,
 }
 
 impl EffortLevel {
@@ -247,22 +249,46 @@ impl EffortLevel {
         }
     }
 
-    /// Cycle Low → Medium → High → Low (Tab).
+    /// Cycle High → Medium → Low → High (Tab inside the effort pane).
     pub fn cycle(self) -> Self {
         match self {
-            Self::Low => Self::Medium,
-            Self::Medium => Self::High,
-            Self::High => Self::Low,
+            Self::High => Self::Medium,
+            Self::Medium => Self::Low,
+            Self::Low => Self::High,
         }
     }
 
-    /// Lock-board radio row: filled `●` on the current level.
-    pub fn radios_line(self) -> &'static str {
-        match self {
-            Self::Low => "● Low   ○ Medium   ○ High",
-            Self::Medium => "○ Low   ● Medium   ○ High",
-            Self::High => "○ Low   ○ Medium   ● High",
-        }
+    /// Vertical radio rows, High first (lock v2 F8).
+    pub fn rows() -> &'static [(Self, &'static str, &'static str)] {
+        &[
+            (
+                Self::High,
+                "High Effort",
+                "Deepest reasoning — best for hard, multi-file changes",
+            ),
+            (
+                Self::Medium,
+                "Medium Effort",
+                "Balanced reasoning for everyday coding · default",
+            ),
+            (
+                Self::Low,
+                "Low Effort",
+                "Fastest responses for quick edits and questions",
+            ),
+        ]
+    }
+
+    /// One-line radio summary (High → Medium → Low).
+    pub fn radios_line(self) -> String {
+        Self::rows()
+            .iter()
+            .map(|(level, label, _)| {
+                let mark = if *level == self { "●" } else { "○" };
+                format!("{mark} {label}")
+            })
+            .collect::<Vec<_>>()
+            .join("   ")
     }
 }
 
@@ -295,19 +321,49 @@ impl InteractiveState {
             hovered_tab: None,
             tab_click_zones: Vec::new(),
             effort: None,
+            effort_focused: false,
         }
     }
 
-    /// Show Low / Medium / High effort radios and bind Tab to cycling them.
+    /// Show High / Medium / Low effort radios and bind Tab to the effort pane.
     pub fn with_effort(mut self, effort: EffortLevel) -> Self {
         self.effort = Some(effort);
         self
     }
 
-    /// Advance the effort radio (Low → Medium → High → Low).
+    /// Toggle keyboard focus between the model list and the effort pane.
+    pub fn toggle_effort_focus(&mut self) {
+        if self.effort.is_some() {
+            self.effort_focused = !self.effort_focused;
+        }
+    }
+
+    /// Advance the effort radio High → Medium → Low → High.
     pub fn cycle_effort(&mut self) {
         if let Some(current) = self.effort {
             self.effort = Some(current.cycle());
+        }
+    }
+
+    /// Move effort selection toward High (up).
+    pub fn effort_up(&mut self) {
+        if let Some(e) = self.effort {
+            self.effort = Some(match e {
+                EffortLevel::Low => EffortLevel::Medium,
+                EffortLevel::Medium => EffortLevel::High,
+                EffortLevel::High => EffortLevel::High,
+            });
+        }
+    }
+
+    /// Move effort selection toward Low (down).
+    pub fn effort_down(&mut self) {
+        if let Some(e) = self.effort {
+            self.effort = Some(match e {
+                EffortLevel::High => EffortLevel::Medium,
+                EffortLevel::Medium => EffortLevel::Low,
+                EffortLevel::Low => EffortLevel::Low,
+            });
         }
     }
 
@@ -873,24 +929,18 @@ mod tests {
     }
 
     #[test]
-    fn effort_level_cycles_low_medium_high() {
+    fn effort_level_cycles_high_medium_low() {
         assert_eq!(EffortLevel::parse(None), EffortLevel::Medium);
         assert_eq!(EffortLevel::parse(Some("LOW")), EffortLevel::Low);
         assert_eq!(EffortLevel::parse(Some("max")), EffortLevel::Medium);
-        assert_eq!(EffortLevel::Low.cycle(), EffortLevel::Medium);
-        assert_eq!(EffortLevel::Medium.cycle(), EffortLevel::High);
-        assert_eq!(EffortLevel::High.cycle(), EffortLevel::Low);
-        assert_eq!(
-            EffortLevel::Medium.radios_line(),
-            "○ Low   ● Medium   ○ High"
-        );
-        for level in [EffortLevel::Low, EffortLevel::Medium, EffortLevel::High] {
-            let line = level.radios_line();
-            assert!(!line.contains('★') && !line.contains("A★"), "{line}");
-        }
+        assert_eq!(EffortLevel::High.cycle(), EffortLevel::Medium);
+        assert_eq!(EffortLevel::Medium.cycle(), EffortLevel::Low);
+        assert_eq!(EffortLevel::Low.cycle(), EffortLevel::High);
+        assert_eq!(EffortLevel::rows()[0].1, "High Effort");
         let mut state = InteractiveState::new("Model", Vec::new(), InteractiveAction::SetModel)
             .with_effort(EffortLevel::Low);
-        state.cycle_effort();
-        assert_eq!(state.effort, Some(EffortLevel::Medium));
+        assert_eq!(state.effort, Some(EffortLevel::Low));
+        state.toggle_effort_focus();
+        assert!(state.effort_focused);
     }
 }

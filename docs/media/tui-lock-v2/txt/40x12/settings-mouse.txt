@@ -1,0 +1,12 @@
+╭─ Settings ───────────────────── [x] ─╮
+│ / to search                          │
+│ ──────────────────────────────────── │
+│ Mouse ────────────────────────────── │
+│  ▸ Mouse capture                 on  │
+│  ▸ Scroll lines                   3  │
+│  ▸ Invert scroll                off  │
+│  ▸ Copy on select               off  │
+│                                      │
+│   ↑↓ nav | Space toggle | / search   │
+│             F2/Esc close             │
+╰──────────────────────────────────────╯

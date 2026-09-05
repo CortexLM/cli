@@ -104,7 +104,7 @@ mod tests {
         assert_eq!(state.effort, Some(EffortLevel::High));
         assert_eq!(
             state.effort.expect("effort").radios_line(),
-            "○ Low   ○ Medium   ● High"
+            "● High Effort   ○ Medium Effort   ○ Low Effort"
         );
     }
 

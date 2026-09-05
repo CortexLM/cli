@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > run the tui tests and fix whatever fails                                                                 09:14 AM
+
+   ♦ Thought for 2.1s
+
+   ● Shell  $ cargo test -p cortex-tui · stopped
+   × Stopped
+   Worked for 12s · 4.1k tokens
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Reply, or ↑ to edit your last message                                                                            │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

@@ -207,6 +207,7 @@ install_path="${BIN_DIR}/Cortex"
 cp "$BINARY" "$install_path"
 chmod 755 "$install_path"
 ln -sf Cortex "${BIN_DIR}/cortex"
+ln -sf Cortex "${BIN_DIR}/agent"
 
 echo "Installed Cortex CLI v${VERSION} to ${install_path}"
 

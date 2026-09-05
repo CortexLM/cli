@@ -41,9 +41,7 @@ fn compact_count(n: u64) -> String {
         }
     } else if n >= 1000 {
         let k = n as f64 / 1000.0;
-        if n >= 10_000 && k.fract() < 0.05 {
-            format!("{}K", k as u64)
-        } else if n % 1000 == 0 {
+        if (n >= 10_000 && k.fract() < 0.05) || n.is_multiple_of(1000) {
             format!("{}K", k as u64)
         } else {
             format!("{:.0}K", k)
@@ -512,15 +510,16 @@ pub fn paint_footer(area: Rect, buf: &mut Buffer, set: FooterSet, hovered: Optio
         buf.set_string(
             x,
             y,
-            &key.chars().take(key_len).collect::<String>(),
+            key.chars().take(key_len).collect::<String>(),
             key_style,
         );
         x = x.saturating_add(key_len as u16);
         let rest = remain.saturating_sub(key_len);
         if rest > 0 {
             let lab = first_fitting_line(hint.label, rest);
-            buf.set_string(x, y, &lab, label_style);
-            x = x.saturating_add(lab.chars().count() as u16);
+            let lab_len = lab.chars().count() as u16;
+            buf.set_string(x, y, lab, label_style);
+            x = x.saturating_add(lab_len);
         }
     }
 }

@@ -106,11 +106,11 @@ impl Widget for ShortcutsOverlay {
             if y >= inner.bottom().saturating_sub(3) {
                 break;
             }
-            buf.set_string(inner.x, y, &format!("{key:<12}"), Style::default().fg(TEXT));
+            buf.set_string(inner.x, y, format!("{key:<12}"), Style::default().fg(TEXT));
             buf.set_string(
                 inner.x + 13,
                 y,
-                &first_fitting_line(label, (col2.saturating_sub(inner.x + 14)) as usize),
+                first_fitting_line(label, (col2.saturating_sub(inner.x + 14)) as usize),
                 Style::default().fg(TEXT_DIM),
             );
         }
@@ -119,11 +119,11 @@ impl Widget for ShortcutsOverlay {
             if y >= inner.bottom().saturating_sub(3) {
                 break;
             }
-            buf.set_string(col2, y, &format!("{key:<12}"), Style::default().fg(TEXT));
+            buf.set_string(col2, y, format!("{key:<12}"), Style::default().fg(TEXT));
             buf.set_string(
                 col2 + 13,
                 y,
-                &first_fitting_line(label, inner.right().saturating_sub(col2 + 13) as usize),
+                first_fitting_line(label, inner.right().saturating_sub(col2 + 13) as usize),
                 Style::default().fg(TEXT_DIM),
             );
         }
@@ -136,7 +136,7 @@ impl Widget for ShortcutsOverlay {
         buf.set_string(
             inner.x,
             hair_y + 1,
-            &first_fitting_line(&docs, inner.width as usize),
+            first_fitting_line(&docs, inner.width as usize),
             Style::default().fg(TEXT_MUTED),
         );
         let close = "Ctrl+x/Esc close";

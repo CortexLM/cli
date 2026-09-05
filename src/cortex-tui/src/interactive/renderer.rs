@@ -100,13 +100,7 @@ impl<'a> InteractiveWidget<'a> {
             0
         };
         let hints_height = 1;
-        let effort_height = if state.effort_focused {
-            3
-        } else if state.effort.is_some() {
-            0
-        } else {
-            0
-        };
+        let effort_height = if state.effort_focused { 3 } else { 0 };
         let items_height = inner
             .height
             .saturating_sub(search_height + hints_height + effort_height);

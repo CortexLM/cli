@@ -792,7 +792,7 @@ impl Widget for SettingsModal<'_> {
         buf.set_string(
             inner.x + 1,
             inner.y,
-            &first_fitting_line(&prompt, inner.width.saturating_sub(2) as usize),
+            first_fitting_line(&prompt, inner.width.saturating_sub(2) as usize),
             search_style,
         );
         buf.set_string(inner.x, inner.y + 1, "─".repeat(inner.width as usize), rule);
@@ -825,7 +825,7 @@ fn paint_rows(inner: Rect, buf: &mut Buffer, state: &SettingsModalState) {
         buf.set_string(
             inner.x + 2,
             inner.y + 3,
-            &first_fitting_line("No settings match", inner.width.saturating_sub(3) as usize),
+            first_fitting_line("No settings match", inner.width.saturating_sub(3) as usize),
             Style::default().fg(TEXT_DIM),
         );
     }
@@ -919,14 +919,14 @@ fn paint_rows(inner: Rect, buf: &mut Buffer, state: &SettingsModalState) {
         buf.set_string(
             inner.x + 2,
             tip_y,
-            &first_fitting_line(tip, inner.width.saturating_sub(2) as usize),
+            first_fitting_line(tip, inner.width.saturating_sub(2) as usize),
             Style::default().fg(TEXT_DIM),
         );
         let legend = "↑/↓/j/k nav | g/G top/btm | Space toggle | Enter toggle | → expand | / search | d reset";
         buf.set_string(
             inner.x + 1,
             tip_y + 1,
-            &first_fitting_line(legend, inner.width.saturating_sub(2) as usize),
+            first_fitting_line(legend, inner.width.saturating_sub(2) as usize),
             Style::default().fg(TEXT_DIM),
         );
         let close = "F2/Esc close";
@@ -936,7 +936,7 @@ fn paint_rows(inner: Rect, buf: &mut Buffer, state: &SettingsModalState) {
         buf.set_string(
             inner.x + 1,
             tip_y,
-            &first_fitting_line("F2/Esc close", inner.width as usize),
+            first_fitting_line("F2/Esc close", inner.width as usize),
             Style::default().fg(TEXT_DIM),
         );
     }

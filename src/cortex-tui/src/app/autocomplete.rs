@@ -48,6 +48,8 @@ pub struct AutocompleteState {
     pub selected: usize,
     pub max_visible: usize,
     pub scroll_offset: usize,
+    /// Mouse-hovered row (distinct from keyboard `selected`).
+    pub hovered: Option<usize>,
 }
 
 impl AutocompleteState {
@@ -61,6 +63,7 @@ impl AutocompleteState {
             selected: 0,
             max_visible: PALETTE_HOME_LIMIT,
             scroll_offset: 0,
+            hovered: None,
         }
     }
 

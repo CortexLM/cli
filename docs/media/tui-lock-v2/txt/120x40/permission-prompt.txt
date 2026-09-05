@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > add ioredis and a mock for the tests                                                                     09:40 AM
+
+   ♦ Thought for 1.4s
+
+   ● Cortex wants to run
+   $ npm install ioredis && npm install -D ioredis-mock
+   > 1 Yes, run once
+     2 Yes, always allow npm install in this project
+     3 Edit command
+     4 No — tell Cortex what to do instead
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Choose an option above                                                                                           │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ ↑↓:select  |  Enter:confirm  |  e:edit command  |  Esc:cancel

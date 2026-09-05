@@ -221,6 +221,7 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
                 0,
                 true,
                 Some(ghost),
+                true,
             );
             row += 1;
         }
@@ -242,6 +243,7 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
                         part.chars().count(),
                         true,
                         None,
+                        true,
                     );
                     row += 1;
                     continue;
@@ -272,7 +274,7 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
             }
             if parts.is_empty() {
                 crate::views::minimal_session::paint_composer_contents(
-                    buf, area.x, row, area.width, "", 0, true, None,
+                    buf, area.x, row, area.width, "", 0, true, None, true,
                 );
                 row += 1;
             }

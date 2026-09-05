@@ -38,27 +38,42 @@ pub fn render_message_with_theme(
     colors: &AdaptiveColors,
     markdown_theme: &MarkdownTheme,
     compact: bool,
+    timestamps: bool,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     match msg.role {
         MessageRole::User => {
-            // A past user turn: `> prompt text` in white on a full-width,
-            // slightly lighter gray bar. Every wrapped row carries the bar.
-            lines.extend(user_turn_lines(&msg.content, width, colors));
+            let ts = if timestamps && !compact {
+                msg.timestamp.as_deref()
+            } else {
+                None
+            };
+            lines.extend(user_turn_lines(&msg.content, width, colors, ts, compact));
         }
         MessageRole::Assistant => {
-            // Use full markdown renderer with theme
             use cortex_core::markdown::MarkdownRenderer;
 
-            // Create renderer with width and theme
-            let content_width = width.saturating_sub(4); // Leave margin
-            let renderer = MarkdownRenderer::cortex(markdown_theme.clone(), content_width);
+            let indent: u16 = if compact { 0 } else { 3 };
+            if let Some(secs) = msg.thought_secs {
+                let thought = format!(
+                    "{}♦ Thought for {}",
+                    " ".repeat(indent as usize),
+                    crate::ui::chrome::format_secs(secs)
+                );
+                lines.push(Line::from(Span::styled(
+                    thought,
+                    Style::default().fg(colors.text_dim),
+                )));
+                if !compact {
+                    lines.push(Line::from(""));
+                }
+            }
 
-            // Render markdown content
+            let content_width = width.saturating_sub(indent + 2);
+            let renderer = MarkdownRenderer::cortex(markdown_theme.clone(), content_width);
             let mut rendered_lines = renderer.render(&msg.content);
 
-            // Add streaming cursor if still streaming
             if msg.is_streaming
                 && let Some(last) = rendered_lines.last_mut()
             {
@@ -66,7 +81,43 @@ pub fn render_message_with_theme(
                     .push(Span::styled("▌", Style::default().fg(colors.text)));
             }
 
-            lines.extend(rendered_lines);
+            let ts = if !compact {
+                msg.timestamp.as_deref().filter(|_| width >= 80)
+            } else {
+                None
+            };
+            for (i, line) in rendered_lines.into_iter().enumerate() {
+                let indented = indent_line(line, indent);
+                if i == 0 {
+                    if let Some(ts) = ts {
+                        lines.push(pad_timestamp(
+                            indented,
+                            ts,
+                            width.saturating_sub(1),
+                            colors.text_dim,
+                        ));
+                    } else {
+                        lines.push(indented);
+                    }
+                } else {
+                    lines.push(indented);
+                }
+            }
+
+            if let Some(secs) = msg.worked_secs {
+                if !compact {
+                    lines.push(Line::from(""));
+                }
+                let worked = format!(
+                    "{}Worked for {}",
+                    " ".repeat(indent as usize),
+                    crate::ui::chrome::format_secs(secs)
+                );
+                lines.push(Line::from(Span::styled(
+                    worked,
+                    Style::default().fg(colors.text_dim),
+                )));
+            }
         }
         MessageRole::System => {
             // Detect error messages - show in error color
@@ -141,11 +192,29 @@ pub fn render_message_with_theme(
 
 /// A past user turn as full-width bar rows: `> text` on the first row, the
 /// wrapped continuation indented under the copy, every row padded to `width`
-/// so the gray bar spans the terminal.
-pub fn user_turn_lines(content: &str, width: u16, colors: &AdaptiveColors) -> Vec<Line<'static>> {
+/// so the gray bar spans the terminal. Timestamp is 12h on the first row when
+/// the viewport is wide enough.
+pub fn user_turn_lines(
+    content: &str,
+    width: u16,
+    colors: &AdaptiveColors,
+    timestamp: Option<&str>,
+    compact: bool,
+) -> Vec<Line<'static>> {
     let bar = Style::default().fg(colors.text).bg(colors.user_bg);
+    let gutter = if compact { 0 } else { 1 };
+    let indent = if compact { 0 } else { 2 }; // spaces inside the bar before `>`
     let width = width.max(3) as usize;
-    let text_width = width.saturating_sub(3);
+    let ts = timestamp.filter(|_| width >= 80 && !compact).unwrap_or("");
+    let ts_w = if ts.is_empty() {
+        0
+    } else {
+        ts.chars().count() + 2
+    };
+    let text_width = width
+        .saturating_sub(gutter + 1 + indent + 2)
+        .saturating_sub(ts_w)
+        .max(8);
     let mut lines = Vec::new();
     let wrapped = wrap_text(content, text_width);
     let rows: Vec<String> = if wrapped.is_empty() {
@@ -155,10 +224,26 @@ pub fn user_turn_lines(content: &str, width: u16, colors: &AdaptiveColors) -> Ve
     };
     for (i, row) in rows.iter().enumerate() {
         let prefix = if i == 0 { "> " } else { "  " };
-        let mut text = format!("{prefix}{row}");
+        let mut spans = Vec::new();
+        if gutter > 0 {
+            spans.push(Span::raw(" ".repeat(gutter)));
+        }
+        let mut text = format!("{}{}{row}", " ".repeat(indent), prefix);
         let used = unicode_width::UnicodeWidthStr::width(text.as_str());
-        text.push_str(&" ".repeat(width.saturating_sub(used)));
-        lines.push(Line::from(Span::styled(text, bar)));
+        let pad_target = if i == 0 && !ts.is_empty() {
+            width.saturating_sub(gutter + ts.chars().count())
+        } else {
+            width.saturating_sub(gutter)
+        };
+        text.push_str(&" ".repeat(pad_target.saturating_sub(used)));
+        spans.push(Span::styled(text, bar));
+        if i == 0 && !ts.is_empty() {
+            spans.push(Span::styled(
+                ts.to_string(),
+                Style::default().fg(colors.text_dim).bg(colors.user_bg),
+            ));
+        }
+        lines.push(Line::from(spans));
     }
     lines
 }
@@ -462,6 +547,11 @@ pub fn generate_welcome_lines(
         return Vec::new();
     }
 
+    let indent: u16 = if app_state.compact_mode || width < 20 {
+        0
+    } else {
+        3
+    };
     let version = if app_state.cli_version.is_empty() {
         VERSION
     } else {
@@ -469,10 +559,45 @@ pub fn generate_welcome_lines(
     };
     WelcomeCard::new()
         .version(version)
+        .agent(app_state.agent_entrypoint)
         .text_color(colors.text)
         .dim_color(colors.text_dim)
         .border_color(colors.text_dim)
-        .to_lines(width)
+        .to_lines(width.saturating_sub(indent))
+        .into_iter()
+        .map(|line| indent_line(line, indent))
+        .collect()
+}
+
+fn indent_span_prefix(n: u16) -> Span<'static> {
+    Span::raw(" ".repeat(n as usize))
+}
+
+fn indent_line(mut line: Line<'static>, indent: u16) -> Line<'static> {
+    if indent == 0 {
+        return line;
+    }
+    let mut spans = Vec::with_capacity(line.spans.len() + 1);
+    spans.push(indent_span_prefix(indent));
+    spans.append(&mut line.spans);
+    Line::from(spans)
+}
+
+fn pad_timestamp(mut line: Line<'static>, ts: &str, width: u16, dim: Color) -> Line<'static> {
+    if ts.is_empty() || width < 80 {
+        return line;
+    }
+    let used: usize = line
+        .spans
+        .iter()
+        .map(|s| unicode_width::UnicodeWidthStr::width(s.content.as_ref()))
+        .sum();
+    let ts_w = ts.chars().count() + 2;
+    let pad = (width as usize).saturating_sub(used + ts_w);
+    line.spans.push(Span::raw(" ".repeat(pad)));
+    line.spans
+        .push(Span::styled(ts.to_string(), Style::default().fg(dim)));
+    line
 }
 
 /// Generates message lines for scrollable content.
@@ -517,7 +642,21 @@ pub fn generate_message_lines(
             colors,
             markdown_theme,
             app_state.compact_mode,
+            app_state.timestamps_enabled,
         ));
+    }
+
+    if app_state.streaming.thinking && app_state.show_thinking_blocks {
+        let indent = if app_state.compact_mode { 0 } else { 3 };
+        let secs = app_state.streaming.prompt_elapsed_seconds();
+        let line = format!("{}⠇ Thinking · {}s", " ".repeat(indent), secs.max(1));
+        all_lines.push(Line::from(Span::styled(
+            line,
+            Style::default().fg(colors.text_dim),
+        )));
+        if !app_state.compact_mode {
+            all_lines.push(Line::from(""));
+        }
     }
 
     // Get streaming content if any

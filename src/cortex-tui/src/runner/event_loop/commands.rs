@@ -179,36 +179,7 @@ impl EventLoop {
                     .push(Box::new(HelpModal::with_topic(topic)));
             }
             ModalType::Settings => {
-                use crate::interactive::builders::{SettingsSnapshot, build_settings_selector};
-                let snapshot = SettingsSnapshot {
-                    compact_mode: self.app_state.compact_mode,
-                    timestamps: self.app_state.timestamps_enabled,
-                    line_numbers: self.app_state.line_numbers_enabled,
-                    word_wrap: self.app_state.word_wrap_enabled,
-                    syntax_highlight: self.app_state.syntax_highlight_enabled,
-                    auto_approve: matches!(
-                        self.app_state.permission_mode,
-                        crate::permissions::PermissionMode::Yolo
-                    ),
-                    sandbox_mode: self.app_state.sandbox_mode,
-                    streaming_enabled: self.app_state.streaming_enabled,
-                    auto_scroll: self.app_state.auto_scroll_enabled,
-                    sound: self.app_state.sound_enabled,
-                    thinking_enabled: self.app_state.thinking_budget.is_some(),
-                    debug_mode: self.app_state.debug_mode,
-                    context_aware: self.app_state.context_aware_enabled,
-                    co_author: self.app_state.co_author_enabled,
-                    auto_commit: self.app_state.auto_commit_enabled,
-                    sign_commits: self.app_state.sign_commits_enabled,
-                    cloud_sync: self.app_state.cloud_sync_enabled,
-                    auto_save: self.app_state.auto_save_enabled,
-                    session_history: self.app_state.session_history_enabled,
-                    telemetry: self.app_state.telemetry_enabled,
-                    analytics: self.app_state.analytics_enabled,
-                };
-                let terminal_height = self.app_state.terminal_size.1;
-                let interactive = build_settings_selector(snapshot, Some(terminal_height));
-                self.app_state.enter_interactive_mode(interactive);
+                self.app_state.open_settings_modal();
             }
             ModalType::ModelPicker | ModalType::Effort => {
                 let (models, current_model) = if let Some(ref pm) = self.provider_manager {

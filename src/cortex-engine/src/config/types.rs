@@ -323,9 +323,9 @@ pub enum ReasoningSummary {
 }
 
 /// TUI configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TuiConfig {
-    #[serde(default = "default_animations")]
+    #[serde(default = "default_true")]
     pub animations: bool,
     /// Default is **always** (full viewport). Set `false` to stay inline
     /// so the host shell prompt remains visible above the app.
@@ -335,6 +335,27 @@ pub struct TuiConfig {
     pub notifications: NotificationsConfig,
     #[serde(default)]
     pub theme: ThemeConfig,
+    #[serde(default)]
+    pub mouse: MouseConfig,
+    #[serde(default)]
+    pub compact_mode: bool,
+    #[serde(default = "default_true")]
+    pub timestamps: bool,
+    #[serde(default = "default_true")]
+    pub show_thinking_blocks: bool,
+    #[serde(default = "default_true")]
+    pub group_tool_calls: bool,
+    #[serde(default)]
+    pub collapsed_edit_blocks: bool,
+    #[serde(default = "default_true")]
+    pub line_numbers: bool,
+    #[serde(default = "default_true")]
+    pub word_wrap: bool,
+    #[serde(default = "default_true")]
+    pub syntax_highlight: bool,
+    /// When true, the "Help improve Cortex" banner is hidden.
+    #[serde(default)]
+    pub opt_in_banner_dismissed: bool,
 }
 
 impl Default for TuiConfig {
@@ -344,16 +365,54 @@ impl Default for TuiConfig {
             alternate_screen: true,
             notifications: NotificationsConfig::default(),
             theme: ThemeConfig::default(),
+            mouse: MouseConfig::default(),
+            compact_mode: false,
+            timestamps: true,
+            show_thinking_blocks: true,
+            group_tool_calls: true,
+            collapsed_edit_blocks: false,
+            line_numbers: true,
+            word_wrap: true,
+            syntax_highlight: true,
+            opt_in_banner_dismissed: false,
         }
     }
 }
 
-fn default_animations() -> bool {
+fn default_true() -> bool {
     true
 }
 
 fn default_alternate_screen() -> bool {
     true
+}
+
+/// Mouse capture and pointer behaviour (`[tui.mouse]`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MouseConfig {
+    #[serde(default = "default_true")]
+    pub capture: bool,
+    #[serde(default = "default_scroll_lines")]
+    pub scroll_lines: u16,
+    #[serde(default)]
+    pub invert_scroll: bool,
+    #[serde(default)]
+    pub copy_on_select: bool,
+}
+
+impl Default for MouseConfig {
+    fn default() -> Self {
+        Self {
+            capture: true,
+            scroll_lines: 3,
+            invert_scroll: false,
+            copy_on_select: false,
+        }
+    }
+}
+
+fn default_scroll_lines() -> u16 {
+    3
 }
 
 /// Theme configuration.
@@ -369,7 +428,7 @@ fn default_theme() -> String {
 }
 
 /// Notifications configuration.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct NotificationsConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -503,5 +562,28 @@ mod tui_alternate_screen_tests {
         let parsed: ConfigToml =
             toml::from_str("[tui]\nalternate_screen = false\n").expect("opt-out");
         assert!(!parsed.tui.expect("tui").alternate_screen);
+    }
+
+    #[test]
+    fn tui_mouse_and_appearance_defaults() {
+        let tui = TuiConfig::default();
+        assert!(tui.timestamps);
+        assert!(tui.show_thinking_blocks);
+        assert!(tui.group_tool_calls);
+        assert!(!tui.collapsed_edit_blocks);
+        assert!(tui.mouse.capture);
+        assert_eq!(tui.mouse.scroll_lines, 3);
+        assert!(!tui.mouse.invert_scroll);
+        assert!(!tui.mouse.copy_on_select);
+        assert!(!tui.opt_in_banner_dismissed);
+
+        let parsed: ConfigToml = toml::from_str(
+            "[tui.mouse]\ncapture = false\nscroll_lines = 5\ninvert_scroll = true\n",
+        )
+        .expect("mouse table");
+        let mouse = parsed.tui.expect("tui").mouse;
+        assert!(!mouse.capture);
+        assert_eq!(mouse.scroll_lines, 5);
+        assert!(mouse.invert_scroll);
     }
 }

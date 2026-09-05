@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   Worked for 4.6s
+
+   > Cortex Mini 1   Fast default for…
+     Cortex 1        Deeper reasoning…
+     Cortex Max 1    Longest context …
+ ╭─ Agent ────────────────────────────╮
+ │ > /model                           │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:choose | Tab:effort | Esc:close

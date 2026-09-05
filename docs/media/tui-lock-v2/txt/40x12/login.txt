@@ -1,0 +1,12 @@
+
+  Welcome to Cortex CLI!
+
+  How would you like to log in?
+
+  > 1 Continue with browser
+    2 Paste an API key
+
+ ↑↓:select | Enter:confirm | Esc:quit
+
+
+

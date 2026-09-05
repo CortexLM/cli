@@ -1,0 +1,40 @@
+
+  Welcome to Cortex CLI!
+
+  ✓ Signed in as mathis@cortex.foundation
+
+  Run cortex to start a session.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -18,13 +18,21 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
         KeyCode::Up | KeyCode::Char('k')
             if key.modifiers.is_empty() || key.modifiers == KeyModifiers::NONE =>
         {
-            state.select_prev();
+            if state.effort_focused {
+                state.effort_up();
+            } else {
+                state.select_prev();
+            }
             InteractiveResult::Continue
         }
         KeyCode::Down | KeyCode::Char('j')
             if key.modifiers.is_empty() || key.modifiers == KeyModifiers::NONE =>
         {
-            state.select_next();
+            if state.effort_focused {
+                state.effort_down();
+            } else {
+                state.select_next();
+            }
             InteractiveResult::Continue
         }
 
@@ -72,9 +80,9 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
         KeyCode::Left if !state.tabs.is_empty() => InteractiveResult::SwitchTab { direction: -1 },
         KeyCode::Right if !state.tabs.is_empty() => InteractiveResult::SwitchTab { direction: 1 },
 
-        // `/model` Effort radios: Tab cycles Low → Medium → High.
+        // `/model` Effort radios: Tab jumps between the model list and the effort pane.
         KeyCode::Tab if state.effort.is_some() => {
-            state.cycle_effort();
+            state.toggle_effort_focus();
             InteractiveResult::Continue
         }
 
@@ -329,18 +337,16 @@ mod tests {
     }
 
     #[test]
-    fn tab_cycles_model_effort_radios() {
+    fn tab_jumps_to_effort_pane() {
         let items = vec![InteractiveItem::new("mini", "Cortex Mini 1")];
         let mut state = InteractiveState::new("Model", items, InteractiveAction::SetModel)
             .with_effort(crate::interactive::EffortLevel::Medium);
-        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Medium));
-
+        assert!(!state.effort_focused);
         let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
         handle_interactive_key(&mut state, tab);
-        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::High));
+        assert!(state.effort_focused);
         handle_interactive_key(&mut state, tab);
-        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Low));
-        handle_interactive_key(&mut state, tab);
+        assert!(!state.effort_focused);
         assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Medium));
     }
 

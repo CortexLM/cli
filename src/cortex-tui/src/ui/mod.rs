@@ -18,6 +18,7 @@
 //! / commands · Ctrl+K palette · ? help
 //! ```
 
+pub mod chrome;
 pub mod colors;
 pub mod consts;
 pub mod shimmer;

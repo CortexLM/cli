@@ -159,6 +159,54 @@ impl EventLoop {
             return Ok(());
         }
 
+        // Settings modal (F2 / `/settings`) owns keys while open.
+        if let Some(mut modal) = self.app_state.settings_modal.take() {
+            let action = modal.handle_key(key_event);
+            match action {
+                crate::widgets::SettingsAction::Close => {
+                    self.app_state.apply_settings_values(&modal.values);
+                    self.app_state.settings_modal = None;
+                }
+                crate::widgets::SettingsAction::Changed(_) => {
+                    self.app_state.apply_settings_values(&modal.values);
+                    self.app_state.settings_modal = Some(modal);
+                }
+                crate::widgets::SettingsAction::Continue => {
+                    self.app_state.settings_modal = Some(modal);
+                }
+            }
+            self.render(terminal)?;
+            return Ok(());
+        }
+
+        if self.app_state.shortcuts_open {
+            use crossterm::event::{KeyCode, KeyModifiers};
+            let close = matches!(key_event.code, KeyCode::Esc | KeyCode::F(2))
+                || (key_event.code == KeyCode::Char('x')
+                    && key_event.modifiers.contains(KeyModifiers::CONTROL));
+            if close {
+                self.app_state.shortcuts_open = false;
+            }
+            self.render(terminal)?;
+            return Ok(());
+        }
+
+        {
+            use crossterm::event::{KeyCode, KeyModifiers};
+            if key_event.code == KeyCode::F(2) {
+                self.app_state.open_settings_modal();
+                self.render(terminal)?;
+                return Ok(());
+            }
+            if key_event.code == KeyCode::Char('x')
+                && key_event.modifiers.contains(KeyModifiers::CONTROL)
+            {
+                self.app_state.shortcuts_open = true;
+                self.render(terminal)?;
+                return Ok(());
+            }
+        }
+
         // Check if in interactive mode and handle its input first
         if self.app_state.is_interactive_mode() {
             if let Some(state) = self.app_state.get_interactive_state_mut() {

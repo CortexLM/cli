@@ -1,0 +1,12 @@
+╭─ Settings ───────────────────── [x] ─╮
+│ Appearance › Theme                   │
+│ ──────────────────────────────────── │
+│  ● Cortex Night             current  │
+│  ○ Cortex Day                        │
+│  ○ Ocean Dark                        │
+│  ○ Monokai                           │
+│                                      │
+│                                      │
+│        Enter select | ← back         │
+│             F2/Esc close             │
+╰──────────────────────────────────────╯

@@ -112,6 +112,37 @@ impl EventLoop {
                     }
                 }
 
+                if self.app_state.autocomplete.visible {
+                    let (w, h) = self.app_state.terminal_size;
+                    let footer_y = h.saturating_sub(1);
+                    let composer_y = footer_y.saturating_sub(1 + 3);
+                    let palette_h = if h >= 20 { 8 } else { 3 };
+                    let palette_y = composer_y.saturating_sub(palette_h);
+                    if y >= palette_y && y < composer_y {
+                        let row =
+                            (y - palette_y) as usize + self.app_state.autocomplete.scroll_offset;
+                        self.app_state.autocomplete.hovered = Some(row);
+                    } else {
+                        self.app_state.autocomplete.hovered = None;
+                    }
+                    let _ = w;
+                }
+
+                if let Some(ref mut modal) = self.app_state.settings_modal {
+                    modal.hover_at(y);
+                }
+
+                let (_, h) = self.app_state.terminal_size;
+                let footer_y = h.saturating_sub(1);
+                let composer_y = footer_y.saturating_sub(1 + 3);
+                self.app_state.composer_hovered = y >= composer_y && y < footer_y.saturating_sub(1);
+                if y == footer_y {
+                    self.app_state.footer_hover = Some(0);
+                } else {
+                    self.app_state.footer_hover = None;
+                }
+                let _ = x;
+
                 // Handle question view hover
                 if self.app_state.view == crate::app::AppView::Questions {
                     self.handle_question_hover(x, y);

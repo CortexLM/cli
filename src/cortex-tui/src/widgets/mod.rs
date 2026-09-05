@@ -30,6 +30,8 @@ pub mod model_picker;
 // pub mod provider_picker; // REMOVED (single Cortex provider)
 pub mod scrollable_dropdown;
 pub mod selection_list;
+pub mod settings_modal;
+pub mod shortcuts_overlay;
 pub mod status_indicator;
 pub mod task_progress;
 pub mod toast;
@@ -55,6 +57,8 @@ pub use scrollable_dropdown::{
     select_next, select_prev,
 };
 pub use selection_list::{SelectionItem, SelectionList, SelectionResult};
+pub use settings_modal::{SettingsAction, SettingsModal, SettingsModalState, SettingsValues};
+pub use shortcuts_overlay::ShortcutsOverlay;
 pub use status_indicator::{StatusIndicator, fmt_elapsed_compact};
 pub use task_progress::{
     CompactProgressIndicator, CurrentTool, ParallelTaskProgressWidget, ProgressCollector,

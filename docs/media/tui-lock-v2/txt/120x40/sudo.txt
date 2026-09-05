@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > install the system deps                                                                                  02:40 PM
+
+   ♦ Thought for 0.7s
+
+   ● Shell  $ sudo apt-get install -y libssl-dev
+   Password for mathis: ••••••••
+     Never stored, logged, or shown to the model — sent straight to sudo.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Enter the password above                                                                                         │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:submit  |  Esc:cancel

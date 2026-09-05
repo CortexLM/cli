@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > run the tui tests and fix whatever fails                                                                 09:14 AM
+
+   ♦ Thought for 2.1s
+
+   ⠇ Shell  $ cargo test -p cortex-tui · running · 8s
+
+   > /btw what is the difference between Plan and Ask?                                                        09:15 AM
+
+   ♦ Side note  ·  answered without touching the running turn
+
+   Plan drafts an approach and waits for approval before editing. Ask never edits — it only answers           09:15 AM
+   questions about the codebase.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Esc:interrupt  |  Enter:queue follow-up  |  Ctrl+x:shortcuts

@@ -1,8 +1,9 @@
 //! Renderer for interactive selection in the input area.
 
-use super::state::{InlineFormState, InteractiveItem, InteractiveState};
+use super::state::{EffortLevel, InlineFormState, InteractiveItem, InteractiveState};
 use cortex_core::style::{
-    ACCENT, BORDER_FOCUS, HAIRLINE, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+    ACCENT, BAR_HOVER, BORDER_FOCUS, HAIRLINE, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM,
+    TEXT_MUTED,
 };
 use ratatui::{
     buffer::Buffer,
@@ -21,6 +22,8 @@ pub const SEARCH_PLACEHOLDER: &str = "Type to search";
 /// Widget for rendering the interactive selection list.
 pub struct InteractiveWidget<'a> {
     state: &'a InteractiveState,
+    /// Skip title, hairline, hints, and `Clear` — rows sit above the composer.
+    rows_only: bool,
 }
 
 /// Paint a full-width hairline on row `y`.
@@ -39,7 +42,16 @@ fn hairline(area: Rect, y: u16, buf: &mut Buffer) {
 impl<'a> InteractiveWidget<'a> {
     /// Create a new interactive widget.
     pub fn new(state: &'a InteractiveState) -> Self {
-        Self { state }
+        Self {
+            state,
+            rows_only: false,
+        }
+    }
+
+    /// Paint only the option rows (slash / model / effort) above the composer.
+    pub fn rows_only(mut self) -> Self {
+        self.rows_only = true;
+        self
     }
 
     /// Calculate click zones for the interactive list.
@@ -88,7 +100,13 @@ impl<'a> InteractiveWidget<'a> {
             0
         };
         let hints_height = 1;
-        let effort_height = if state.effort.is_some() { 2 } else { 0 };
+        let effort_height = if state.effort_focused {
+            3
+        } else if state.effort.is_some() {
+            0
+        } else {
+            0
+        };
         let items_height = inner
             .height
             .saturating_sub(search_height + hints_height + effort_height);
@@ -138,7 +156,14 @@ impl<'a> InteractiveWidget<'a> {
             0
         };
         let hints_height = 1;
-        let effort_height = if self.state.effort.is_some() { 2 } else { 0 };
+        let effort_height = if self.state.effort_focused { 3 } else { 0 };
+
+        if self.rows_only {
+            if self.state.effort_focused {
+                return 3;
+            }
+            return items_count as u16;
+        }
 
         (items_count as u16) + header_height + search_height + hints_height + effort_height
     }
@@ -146,6 +171,15 @@ impl<'a> InteractiveWidget<'a> {
 
 impl<'a> Widget for InteractiveWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        if self.rows_only {
+            if self.state.effort_focused {
+                self.render_effort_radios(area, buf);
+            } else {
+                self.render_items(area, buf);
+            }
+            return;
+        }
+
         // Clear the area first
         Clear.render(area, buf);
 
@@ -209,12 +243,13 @@ impl<'a> Widget for InteractiveWidget<'a> {
         // Layout: search (optional, framed by two hairlines) + items +
         // optional Effort radios + hints
         let mut constraints = Vec::new();
-        if self.state.searchable {
+        if self.state.searchable && !self.state.effort_focused {
             constraints.push(Constraint::Length(SEARCH_FIELD_ROWS));
         }
-        constraints.push(Constraint::Min(1)); // Items
-        if self.state.effort.is_some() {
-            constraints.push(Constraint::Length(2)); // Effort title + radios
+        if self.state.effort_focused {
+            constraints.push(Constraint::Length(3));
+        } else {
+            constraints.push(Constraint::Min(1)); // Items
         }
         constraints.push(Constraint::Length(1)); // Hints
 
@@ -223,22 +258,20 @@ impl<'a> Widget for InteractiveWidget<'a> {
 
         // Render the search field if enabled: `/ Type to search` between two
         // hairlines — the same bar as the composer.
-        if self.state.searchable {
+        if self.state.searchable && !self.state.effort_focused {
             let search_area = chunks[chunk_idx];
             chunk_idx += 1;
             render_search_field(search_area, buf, &self.state.search_query);
         }
 
-        // Render items
-        let items_area = chunks[chunk_idx];
-        chunk_idx += 1;
-
-        self.render_items(items_area, buf);
-
-        if self.state.effort.is_some() {
+        if self.state.effort_focused {
             let effort_area = chunks[chunk_idx];
             chunk_idx += 1;
             self.render_effort_radios(effort_area, buf);
+        } else {
+            let items_area = chunks[chunk_idx];
+            chunk_idx += 1;
+            self.render_items(items_area, buf);
         }
 
         // Render hints
@@ -371,7 +404,7 @@ impl<'a> InteractiveWidget<'a> {
         } else if selected_bar {
             (TEXT, SELECTION_BG)
         } else if is_hovered {
-            (TEXT, SURFACE_1)
+            (TEXT, BAR_HOVER)
         } else {
             (TEXT, Color::Reset)
         };
@@ -430,7 +463,7 @@ impl<'a> InteractiveWidget<'a> {
             Style::default().fg(TEXT_DIM).add_modifier(Modifier::BOLD)
         } else if selected_bar {
             Style::default()
-                .fg(ACCENT)
+                .fg(TEXT)
                 .bg(SELECTION_BG)
                 .add_modifier(Modifier::BOLD)
         } else {
@@ -462,7 +495,7 @@ impl<'a> InteractiveWidget<'a> {
         }
     }
 
-    /// Paint `Effort` plus `○ Low   ● Medium   ○ High`. No A★ / star picker.
+    /// Paint High / Medium / Low effort radios, High first.
     fn render_effort_radios(&self, area: Rect, buf: &mut Buffer) {
         let Some(effort) = self.state.effort else {
             return;
@@ -470,19 +503,57 @@ impl<'a> InteractiveWidget<'a> {
         if area.height < 1 {
             return;
         }
-        buf.set_string(
-            area.x,
-            area.y,
-            "Effort",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-        );
-        if area.height >= 2 {
-            buf.set_string(
-                area.x,
-                area.y + 1,
-                effort.radios_line(),
-                Style::default().fg(TEXT),
-            );
+        for (i, (level, label, desc)) in EffortLevel::rows().iter().enumerate() {
+            let y = area.y + i as u16;
+            if y >= area.bottom() {
+                break;
+            }
+            let focused = self.state.effort_focused && *level == effort;
+            let hovered = !focused && self.state.hovered == Some(1000 + i);
+            if focused {
+                for dx in 0..area.width {
+                    if let Some(cell) = buf.cell_mut((area.x + dx, y)) {
+                        cell.set_bg(SELECTION_BG);
+                    }
+                }
+                buf.set_string(
+                    area.x,
+                    y,
+                    "> ",
+                    Style::default().fg(ACCENT).bg(SELECTION_BG),
+                );
+            } else if hovered {
+                for dx in 0..area.width {
+                    if let Some(cell) = buf.cell_mut((area.x + dx, y)) {
+                        cell.set_bg(BAR_HOVER);
+                    }
+                }
+                buf.set_string(area.x, y, "  ", Style::default().fg(TEXT_DIM).bg(BAR_HOVER));
+            } else {
+                buf.set_string(area.x, y, "  ", Style::default().fg(TEXT_DIM));
+            }
+            let name_style = if focused {
+                Style::default()
+                    .fg(TEXT)
+                    .bg(SELECTION_BG)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(TEXT)
+            };
+            buf.set_string(area.x + 2, y, *label, name_style);
+            let desc_x = area.x + 2 + 16;
+            if desc_x + 4 < area.right() {
+                let desc_style = if focused {
+                    Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
+                } else {
+                    Style::default().fg(TEXT_DIM)
+                };
+                let shown = crate::ui::text_utils::first_fitting_line(
+                    desc,
+                    area.right().saturating_sub(desc_x + 1) as usize,
+                );
+                buf.set_string(desc_x, y, &shown, desc_style);
+            }
         }
     }
 
@@ -738,11 +809,11 @@ mod tests {
         assert!(rows[4].chars().all(|c| c == '─'), "{text}");
         assert_eq!(buf[(0, 2)].style().fg, Some(HAIRLINE), "{text}");
 
-        // Selected row: violet `>` and label on the gray bar, dim description.
+        // Selected row: violet `>` on the gray bar, white label, dim description.
         assert!(rows[5].starts_with("> Model"), "{text}");
         assert_eq!(buf[(0, 5)].style().fg, Some(ACCENT));
         assert_eq!(buf[(0, 5)].style().bg, Some(SELECTION_BG));
-        assert_eq!(buf[(2, 5)].style().fg, Some(ACCENT));
+        assert_eq!(buf[(2, 5)].style().fg, Some(TEXT));
         let desc_x = rows[5].find("Cortex").expect("description") as u16;
         assert_eq!(buf[(desc_x, 5)].style().fg, Some(TEXT_DIM));
         assert_eq!(buf[(desc_x, 5)].style().bg, Some(SELECTION_BG));
@@ -763,7 +834,7 @@ mod tests {
             InteractiveItem::new("one", "Cortex 1")
                 .with_description("Deeper reasoning for hard changes."),
         ];
-        let state = InteractiveState::new("Model", items, InteractiveAction::SetModel)
+        let mut state = InteractiveState::new("Model", items, InteractiveAction::SetModel)
             .with_search()
             .with_effort(crate::interactive::EffortLevel::Medium)
             .with_hints(vec![
@@ -772,15 +843,16 @@ mod tests {
                 ("tab".into(), "effort".into()),
                 ("esc".into(), "close".into()),
             ]);
+        state.effort_focused = true;
         let widget = InteractiveWidget::new(&state);
         let area = Rect::new(0, 0, 72, 12);
         let mut buf = Buffer::empty(area);
         widget.render(area, &mut buf);
         let text = buffer_text(&buf);
 
-        assert!(text.contains("Effort"), "{text}");
-        assert!(text.contains("○ Low   ● Medium   ○ High"), "{text}");
-        assert!(text.contains("tab effort"), "{text}");
+        assert!(text.contains("High Effort"), "{text}");
+        assert!(text.contains("Medium Effort"), "{text}");
+        assert!(text.contains("Low Effort"), "{text}");
         assert!(
             !text.contains('★') && !text.contains("A★") && !text.contains("/effort"),
             "model picker must not be an A★ /effort picker:\n{text}"

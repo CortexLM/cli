@@ -96,7 +96,7 @@ mod tests {
         let state = build_effort_selector(Some("low"));
         assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Low));
         let line = state.effort.expect("effort").radios_line();
-        assert_eq!(line, "● Low   ○ Medium   ○ High");
+        assert_eq!(line, "○ High Effort   ○ Medium Effort   ● Low Effort");
         assert!(!line.contains('★') && !line.contains("MAX"), "{line}");
     }
 }

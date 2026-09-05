@@ -111,7 +111,7 @@ async fn test_handle_settings() {
     let result = run_action(&mut state, &mut stream, KeyAction::ToggleSettings).await;
     assert!(result.is_ok());
     assert!(result.unwrap());
-    assert_eq!(state.view, AppView::Settings);
+    assert!(state.settings_modal.is_some());
 }
 
 #[tokio::test]

@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > why do tests fail on the composer?                                                                       09:14 AM
+
+   ♦ Thought for 2.1s
+
+   ▾ 3 tool calls  Read ×2 · Grep ×1
+   ● Read  src/cortex-tui/src/composer.rs · 212 lines
+   ● Read  src/cortex-tui/src/tests/composer.rs · 88 lines
+   ● Grep  "model_chip" in src/ · 3 hits in 2 files
+   ● Shell  $ cargo test -p cortex-tui composer · × 101 · 12s
+     test composer::chip_in_border … FAILED — expected `Cortex Mini 1 (medium)`, got ``
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

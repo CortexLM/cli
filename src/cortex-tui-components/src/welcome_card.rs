@@ -21,6 +21,8 @@ pub trait ToLines {
 const WELCOME_LEAD: &str = "Welcome to ";
 const WELCOME_PRODUCT: &str = "Cortex";
 const WELCOME_TAIL: &str = ", the coding agent CLI";
+const WELCOME_AGENT_PRODUCT: &str = "Cortex Agent";
+const WELCOME_AGENT_TAIL: &str = " — describe a task, it does the work";
 
 /// Empty-session splash: welcome line plus version/hints. No mascot or logo.
 pub struct WelcomeCard<'a> {
@@ -32,6 +34,7 @@ pub struct WelcomeCard<'a> {
     text_color: Color,
     dim_color: Color,
     border_color: Color,
+    agent: bool,
 }
 
 impl<'a> WelcomeCard<'a> {
@@ -46,6 +49,7 @@ impl<'a> WelcomeCard<'a> {
             text_color: TEXT,
             dim_color: TEXT_DIM,
             border_color: BORDER,
+            agent: false,
         }
     }
 
@@ -70,6 +74,12 @@ impl<'a> WelcomeCard<'a> {
     /// Set the tips to display.
     pub fn tips(mut self, tips: &[&'a str]) -> Self {
         self.tips = tips.to_vec();
+        self
+    }
+
+    /// Agent-entrypoint title: `Welcome to Cortex Agent — describe a task…`.
+    pub fn agent(mut self, agent: bool) -> Self {
+        self.agent = agent;
         self
     }
 
@@ -118,17 +128,23 @@ impl ToLines for WelcomeCard<'_> {
             self.accent_color,
             self.border_color,
         );
-        welcome_lines(self.version, width, self.text_color, self.dim_color)
+        welcome_lines(
+            self.version,
+            width,
+            self.text_color,
+            self.dim_color,
+            self.agent,
+        )
     }
 }
 
-/// `v{version} · / commands · @ files · ! shell · & cloud`, shortened to fit.
+/// `v{version}  ·  / commands  ·  @ files  ·  ! shell  ·  & cloud`, shortened to fit.
 pub fn splash_hint_line(version: &str, width: usize) -> String {
-    let full = format!("v{version} · / commands · @ files · ! shell · & cloud");
+    let full = format!("v{version}  ·  / commands  ·  @ files  ·  ! shell  ·  & cloud");
     if full.chars().count() <= width {
         return full;
     }
-    let mid = format!("v{version} · / commands · @ files · ! shell");
+    let mid = format!("v{version}  ·  / commands  ·  @ files");
     if mid.chars().count() <= width {
         return mid;
     }
@@ -144,25 +160,36 @@ pub fn splash_hint_line(version: &str, width: usize) -> String {
     }
 }
 
-fn welcome_lines(version: Option<&str>, width: u16, text: Color, dim: Color) -> Vec<Line<'static>> {
+fn welcome_lines(
+    version: Option<&str>,
+    width: u16,
+    text: Color,
+    dim: Color,
+    agent: bool,
+) -> Vec<Line<'static>> {
     let w = width as usize;
     let dim_st = Style::default().fg(dim);
     let bold_st = Style::default().fg(text).add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
-    let title_w = WELCOME_LEAD.len() + WELCOME_PRODUCT.len() + WELCOME_TAIL.len();
+    let (product, tail) = if agent {
+        (WELCOME_AGENT_PRODUCT, WELCOME_AGENT_TAIL)
+    } else {
+        (WELCOME_PRODUCT, WELCOME_TAIL)
+    };
+    let title_w = WELCOME_LEAD.len() + product.len() + tail.len();
     if title_w <= w {
         lines.push(Line::from(vec![
             Span::styled(WELCOME_LEAD, dim_st),
-            Span::styled(WELCOME_PRODUCT, bold_st),
-            Span::styled(WELCOME_TAIL, dim_st),
+            Span::styled(product, bold_st),
+            Span::styled(tail, dim_st),
         ]));
-    } else if WELCOME_LEAD.len() + WELCOME_PRODUCT.len() <= w {
+    } else if WELCOME_LEAD.len() + product.len() <= w {
         lines.push(Line::from(vec![
             Span::styled(WELCOME_LEAD, dim_st),
-            Span::styled(WELCOME_PRODUCT, bold_st),
+            Span::styled(product, bold_st),
         ]));
     } else {
-        lines.push(Line::from(Span::styled(WELCOME_PRODUCT, bold_st)));
+        lines.push(Line::from(Span::styled(product, bold_st)));
     }
     let ver = version.unwrap_or(env!("CARGO_PKG_VERSION"));
     let hint = splash_hint_line(ver, w);
@@ -177,7 +204,13 @@ impl Widget for WelcomeCard<'_> {
         if area.height == 0 || area.width == 0 {
             return;
         }
-        let lines = welcome_lines(self.version, area.width, self.text_color, self.dim_color);
+        let lines = welcome_lines(
+            self.version,
+            area.width,
+            self.text_color,
+            self.dim_color,
+            self.agent,
+        );
         for (i, line) in lines.into_iter().enumerate() {
             let y = area.y + i as u16;
             if y >= area.bottom() {
@@ -531,7 +564,10 @@ mod tests {
         assert!(text.contains("Welcome to "));
         assert!(text.contains("Cortex"));
         assert!(text.contains("the coding agent CLI"));
-        assert!(text.contains("v0.1.7 · / commands"));
+        assert!(
+            text.contains("v0.1.7") && text.contains("/ commands"),
+            "{text}"
+        );
         assert!(text.contains("& cloud"));
         assert_no_mascot(&text);
         assert!(!text.contains("Welcome!"));

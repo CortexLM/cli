@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > /config                                                                                                  05:30 PM
+
+   ~/.cortex/config.json  ·  read-only view · edit with your editor
+     model                   cortex-1-mini
+     effort                  medium
+     permissions             smart
+     sandbox                 workspace
+     tui.alternate_screen    true
+     tui.theme.name          cortex-night
+     tui.animations          true
+     mcp.servers             github · filesystem · linear · sentry
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > /config                                                                                                          │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

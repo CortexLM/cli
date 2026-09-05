@@ -97,6 +97,12 @@ pub struct AdaptiveColors {
     pub thinking: Color,
     /// Selection bar background (dark gray)
     pub selection: Color,
+    /// Hover bar (`#1A1A1A`)
+    pub hover: Color,
+    /// Hairline hover (`#525252`)
+    pub hairline_hover: Color,
+    /// Inky canvas
+    pub background: Color,
 }
 
 impl AdaptiveColors {
@@ -118,7 +124,7 @@ impl AdaptiveColors {
         let border_rgb = blend((0x3A, 0x3A, 0x3A), bg, 0.9);
         let user_bg_rgb = blend((0x1C, 0x1C, 0x1C), bg, 0.8);
         let panel_rgb = blend((0x14, 0x14, 0x14), bg, 0.8);
-        let selection_rgb = blend((0x22, 0x1A, 0x38), bg, 0.9);
+        let selection_rgb = blend((0x26, 0x26, 0x26), bg, 0.9);
 
         Self {
             accent: cortex_core::style::ACCENT,
@@ -134,6 +140,9 @@ impl AdaptiveColors {
             warning: cortex_core::style::WARNING,
             thinking: cortex_core::style::THINKING,
             selection: Color::Rgb(selection_rgb.0, selection_rgb.1, selection_rgb.2),
+            hover: cortex_core::style::BAR_HOVER,
+            hairline_hover: cortex_core::style::BORDER_FOCUS,
+            background: cortex_core::style::VOID,
         }
     }
 
@@ -162,8 +171,11 @@ impl AdaptiveColors {
             diff_add: Color::Rgb(0x16, 0xA3, 0x4A),
             error: Color::Rgb(0xD9, 0x3D, 0x3D), // Darker red for light bg
             warning: Color::Rgb(0xC9, 0x9A, 0x2E), // Darker amber for light bg
-            thinking: Color::Rgb(0x9A, 0x7B, 0x2E), // Darker gold for light bg
+            thinking: Color::Rgb(0x9A, 0x7B, 0x2E),
             selection: Color::Rgb(selection_rgb.0, selection_rgb.1, selection_rgb.2),
+            hover: Color::Rgb(0xE8, 0xE8, 0xE8),
+            hairline_hover: Color::Rgb(border_rgb.0, border_rgb.1, border_rgb.2),
+            background: Color::Rgb(bg.0, bg.1, bg.2),
         }
     }
 
@@ -182,8 +194,11 @@ impl AdaptiveColors {
             diff_add: cortex_core::style::DIFF_ADD,      // #4ADE80
             error: cortex_core::style::ERROR,            // #F87171
             warning: cortex_core::style::WARNING,        // #FFC857
-            thinking: cortex_core::style::THINKING,      // #C9A95C
-            selection: cortex_core::style::SELECTION_BG, // #221A38
+            thinking: cortex_core::style::THINKING,      // dim
+            selection: cortex_core::style::SELECTION_BG, // #262626
+            hover: cortex_core::style::BAR_HOVER,
+            hairline_hover: cortex_core::style::BORDER_FOCUS,
+            background: cortex_core::style::VOID,
         }
     }
 }
@@ -222,6 +237,9 @@ impl AdaptiveColors {
             warning: theme.warning,
             thinking: cortex_core::style::THINKING,
             selection,
+            hover: cortex_core::style::BAR_HOVER,
+            hairline_hover: theme.border_focus,
+            background: theme.background,
         }
     }
 
@@ -268,14 +286,15 @@ mod tests {
         // Green covers `✓` and diff additions alike.
         assert!(matches!(colors.diff_add, Color::Rgb(0x4A, 0xDE, 0x80)));
         assert_eq!(colors.success, colors.diff_add);
-        // The selection bar is `#221A38`.
-        assert!(matches!(colors.selection, Color::Rgb(0x22, 0x1A, 0x38)));
+        // The selection bar is `#262626`.
+        assert!(matches!(colors.selection, Color::Rgb(0x26, 0x26, 0x26)));
+        assert!(matches!(colors.hover, Color::Rgb(0x1A, 0x1A, 0x1A)));
         assert!(matches!(colors.user_bg, Color::Rgb(0x1C, 0x1C, 0x1C)));
         assert!(matches!(colors.panel_bg, Color::Rgb(0x14, 0x14, 0x14)));
         assert!(matches!(colors.border, Color::Rgb(0x3A, 0x3A, 0x3A)));
         assert!(matches!(colors.text_dim, Color::Rgb(0x6B, 0x72, 0x80)));
-        // Thinking is the muted gold, distinct from the warning amber.
-        assert_ne!(colors.thinking, colors.warning);
+        // Thinking metadata is dim, not gold.
+        assert_eq!(colors.thinking, colors.text_dim);
     }
 
     #[test]
@@ -306,7 +325,7 @@ mod tests {
         // Dark themes carry the locked selection bar.
         assert!(matches!(
             dark_colors.selection,
-            Color::Rgb(0x22, 0x1A, 0x38)
+            Color::Rgb(0x26, 0x26, 0x26)
         ));
 
         let light_colors = AdaptiveColors::from_theme_name("light");

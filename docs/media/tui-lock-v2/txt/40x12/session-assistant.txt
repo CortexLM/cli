@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   > tell me about yourself
+
+   ♦ Thought for 0.4s
+
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

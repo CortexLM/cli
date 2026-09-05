@@ -177,6 +177,7 @@ try {
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
     $dest = Join-Path $BinDir "Cortex.exe"
     Copy-Item -Path $binary.FullName -Destination $dest -Force
+    Copy-Item -Path $dest -Destination (Join-Path $BinDir "agent.exe") -Force
 
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $pathParts = @()

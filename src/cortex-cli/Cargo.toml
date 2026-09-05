@@ -10,6 +10,10 @@ description = "Cortex CLI - Modern AI coding agent"
 name = "Cortex"
 path = "src/main.rs"
 
+[[bin]]
+name = "agent"
+path = "src/main.rs"
+
 [lib]
 name = "cortex_cli"
 path = "src/lib.rs"

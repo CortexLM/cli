@@ -520,3 +520,32 @@ fn test_share_command() {
         CommandResult::Async(ref s) if s == "share:7d"
     ));
 }
+
+#[test]
+fn effort_opens_model_picker_not_a_star_picker() {
+    let executor = CommandExecutor::new();
+    let result = executor.execute_str("/effort");
+    assert!(
+        matches!(result, CommandResult::OpenModal(ModalType::ModelPicker)),
+        "expected /effort to open /model radios, got {result:?}"
+    );
+    assert!(!matches!(
+        result,
+        CommandResult::OpenModal(ModalType::Effort)
+    ));
+}
+
+#[test]
+fn plugins_command_is_registered() {
+    let executor = CommandExecutor::new();
+    let result = executor.execute_str("/plugins");
+    assert!(
+        matches!(result, CommandResult::Async(ref s) if s == "plugins:list"),
+        "got {result:?}"
+    );
+    let result = executor.execute_str("/plugins list");
+    assert!(
+        matches!(result, CommandResult::Async(ref s) if s == "plugins:list"),
+        "got {result:?}"
+    );
+}

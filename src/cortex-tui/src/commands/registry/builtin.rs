@@ -87,10 +87,10 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     registry.register(CommandDef::new(
         "effort",
         &[],
-        "Tune reasoning effort for the current model",
+        "Tune reasoning effort on the model picker (Tab)",
         "/effort",
         CommandCategory::Model,
-        true,
+        false,
     ));
 
     registry.register(CommandDef::new(

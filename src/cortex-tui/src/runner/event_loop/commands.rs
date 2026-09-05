@@ -210,7 +210,7 @@ impl EventLoop {
                 let interactive = build_settings_selector(snapshot, Some(terminal_height));
                 self.app_state.enter_interactive_mode(interactive);
             }
-            ModalType::ModelPicker => {
+            ModalType::ModelPicker | ModalType::Effort => {
                 let (models, current_model) = if let Some(ref pm) = self.provider_manager {
                     if let Ok(manager) = pm.try_read() {
                         let models = manager.available_models();
@@ -241,6 +241,7 @@ impl EventLoop {
                 let interactive = crate::interactive::builders::build_model_selector(
                     models,
                     current_model.as_deref(),
+                    self.app_state.thinking_budget.as_deref(),
                 );
                 self.app_state.enter_interactive_mode(interactive);
             }
@@ -385,12 +386,6 @@ impl EventLoop {
                 self.app_state.set_agent_mode("plan");
                 self.sync_agent_mode_harness();
                 self.app_state.toasts.info("Mode: Plan");
-            }
-            ModalType::Effort => {
-                let interactive = crate::interactive::builders::build_effort_selector(
-                    self.app_state.thinking_budget.as_deref(),
-                );
-                self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::Skills => {
                 let interactive = self.build_skills_picker().await;

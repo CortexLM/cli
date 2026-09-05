@@ -54,6 +54,6 @@ pub mod state;
 pub use handlers::handle_interactive_key;
 pub use renderer::InteractiveWidget;
 pub use state::{
-    InlineFormField, InlineFormState, InputMode, InteractiveAction, InteractiveItem,
+    EffortLevel, InlineFormField, InlineFormState, InputMode, InteractiveAction, InteractiveItem,
     InteractiveResult, InteractiveState,
 };

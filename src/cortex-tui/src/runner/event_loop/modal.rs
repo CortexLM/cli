@@ -607,6 +607,14 @@ impl EventLoop {
                     let _ = config.save_last_model(&self.app_state.provider, &item_id);
                 }
                 self.update_session_model(&item_id);
+                if let Some(effort) = self
+                    .app_state
+                    .get_interactive_state()
+                    .and_then(|state| state.effort)
+                {
+                    self.app_state
+                        .set_thinking_budget(Some(effort.as_str().to_string()));
+                }
                 return false;
             }
             InteractiveAction::ToggleSetting => {

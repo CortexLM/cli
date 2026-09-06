@@ -11,7 +11,7 @@ use ratatui::style::Color;
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::interpolate_color;
+/// use cortex_core::animation::interpolate_color;
 /// use ratatui::style::Color;
 ///
 /// let from = Color::Rgb(0, 255, 255);

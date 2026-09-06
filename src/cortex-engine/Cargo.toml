@@ -19,31 +19,31 @@ workspace = true
 cortex-protocol = { workspace = true }
 cortex-common = { workspace = true }
 cortex-login = { workspace = true }
-cortex-mcp-types = { path = "../cortex-mcp-types" }
+cortex-mcp-types = { workspace = true }
 
 # New feature crates (Phase 1)
-cortex-lsp = { path = "../cortex-lsp" }
-cortex-snapshot = { path = "../cortex-snapshot" }
+cortex-lsp = { workspace = true }
+cortex-snapshot = { workspace = true }
 cortex-agents-ext = { path = "../cortex-agents", package = "cortex-agents" }
 cortex-hooks-ext = { path = "../cortex-hooks", package = "cortex-hooks" }
-cortex-share = { path = "../cortex-share" }
+cortex-share = { workspace = true }
 cortex-plugins-ext = { path = "../cortex-plugins", package = "cortex-plugins" }
-cortex-batch = { path = "../cortex-batch" }
-cortex-prompt-harness = { path = "../cortex-prompt-harness" }
+cortex-batch = { workspace = true }
+cortex-prompt-harness = { workspace = true }
 
 # New feature crates (Phase 2)
-cortex-ghost = { path = "../cortex-ghost" }
+cortex-ghost = { workspace = true }
 cortex-review-ext = { path = "../cortex-review", package = "cortex-review" }
-cortex-resume = { path = "../cortex-resume" }
+cortex-resume = { workspace = true }
 cortex-compact-ext = { path = "../cortex-compact", package = "cortex-compact" }
-cortex-ratelimits = { path = "../cortex-ratelimits" }
-cortex-migrations = { path = "../cortex-migrations" }
-cortex-experimental = { path = "../cortex-experimental" }
+cortex-ratelimits = { workspace = true }
+cortex-migrations = { workspace = true }
+cortex-experimental = { workspace = true }
 
 # Async
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "fs", "net", "process", "time"] }
 tokio-stream = { workspace = true }
-tokio-util = "0.7"
+tokio-util = { workspace = true }
 async-trait = { workspace = true }
 async-channel = { workspace = true }
 futures = { workspace = true }
@@ -82,36 +82,32 @@ base64 = { workspace = true }
 sha2 = { workspace = true }
 tempfile = { workspace = true }
 rand = "0.8"
-urlencoding = "2.1"
-serde_yaml = "0.9"
-num_cpus = "1.16"
-glob = "0.3"
-walkdir = "2.5"
+urlencoding = { workspace = true }
+serde_yaml = { workspace = true }
+num_cpus = { workspace = true }
+glob = { workspace = true }
+walkdir = { workspace = true }
 
 # Security - credential encryption
 # Note: keyring with linux-native is platform-specific, moved to target dependencies
-secrecy = { version = "0.10", features = ["serde"] }
+secrecy = { workspace = true, features = ["serde"] }
 aes-gcm = "0.10"
 argon2 = "0.5"
-zeroize = { version = "1.8", features = ["derive"] }
+zeroize = { workspace = true, features = ["derive"] }
 
 # mDNS / Service Discovery
 mdns-sd = { workspace = true }
 hostname = { workspace = true }
-flume = "0.11"
+flume = { workspace = true }
 
 # Platform specific
 # Linux glibc builds - uses linux-native keyring backend (libsecret/D-Bus)
 [target.'cfg(all(target_os = "linux", not(target_env = "musl")))'.dependencies]
-landlock = { workspace = true }
-seccompiler = { workspace = true }
 libc = { workspace = true }
 keyring = { workspace = true, features = ["linux-native"] }
 
 # Linux musl builds (static) - uses linux-keyutils backend (no D-Bus dependency)
 [target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
-landlock = { workspace = true }
-seccompiler = { workspace = true }
 libc = { workspace = true }
 keyring = { workspace = true, features = ["linux-native"] }
 
@@ -121,7 +117,7 @@ libc = { workspace = true }
 keyring = { workspace = true, features = ["apple-native"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-cortex-windows-sandbox = { path = "../cortex-windows-sandbox" }
+cortex-windows-sandbox = { workspace = true }
 # Windows uses default keyring backend (Windows Credential Manager)
 keyring = { workspace = true, features = ["windows-native"] }
 
@@ -129,9 +125,5 @@ keyring = { workspace = true, features = ["windows-native"] }
 libc = { workspace = true }
 
 [dev-dependencies]
-pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
-tokio-test = { workspace = true }
-wiremock = { workspace = true }
-insta = { workspace = true }
 serial_test = { workspace = true }

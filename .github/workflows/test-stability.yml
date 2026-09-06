@@ -1,0 +1,26 @@
+name: Test stability
+on:
+  schedule:
+    - cron: '30 5 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config git ripgrep
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.102
+      - run: python3 scripts/readiness/tests.py --repeat 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-stability
+          path: target/readiness/tests/
+          retention-days: 30

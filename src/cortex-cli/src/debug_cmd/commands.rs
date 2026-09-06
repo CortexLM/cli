@@ -13,6 +13,9 @@ pub struct DebugCli {
 /// Debug subcommands.
 #[derive(Debug, clap::Subcommand)]
 pub enum DebugSubcommand {
+    /// Check local configuration, storage, and required tools without network access.
+    Doctor(DoctorArgs),
+
     /// Show resolved configuration and config file locations.
     Config(ConfigArgs),
 
@@ -39,6 +42,14 @@ pub enum DebugSubcommand {
 
     /// Wait for a condition (useful for scripts).
     Wait(WaitArgs),
+}
+
+/// Arguments for local readiness checks.
+#[derive(Debug, Parser)]
+pub struct DoctorArgs {
+    /// Output the checks as JSON.
+    #[arg(long)]
+    pub json: bool,
 }
 
 // =============================================================================

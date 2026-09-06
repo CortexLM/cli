@@ -10,7 +10,7 @@ description = "Terminal backend for Cortex TUI"
 workspace = true
 
 [dependencies]
-cortex-tui-core = { path = "../cortex-tui-core" }
-cortex-tui-buffer = { path = "../cortex-tui-buffer" }
-cortex-tui-input = { path = "../cortex-tui-input" }
+cortex-tui-core = { workspace = true }
+cortex-tui-buffer = { workspace = true }
+cortex-tui-input = { workspace = true }
 crossterm = { workspace = true }

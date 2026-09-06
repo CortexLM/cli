@@ -37,3 +37,5 @@ Thumbs.db
 .cargo-home/
 .sccache/
 .rustup/
+__pycache__/
+*.py[cod]

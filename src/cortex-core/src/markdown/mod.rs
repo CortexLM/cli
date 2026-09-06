@@ -40,7 +40,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use cortex_engine::markdown::{MarkdownRenderer, MarkdownTheme};
+//! use cortex_core::markdown::{MarkdownRenderer, MarkdownTheme};
 //!
 //! // Create renderer with default theme
 //! let renderer = MarkdownRenderer::new();

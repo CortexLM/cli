@@ -1,0 +1,16 @@
+{
+  "name": "Cortex Rust workspace",
+  "build": {"dockerfile": "Dockerfile", "context": ".."},
+  "remoteUser": "cortex",
+  "updateRemoteUserUID": true,
+  "postCreateCommand": "bash scripts/dev-setup.sh",
+  "containerEnv": {
+    "CORTEX_HOME": "/home/cortex/.cortex",
+    "CARGO_BUILD_JOBS": "4"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer", "tamasfe.even-better-toml"]
+    }
+  }
+}

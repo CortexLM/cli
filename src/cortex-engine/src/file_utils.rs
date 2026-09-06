@@ -227,6 +227,8 @@ pub async fn append_string(path: impl AsRef<Path>, content: impl AsRef<str>) -> 
         .await?;
 
     file.write_all(content.as_ref().as_bytes()).await?;
+    // Tokio may still have an underlying blocking write in flight.
+    file.flush().await?;
     Ok(())
 }
 
@@ -741,6 +743,18 @@ mod tests {
         assert!(content.contains("line2"));
 
         remove_file(&path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_append_is_visible_to_immediate_readers() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("append.txt");
+        let mut expected = String::new();
+        for _ in 0..100 {
+            append_string(&path, "line\n").await.unwrap();
+            expected.push_str("line\n");
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
+        }
     }
 
     #[test]

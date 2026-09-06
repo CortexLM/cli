@@ -935,7 +935,7 @@ pub async fn run_serve(serve_cli: ServeCommand) -> Result<()> {
         ..Default::default()
     };
 
-    // Set authentication if provided
+    config.apply_auth_env();
     if let Some(token) = serve_cli.auth_token {
         config.auth.enabled = true;
         config.auth.api_keys.push(token);

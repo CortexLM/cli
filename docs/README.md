@@ -21,6 +21,8 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [Sessions](guides/sessions.md) | Resume, list, export, import, share, protect |
 | [Headless / exec mode](guides/exec.md) | Non-interactive runs for scripts and CI |
 | [Plan and Spec modes](guides/plan.md) | Get a plan approved before anything is written |
+| [Development and local QA](guides/development.md) | Reproducible setup, real local tests, coverage and test reports |
+| [Source quality](guides/quality.md) | Dependency, complexity, duplication, feature-flag and contract gates |
 
 ### Configuration
 
@@ -50,6 +52,8 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [Slash commands](reference/slash-commands.md) | Everything you can type after `/` in the TUI |
 | [Keyboard shortcuts](reference/keyboard.md) | Key bindings by context |
 | [Signing in](reference/login.md) | Browser, device-code, SSO and token sign-in; the keyring |
+| [Local app-server API](reference/app-server.md) | Authentication, supported OpenAPI contract and local readiness |
+| [Privacy](reference/privacy.md) | Local diagnostic allowlist, consent, retention and data boundaries |
 
 ### Operations
 
@@ -58,6 +62,9 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [Troubleshooting](troubleshooting.md) | Common failures and how to diagnose them |
 | [Contributing](CONTRIBUTING.md) | Filing issues, PR conventions, required checks |
 | [CI secrets](CI_SECRETS.md) | Secret *names* the release workflows expect |
+| [Local operations](guides/operations.md) | Alerts, error investigation, deployment comparison and profiling |
+| [Maintenance](guides/maintenance.md) | Ownership, labels, backlog triage and release review |
+| [Readiness remediation](guides/readiness-remediation.md) | Local validation snapshot and explicit remaining limits |
 
 ## Conventions used here
 

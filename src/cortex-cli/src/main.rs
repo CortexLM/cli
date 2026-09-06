@@ -130,6 +130,8 @@ async fn main() -> Result<()> {
     cortex_cli::install_panic_hook();
 
     let cli = Cli::parse();
+    cortex_common::diagnostics::init_from_env()
+        .map_err(|_| anyhow::anyhow!("Local diagnostics could not be initialized"))?;
 
     // Handle color mode
     // SAFETY: Environment variable mutations happen early before threads spawn
@@ -182,14 +184,36 @@ async fn main() -> Result<()> {
     }
 
     // Background update check (non-blocking)
-    let is_upgrade_cmd = matches!(&cli.command, Some(Commands::Upgrade(_)));
+    let skip_auto_update = matches!(
+        &cli.command,
+        Some(Commands::Upgrade(_) | Commands::Serve(_))
+    );
     let is_tui_mode = cli.command.is_none();
-    if !is_upgrade_cmd && !is_tui_mode {
+    if !skip_auto_update && !is_tui_mode && !is_debug_cmd {
         tokio::spawn(async {
             check_for_updates_background().await;
         });
     }
 
-    // Dispatch the command
-    dispatch_command(cli).await
+    let operation = if is_tui_mode {
+        cortex_common::diagnostics::Operation::CliInteractive
+    } else if is_debug_cmd {
+        cortex_common::diagnostics::Operation::CliDebug
+    } else {
+        cortex_common::diagnostics::Operation::CliCommand
+    };
+    let trace = cortex_common::diagnostics::TraceContext::default();
+    let start = std::time::Instant::now();
+    let result = trace.clone().scope(dispatch_command(cli)).await;
+    if cortex_common::diagnostics::record(
+        operation,
+        &trace,
+        if result.is_ok() { 200 } else { 500 },
+        start.elapsed(),
+    )
+    .is_err()
+    {
+        eprintln!("Local diagnostics could not be written");
+    }
+    result
 }

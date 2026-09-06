@@ -9,14 +9,14 @@ description = "Auto-compaction for Cortex CLI conversations"
 workspace = true
 
 [dependencies]
-cortex-common = { path = "../cortex-common" }
-serde = { version = "1", features = ["derive"] }
-tracing = "0.1"
+cortex-common = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
 thiserror = "1"
 
 # For disk space detection on Unix
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

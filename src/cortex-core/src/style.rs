@@ -450,7 +450,7 @@ impl CortexStyle {
     ///
     /// # Example
     /// ```
-    /// use cortex_engine::style::CortexStyle;
+    /// use cortex_core::style::CortexStyle;
     ///
     /// let pulse_progress = 0.5; // Middle of animation
     /// let style = CortexStyle::brain_pulse(pulse_progress);
@@ -473,7 +473,7 @@ impl CortexStyle {
     ///
     /// # Example
     /// ```
-    /// use cortex_engine::style::CortexStyle;
+    /// use cortex_core::style::CortexStyle;
     ///
     /// let style_full = CortexStyle::brain_cyan(1.0);   // Bright cyan
     /// let style_dim = CortexStyle::brain_cyan(0.6);    // Dimmed cyan

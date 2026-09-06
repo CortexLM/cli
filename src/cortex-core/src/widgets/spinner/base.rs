@@ -12,8 +12,8 @@ use ratatui::widgets::Widget;
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::Spinner;
-/// use cortex_engine::widgets::SpinnerWidget;
+/// use cortex_core::animation::Spinner;
+/// use cortex_core::widgets::SpinnerWidget;
 /// use ratatui::style::{Style, Color};
 ///
 /// let mut spinner = Spinner::dots();

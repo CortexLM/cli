@@ -11,8 +11,8 @@ use ratatui::widgets::Widget;
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::Spinner;
-/// use cortex_engine::widgets::ProgressSpinner;
+/// use cortex_core::animation::Spinner;
+/// use cortex_core::widgets::ProgressSpinner;
 ///
 /// let mut spinner = Spinner::dots();
 ///

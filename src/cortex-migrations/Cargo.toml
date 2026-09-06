@@ -9,5 +9,5 @@ description = "Model migration warnings and deprecation notices for Cortex CLI"
 workspace = true
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-chrono = { version = "0.4", features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+chrono = { workspace = true, features = ["serde"] }

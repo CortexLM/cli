@@ -19,13 +19,13 @@ workspace = true
 
 [dependencies]
 # Internal
-cortex-engine = { path = "../cortex-engine" }
-cortex-protocol = { path = "../cortex-protocol" }
-cortex-common = { path = "../cortex-common" }
+cortex-engine = { workspace = true }
+cortex-protocol = { workspace = true }
+cortex-common = { workspace = true }
 
 # Web framework
 axum = { workspace = true }
-tower-http = { workspace = true }
+tower-http = { workspace = true, features = ["limit"] }
 
 # Async
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "fs", "net", "process", "time"] }
@@ -37,7 +37,8 @@ async-channel = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = "0.9"
+serde_yaml = { workspace = true }
+schemars = { workspace = true }
 
 # HTTP client
 reqwest = { workspace = true }
@@ -48,7 +49,7 @@ thiserror = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
 # CLI
 clap = { workspace = true }
@@ -61,16 +62,17 @@ dirs = "5"
 fs2 = "0.4"  # File locking for concurrent access
 
 # Authentication
-jsonwebtoken = "10"
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 
 # File watching
-notify = "6"
+notify = { workspace = true }
 notify-debouncer-mini = "0.4"
 
 # mDNS/Bonjour service discovery
-mdns-sd = "0.11"
+mdns-sd = { workspace = true }
 if-addrs = "0.13"
 gethostname = "0.5"
 
 [dev-dependencies]
-tokio-test = { workspace = true }
+tower = { workspace = true }
+tempfile = { workspace = true }

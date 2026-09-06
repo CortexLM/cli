@@ -68,6 +68,15 @@ Match CI (`.github/workflows/ci.yml`):
 - TUI job for the framework + app surfaces
 - `./scripts/check-cli-version.sh`
 - PR attestation checklist in `.github/PULL_REQUEST_TEMPLATE.md`
+- Source/dependency policy, API-contract freshness, local QA, and changed-line
+  coverage in CI. Use the actual PR base SHA, never a self-baseline.
+
+Local setup and the exact reporting/coverage commands:
+[`docs/guides/development.md`](docs/guides/development.md).
+Policy and existing-debt handling:
+[`docs/guides/quality.md`](docs/guides/quality.md).
+Diagnostics stay local, opt-in, and content-free:
+[`docs/guides/operations.md`](docs/guides/operations.md).
 
 ## Where to read what
 

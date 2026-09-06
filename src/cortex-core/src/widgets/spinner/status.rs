@@ -13,8 +13,8 @@ use std::time::Instant;
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::Spinner;
-/// use cortex_engine::widgets::StatusSpinner;
+/// use cortex_core::animation::Spinner;
+/// use cortex_core::widgets::StatusSpinner;
 /// use std::time::Instant;
 ///
 /// let mut spinner = Spinner::dots();

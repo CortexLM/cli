@@ -16,7 +16,7 @@ workspace = true
 [dependencies]
 # Serialization
 serde = { workspace = true }
-serde_yaml = "0.9"
+serde_yaml = { workspace = true }
 
 # Async
 tokio = { workspace = true, features = ["fs", "io-util", "sync"] }

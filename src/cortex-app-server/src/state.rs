@@ -88,7 +88,7 @@ impl AppState {
     /// Start background cleanup task that runs periodically.
     /// Call this after wrapping AppState in Arc to start the cleanup loop.
     pub fn start_cleanup_task(self: &Arc<Self>) {
-        let state = Arc::clone(self);
+        let state = Arc::downgrade(self);
         let cleanup_interval = Duration::from_secs(60); // Run cleanup every minute
 
         tokio::spawn(async move {
@@ -97,6 +97,9 @@ impl AppState {
 
             loop {
                 interval.tick().await;
+                let Some(state) = state.upgrade() else {
+                    break;
+                };
 
                 // Cleanup expired sessions
                 state.cleanup_expired_sessions().await;
@@ -144,6 +147,7 @@ impl AppState {
 
         // Update metrics
         self.increment_counter("sessions_created").await;
+        self.record_session_event(cortex_common::diagnostics::Operation::SessionCreated);
 
         Ok(session)
     }
@@ -178,6 +182,7 @@ impl AppState {
         let mut sessions = self.sessions.write().await;
         if sessions.remove(id).is_some() {
             self.increment_counter("sessions_deleted").await;
+            self.record_session_event(cortex_common::diagnostics::Operation::SessionDeleted);
             Ok(())
         } else {
             Err(AppError::NotFound(format!("Session not found: {id}")))
@@ -244,16 +249,25 @@ impl AppState {
 
     /// Get metrics snapshot.
     pub async fn get_metrics(&self) -> MetricsSnapshot {
+        // Never hold both locks: session mutations increment metrics while holding
+        // the session lock.
+        let active_sessions = self.sessions.read().await.len();
         let metrics = self.metrics.read().await;
-        let sessions = self.sessions.read().await;
 
         MetricsSnapshot {
             uptime_seconds: self.uptime().as_secs(),
-            active_sessions: sessions.len(),
+            active_sessions,
             total_requests: *metrics.counters.get("total_requests").unwrap_or(&0),
             rate_limit_hits: *metrics.counters.get("rate_limit_exceeded").unwrap_or(&0),
             sessions_created: *metrics.counters.get("sessions_created").unwrap_or(&0),
             errors: *metrics.counters.get("errors").unwrap_or(&0),
+        }
+    }
+
+    fn record_session_event(&self, operation: cortex_common::diagnostics::Operation) {
+        use cortex_common::diagnostics::{TraceContext, record};
+        if record(operation, &TraceContext::current(), 200, Duration::ZERO).is_err() {
+            tracing::warn!("Local diagnostics could not be written");
         }
     }
 
@@ -437,7 +451,7 @@ struct MetricsState {
 }
 
 /// Metrics snapshot.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema)]
 pub struct MetricsSnapshot {
     /// Server uptime in seconds.
     pub uptime_seconds: u64,

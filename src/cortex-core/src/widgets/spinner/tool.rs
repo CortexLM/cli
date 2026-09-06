@@ -12,7 +12,7 @@ use ratatui::widgets::Widget;
 ///
 /// # Example
 /// ```
-/// use cortex_engine::widgets::ToolIndicator;
+/// use cortex_core::widgets::ToolIndicator;
 ///
 /// let indicator = ToolIndicator::new("file_search");
 /// // Later: indicator.tick();

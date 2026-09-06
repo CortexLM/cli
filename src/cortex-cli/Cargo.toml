@@ -41,9 +41,9 @@ cortex-process-hardening = { workspace = true }
 cortex-app-server = { workspace = true }
 cortex-update = { workspace = true }
 
-cortex-share = { path = "../cortex-share" }
+cortex-share = { workspace = true }
 cortex-snapshot = { workspace = true }
-cortex-compact = { path = "../cortex-compact" }
+cortex-compact = { workspace = true }
 cortex-agents = { workspace = true }
 
 clap = { workspace = true }
@@ -63,7 +63,7 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
-serde_yaml = "0.9"
+serde_yaml = { workspace = true }
 serde = { workspace = true }
 ctor = "0.5"
 base64 = { workspace = true }
@@ -92,14 +92,14 @@ ctrlc = { version = "3.4", features = ["termination"] }
 
 # For file descriptor limit checking
 libc = { workspace = true }
+tempfile = { workspace = true }
 
 # For SIGTERM signal handling on Unix (graceful container shutdown)
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
 
 [build-dependencies]
-chrono = "0.4"
+chrono = { workspace = true }
 
 [dev-dependencies]
 serial_test = { workspace = true }
-tempfile = { workspace = true }

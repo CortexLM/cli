@@ -12,12 +12,12 @@ fn test_doctor_binary_reports_local_readiness_and_invalid_config() {
             .unwrap()
     };
     let output = run();
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(
         output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+        "local readiness checks: {}",
+        value["checks"]
     );
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["ready"], true);
     assert_eq!(value["scope"], "local");
     assert_eq!(value["coding_service"], "not_checked");

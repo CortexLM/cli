@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config git ripgrep
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2

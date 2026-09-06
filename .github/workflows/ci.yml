@@ -153,7 +153,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov@0.6.21,cargo-nextest@0.9.102
-      - run: cargo llvm-cov nextest --locked -p cortex-cli -p cortex-app-server -p cortex-common --profile ci --lcov --output-path target/readiness/lcov.info
+      - name: Collect application coverage
+        run: |
+          mkdir -p target/readiness
+          cargo llvm-cov nextest --locked -p cortex-cli -p cortex-app-server -p cortex-common --profile ci --lcov --output-path target/readiness/lcov.info
       - run: python3 scripts/readiness/coverage.py --base "$QUALITY_BASE"
       - uses: actions/upload-artifact@v4
         if: always()

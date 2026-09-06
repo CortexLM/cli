@@ -64,6 +64,7 @@ response for the coding service. Keep live tests out of default CI.
 python3 scripts/readiness/tests.py
 python3 scripts/readiness/tests.py --repeat 3
 cargo test --locked --workspace --doc
+mkdir -p target/readiness
 cargo llvm-cov nextest --locked -p cortex-cli -p cortex-app-server -p cortex-common \
   --profile ci --lcov --output-path target/readiness/lcov.info
 python3 scripts/readiness/coverage.py --base origin/main

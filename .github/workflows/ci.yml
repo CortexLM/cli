@@ -36,6 +36,8 @@ jobs:
         with:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt, clippy
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-machete@0.9.1

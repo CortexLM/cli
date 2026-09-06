@@ -12,14 +12,14 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
-cortex-tui-core = { path = "crates/cortex-tui-core" }
-cortex-tui-buffer = { path = "crates/cortex-tui-buffer" }
-cortex-tui-terminal = { path = "crates/cortex-tui-terminal" }
-cortex-tui-layout = { path = "crates/cortex-tui-layout" }
-cortex-tui-widgets = { path = "crates/cortex-tui-widgets" }
-cortex-tui-input = { path = "crates/cortex-tui-input" }
-cortex-tui-text = { path = "crates/cortex-tui-text" }
-cortex-tui-syntax = { path = "crates/cortex-tui-syntax" }
+cortex-tui-core = { workspace = true }
+cortex-tui-buffer = { workspace = true }
+cortex-tui-terminal = { workspace = true }
+cortex-tui-layout = { workspace = true }
+cortex-tui-widgets = { workspace = true }
+cortex-tui-input = { workspace = true }
+cortex-tui-text = { workspace = true }
+cortex-tui-syntax = { workspace = true }
 
 # Workspace member of CortexLM/cli
 

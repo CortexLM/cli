@@ -9,6 +9,8 @@
 - [ ] `cargo test --workspace` (or note the subset and why)
 - [ ] TUI / snapshot tests for every surface this PR touches
 - [ ] `cargo audit` (or note a documented `.cargo/audit.toml` exception)
+- [ ] Source/dependency policy and generated API contracts verified against the real PR base
+- [ ] Local functional/security QA and changed-line coverage passed (or explain the blocker)
 
 ## Attestation (required)
 
@@ -23,3 +25,5 @@ I attest that:
 ## Risk
 
 <!-- Auth, exec policy, sandbox, release, or API-contract impact. -->
+
+<!-- For a new feature flag: owner, intended lifetime, rollout/removal decision, and production consumer test. -->

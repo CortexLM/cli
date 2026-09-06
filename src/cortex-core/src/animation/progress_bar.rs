@@ -6,7 +6,7 @@
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::ProgressBar;
+/// use cortex_core::animation::ProgressBar;
 ///
 /// let mut progress = ProgressBar::new(100);
 /// progress.set_progress(42);

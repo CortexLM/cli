@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use cortex_engine::markdown::MarkdownTheme;
+//! use cortex_core::markdown::MarkdownTheme;
 //!
 //! // Use default theme
 //! let theme = MarkdownTheme::default();

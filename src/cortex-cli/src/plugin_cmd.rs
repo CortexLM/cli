@@ -657,7 +657,7 @@ pub struct PluginInstallArgs {
     pub name: String,
 
     /// Plugin version (defaults to latest)
-    #[arg(long, short = 'v')]
+    #[arg(long)]
     pub version: Option<String>,
 
     /// Force reinstall if already installed

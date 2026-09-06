@@ -14,8 +14,8 @@ use ratatui::widgets::Widget;
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::{Spinner, Pulse};
-/// use cortex_engine::widgets::ThinkingIndicator;
+/// use cortex_core::animation::{Spinner, Pulse};
+/// use cortex_core::widgets::ThinkingIndicator;
 ///
 /// let mut spinner = Spinner::dots();
 /// let mut pulse = Pulse::new(1500);

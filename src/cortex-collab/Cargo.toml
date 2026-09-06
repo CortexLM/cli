@@ -25,6 +25,3 @@ thiserror = { workspace = true }
 
 # Utilities
 uuid = { workspace = true }
-
-[dev-dependencies]
-tokio-test = { workspace = true }

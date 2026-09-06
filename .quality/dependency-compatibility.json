@@ -1,0 +1,66 @@
+{
+  "src/cortex-agents/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-app-server/Cargo.toml:dependencies:dirs": {
+    "declaration": "5",
+    "reason": "Retains dirs 5 platform path behavior until its consumers are migrated and platform-tested."
+  },
+  "src/cortex-batch/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-compact/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-engine/Cargo.toml:dependencies:rand": {
+    "declaration": "0.8",
+    "reason": "Retains rand 0.8 Rng/generation APIs; upgrade requires a separate compatibility change."
+  },
+  "src/cortex-ghost/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-hooks/Cargo.toml:dependencies:dirs": {
+    "declaration": "5.0",
+    "reason": "Retains dirs 5 platform path behavior until its consumers are migrated and platform-tested."
+  },
+  "src/cortex-hooks/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-linux-sandbox/Cargo.toml:target.cfg(target_os = \"linux\").dependencies:seccompiler": {
+    "declaration": "0.4",
+    "reason": "Retains seccompiler 0.4 sandbox filter API; changing sandbox policy needs a dedicated compatibility review."
+  },
+  "src/cortex-resume/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-review/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-share/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-snapshot/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-storage/Cargo.toml:dependencies:dirs": {
+    "declaration": "5",
+    "reason": "Retains dirs 5 platform path behavior until its consumers are migrated and platform-tested."
+  },
+  "src/cortex-storage/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  },
+  "src/cortex-windows-sandbox/Cargo.toml:dependencies:thiserror": {
+    "declaration": "1",
+    "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
+  }
+}

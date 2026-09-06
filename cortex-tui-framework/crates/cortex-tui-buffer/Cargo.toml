@@ -10,5 +10,5 @@ description = "Double-buffered terminal rendering for Cortex TUI"
 workspace = true
 
 [dependencies]
-cortex-tui-core = { path = "../cortex-tui-core" }
+cortex-tui-core = { workspace = true }
 smallvec = { workspace = true }

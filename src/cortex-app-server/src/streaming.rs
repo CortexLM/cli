@@ -33,20 +33,20 @@ pub fn routes() -> Router<Arc<AppState>> {
         // CLI Session management
         .route("/cli/sessions", post(create_cli_session))
         .route("/cli/sessions", get(list_cli_sessions))
-        .route("/cli/sessions/:id", get(get_cli_session))
+        .route("/cli/sessions/{id}", get(get_cli_session))
         .route(
-            "/cli/sessions/:id",
+            "/cli/sessions/{id}",
             axum::routing::delete(delete_cli_session),
         )
         // Message streaming
-        .route("/cli/sessions/:id/chat", post(chat_stream))
-        .route("/cli/sessions/:id/events", get(session_events_stream))
+        .route("/cli/sessions/{id}/chat", post(chat_stream))
+        .route("/cli/sessions/{id}/events", get(session_events_stream))
         // Approval handling
-        .route("/cli/sessions/:id/approve", post(approve_command))
+        .route("/cli/sessions/{id}/approve", post(approve_command))
         // Interrupt
-        .route("/cli/sessions/:id/interrupt", post(interrupt_session))
+        .route("/cli/sessions/{id}/interrupt", post(interrupt_session))
         // Fork
-        .route("/cli/sessions/:id/fork", post(fork_cli_session))
+        .route("/cli/sessions/{id}/fork", post(fork_cli_session))
 }
 
 // ============================================================================

@@ -47,7 +47,7 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use cortex_engine::{
+//! use cortex_core::{
 //!     frame_engine::{FrameEngine, EngineEvent, create_event_channel},
 //!     events::{Action, EventBus, DefaultKeyMapper, KeyMapper},
 //!     style::CortexStyle,

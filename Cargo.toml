@@ -437,6 +437,11 @@ panic = "abort"
 strip = "symbols"
 opt-level = 3
 
+[profile.profiling]
+inherits = "release"
+debug = 1
+strip = "none"
+
 [profile.release.build-override]
 opt-level = 3
 

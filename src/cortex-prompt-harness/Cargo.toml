@@ -18,9 +18,5 @@ chrono = { workspace = true }
 # Utilities
 indexmap = { workspace = true }
 
-[dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros"] }
-pretty_assertions = { workspace = true }
-
 [lints]
 workspace = true

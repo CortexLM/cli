@@ -10,18 +10,14 @@ authors.workspace = true
 
 [dependencies]
 # Cortex TUI core (theme, colors, base widgets)
-cortex-core = { path = "../cortex-core" }
+cortex-core = { workspace = true }
 
 # TUI framework
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 
 # Utilities
-unicode-width = { workspace = true }
 unicode-segmentation = { workspace = true }
-
-[dev-dependencies]
-tokio-test = { workspace = true }
 
 [[example]]
 name = "dump_previews"

@@ -20,7 +20,7 @@ pub enum FadeDirection {
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::Fade;
+/// use cortex_core::animation::Fade;
 ///
 /// let fade = Fade::fade_in(300); // 300ms fade in
 /// while !fade.is_complete() {

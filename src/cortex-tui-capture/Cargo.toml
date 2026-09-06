@@ -23,9 +23,6 @@ ratatui = { workspace = true }
 cortex-tui-buffer = { workspace = true }
 cortex-tui-core = { workspace = true }
 
-# Product theme, so the recorded demo tracks the real TUI palette
-cortex-core = { workspace = true }
-
 # Welcome-card helpers used by capture snapshot tests
 cortex-tui-components = { workspace = true }
 
@@ -53,7 +50,6 @@ tracing = { workspace = true }
 dirs = { workspace = true }
 
 [dev-dependencies]
-tokio-test = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

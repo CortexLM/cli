@@ -16,7 +16,7 @@ use tui_textarea::TextArea;
 /// # Example
 ///
 /// ```ignore
-/// use cortex_engine::widgets::CortexInput;
+/// use cortex_core::widgets::CortexInput;
 ///
 /// let mut input = CortexInput::new()
 ///     .with_placeholder("Type a message...")

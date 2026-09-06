@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Health check response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
@@ -47,7 +47,7 @@ pub struct DiscoverResponse {
 // ============================================================================
 
 /// Create session request.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CreateSessionRequest {
     #[serde(default)]
     pub model: Option<String>,
@@ -58,7 +58,7 @@ pub struct CreateSessionRequest {
 }
 
 /// Session response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct SessionResponse {
     pub id: String,
     pub model: String,
@@ -83,7 +83,7 @@ fn default_limit() -> usize {
 }
 
 /// Session list item.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct SessionListItem {
     pub id: String,
     pub model: String,
@@ -97,7 +97,7 @@ pub struct SessionListItem {
 // ============================================================================
 
 /// Send message request.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SendMessageRequest {
     pub content: String,
     #[serde(default)]
@@ -105,7 +105,7 @@ pub struct SendMessageRequest {
 }
 
 /// Message response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct MessageResponse {
     pub id: String,
     pub role: String,
@@ -116,7 +116,7 @@ pub struct MessageResponse {
 }
 
 /// Tool call response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ToolCallResponse {
     pub id: String,
     pub name: String,

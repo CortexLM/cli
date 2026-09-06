@@ -1,6 +1,7 @@
 //! Command handlers for debug subcommands.
 
 mod config;
+mod doctor;
 mod file;
 mod lsp;
 mod paths;
@@ -11,6 +12,7 @@ mod system;
 mod wait;
 
 pub use config::run_config;
+pub use doctor::run_doctor;
 pub use file::run_file;
 pub use lsp::run_lsp;
 pub use paths::run_paths;

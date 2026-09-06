@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use cortex_engine::markdown::{MarkdownRenderer, IncrementalMarkdownRenderer};
+//! use cortex_core::markdown::{MarkdownRenderer, IncrementalMarkdownRenderer};
 //!
 //! // One-shot rendering
 //! let renderer = MarkdownRenderer::new().with_width(80);

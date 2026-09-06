@@ -10,5 +10,5 @@ workspace = true
 
 [dependencies]
 tokio = { workspace = true, features = ["process"] }
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 thiserror = "1"

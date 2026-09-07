@@ -110,7 +110,6 @@ async fn test_auth_is_enforced_for_rest_websocket_and_health_prefix() {
         "/api/v1/metrics",
         "/api/v1/ws",
         "/api/v1/health/sessions",
-        "/api/v1/admin/stats",
     ] {
         let response = router
             .clone()
@@ -257,7 +256,7 @@ async fn test_cors_denies_unknown_origins_and_allows_configured_origin() {
 }
 
 #[tokio::test]
-async fn test_jwt_validation_and_admin_role_are_enforced() {
+async fn test_jwt_authentication_still_validates_identity_issuer_audience_and_expiry() {
     let mut config = ServerConfig::default();
     config.auth.jwt_secret = Some(uuid::Uuid::new_v4().to_string());
     let service = AuthService::new(config.auth.clone());
@@ -265,29 +264,112 @@ async fn test_jwt_validation_and_admin_role_are_enforced() {
     assert_eq!(service.validate_token(&token).unwrap().sub, "fixture-user");
     let (router, _, _) = configured(config.clone()).await;
     let req = Request::builder()
-        .uri("/api/v1/admin/stats")
+        .uri("/api/v1/sessions")
         .header("authorization", format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
     assert_eq!(
         router.clone().oneshot(req).await.unwrap().status(),
-        StatusCode::FORBIDDEN
+        StatusCode::OK
     );
-    let mut claims = Claims::new("fixture-user", 3600).with_role("admin");
-    claims.iss = "wrong-issuer".into();
     let key =
         jsonwebtoken::EncodingKey::from_secret(config.auth.jwt_secret.as_ref().unwrap().as_bytes());
-    let wrong = jsonwebtoken::encode(&jsonwebtoken::Header::default(), &claims, &key).unwrap();
-    assert!(service.validate_token(&wrong).is_err());
-    let req = Request::builder()
-        .uri("/api/v1/sessions")
-        .header("authorization", format!("Bearer {wrong}"))
-        .body(Body::empty())
-        .unwrap();
-    assert_eq!(
-        router.oneshot(req).await.unwrap().status(),
-        StatusCode::UNAUTHORIZED
-    );
+    for invalid in ["issuer", "audience", "expiry", "signature"] {
+        let mut claims = Claims::new("fixture-user", 3600);
+        match invalid {
+            "issuer" => claims.iss = "wrong-issuer".into(),
+            "audience" => claims.aud = vec!["wrong-audience".into()],
+            "expiry" => claims.exp = 1,
+            _ => {}
+        }
+        let wrong_key = jsonwebtoken::EncodingKey::from_secret(uuid::Uuid::new_v4().as_bytes());
+        let signing_key = if invalid == "signature" {
+            &wrong_key
+        } else {
+            &key
+        };
+        let token =
+            jsonwebtoken::encode(&jsonwebtoken::Header::default(), &claims, signing_key).unwrap();
+        assert!(service.validate_token(&token).is_err(), "{invalid}");
+        let req = Request::builder()
+            .uri("/api/v1/sessions")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            router.clone().oneshot(req).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED,
+            "{invalid}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_removed_admin_routes_are_unavailable_even_with_legacy_privileges() {
+    let secret = uuid::Uuid::new_v4().to_string();
+    let api_key = uuid::Uuid::new_v4().to_string();
+    let mut claims = serde_json::to_value(Claims::new("fixture-user", 3600)).unwrap();
+    claims["roles"] = json!(["admin"]);
+    claims["metadata"] = json!({"name": "legacy profile"});
+    let token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .unwrap();
+    let headers = [
+        None,
+        Some(format!("ApiKey {api_key}")),
+        Some(format!("Bearer {token}")),
+    ];
+    for authenticated in [false, true] {
+        let mut config = ServerConfig::default();
+        config.auth.enabled = authenticated;
+        config.auth.api_keys = vec![api_key.clone()];
+        config.auth.jwt_secret = Some(secret.clone());
+        config.rate_limit.burst_size = 100;
+        let service = AuthService::new(config.auth.clone());
+        let decoded = service.validate_token(&token).unwrap();
+        assert_eq!(decoded.sub, "fixture-user");
+        let decoded = serde_json::to_value(decoded).unwrap();
+        assert!(decoded.get("roles").is_none());
+        assert!(decoded.get("metadata").is_none());
+        let state = Arc::new(AppState::new(config).await.unwrap());
+        let router = create_router_with_state(state);
+        for (method, path) in [
+            ("GET", "/admin/stats"),
+            ("GET", "/admin/stats/sessions"),
+            ("GET", "/admin/stats/usage"),
+            ("GET", "/admin/sessions"),
+            ("POST", "/admin/sessions/bulk"),
+            ("GET", "/admin/sessions/export"),
+            ("GET", "/admin/shares"),
+            ("POST", "/admin/shares/cleanup"),
+        ] {
+            for header in &headers {
+                let mut req = request(
+                    method,
+                    &format!("/api/v1{path}"),
+                    None,
+                    Some(json!({"session_ids": [], "action": "delete"})),
+                );
+                if let Some(header) = header {
+                    req.headers_mut()
+                        .insert("authorization", header.parse().unwrap());
+                }
+                let expected = if authenticated && header.is_none() {
+                    StatusCode::UNAUTHORIZED
+                } else {
+                    StatusCode::NOT_FOUND
+                };
+                assert_eq!(
+                    router.clone().oneshot(req).await.unwrap().status(),
+                    expected,
+                    "{method} {path}"
+                );
+            }
+        }
+    }
 }
 
 #[tokio::test]

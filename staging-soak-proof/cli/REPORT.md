@@ -9,6 +9,28 @@ changes tracked files.
 
 Supersedes the 11:46 UTC attempt (PR #35) for tip `sha-45d44b02`.
 
+## Addendum 15:20–15:35 UTC: CLI binary + chrome lock v2 smoke
+
+Designer cli has since signed the hop report as `CLI_STAGING_PARTIAL`
+(hop/tip/guest PASS) from a host with credentials. This addendum covers only
+the binary and chrome checks runnable from the agent host, where the hop ports
+(18080/18081/18090) still refuse connections and no sealed env exists.
+
+- Binary: `target/debug/Cortex` (`cargo build --locked -p cortex-cli`, exit 0,
+  `dev` profile, reports `Cortex CLI v0.1.8`). Worktree
+  `/opt/droid-mcp/worktrees/da-8baa0402-d0ff-4318-a542-bb59e280f8c8`.
+
+| Check | Status | Evidence |
+| --- | --- | --- |
+| Binary against staging API base | PARTIAL | Real PTY (120×40), isolated `HOME`, `CORTEX_API_URL=http://127.0.0.1:18081`. Trust prompt rendered; after accepting, the login screen rendered and the device flow targeted `http://127.0.0.1:18081/v1/auth/device` (staging base honoured, no production fallback). Request could not complete: port refused. Ctrl+C exited with `Login cancelled.` No turn, guest session, or `/v1/me` was exercised. |
+| Chrome lock v2, headless | PASS | `cargo test -p cortex-tui lock_v2`: 11 passed, 0 failed (narrow/wide frame uniqueness, welcome, first-run tips, user bars, settings modal, effort order, slash hover). `scripts/render-tui-lock-v2.sh` wrote 32 ANSI frames + manifest to `target/tui-lock-v2/40x12` via `MockTerminal`; PNG rasterising skipped (Pillow absent on host, ANSI frames suffice). |
+| Chrome lock v2, live binary, non-member states | PASS | Trust-folder dialog and login chooser (`Continue with browser` / `Paste an API key`, footer `↑↓ select · ↵ confirm · esc quit`, version line) rendered in the real binary. |
+| Chrome lock v2, member states (session, composer, model list, settings, permission prompt, diff) | BLOCKED | Need an authenticated session; no IdC / member VPN / WorkOS login on this host. Covered headlessly above only. Remains with Mathis. |
+
+Note for Designer cli re-sign: hop-side rows (readyz, guest, `/v1/me`, `/chat`
+307) are carried by the signed `CLI_STAGING_PARTIAL` report; this addendum adds
+binary + chrome evidence and changes no prior row.
+
 ## Provenance
 
 - Tip under test: backend `45d44b02fbd58f2db47427f1cf35cfd017f783e2`
@@ -55,4 +77,4 @@ claimed and none of these rows is a pass of the staging service.
 
 No production go decision follows from this report.
 
-SOAK_RESULT: BLOCKED tip=sha-45d44b02 (agent AWS credentials unavailable; /readyz, /v1/me, /chat redirect and CLI staging smoke unverified; CLI build + local doctor PASS; member IdC/VPN remains Mathis; PROD HOLD)
+SOAK_RESULT: BLOCKED tip=sha-45d44b02 (hop rows carried by Designer cli CLI_STAGING_PARTIAL; from agent host: CLI build PASS, lock v2 headless 11/11 PASS, binary honours staging base but port refused; member chrome states BLOCKED, remain Mathis; PROD HOLD)

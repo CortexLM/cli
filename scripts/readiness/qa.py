@@ -84,8 +84,16 @@ def server_flow(binary, env, workspace, output):
                     pass
                 check(time.monotonic() < deadline, "Local server readiness timed out")
                 time.sleep(.1)
-            for path in ["/sessions", "/metrics", "/admin/stats", "/ws", "/health/sessions"]:
+            for path in ["/sessions", "/metrics", "/ws", "/health/sessions"]:
                 check(call("GET", path, authenticated=False)[0] == 401, "Authentication boundary failed")
+            for method, path in [
+                ("GET", "/admin/stats"), ("GET", "/admin/stats/sessions"),
+                ("GET", "/admin/stats/usage"), ("GET", "/admin/sessions"),
+                ("POST", "/admin/sessions/bulk"), ("GET", "/admin/sessions/export"),
+                ("GET", "/admin/shares"), ("POST", "/admin/shares/cleanup"),
+            ]:
+                body = {"session_ids": [], "action": "delete"} if method == "POST" else None
+                check(call(method, path, body)[0] == 404, "Removed administration endpoint remains available")
             check(call("GET", "/sessions", headers={"Authorization": "ApiKey invalid-fixture"})[0] == 401, "Invalid key was accepted")
             status, headers, session = call("POST", "/sessions", {"model": "local-qa"})
             check(status == 200, "Session creation failed")
@@ -132,7 +140,7 @@ def server_flow(binary, env, workspace, output):
         "server.local_readiness", "server.authentication", "server.session_crud",
         "server.message_storage", "server.correlation", "server.metrics",
         "dast.body_limit", "dast.cors", "dast.workspace_traversal", "dast.symlink_escape",
-        "server.file_crud", "dast.file_mutations",
+        "server.file_crud", "dast.file_mutations", "dast.removed_admin_routes",
     ]
 
 def run(bin_dir):

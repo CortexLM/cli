@@ -1,80 +1,68 @@
-# Cortex CLI staging soak, Designer cli
+# Cortex CLI staging soak, Designer cli — CLI_SMOKE_v019
 
-**Result: BLOCKED. Production: HOLD, untouched.**
+**Result: PARTIAL. Production: HOLD, untouched.**
 
-Observation window: 2026-09-07, 14:46–15:03 UTC. Bounded readiness attempt,
-not a completed soak or release acceptance. No staging mutations, member
-login, model turns, deployments, or production writes ran. Only this document
-changes tracked files.
+Observation window: 2026-09-07, 21:41–21:48 UTC. Post-#41 smoke of Cortex CLI
+v0.1.9 from this agent host. No staging mutations, member login, model turns,
+deployments, or production writes ran. Only this document changes tracked
+files.
 
-Supersedes the 11:46 UTC attempt (PR #35) for tip `sha-45d44b02`.
-
-## Addendum 15:20–15:35 UTC: CLI binary + chrome lock v2 smoke
-
-Designer cli has since signed the hop report as `CLI_STAGING_PARTIAL`
-(hop/tip/guest PASS) from a host with credentials. This addendum covers only
-the binary and chrome checks runnable from the agent host, where the hop ports
-(18080/18081/18090) still refuse connections and no sealed env exists.
-
-- Binary: `target/debug/Cortex` (`cargo build --locked -p cortex-cli`, exit 0,
-  `dev` profile, reports `Cortex CLI v0.1.8`). Worktree
-  `/opt/droid-mcp/worktrees/da-8baa0402-d0ff-4318-a542-bb59e280f8c8`.
-
-| Check | Status | Evidence |
-| --- | --- | --- |
-| Binary against staging API base | PARTIAL | Real PTY (120×40), isolated `HOME`, `CORTEX_API_URL=http://127.0.0.1:18081`. Trust prompt rendered; after accepting, the login screen rendered and the device flow targeted `http://127.0.0.1:18081/v1/auth/device` (staging base honoured, no production fallback). Request could not complete: port refused. Ctrl+C exited with `Login cancelled.` No turn, guest session, or `/v1/me` was exercised. |
-| Chrome lock v2, headless | PASS | `cargo test -p cortex-tui lock_v2`: 11 passed, 0 failed (narrow/wide frame uniqueness, welcome, first-run tips, user bars, settings modal, effort order, slash hover). `scripts/render-tui-lock-v2.sh` wrote 32 ANSI frames + manifest to `target/tui-lock-v2/40x12` via `MockTerminal`; PNG rasterising skipped (Pillow absent on host, ANSI frames suffice). |
-| Chrome lock v2, live binary, non-member states | PASS | Trust-folder dialog and login chooser (`Continue with browser` / `Paste an API key`, footer `↑↓ select · ↵ confirm · esc quit`, version line) rendered in the real binary. |
-| Chrome lock v2, member states (session, composer, model list, settings, permission prompt, diff) | BLOCKED | Need an authenticated session; no IdC / member VPN / WorkOS login on this host. Covered headlessly above only. Remains with Mathis. |
-
-Note for Designer cli re-sign: hop-side rows (readyz, guest, `/v1/me`, `/chat`
-307) are carried by the signed `CLI_STAGING_PARTIAL` report; this addendum adds
-binary + chrome evidence and changes no prior row.
+Supersedes the v0.1.8 hop-blocked soaks (#35, #37, #38) for this version
+lane. Hop rows remain unobservable from this VM; offline binary + lock v2
+rows below are new evidence against tip `fe94a48`.
 
 ## Provenance
 
-- Tip under test: backend `45d44b02fbd58f2db47427f1cf35cfd017f783e2`
-  (backend PR #201, "Redirect /chat to the Chat home", merged
-  `2026-09-07T13:45:04Z`).
-- [Deploy staging 34131499106](https://github.com/CortexLM/backend/actions/runs/34131499106):
-  `completed / success`, updated `2026-09-07T14:12:10Z`, `headSha` equals the
-  tip above. Historical deployment record, not a live readback.
-- Backend checkout used for the hop script: `ef169f7ce41e472fec28a0ea8b012348897eb546`.
-- `CortexLM/cli` checkout: `99a94ed` (`main` + this document). Version
-  sources all report `0.1.8`.
+- Tip under test: `fe94a4896006d41bfb9f7205e7e1cbf05c9bf157`
+  (`chore: bump version to 0.1.9`, [PR #41](https://github.com/CortexLM/cli/pull/41),
+  merged `2026-09-07T21:30:21Z`).
+- Annotated tag `v0.1.9` points at that commit
+  (`refs/tags/v0.1.9` → `e093cf47…`, peeled `fe94a48`).
+- `CortexLM/cli` checkout: `fe94a48` (`main` at smoke start). Version sources
+  all report `0.1.9` (`VERSION_CLI`, `[workspace.package].version`,
+  `src/cortex-cli/VERSION`). `./scripts/check-cli-version.sh` exit **0**.
+- Binary: `target/debug/Cortex` (`cargo build --locked -p cortex-cli`,
+  first attempt failed on missing `alsa.pc`; after
+  `libasound2-dev` / `libssl-dev` from `docs/guides/development.md`, retry
+  exit **0**, `dev` profile). Reports `cortex 0.1.9 (fe94a48 2026-09-07)`.
+- Toolchain: rustc 1.98.0 (`rust-toolchain.toml`).
+
+No sealed env, AWS session, or IdC/VPN on this host. No credentials were
+created, read, or written. Public production API DNS resolves; it was not
+called.
 
 ## Results
 
 | Check | Status | Evidence |
 | --- | --- | --- |
-| Tip image / API `/readyz` | BLOCKED | Deployment record for `sha-45d44b02` is green (above). Live `/readyz` unobservable: GET `http://127.0.0.1:18081/readyz` at 14:47Z, HTTP **000**, curl **7** (connection refused). |
-| API path CLI uses (guest auth + `/v1/me`) | BLOCKED | Source: `src/cortex-engine/src/client/code_agent.rs` and `src/cortex-tui/src/runner/login_screen.rs` call `POST /v1/auth/guest`. GET `http://127.0.0.1:18081/v1/me` at 15:02Z, HTTP **000**, curl **7**. No request reached staging. |
-| `cortex` CLI binary against staging API base | BLOCKED (build PASS) | `cargo build --locked -p cortex-cli` exit **0** (online fetch; the offline `phc` blocker from #35 is gone). `CORTEX_API_URL=http://127.0.0.1:18081 Cortex debug doctor --json` in an isolated `HOME`: exit **0**, `checks` all `true`, `ready: true`, `scope: local`, `coding_service: not_checked`. Doctor is local-only by contract; no staging turn was exercised. |
-| TUI chrome, full member VPN | BLOCKED | No IdC / Client VPN on this host. Remains with Mathis. |
-| `/chat` redirect on web hop (expect 307→`/`) | BLOCKED | GET `http://127.0.0.1:18080/chat` with `Host: staging.cortex.foundation` at 15:02Z, HTTP **000**, curl **7**. Not observed. |
-| IAM staging hop | BLOCKED | `/home/box/agent-data/shared-secrets/cursor-staging-soak.env` absent; no Factory shared-secrets equivalent found. `SKIP_ASSUME=1 scripts/cursor-staging-access.sh --once` exit **253**: `NoCredentials`. `aws sts get-caller-identity` fails the same way, so opening own port-forwards with the soak role is not possible either. No PIDs started. |
+| Staging hop `127.0.0.1:18081/readyz` | BLOCKED | GET at 21:42Z and 21:48Z, HTTP **000**, curl **7** (connection refused). Same for `:18080` and `:18090`. No listener. |
+| Real-PTY trust / login with `CORTEX_API_URL` | BLOCKED | Hop unreachable. Trust/login against the staging base was not started. No device-code request, no production fallback attempt. |
+| `/model` vs `GET /v1/models` emptiness | BLOCKED | GET `http://127.0.0.1:18081/v1/models` at 21:48Z, HTTP **000**, curl **7**. TUI `/model` empty-state (`No models available…`) not exercised against a live list. Source still maps `/model` to `GET {CORTEX_API_URL}/v1/models` (`src/cortex-tui/src/providers/manager.rs`). |
+| CLI build + version 0.1.9 | PASS | Locked build exit **0**. `--version` contains `0.1.9` and short SHA `fe94a48`. Version-consistency script exit **0**. |
+| Chrome lock v2, headless | PASS | `cargo test --locked -p cortex-tui lock_v2`: **11 passed**, 0 failed (wide/narrow uniqueness, welcome, first-run `/model` tips, user bars, settings modal, effort High→Medium→Low, slash hover). Finished 21:48Z. |
+| `debug doctor` (local only) | PASS | Isolated `HOME`, `CORTEX_API_URL=http://127.0.0.1:18081`. Exit **0**, `ready: true`, `scope: local`, `coding_service: not_checked`, checks `configuration` / `git` / `ripgrep` / `storage` all `true`. Doctor is local-only by contract. |
+| IAM staging hop / sealed env | BLOCKED | No `cursor-staging-soak.env` (or equivalent). `aws` CLI absent. No port-forwards started. |
 | Public staging DNS | PASS (expected limitation) | `staging.cortex.foundation` / `api.staging.cortex.foundation` do not resolve from this host. |
-| CLI version consistency | PASS | `./scripts/check-cli-version.sh` exit **0**, all sources `0.1.8`. |
+| TUI chrome, full member VPN | BLOCKED | No IdC / Client VPN / WorkOS login on this host. Remains with Mathis. |
+| Production | HOLD | Untouched. No go decision. |
 
 `BLOCKED` means prerequisites were unavailable; no observed service failure is
-claimed and none of these rows is a pass of the staging service.
-
-## Delta vs #35
-
-- CLI build now succeeds and `debug doctor` runs green locally.
-- Tip advanced to `sha-45d44b02`; its staging deploy run is green.
-- Access blocker unchanged: no AWS credentials for `cursor-staging-soak`.
+claimed and none of those rows is a pass of the staging service.
 
 ## Unblock and repeat
 
-1. Provide the sealed `cursor-staging-soak.env` (or equivalent short-lived
-   session) to the agent host, then rerun `scripts/cursor-staging-access.sh --once`.
-2. With listeners up: require API `/readyz` 200, web `/chat` → 307 `Location: /`,
-   `POST /v1/auth/guest` then `GET /v1/me` 200 through the CLI's client path.
-3. Run `target/debug/Cortex` with `CORTEX_API_URL="$STAGING_API_URL"` in an
-   isolated home for one guest turn. Doctor stays a local prerequisite only.
-4. Member IdC/VPN, WorkOS login and TUI chrome remain with Mathis.
+1. Provide a short-lived staging hop (listeners on `127.0.0.1:18080/18081/18090`)
+   or the sealed soak session, then require API `/readyz` **200**.
+2. Real PTY: `CORTEX_API_URL=http://127.0.0.1:18081` in an isolated `HOME`;
+   accept trust, complete login against the staging base (no production
+   fallback).
+3. Emptiness check: `GET /v1/models` body vs TUI `/model` list. If the API
+   list is empty, `/model` must show the product empty copy rather than a
+   silent or stale picker. If the API list is non-empty, `/model` must show
+   the same product names.
+4. Member IdC/VPN, WorkOS login and authenticated chrome remain with Mathis.
 
 No production go decision follows from this report.
 
-SOAK_RESULT: BLOCKED tip=sha-45d44b02 (hop rows carried by Designer cli CLI_STAGING_PARTIAL; from agent host: CLI build PASS, lock v2 headless 11/11 PASS, binary honours staging base but port refused; member chrome states BLOCKED, remain Mathis; PROD HOLD)
+SOAK_RESULT: PARTIAL tip=fe94a48 v=0.1.9 (hop BLOCKED 127.0.0.1:18081/readyz curl 7; build PASS; version PASS; lock_v2 11/11 PASS; real-PTY login BLOCKED; /model vs /v1/models BLOCKED; PROD HOLD)
+CLI_SMOKE_v019

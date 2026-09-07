@@ -46,7 +46,7 @@ jobs:
       - run: python scripts/readiness/quality.py --base "$QUALITY_BASE"
       - run: cargo machete --with-metadata
       - run: python scripts/readiness/release_age.py --base "$QUALITY_BASE"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: source-quality
@@ -119,13 +119,13 @@ jobs:
         run: cargo build --locked -p cortex-cli -p cortex-app-server
       - name: Local functional QA and dynamic security tests
         run: python3 scripts/readiness/qa.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-performance
           path: target/readiness/tests/
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: local-qa
@@ -158,7 +158,7 @@ jobs:
           mkdir -p target/readiness
           cargo llvm-cov nextest --locked -p cortex-cli -p cortex-app-server -p cortex-common --profile ci --lcov --output-path target/readiness/lcov.info
       - run: python3 scripts/readiness/coverage.py --base "$QUALITY_BASE"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage

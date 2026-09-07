@@ -585,7 +585,7 @@ impl MarkdownTheme {
 impl Default for MarkdownTheme {
     /// The gray chrome: white headings and emphasis, dim bullets and rules,
     /// hairline `#3A3A3A` table / fence / quote borders, green only on the
-    /// checked `✓`. No accent colour anywhere in a reply — the violet belongs
+    /// checked `✓`. No accent colour anywhere in a reply — the banner green belongs
     /// to the focused selection alone.
     fn default() -> Self {
         Self {

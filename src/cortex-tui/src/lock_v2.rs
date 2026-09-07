@@ -720,7 +720,7 @@ Tell me what you'd like to do.",
             );
             state.add_message(
                 Message::assistant(
-                    "**Plan**\n1. Recapture every SPEC §7 board from the live session.\n2. Keep violet on keyboard focus only.\n3. Do not merge until Designer signs off.",
+                    "**Plan**\n1. Recapture every SPEC §7 board from the live session.\n2. Keep banner green on keyboard focus only.\n3. Do not merge until Designer signs off.",
                 )
                 .with_timestamp("09:04 AM"),
             );
@@ -1375,11 +1375,11 @@ mod tests {
                 }
             }
         }
-        assert!(found_accent, "expected violet caret on welcome");
+        assert!(found_accent, "expected banner green caret on welcome");
     }
 
     #[test]
-    fn slash_hover_is_not_violet_wash() {
+    fn slash_hover_is_not_banner_green_wash() {
         let mut state = palette_state("/");
         state.autocomplete.hovered = Some(3);
         let config = capture_config(120, 40);
@@ -1398,7 +1398,7 @@ mod tests {
                     found_hover = true;
                 }
                 if buf[(x, y)].bg == ratatui::style::Color::Rgb(0x22, 0x1A, 0x38) {
-                    panic!("retired violet wash at {x},{y}");
+                    panic!("retired banner green wash at {x},{y}");
                 }
             }
         }

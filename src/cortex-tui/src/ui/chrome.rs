@@ -524,16 +524,19 @@ pub fn paint_footer(area: Rect, buf: &mut Buffer, set: FooterSet, hovered: Optio
     }
 }
 
-/// True when the composer caret should be violet (keyboard focus).
+/// True when the composer caret should be banner green (keyboard focus).
 pub fn composer_caret_style(focused: bool) -> Style {
     if focused {
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(ACCENT)
+            .add_modifier(Modifier::BOLD)
+            .bg(cortex_core::style::TEXT)
     } else {
         Style::default().fg(TEXT_DIM)
     }
 }
 
-/// Hover bar fill — `#1A1A1A`, no violet.
+/// Hover bar fill — `#1A1A1A`, no banner green.
 pub fn paint_hover_bar(area: Rect, buf: &mut Buffer) {
     for dx in 0..area.width {
         if let Some(cell) = buf.cell_mut((area.x + dx, area.y)) {
@@ -596,9 +599,7 @@ pub fn paint_opt_in_banner(area: Rect, buf: &mut Buffer, hover: Option<u8>, focu
 
 fn banner_btn_style(hover: bool, focus: bool, recommended: bool) -> Style {
     if focus {
-        Style::default()
-            .fg(ACCENT)
-            .bg(cortex_core::style::SELECTION_BG)
+        Style::default().fg(ACCENT).bg(cortex_core::style::TEXT)
     } else if hover {
         Style::default()
             .fg(TEXT)

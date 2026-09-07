@@ -187,7 +187,7 @@ mod harness_snapshots {
     }
 
     #[test]
-    fn autocomplete_selected_row_is_violet_on_the_gray_bar() {
+    fn autocomplete_selected_row_is_banner_green_on_the_gray_bar() {
         use cortex_core::style::{ACCENT, SELECTION_BG, TEXT, TEXT_DIM};
 
         use crate::app::{AutocompleteItem, AutocompleteTrigger};
@@ -219,7 +219,10 @@ mod harness_snapshots {
             if buf[(60, y)].style().bg != Some(SELECTION_BG) || !row.contains('/') {
                 continue;
             }
-            assert!(row.contains("> /"), "violet caret leads the row: {row}");
+            assert!(
+                row.contains("> /"),
+                "banner green caret leads the row: {row}"
+            );
             let caret_x = row.find("> /").expect("caret") as u16;
             assert_eq!(buf[(caret_x, y)].style().fg, Some(ACCENT), "{row}");
             let label_at = row.find('/').expect("selected command label");

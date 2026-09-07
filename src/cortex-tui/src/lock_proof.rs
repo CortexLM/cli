@@ -537,8 +537,8 @@ mod tests {
 
     /// Locked diff green `#4ADE80` as an SGR foreground.
     const GREEN_FG: &str = "38;2;74;222;128";
-    /// Selection violet `#A78BFA` as an SGR foreground.
-    const ACCENT_FG: &str = "38;2;167;139;250";
+    /// Selection banner green `#1F4945` as an SGR foreground.
+    const ACCENT_FG: &str = "38;2;31;73;69";
     /// Error red `#F87171` as an SGR foreground.
     const ERROR_FG: &str = "38;2;248;113;113";
 
@@ -756,8 +756,8 @@ mod tests {
     ];
 
     #[test]
-    fn violet_is_reserved_for_selection_and_focused_composer() {
-        // Violet is the focused composer `>` (between hairlines) and the
+    fn banner_green_is_reserved_for_selection_and_focused_composer() {
+        // Banner green is the focused composer `>` (between hairlines) and the
         // focused picker `>` + label on the gray selection bar. Past user
         // `>` stays white.
         for id in lock_scene_ids() {
@@ -768,7 +768,12 @@ mod tests {
                     if cell.style().fg != Some(ACCENT) || cell.symbol() == " " {
                         continue;
                     }
-                    let on_bar = cell.style().bg == Some(SELECTION_BG);
+                    assert_eq!(cell.fg, Color::Rgb(31, 73, 69));
+                    assert_eq!(
+                        cell.bg, TEXT,
+                        "{id}: accent needs a readable backing at {size:?} ({x},{y})"
+                    );
+                    let on_bar = (0..buf.area.width).any(|col| buf[(col, y)].bg == SELECTION_BG);
                     let boxed = y > 0
                         && y + 1 < buf.area.height
                         && row_text(buf, y - 1).contains('╭')
@@ -781,16 +786,16 @@ mod tests {
                     let fuzzy_or_slash = cell.style().bg != Some(USER_TURN_BG);
                     assert!(
                         on_bar || composer_caret || fuzzy_or_slash,
-                        "{id} paints violet {:?} off the selection bar and composer at {size:?} ({x},{y}):\n{}",
+                        "{id} paints banner green {:?} off the selection bar and composer at {size:?} ({x},{y}):\n{}",
                         cell.symbol(),
                         frame.plain
                     );
                 }
-                let violet = painted_chars(&frame.ansi, ACCENT_FG);
+                let banner_green = painted_chars(&frame.ansi, ACCENT_FG);
                 if SELECTION_SCENES.contains(id) || COMPOSER_SCENES.contains(id) {
                     assert!(
-                        violet.contains('>'),
-                        "{id} must paint a violet `>` at {size:?}: {violet:?}"
+                        banner_green.contains('>'),
+                        "{id} must paint a banner green `>` at {size:?}: {banner_green:?}"
                     );
                 }
             }
@@ -798,17 +803,17 @@ mod tests {
     }
 
     #[test]
-    fn selection_rows_are_violet_on_the_selection_bar_never_inverted() {
-        // Violet is never a background (no inverted bar). The selection bar
+    fn selection_rows_are_banner_green_on_the_selection_bar_never_inverted() {
+        // Banner green is never a background (no inverted bar). The selection bar
         // is the locked `#221A38` wash.
-        const ACCENT_BG: &str = "48;2;167;139;250";
+        const ACCENT_BG: &str = "48;2;31;73;69";
         const SELECTION_WASH: &str = "48;2;38;38;38";
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 assert!(
                     !frame.ansi.contains(ACCENT_BG),
-                    "{id} paints an inverted violet bar at {size:?}"
+                    "{id} paints an inverted banner green bar at {size:?}"
                 );
             }
         }
@@ -823,11 +828,12 @@ mod tests {
                     (0..120u16).any(|x| {
                         frame.buffer[(x, *y)].symbol() == ">"
                             && frame.buffer[(x, *y)].style().fg == Some(ACCENT)
-                            && frame.buffer[(x, *y)].style().bg == Some(SELECTION_BG)
+                            && frame.buffer[(x, *y)].style().bg == Some(TEXT)
+                            && (0..120u16).any(|col| frame.buffer[(col, *y)].bg == SELECTION_BG)
                     })
                 })
-                .unwrap_or_else(|| panic!("{id} has no violet `>` row:\n{}", frame.plain));
-            // The focused row carries the selection bar and a violet caret.
+                .unwrap_or_else(|| panic!("{id} has no banner green `>` row:\n{}", frame.plain));
+            // The focused row carries the selection bar and a banner green caret.
             let has_bar =
                 (0..120u16).any(|x| frame.buffer[(x, row)].style().bg == Some(SELECTION_BG));
             assert!(
@@ -897,7 +903,7 @@ mod tests {
     fn every_edit_plus_count_is_green() {
         // Rule from states 10 (Edit +9), 24 (queued Edit +58) and 30 (MAX
         // footer +214): the `+N` of an Edit / Write / commit is the diff
-        // green at both sizes — never gray or violet. Scan every scene for
+        // green at both sizes — never gray or banner green. Scan every scene for
         // `+N` tokens on Edit, Write and Committed lines.
         for id in lock_scene_ids() {
             for size in SIZES {
@@ -1001,10 +1007,10 @@ mod tests {
 
     #[test]
     fn banned_colors_never_painted() {
-        // The interim violet highlight is gone with the mint one: no scene
-        // paints violet, the old `#221A38` violet wash, the mint pair, the old
+        // The interim banner green highlight is gone with the mint one: no scene
+        // paints banner green, the old `#221A38` retired violet wash, the mint pair, the old
         // brand green, or the navy wash — the host terminal owns the
-        // background and the violet lives on the focused selection alone.
+        // background and the banner green lives on the focused selection alone.
         // Mint `#00F5D4` / `#1A3330` never painted. Selection bar `#221A38`
         // is allowed; inverted accent as a background is not (checked above).
         const BANNED: [&str; 4] = ["0;245;212", "26;51;48", "0;255;163", "10;22;40"];
@@ -1046,7 +1052,7 @@ mod tests {
                         frame.plain
                     );
                 };
-                // The focused composer `>` is violet; a placeholder is dim.
+                // The focused composer `>` is banner green; a placeholder is dim.
                 assert_eq!(buf[(x, y)].style().fg, Some(ACCENT), "{id} at {size:?}");
                 let row = row_text(buf, y);
                 assert!(
@@ -1170,9 +1176,9 @@ mod tests {
     }
 
     #[test]
-    fn past_user_caret_is_white_focused_composer_is_violet() {
+    fn past_user_caret_is_white_focused_composer_is_banner_green() {
         // Past user `>` (on the gray bar) is never accented. The focused
-        // composer `>` (between hairlines) is violet `#A78BFA`.
+        // composer `>` (between hairlines) is banner green `#1F4945`.
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
@@ -1204,7 +1210,7 @@ mod tests {
                         assert_eq!(
                             cell.style().fg,
                             Some(ACCENT),
-                            "{id} composer caret must be violet at {size:?}:\n{}",
+                            "{id} composer caret must be banner green at {size:?}:\n{}",
                             row_text(buf, y)
                         );
                     }
@@ -1213,15 +1219,15 @@ mod tests {
         }
         // A typed composer still accents only the caret, not the typed copy.
         let typing = render_lock_scene("typing", 120, 40).expect("typing");
-        let violet = painted_chars(&typing.ansi, ACCENT_FG);
+        let banner_green = painted_chars(&typing.ansi, ACCENT_FG);
         assert!(
-            violet.contains('>'),
-            "typing composer `>` must be violet: {violet:?}"
+            banner_green.contains('>'),
+            "typing composer `>` must be banner green: {banner_green:?}"
         );
         let footer_max = render_lock_scene("footer_max", 120, 40).expect("footer_max");
         assert!(
             painted_chars(&footer_max.ansi, ACCENT_FG).contains('>'),
-            "footer_max composer `>` must be violet"
+            "footer_max composer `>` must be banner green"
         );
     }
 
@@ -2281,12 +2287,12 @@ mod tests {
     }
 
     #[test]
-    fn slash_palette_rows_are_middot_or_violet_caret() {
+    fn slash_palette_rows_are_middot_or_banner_green_caret() {
         for size in SIZES {
             let frame = render_lock_scene("palette", size.0, size.1).expect("palette");
             assert!(
                 frame.plain.contains("> /model") || frame.plain.contains("/model"),
-                "the focused command leads with the violet caret at {size:?}:\n{}",
+                "the focused command leads with the banner green caret at {size:?}:\n{}",
                 frame.plain
             );
             assert!(
@@ -2301,7 +2307,7 @@ mod tests {
             );
         }
         // The wide selected row keeps the dim description on the bar, never a
-        // bright (or violet) description.
+        // bright (or banner green) description.
         let wide = render_lock_scene("palette", 120, 40).expect("palette wide");
         let buf = &wide.buffer;
         let y = (0..40u16)
@@ -2429,7 +2435,7 @@ mod tests {
     #[test]
     fn login_is_a_numbered_picker_with_live_sub_states() {
         // `login_select` is the picker with the selection moved to option 2:
-        // the violet `>` and the gray bar sit on `Paste an API key`, option 1
+        // the banner green `>` and the gray bar sit on `Paste an API key`, option 1
         // falls back to the dim middot.
         let select = render_lock_scene("login_select", 120, 40).expect("select");
         assert!(select.plain.contains("Welcome to Cortex CLI!"));
@@ -2462,7 +2468,12 @@ mod tests {
             );
             assert_eq!(buf[(0, row)].style().fg, Some(ACCENT));
             for x in 0..120u16 {
-                assert_eq!(buf[(x, row)].style().bg, Some(SELECTION_BG), "col {x}");
+                let expected = if buf[(x, row)].fg == ACCENT {
+                    TEXT
+                } else {
+                    SELECTION_BG
+                };
+                assert_eq!(buf[(x, row)].style().bg, Some(expected), "col {x}");
                 assert_eq!(buf[(x, row + 1)].style().bg, Some(SELECTION_BG), "col {x}");
             }
             let other = (0..40u16)
@@ -2648,7 +2659,7 @@ mod tests {
 
     #[test]
     fn tool_tile_dots_are_white() {
-        // Every tool tile paints its `●` status dot white — never the violet accent,
+        // Every tool tile paints its `●` status dot white — never the banner green accent,
         // never green. Labels stay white too.
         let tiles = [
             "tool_tiles",

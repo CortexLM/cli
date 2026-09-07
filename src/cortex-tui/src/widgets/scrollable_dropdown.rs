@@ -280,12 +280,12 @@ impl<'a> ScrollableDropdown<'a> {
         }
 
         // Label
-        // The selected label is the violet accent on the gray bar.
+        // The selected label is the banner green accent on the gray bar.
         let label_style = if is_selected {
             Style::default()
                 .fg(ACCENT)
-                .bg(bg)
                 .add_modifier(Modifier::BOLD)
+                .bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT).bg(bg)
         };
@@ -329,7 +329,7 @@ impl<'a> ScrollableDropdown<'a> {
 
         // Selection indicator
         if is_selected {
-            let indicator_style = Style::default().fg(ACCENT).bg(bg);
+            let indicator_style = Style::default().fg(ACCENT).bg(cortex_core::style::TEXT);
             if let Some(cell) = buf.cell_mut((area.x, area.y)) {
                 cell.set_char('>').set_style(indicator_style);
             }

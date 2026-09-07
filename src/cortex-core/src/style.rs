@@ -1,24 +1,25 @@
 //! Cortex Theme — inky chrome on a painted `#000000` alternate screen.
 //!
 //! Structure comes from gray — hairlines, filled charcoal panels, dim
-//! secondary copy, white primary copy. The one accent is the Cortex violet
-//! `#A78BFA`, reserved for keyboard focus: the `>` caret, the focused row
-//! marker, and typed slash-command matches. Green exists only for `✓`
+//! secondary copy, white primary copy. The one accent is the Cortex banner green
+//! `#1F4945`, reserved for keyboard focus: the `>` caret, the focused row
+//! marker, and typed slash-command matches. Bright green exists only for `✓`
 //! success and `+` diff additions; red and amber only on diagnostics.
-//! Hover bars are `#1A1A1A` with no violet. Gold, mint, cyan, and the
-//! `#221A38` violet wash are never painted.
+//! Hover bars are `#1A1A1A` with no banner green. Gold, mint, cyan, and the
+//! `#221A38` retired violet wash are never painted.
 
 use ratatui::style::{Color, Modifier, Style};
 
 // ============================================================
-// ACCENT - one violet, focused selection only
+// ACCENT - one banner green, focused selection only
 // ============================================================
 
-/// Primary accent - Cortex violet for the focused selection (`>` caret + label)
-pub const ACCENT: Color = Color::Rgb(167, 139, 250); // #A78BFA
+/// Banner background, sampled from the dominant JPEG pixel (31, 73, 69).
+/// Pair with `TEXT` behind focused glyphs: this dark green is illegible on black.
+pub const ACCENT: Color = Color::Rgb(31, 73, 69); // #1F4945
 
 /// Legacy brand slot. Widgets that once painted titles, icons and cursors in
-/// the brand colour now get a light gray, so the violet stays on the focused
+/// the brand colour now get a light gray, so the banner green stays on the focused
 /// selection only — use `ACCENT` for that.
 pub const CYAN_PRIMARY: Color = SKY_BLUE;
 
@@ -41,7 +42,7 @@ pub const TEAL: Color = Color::Rgb(75, 85, 99); // #4B5563
 /// Inky background — painted on the whole alternate screen (`#000000`).
 pub const VOID: Color = Color::Rgb(0, 0, 0);
 
-/// Hover bar — `#1A1A1A`, no violet. Distinct from the user-turn bar.
+/// Hover bar — `#1A1A1A`, no banner green. Distinct from the user-turn bar.
 pub const BAR_HOVER: Color = Color::Rgb(26, 26, 26); // #1A1A1A
 
 /// Filled charcoal panel for tips / info blocks
@@ -104,8 +105,8 @@ pub const INFO: Color = DEEP_CYAN; // #9CA3AF
 pub const HIGHLIGHT: Color = ELECTRIC_BLUE; // #E5E7EB
 
 /// Focused-row background — dark gray `#262626`. The caret / `▸` on it
-/// are `#A78BFA`; the label stays white (bold in Settings). Never invert
-/// onto the accent, never a violet wash.
+/// use `#1F4945` on a near-white backing; other text stays white. Never invert
+/// onto the accent, never a banner green wash.
 pub const SELECTION_BG: Color = SURFACE_2; // #262626
 
 // ============================================================
@@ -210,15 +211,15 @@ impl ThemeColors {
         }
     }
 
-    /// Dark theme (default) - gray chrome, violet selection on dark background
+    /// Dark theme (default) - gray chrome, banner green selection on dark background
     pub fn dark() -> Self {
         Self::ocean_cyan()
     }
 
-    /// Light theme - darker violet selection, gray chrome on a light background
+    /// Light theme - darker banner green selection, gray chrome on a light background
     pub fn light() -> Self {
         Self {
-            primary: Color::Rgb(124, 58, 237),
+            primary: ACCENT,
             secondary: Color::Rgb(82, 82, 91),
             accent: Color::Rgb(39, 39, 42),
             background: Color::Rgb(255, 255, 255),
@@ -336,10 +337,10 @@ impl CortexStyle {
             .add_modifier(Modifier::BOLD)
     }
 
-    /// Selected item style: violet marker on the dark gray bar — never inverted
+    /// Selected glyph: banner green on near-white, within the dark gray row.
     #[inline]
     pub fn selected() -> Style {
-        Style::default().fg(ACCENT).bg(SELECTION_BG)
+        Style::default().fg(ACCENT).bg(TEXT)
     }
 
     /// Error style: lock red text for error messages
@@ -434,7 +435,7 @@ impl CortexStyle {
         Style::default().fg(BORDER)
     }
 
-    /// Focused border style: a lighter gray — violet never outlines a box
+    /// Focused border style: a lighter gray — banner green never outlines a box
     #[inline]
     pub fn border_focused() -> Style {
         Style::default().fg(BORDER_FOCUS)
@@ -481,7 +482,7 @@ impl CortexStyle {
     pub fn brain_cyan(brightness: f32) -> Style {
         let b = brightness.clamp(0.0, 1.0);
         // CYAN_PRIMARY is RGB(0, 255, 255)
-        // Scale the brightness while keeping the violet hue
+        // Scale the brightness while keeping the banner green hue
         let r = (0.0 * b) as u8;
         let g = (255.0 * b) as u8;
         let bl = (255.0 * b) as u8;
@@ -592,7 +593,7 @@ mod tests {
 
     #[test]
     fn test_brain_cyan_brightness() {
-        // Full brightness should be violet
+        // Full brightness should be banner green
         let style_full = CortexStyle::brain_cyan(1.0);
         assert_eq!(style_full.fg, Some(Color::Rgb(0, 255, 255)));
 
@@ -645,11 +646,31 @@ mod tests {
     }
 
     #[test]
+    fn banner_accent_has_accessible_focus_contrast() {
+        fn luminance(color: Color) -> f64 {
+            let Color::Rgb(r, g, b) = color else {
+                panic!("expected RGB")
+            };
+            let linear = |v: u8| {
+                let v = f64::from(v) / 255.0;
+                if v <= 0.04045 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+        }
+        assert!((luminance(TEXT) + 0.05) / (luminance(ACCENT) + 0.05) >= 4.5);
+        assert_eq!(ThemeColors::light().primary, ACCENT);
+    }
+
+    #[test]
     fn gray_chrome_palette_is_locked() {
-        // One accent: the Cortex violet, for the focused selection only.
-        assert_eq!(ACCENT, Color::Rgb(0xA7, 0x8B, 0xFA));
+        // One accent: the Cortex banner green, for the focused selection only.
+        assert_eq!(ACCENT, Color::Rgb(0x1F, 0x49, 0x45));
         assert_eq!(CortexStyle::selected().fg, Some(ACCENT));
-        assert_eq!(CortexStyle::selected().bg, Some(SELECTION_BG));
+        assert_eq!(CortexStyle::selected().bg, Some(TEXT));
         // Green covers `✓` and `+diff` — the same green.
         assert_eq!(SUCCESS, DIFF_ADD);
         assert_eq!(SUCCESS, Color::Rgb(0x4A, 0xDE, 0x80));
@@ -672,7 +693,7 @@ mod tests {
             assert!(r == g && g == b, "{gray:?} is not neutral");
         }
         assert_eq!(SELECTION_BG, Color::Rgb(0x26, 0x26, 0x26));
-        // The violet lives in `ACCENT` only. Mint is banned.
+        // The banner green lives in `ACCENT` only. Mint is banned.
         for color in [
             SUCCESS,
             BORDER_FOCUS,
@@ -683,7 +704,7 @@ mod tests {
             DEEP_CYAN,
             TEAL,
         ] {
-            assert_ne!(color, ACCENT, "violet leaked off the accent");
+            assert_ne!(color, ACCENT, "banner green leaked off the accent");
             assert_ne!(color, Color::Rgb(0x00, 0xF5, 0xD4), "mint leaked");
             assert_ne!(color, Color::Rgb(0x7D, 0xD3, 0xFC), "cyan leaked");
         }

@@ -115,7 +115,7 @@ impl Widget for QuestionPromptView<'_> {
         // Clear the modal area
         Clear.render(layout.modal_area, buf);
 
-        // Draw border — gray hairline, white title; violet never outlines a box.
+        // Draw border — gray hairline, white title; banner green never outlines a box.
         let border_style = Style::default().fg(colors.border);
         let block = Block::default()
             .borders(Borders::ALL)
@@ -155,10 +155,10 @@ impl QuestionPromptView<'_> {
             let is_hovered = self.hovered_tab == Some(i);
             let is_answered = !self.state.answers[i].is_empty();
 
-            // The active tab is the focused selection: violet on the gray bar,
+            // The active tab is the focused selection: banner green on the gray bar,
             // never inverted onto the accent. Answered tabs read white.
             let (fg, bg) = if is_active {
-                (colors.accent, colors.selection)
+                (colors.accent, cortex_core::style::TEXT)
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -193,7 +193,7 @@ impl QuestionPromptView<'_> {
             let is_hovered = self.hovered_tab == Some(self.state.request.questions.len());
 
             let (fg, bg) = if is_active {
-                (colors.accent, colors.selection)
+                (colors.accent, cortex_core::style::TEXT)
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -264,10 +264,10 @@ impl QuestionPromptView<'_> {
             let prefix = format!("{}. {}", i + 1, checkbox);
             let label = &opt.label;
 
-            // Focused option: violet on the gray selection bar; a picked option
+            // Focused option: banner green on the gray selection bar; a picked option
             // stays white — its `✓` carries the green.
             let (fg, bg) = if is_selected {
-                (colors.accent, colors.selection)
+                (colors.accent, cortex_core::style::TEXT)
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -330,7 +330,7 @@ impl QuestionPromptView<'_> {
                 let label = "Type your own answer";
 
                 let (fg, bg) = if is_selected {
-                    (colors.accent, colors.selection)
+                    (colors.accent, cortex_core::style::TEXT)
                 } else if is_hovered {
                     (colors.text, colors.user_bg)
                 } else {
@@ -607,7 +607,7 @@ pub enum QuestionHit {
 mod tests {
     use super::*;
     use crate::question::{Question, QuestionRequest, QuestionState, QuestionType};
-    use cortex_core::style::{ACCENT, HAIRLINE, SELECTION_BG, TEXT};
+    use cortex_core::style::{ACCENT, HAIRLINE, TEXT};
 
     fn request() -> QuestionRequest {
         QuestionRequest {
@@ -640,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn focused_option_is_violet_on_the_gray_bar_and_the_frame_is_gray() {
+    fn focused_option_is_banner_green_on_the_gray_bar_and_the_frame_is_gray() {
         let state = QuestionState::new(request());
         let view = QuestionPromptView::new(&state);
         let area = Rect::new(0, 0, 100, 24);
@@ -653,8 +653,8 @@ mod tests {
             for x in 0..100u16 {
                 let cell = &buf[(x, y)];
                 if cell.style().fg == Some(ACCENT) && cell.symbol() != " " {
-                    // Violet only ever sits on the selection bar.
-                    assert_eq!(cell.style().bg, Some(SELECTION_BG), "({x},{y})");
+                    // Banner green has a contrasting near-white backing.
+                    assert_eq!(cell.style().bg, Some(cortex_core::style::TEXT), "({x},{y})");
                     focused = Some(y);
                 }
                 if matches!(cell.symbol(), "─" | "│" | "┌" | "┐" | "└" | "┘") {
@@ -668,9 +668,9 @@ mod tests {
             .map(|x| buf[(x, y)].symbol().to_string())
             .collect();
         assert!(row.contains("1.  Middleware on POST"), "{row}");
-        // The whole row is the gray bar.
+        // The focused option has a contrasting backing.
         let x0 = row.find('1').expect("prefix") as u16;
-        assert_eq!(buf[(x0, y)].style().bg, Some(SELECTION_BG));
+        assert_eq!(buf[(x0, y)].style().bg, Some(cortex_core::style::TEXT));
         assert_eq!(buf[(x0, y)].style().fg, Some(ACCENT));
         assert!(frame_cells > 0, "the prompt keeps its square frame");
         // The title is white, not the accent.

@@ -191,10 +191,10 @@ mod tests {
             "missing hairline below composer:\n{}",
             first.plain
         );
-        // Violet caret `#A78BFA`.
+        // Banner green caret `#1F4945`.
         assert!(
-            first.ansi.contains("\x1b[38;2;167;139;250m"),
-            "splash missing the violet caret"
+            first.ansi.contains("\x1b[38;2;31;73;69m"),
+            "splash missing the banner green caret"
         );
         assert!(
             !first.ansi.contains("\x1b[38;2;0;245;212m"),
@@ -247,8 +247,8 @@ mod tests {
             );
         }
         assert!(
-            last.ansi.contains("\x1b[38;2;167;139;250m"),
-            "working missing the violet caret"
+            last.ansi.contains("\x1b[38;2;31;73;69m"),
+            "working missing the banner green caret"
         );
         assert!(!last.plain.contains("▄█▀▀▀▀█▄"));
         assert!(!last.plain.contains("BUILD"));

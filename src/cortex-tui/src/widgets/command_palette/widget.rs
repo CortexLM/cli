@@ -241,10 +241,10 @@ impl<'a> CommandPalette<'a> {
         selected: bool,
         buf: &mut Buffer,
     ) {
-        // Selected rows: the violet accent on the dark gray bar — never
+        // Selected rows: the banner green accent on the dark gray bar — never
         // inverted.
         let style = if selected {
-            Style::default().fg(ACCENT).bg(SELECTION_BG)
+            Style::default().fg(ACCENT).bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT).bg(SURFACE_0)
         };

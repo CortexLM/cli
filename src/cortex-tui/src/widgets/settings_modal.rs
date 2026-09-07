@@ -479,7 +479,7 @@ const THEME_OPTIONS: &[(&str, &str, &str)] = &[
     (
         "dark",
         "Cortex Night",
-        "Default inky chrome · violet on focus only",
+        "Default inky chrome · banner green on focus only",
     ),
     ("light", "Cortex Day", "Light chrome for bright rooms"),
     ("ocean_dark", "Ocean Dark", "Deep blue and cyan accents"),
@@ -780,7 +780,7 @@ impl Widget for SettingsModal<'_> {
         );
         // Search
         let search_style = if self.state.search_focused {
-            Style::default().fg(ACCENT)
+            Style::default().fg(ACCENT).bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT_DIM)
         };
@@ -870,7 +870,7 @@ fn paint_rows(inner: Rect, buf: &mut Buffer, state: &SettingsModalState) {
         }
         let marker = "▸ ";
         let marker_style = if focused {
-            Style::default().fg(ACCENT).bg(SELECTION_BG)
+            Style::default().fg(ACCENT).bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT_DIM)
         };
@@ -977,8 +977,8 @@ fn paint_theme_submenu(inner: Rect, buf: &mut Buffer, state: &SettingsModalState
         let lab_style = if focused {
             Style::default()
                 .fg(ACCENT)
-                .bg(SELECTION_BG)
                 .add_modifier(Modifier::BOLD)
+                .bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT)
         };

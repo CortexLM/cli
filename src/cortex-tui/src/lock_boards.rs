@@ -2,7 +2,7 @@
 //!
 //! These scenes share the gray session chrome — a past user turn on its gray
 //! bar, the hairline-framed `> ` composer, and the `model · hint` footer —
-//! and Cortex product copy only. The one accent is the violet of a focused
+//! and Cortex product copy only. The one accent is the banner green of a focused
 //! selection; green covers `✓` and `+diff`; red and amber stay on
 //! diagnostics; the Thinking status is the muted gold.
 
@@ -250,7 +250,10 @@ fn paint_composer(area: Rect, buf: &mut Buffer, y: u16, composer: Composer<'_>) 
                 }
                 let prefix = if i == 0 { "> " } else { "  " };
                 let prefix_style = if i == 0 {
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(ACCENT)
+                        .add_modifier(Modifier::BOLD)
+                        .bg(cortex_core::style::TEXT)
                 } else {
                     Style::default().fg(TEXT)
                 };
@@ -428,7 +431,7 @@ fn paint_search_field(area: Rect, buf: &mut Buffer, y: u16, query: &str, placeho
 
 /// One picker option at row `y`.
 ///
-/// Selected: the dark gray bar, a violet `>`, the white number, the violet label,
+/// Selected: the dark gray bar, a banner green `>`, the white number, the banner green label,
 /// dim `meta` right-aligned, and the dim description on the bar's second
 /// row. Unselected: a dim `·`, white number and label, dim meta and
 /// description. Returns the rows used; nothing is painted past `limit`.
@@ -456,7 +459,7 @@ fn picker_option(
         }
     }
     let marker_style = if selected {
-        Style::default().fg(ACCENT).bg(SELECTION_BG)
+        Style::default().fg(ACCENT).bg(cortex_core::style::TEXT)
     } else {
         Style::default().fg(TEXT_DIM)
     };
@@ -470,8 +473,8 @@ fn picker_option(
     let label_style = if selected {
         Style::default()
             .fg(ACCENT)
-            .bg(SELECTION_BG)
             .add_modifier(Modifier::BOLD)
+            .bg(cortex_core::style::TEXT)
     } else {
         Style::default().fg(TEXT)
     };
@@ -923,11 +926,11 @@ fn board_palette(area: Rect, buf: &mut Buffer) {
             let (marker, marker_style, cmd_style) = if selected {
                 (
                     "> ",
-                    Style::default().fg(ACCENT).bg(SELECTION_BG),
+                    Style::default().fg(ACCENT).bg(cortex_core::style::TEXT),
                     Style::default()
                         .fg(ACCENT)
-                        .bg(SELECTION_BG)
-                        .add_modifier(Modifier::BOLD),
+                        .add_modifier(Modifier::BOLD)
+                        .bg(cortex_core::style::TEXT),
                 )
             } else {
                 (
@@ -1443,7 +1446,7 @@ fn board_permission(area: Rect, buf: &mut Buffer) {
                     fill_row(buf, area, y, SELECTION_BG);
                 }
                 let style = if *selected {
-                    Style::default().fg(ACCENT).bg(SELECTION_BG)
+                    Style::default().fg(ACCENT).bg(cortex_core::style::TEXT)
                 } else {
                     Style::default().fg(TEXT)
                 };
@@ -1548,8 +1551,8 @@ fn board_plan(area: Rect, buf: &mut Buffer) {
                 part,
                 Style::default()
                     .fg(ACCENT)
-                    .bg(SELECTION_BG)
-                    .add_modifier(Modifier::BOLD),
+                    .add_modifier(Modifier::BOLD)
+                    .bg(cortex_core::style::TEXT),
             );
         }
     }
@@ -2219,7 +2222,10 @@ fn board_files(area: Rect, buf: &mut Buffer) {
         }
         let mut x = area.x;
         let (marker, marker_style) = if selected {
-            ("> ", Style::default().fg(ACCENT).bg(SELECTION_BG))
+            (
+                "> ",
+                Style::default().fg(ACCENT).bg(cortex_core::style::TEXT),
+            )
         } else {
             ("· ", Style::default().fg(TEXT_DIM))
         };
@@ -2229,7 +2235,7 @@ fn board_files(area: Rect, buf: &mut Buffer) {
         let mut used = 0usize;
         for span in &mut spans {
             if selected {
-                span.style = span.style.fg(ACCENT).bg(SELECTION_BG);
+                span.style = span.style.fg(ACCENT).bg(cortex_core::style::TEXT);
             }
             let content = span.content.to_string();
             let take = first_fitting_line(&content, path_budget.saturating_sub(used));
@@ -2409,7 +2415,10 @@ fn board_jobs(area: Rect, buf: &mut Buffer) {
             Color::Reset
         };
         let (marker, marker_style) = if job.selected {
-            ("> ", Style::default().fg(ACCENT).bg(bg))
+            (
+                "> ",
+                Style::default().fg(ACCENT).bg(cortex_core::style::TEXT),
+            )
         } else {
             ("· ", Style::default().fg(TEXT_DIM))
         };
@@ -2423,8 +2432,8 @@ fn board_jobs(area: Rect, buf: &mut Buffer) {
         let title_style = if job.selected {
             Style::default()
                 .fg(ACCENT)
-                .bg(bg)
                 .add_modifier(Modifier::BOLD)
+                .bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT)
         };
@@ -2852,7 +2861,7 @@ fn board_config(area: Rect, buf: &mut Buffer) {
                 area.x,
                 y,
                 "> ",
-                Style::default().fg(ACCENT).bg(SELECTION_BG),
+                Style::default().fg(ACCENT).bg(cortex_core::style::TEXT),
             );
             buf.set_string(
                 area.x + 2,
@@ -2860,8 +2869,8 @@ fn board_config(area: Rect, buf: &mut Buffer) {
                 &label,
                 Style::default()
                     .fg(ACCENT)
-                    .bg(SELECTION_BG)
-                    .add_modifier(Modifier::BOLD),
+                    .add_modifier(Modifier::BOLD)
+                    .bg(cortex_core::style::TEXT),
             );
             // The selected value keeps its column gap and never ends on a
             // dangling `·` when the `⏎ edit` affordance takes the right edge.
@@ -3192,8 +3201,8 @@ fn board_question(area: Rect, buf: &mut Buffer) {
                 let style = if *selected {
                     Style::default()
                         .fg(ACCENT)
-                        .bg(SELECTION_BG)
                         .add_modifier(Modifier::BOLD)
+                        .bg(cortex_core::style::TEXT)
                 } else {
                     Style::default().fg(TEXT)
                 };
@@ -3238,7 +3247,7 @@ fn board_skills(area: Rect, buf: &mut Buffer) {
                 area.x,
                 y,
                 "> ",
-                Style::default().fg(ACCENT).bg(SELECTION_BG),
+                Style::default().fg(ACCENT).bg(cortex_core::style::TEXT),
             );
             buf.set_string(
                 area.x + 2,
@@ -3246,8 +3255,8 @@ fn board_skills(area: Rect, buf: &mut Buffer) {
                 cmd,
                 Style::default()
                     .fg(ACCENT)
-                    .bg(SELECTION_BG)
-                    .add_modifier(Modifier::BOLD),
+                    .add_modifier(Modifier::BOLD)
+                    .bg(cortex_core::style::TEXT),
             );
             buf.set_string(
                 area.x + 2 + cmd.len() as u16 + 2,
@@ -3883,7 +3892,10 @@ fn board_multi_diff(area: Rect, buf: &mut Buffer) {
             }
         };
         let (marker, marker_style) = if selected {
-            ("> ", Style::default().fg(ACCENT).bg(SELECTION_BG))
+            (
+                "> ",
+                Style::default().fg(ACCENT).bg(cortex_core::style::TEXT),
+            )
         } else {
             ("· ", Style::default().fg(TEXT_DIM))
         };
@@ -3891,8 +3903,8 @@ fn board_multi_diff(area: Rect, buf: &mut Buffer) {
         let path_style = if selected {
             Style::default()
                 .fg(ACCENT)
-                .bg(SELECTION_BG)
                 .add_modifier(Modifier::BOLD)
+                .bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT)
         };

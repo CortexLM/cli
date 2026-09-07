@@ -5,7 +5,7 @@ text, tool rows, borders, status and accents.
 
 | Theme id | Name | Description |
 |----------|------|-------------|
-| `dark` | Dark | The default. Gray chrome on the host terminal background; the Cortex violet marks the focused selection. |
+| `dark` | Dark | The default. Gray chrome on the host terminal background; the Cortex banner green marks the focused selection. |
 | `light` | Light | Light background with dark text. |
 | `ocean_dark` | Ocean Dark | Deep blue and cyan. Also accepted as `ocean`. |
 | `monokai` | Monokai | Classic code-editor colours. |
@@ -38,23 +38,25 @@ For reference — these are the colours the demo recording on the
 
 | Role | Colour |
 |------|--------|
-| Selection accent (`>` caret + focused label; focused composer `>`) | `#A78BFA` |
+| Selection accent (`>` caret + focused label; focused composer `>`) | `#1F4945` |
 | Background | terminal default (`Color::Reset` — never painted) |
 | Charcoal panel (tips / info) | `#141414` |
 | Past user turn bar | `#1C1C1C` |
-| Selection bar | `#262626` (violet caret + label, dim description, never inverted — never a violet wash) |
+| Selection bar | `#262626` (focused green glyphs have a `#F5F5F5` backing for contrast; descriptions stay dim) |
 | Hairline (above / below the prompt, around search fields) | `#3A3A3A` |
 | Focused border | `#525252` (gray — the accent never outlines a box) |
 | Text | `#F5F5F5` |
 | Dim text (placeholders, hints, descriptions) | `#6B7280` |
 | Muted text | `#4B5563` |
-| Success `✓` and diff additions `+N` | `#4ADE80` (the only green) |
+| Success `✓` and diff additions `+N` | `#4ADE80` (bright semantic green) |
 | Warning (`warn` in diagnostics) | `#FFC857` |
 | Error (`error`, `× Stopped`, quota, failed MCP `x`) | `#F87171` |
 | Thinking status | `#C9A95C` (the only gold) |
 
 The footer is gray: the model on the left (`Cortex Mini 1 · Agent · 92%
 context`), one shortcut hint on the right (`shift+tab to cycle modes`).
+
+The accent is the dominant background pixel of the supplied banner: RGB `(31, 73, 69)` (`#1F4945`). Focused green glyphs use a near-white backing rather than disappearing on black. Success and diff colours are unchanged.
 
 ## Related display settings
 

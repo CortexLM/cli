@@ -27,7 +27,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `session-worked` | `Worked for Xs` after a reply | [120x40](120x40/session-worked.png) | — |
 | `session-optin` | `Help improve Cortex` banner — Opt out | Opt in | [120x40](120x40/session-optin.png) | [40x12](40x12/session-optin.png) |
 | `session-optin-hover` | Banner with the mouse over `[Opt in]` | [120x40](120x40/session-optin-hover.png) | — |
-| `composer-empty` | Empty composer — caret before the placeholder, violet `>` | [120x40](120x40/composer-empty.png) | [40x12](40x12/composer-empty.png) |
+| `composer-empty` | Empty composer — caret before the placeholder, banner green `>` | [120x40](120x40/composer-empty.png) | [40x12](40x12/composer-empty.png) |
 | `composer-typing` | Mid-type, caret on | [120x40](120x40/composer-typing.png) | [40x12](40x12/composer-typing.png) |
 | `composer-typing-blink` | Mid-type, caret off (blink phase) | [120x40](120x40/composer-typing-blink.png) | — |
 | `composer-hover` | Mouse over the composer — hairline lifts to #525252 | [120x40](120x40/composer-hover.png) | [40x12](40x12/composer-hover.png) |
@@ -43,7 +43,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | Board | State | Wide | Narrow |
 |---|---|---|---|
 | `slash-palette` | `/` palette — focused row + hover row + `… more` trailer | [120x40](120x40/slash-palette.png) | [40x12](40x12/slash-palette.png) |
-| `slash-model-typed` | `/mod` typed — violet matched chars, ghost completion | [120x40](120x40/slash-model-typed.png) | [40x12](40x12/slash-model-typed.png) |
+| `slash-model-typed` | `/mod` typed — banner green matched chars, ghost completion | [120x40](120x40/slash-model-typed.png) | [40x12](40x12/slash-model-typed.png) |
 | `model-list` | `/model` — Cortex Mini 1 · Cortex 1 · Cortex Max 1 | [120x40](120x40/model-list.png) | [40x12](40x12/model-list.png) |
 | `model-list-hover` | Model list with mouse over row 3 | [120x40](120x40/model-list-hover.png) | — |
 | `model-effort-high` | Effort radios — High focused | [120x40](120x40/model-effort-high.png) | [40x12](40x12/model-effort-high.png) |
@@ -58,7 +58,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `settings-appearance` | Settings modal — Appearance, Compact mode focused | [120x40](120x40/settings-appearance.png) | [40x12](40x12/settings-appearance.png) |
 | `settings-mouse` | Settings scrolled to Mouse / Behavior | [120x40](120x40/settings-mouse.png) | [40x12](40x12/settings-mouse.png) |
 | `settings-row-hover` | Keyboard focus on Compact mode, mouse over Show timestamps | [120x40](120x40/settings-row-hover.png) | [40x12](40x12/settings-row-hover.png) |
-| `settings-search` | `/ scro` search — filtered rows, violet match | [120x40](120x40/settings-search.png) | — |
+| `settings-search` | `/ scro` search — filtered rows, banner green match | [120x40](120x40/settings-search.png) | — |
 | `settings-theme-submenu` | Theme submenu — Cortex Night / Cortex Day / Ocean Dark / Monokai | [120x40](120x40/settings-theme-submenu.png) | [40x12](40x12/settings-theme-submenu.png) |
 
 ## E. Modes / tools / errors
@@ -99,7 +99,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `clear-confirm` | `/clear` confirm radios | [120x40](120x40/clear-confirm.png) | — |
 | `plan-confirm` | `Implement this plan?` radios | [120x40](120x40/plan-confirm.png) | — |
 | `queue` | Follow-up queue while a step runs | [120x40](120x40/queue.png) | — |
-| `files-picker` | `@` file picker — violet matched chars, hover row | [120x40](120x40/files-picker.png) | — |
+| `files-picker` | `@` file picker — banner green matched chars, hover row | [120x40](120x40/files-picker.png) | — |
 | `jobs` | `/jobs` — cloud agent, subagent, queued | [120x40](120x40/jobs.png) | — |
 | `skills` | `/skills` — search field + skill rows | [120x40](120x40/skills.png) | — |
 | `todos` | Working 2/5 checklist — ✓ done · › current · ○ pending | [120x40](120x40/todos.png) | — |

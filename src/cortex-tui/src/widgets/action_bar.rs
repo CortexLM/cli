@@ -10,7 +10,7 @@ use ratatui::{buffer::Buffer, layout::Rect, style::Style, widgets::Widget};
 /// Style for action items
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionStyle {
-    /// Primary action (violet) - main actions like Add, Select
+    /// Primary action (banner green) - main actions like Add, Select
     Primary,
     /// Danger action (red) - destructive actions like Delete
     Danger,

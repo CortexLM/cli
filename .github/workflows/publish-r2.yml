@@ -207,7 +207,8 @@ jobs:
             local sha
             sha=$(awk '{print $1}' "dist/$platform/${file}.sha256")
             local size
-            size=$(stat -c%s "dist/$platform/$file")
+            # wc -c is portable; GNU stat -c is unavailable on BSD/macOS.
+            size=$(wc -c < "dist/$platform/$file" | tr -d '[:space:]')
             jq -n --arg url "$url" --arg sha256 "$sha" --argjson size "$size" \
               '{url: $url, sha256: $sha256, size: $size}'
           }

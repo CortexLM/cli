@@ -145,6 +145,25 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(os.readlink(self.bindir / "cortex"), "Cortex")
         self.assertEqual(os.readlink(self.bindir / "agent"), "Cortex")
 
+    def test_case_insensitive_bindir_installs_without_alias_conflict(self):
+        # macOS and Windows fold case, so "cortex" resolves to the destination
+        # "Cortex" itself and must not be refused as a foreign command.
+        (self.bindir / "CaseProbe").write_bytes(b"probe")
+        insensitive = (self.bindir / "caseprobe").exists()
+        (self.bindir / "CaseProbe").unlink()
+        if not insensitive:
+            self.skipTest("needs a case-insensitive filesystem")
+        result = self.install(True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.bindir / "Cortex").is_file())
+
+    def test_foreign_command_named_cortex_is_never_replaced(self):
+        # The refusal must still hold for a real, unrelated binary.
+        (self.bindir / "agent").write_bytes(b"someone else's agent")
+        result = self.install(False)
+        self.assertIn("refusing to overwrite existing command: agent", result.stdout + result.stderr)
+        self.assertEqual((self.bindir / "agent").read_bytes(), b"someone else's agent")
+
     def test_channel_manifest_install(self):
         del self.env["CORTEX_VERSION"]
         self.install(True)

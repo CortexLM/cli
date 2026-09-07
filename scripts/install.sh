@@ -158,9 +158,20 @@ dest, backup = bindir / 'Cortex', bindir / 'Cortex.old'
 for path in (dest, backup):
     if path.is_symlink() or (path.exists() and not path.is_file()):
         sys.exit('install.sh: refusing non-regular installation target')
+
+def is_destination(path):
+    # On a case-insensitive filesystem 'cortex' and 'Cortex' are one file;
+    # the destination is never an alias to refuse or to replace.
+    try:
+        return path.samefile(dest)
+    except OSError:
+        return False
+
 for name in ('cortex', 'agent'):
     path = bindir / name
-    if os.path.lexists(path) and not (path.is_symlink() and os.readlink(path) == 'Cortex'):
+    if not os.path.lexists(path) or is_destination(path):
+        continue
+    if not (path.is_symlink() and os.readlink(path) == 'Cortex'):
         sys.exit('install.sh: refusing to overwrite existing command: ' + name)
 
 def verify_binary(path):
@@ -212,6 +223,8 @@ with tempfile.TemporaryDirectory(prefix='.cortex-install-', dir=bindir) as temp:
             if not os.path.lexists(path):
                 path.symlink_to('Cortex')
                 aliases.append(path)
+            elif not is_destination(path) and not path.is_symlink():
+                raise ValueError('alias name is occupied by a regular file: ' + name)
     except BaseException:
         for path in aliases:
             path.unlink()

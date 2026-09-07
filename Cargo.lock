@@ -1763,6 +1763,7 @@ dependencies = [
 name = "cortex-tui-layout"
 version = "0.1.8"
 dependencies = [
+ "cortex-tui-buffer",
  "slotmap",
  "taffy",
 ]

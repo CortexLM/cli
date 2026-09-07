@@ -66,8 +66,11 @@ impl From<taffy_style::FlexWrap> for FlexWrap {
     fn from(value: taffy_style::FlexWrap) -> Self {
         match value {
             taffy_style::FlexWrap::NoWrap => Self::NoWrap,
-            taffy_style::FlexWrap::Wrap => Self::Wrap,
-            taffy_style::FlexWrap::WrapReverse => Self::WrapReverse,
+            // Cortex does not expose balanced wrapping; preserve line direction.
+            taffy_style::FlexWrap::Wrap | taffy_style::FlexWrap::Balance => Self::Wrap,
+            taffy_style::FlexWrap::WrapReverse | taffy_style::FlexWrap::BalanceReverse => {
+                Self::WrapReverse
+            }
         }
     }
 }
@@ -93,28 +96,30 @@ pub enum JustifyContent {
 impl From<JustifyContent> for taffy_style::JustifyContent {
     fn from(value: JustifyContent) -> Self {
         match value {
-            JustifyContent::Start => Self::Start,
-            JustifyContent::End => Self::End,
-            JustifyContent::Center => Self::Center,
-            JustifyContent::SpaceBetween => Self::SpaceBetween,
-            JustifyContent::SpaceAround => Self::SpaceAround,
-            JustifyContent::SpaceEvenly => Self::SpaceEvenly,
+            JustifyContent::Start => Self::START,
+            JustifyContent::End => Self::END,
+            JustifyContent::Center => Self::CENTER,
+            JustifyContent::SpaceBetween => Self::SPACE_BETWEEN,
+            JustifyContent::SpaceAround => Self::SPACE_AROUND,
+            JustifyContent::SpaceEvenly => Self::SPACE_EVENLY,
         }
     }
 }
 
 impl From<taffy_style::JustifyContent> for JustifyContent {
     fn from(value: taffy_style::JustifyContent) -> Self {
-        match value {
-            taffy_style::JustifyContent::Start => Self::Start,
-            taffy_style::JustifyContent::End => Self::End,
-            taffy_style::JustifyContent::Center => Self::Center,
-            taffy_style::JustifyContent::SpaceBetween => Self::SpaceBetween,
-            taffy_style::JustifyContent::SpaceAround => Self::SpaceAround,
-            taffy_style::JustifyContent::SpaceEvenly => Self::SpaceEvenly,
-            taffy_style::JustifyContent::Stretch => Self::Start,
-            taffy_style::JustifyContent::FlexStart => Self::Start,
-            taffy_style::JustifyContent::FlexEnd => Self::End,
+        // The Cortex style subset has no overflow-safety modifier.
+        match value.keyword() {
+            taffy_style::AlignContentKeyword::Start
+            | taffy_style::AlignContentKeyword::FlexStart
+            | taffy_style::AlignContentKeyword::Stretch => Self::Start,
+            taffy_style::AlignContentKeyword::End | taffy_style::AlignContentKeyword::FlexEnd => {
+                Self::End
+            }
+            taffy_style::AlignContentKeyword::Center => Self::Center,
+            taffy_style::AlignContentKeyword::SpaceBetween => Self::SpaceBetween,
+            taffy_style::AlignContentKeyword::SpaceAround => Self::SpaceAround,
+            taffy_style::AlignContentKeyword::SpaceEvenly => Self::SpaceEvenly,
         }
     }
 }
@@ -138,25 +143,28 @@ pub enum AlignItems {
 impl From<AlignItems> for taffy_style::AlignItems {
     fn from(value: AlignItems) -> Self {
         match value {
-            AlignItems::Start => Self::Start,
-            AlignItems::End => Self::End,
-            AlignItems::Center => Self::Center,
-            AlignItems::Baseline => Self::Baseline,
-            AlignItems::Stretch => Self::Stretch,
+            AlignItems::Start => Self::START,
+            AlignItems::End => Self::END,
+            AlignItems::Center => Self::CENTER,
+            AlignItems::Baseline => Self::BASELINE,
+            AlignItems::Stretch => Self::STRETCH,
         }
     }
 }
 
 impl From<taffy_style::AlignItems> for AlignItems {
     fn from(value: taffy_style::AlignItems) -> Self {
-        match value {
-            taffy_style::AlignItems::Start => Self::Start,
-            taffy_style::AlignItems::End => Self::End,
-            taffy_style::AlignItems::Center => Self::Center,
-            taffy_style::AlignItems::Baseline => Self::Baseline,
-            taffy_style::AlignItems::Stretch => Self::Stretch,
-            taffy_style::AlignItems::FlexStart => Self::Start,
-            taffy_style::AlignItems::FlexEnd => Self::End,
+        // Normalize safety and direction-relative keywords to the Cortex subset.
+        match value.keyword() {
+            taffy_style::AlignItemsKeyword::Start
+            | taffy_style::AlignItemsKeyword::FlexStart
+            | taffy_style::AlignItemsKeyword::SelfStart => Self::Start,
+            taffy_style::AlignItemsKeyword::End
+            | taffy_style::AlignItemsKeyword::FlexEnd
+            | taffy_style::AlignItemsKeyword::SelfEnd => Self::End,
+            taffy_style::AlignItemsKeyword::Center => Self::Center,
+            taffy_style::AlignItemsKeyword::Baseline => Self::Baseline,
+            taffy_style::AlignItemsKeyword::Stretch => Self::Stretch,
         }
     }
 }
@@ -184,29 +192,30 @@ pub enum AlignContent {
 impl From<AlignContent> for taffy_style::AlignContent {
     fn from(value: AlignContent) -> Self {
         match value {
-            AlignContent::Start => Self::Start,
-            AlignContent::End => Self::End,
-            AlignContent::Center => Self::Center,
-            AlignContent::SpaceBetween => Self::SpaceBetween,
-            AlignContent::SpaceAround => Self::SpaceAround,
-            AlignContent::SpaceEvenly => Self::SpaceEvenly,
-            AlignContent::Stretch => Self::Stretch,
+            AlignContent::Start => Self::START,
+            AlignContent::End => Self::END,
+            AlignContent::Center => Self::CENTER,
+            AlignContent::SpaceBetween => Self::SPACE_BETWEEN,
+            AlignContent::SpaceAround => Self::SPACE_AROUND,
+            AlignContent::SpaceEvenly => Self::SPACE_EVENLY,
+            AlignContent::Stretch => Self::STRETCH,
         }
     }
 }
 
 impl From<taffy_style::AlignContent> for AlignContent {
     fn from(value: taffy_style::AlignContent) -> Self {
-        match value {
-            taffy_style::AlignContent::Start => Self::Start,
-            taffy_style::AlignContent::End => Self::End,
-            taffy_style::AlignContent::Center => Self::Center,
-            taffy_style::AlignContent::SpaceBetween => Self::SpaceBetween,
-            taffy_style::AlignContent::SpaceAround => Self::SpaceAround,
-            taffy_style::AlignContent::SpaceEvenly => Self::SpaceEvenly,
-            taffy_style::AlignContent::Stretch => Self::Stretch,
-            taffy_style::AlignContent::FlexStart => Self::Start,
-            taffy_style::AlignContent::FlexEnd => Self::End,
+        match value.keyword() {
+            taffy_style::AlignContentKeyword::Start
+            | taffy_style::AlignContentKeyword::FlexStart => Self::Start,
+            taffy_style::AlignContentKeyword::End | taffy_style::AlignContentKeyword::FlexEnd => {
+                Self::End
+            }
+            taffy_style::AlignContentKeyword::Center => Self::Center,
+            taffy_style::AlignContentKeyword::SpaceBetween => Self::SpaceBetween,
+            taffy_style::AlignContentKeyword::SpaceAround => Self::SpaceAround,
+            taffy_style::AlignContentKeyword::SpaceEvenly => Self::SpaceEvenly,
+            taffy_style::AlignContentKeyword::Stretch => Self::Stretch,
         }
     }
 }
@@ -235,11 +244,11 @@ impl AlignSelf {
     pub fn to_taffy_option(&self) -> Option<taffy_style::AlignItems> {
         match *self {
             AlignSelf::Auto => None,
-            AlignSelf::Start => Some(taffy_style::AlignItems::Start),
-            AlignSelf::End => Some(taffy_style::AlignItems::End),
-            AlignSelf::Center => Some(taffy_style::AlignItems::Center),
-            AlignSelf::Baseline => Some(taffy_style::AlignItems::Baseline),
-            AlignSelf::Stretch => Some(taffy_style::AlignItems::Stretch),
+            AlignSelf::Start => Some(taffy_style::AlignItems::START),
+            AlignSelf::End => Some(taffy_style::AlignItems::END),
+            AlignSelf::Center => Some(taffy_style::AlignItems::CENTER),
+            AlignSelf::Baseline => Some(taffy_style::AlignItems::BASELINE),
+            AlignSelf::Stretch => Some(taffy_style::AlignItems::STRETCH),
         }
     }
 }
@@ -307,20 +316,49 @@ impl From<i32> for Dimension {
 
 impl From<Dimension> for taffy_style::Dimension {
     fn from(value: Dimension) -> Self {
+        taffy_style::LengthPercentageAuto::from(value).into()
+    }
+}
+
+impl From<Dimension> for taffy_style::LengthPercentageAuto {
+    fn from(value: Dimension) -> Self {
         match value {
-            Dimension::Auto => Self::Auto,
-            Dimension::Points(p) => Self::Length(p),
-            Dimension::Percent(pct) => Self::Percent(pct / 100.0),
+            Dimension::Auto => Self::auto(),
+            Dimension::Points(p) => Self::length(p),
+            Dimension::Percent(pct) => Self::percent(pct / 100.0),
         }
     }
 }
 
-impl From<taffy_style::Dimension> for Dimension {
-    fn from(value: taffy_style::Dimension) -> Self {
-        match value {
-            taffy_style::Dimension::Auto => Self::Auto,
-            taffy_style::Dimension::Length(l) => Self::Points(l),
-            taffy_style::Dimension::Percent(p) => Self::Percent(p * 100.0),
+/// A layout value cannot be represented by the Cortex style subset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnsupportedDimension;
+
+impl std::fmt::Display for UnsupportedDimension {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("The layout dimension is not supported")
+    }
+}
+
+impl std::error::Error for UnsupportedDimension {}
+
+impl TryFrom<taffy_style::Dimension> for Dimension {
+    type Error = UnsupportedDimension;
+
+    fn try_from(value: taffy_style::Dimension) -> Result<Self, Self::Error> {
+        use taffy_style::ExpandedDimension;
+        match value.expand() {
+            ExpandedDimension::Length(l) => Ok(Self::Points(l)),
+            ExpandedDimension::Percent(p) => Ok(Self::Percent(p * 100.0)),
+            ExpandedDimension::Auto => Ok(Self::Auto),
+            ExpandedDimension::MinContent
+            | ExpandedDimension::MaxContent
+            | ExpandedDimension::FitContent
+            | ExpandedDimension::FitContentPx(_)
+            | ExpandedDimension::FitContentPercent(_)
+            | ExpandedDimension::Stretch
+            | ExpandedDimension::Content
+            | ExpandedDimension::Calc(_) => Err(UnsupportedDimension),
         }
     }
 }
@@ -378,17 +416,20 @@ impl From<f32> for LengthPercentage {
 impl From<LengthPercentage> for taffy_style::LengthPercentage {
     fn from(value: LengthPercentage) -> Self {
         match value {
-            LengthPercentage::Points(p) => Self::Length(p),
-            LengthPercentage::Percent(pct) => Self::Percent(pct / 100.0),
+            LengthPercentage::Points(p) => Self::length(p),
+            LengthPercentage::Percent(pct) => Self::percent(pct / 100.0),
         }
     }
 }
 
-impl From<taffy_style::LengthPercentage> for LengthPercentage {
-    fn from(value: taffy_style::LengthPercentage) -> Self {
-        match value {
-            taffy_style::LengthPercentage::Length(l) => Self::Points(l),
-            taffy_style::LengthPercentage::Percent(p) => Self::Percent(p * 100.0),
+impl TryFrom<taffy_style::LengthPercentage> for LengthPercentage {
+    type Error = UnsupportedDimension;
+
+    fn try_from(value: taffy_style::LengthPercentage) -> Result<Self, Self::Error> {
+        match value.expand() {
+            taffy_style::ExpandedLengthPercentage::Length(l) => Ok(Self::Points(l)),
+            taffy_style::ExpandedLengthPercentage::Percent(p) => Ok(Self::Percent(p * 100.0)),
+            taffy_style::ExpandedLengthPercentage::Calc(_) => Err(UnsupportedDimension),
         }
     }
 }
@@ -450,19 +491,22 @@ impl From<f32> for LengthPercentageAuto {
 impl From<LengthPercentageAuto> for taffy_style::LengthPercentageAuto {
     fn from(value: LengthPercentageAuto) -> Self {
         match value {
-            LengthPercentageAuto::Auto => Self::Auto,
-            LengthPercentageAuto::Points(p) => Self::Length(p),
-            LengthPercentageAuto::Percent(pct) => Self::Percent(pct / 100.0),
+            LengthPercentageAuto::Auto => Self::auto(),
+            LengthPercentageAuto::Points(p) => Self::length(p),
+            LengthPercentageAuto::Percent(pct) => Self::percent(pct / 100.0),
         }
     }
 }
 
-impl From<taffy_style::LengthPercentageAuto> for LengthPercentageAuto {
-    fn from(value: taffy_style::LengthPercentageAuto) -> Self {
-        match value {
-            taffy_style::LengthPercentageAuto::Auto => Self::Auto,
-            taffy_style::LengthPercentageAuto::Length(l) => Self::Points(l),
-            taffy_style::LengthPercentageAuto::Percent(p) => Self::Percent(p * 100.0),
+impl TryFrom<taffy_style::LengthPercentageAuto> for LengthPercentageAuto {
+    type Error = UnsupportedDimension;
+
+    fn try_from(value: taffy_style::LengthPercentageAuto) -> Result<Self, Self::Error> {
+        match value.expand() {
+            taffy_style::ExpandedLengthPercentageAuto::Auto => Ok(Self::Auto),
+            taffy_style::ExpandedLengthPercentageAuto::Length(l) => Ok(Self::Points(l)),
+            taffy_style::ExpandedLengthPercentageAuto::Percent(p) => Ok(Self::Percent(p * 100.0)),
+            taffy_style::ExpandedLengthPercentageAuto::Calc(_) => Err(UnsupportedDimension),
         }
     }
 }
@@ -713,6 +757,15 @@ impl Size<Dimension> {
 }
 
 impl From<Size<Dimension>> for taffy::Size<taffy_style::Dimension> {
+    fn from(value: Size<Dimension>) -> Self {
+        Self {
+            width: value.width.into(),
+            height: value.height.into(),
+        }
+    }
+}
+
+impl From<Size<Dimension>> for taffy::Size<taffy_style::LengthPercentageAuto> {
     fn from(value: Size<Dimension>) -> Self {
         Self {
             width: value.width.into(),

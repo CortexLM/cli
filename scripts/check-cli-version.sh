@@ -128,6 +128,7 @@ if [ $ERRORS -gt 0 ]; then
     echo "1. Update VERSION_CLI with the correct version"
     echo "2. Update [workspace.package] version in Cargo.toml to match"
     echo "3. Ensure cortex-cli/Cargo.toml uses 'version.workspace = true'"
+    echo "4. Update packages/sdk/package.json to the same version"
     exit 1
 fi
 

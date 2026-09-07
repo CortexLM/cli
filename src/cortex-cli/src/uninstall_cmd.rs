@@ -193,16 +193,7 @@ impl UninstallCli {
         // Backup if requested (only after user confirms)
         if self.backup {
             print_info("Creating backup...");
-            if let Err(e) = create_backup(&items_to_remove) {
-                print_warning(&format!("Failed to create backup: {e}"));
-                if !self.force && !self.yes {
-                    println!("Continue without backup? [y/N]");
-                    if !prompt_yes_no()? {
-                        print_info("Uninstall cancelled.");
-                        return Ok(());
-                    }
-                }
-            }
+            create_backup(&items_to_remove).context("Backup failed; no files were removed")?;
         }
 
         // Perform the uninstall
@@ -251,6 +242,13 @@ impl UninstallCli {
             println!("\n  You may need to remove these manually or with elevated privileges.");
         } else {
             println!("\n✓ Cortex CLI has been successfully uninstalled.");
+        }
+
+        if !errors.is_empty() {
+            bail!(
+                "Cortex could not be fully uninstalled; {} item(s) remain",
+                errors.len()
+            );
         }
 
         if self.keep_config {
@@ -388,143 +386,49 @@ fn collect_binary_locations(home_dir: &Path) -> Result<Vec<RemovalItem>> {
 
 /// Collect items from the ~/.cortex directory.
 fn collect_cortex_home_items(home_dir: &Path) -> Result<Vec<RemovalItem>> {
-    let mut items = Vec::new();
     let cortex_home = home_dir.join(".cortex");
-
     if !cortex_home.exists() {
-        return Ok(items);
+        return Ok(Vec::new());
     }
-
-    // Configuration files
-    let config_files = [
-        ("config.toml", "Main configuration file"),
-        ("credentials.json", "Authentication credentials"),
-        ("auth.json", "OAuth tokens"),
+    use RemovalCategory::{Config, Data, Plugins};
+    let entries = [
+        ("config.toml", "Main configuration file", Config),
+        ("credentials.json", "Authentication credentials", Config),
+        ("auth.json", "OAuth tokens", Config),
+        ("sessions", "Session history and data", Data),
+        ("logs", "Log files", Data),
+        ("plugins", "Installed plugins", Plugins),
+        ("skills", "Custom skills", Plugins),
+        ("mcp", "MCP server configurations", Config),
+        ("agents", "Custom agents", Plugins),
+        ("cache", "Cached data", Data),
     ];
-
-    for (file, desc) in config_files {
-        let path = cortex_home.join(file);
+    let mut items = Vec::new();
+    for (name, description, category) in entries {
+        let path = cortex_home.join(name);
         if path.exists() {
+            let size = if path.is_dir() {
+                get_dir_size(&path)
+            } else {
+                get_file_size(&path)
+            };
             items.push(RemovalItem {
-                path: path.clone(),
-                description: desc.to_string(),
-                size: get_file_size(&path),
+                path,
+                description: description.to_string(),
+                size,
                 requires_sudo: false,
-                category: RemovalCategory::Config,
+                category,
             });
         }
     }
-
-    // Session data directory
-    let sessions_dir = cortex_home.join("sessions");
-    if sessions_dir.exists() {
-        items.push(RemovalItem {
-            path: sessions_dir.clone(),
-            description: "Session history and data".to_string(),
-            size: get_dir_size(&sessions_dir),
-            requires_sudo: false,
-            category: RemovalCategory::Data,
-        });
-    }
-
-    // Logs directory
-    let logs_dir = cortex_home.join("logs");
-    if logs_dir.exists() {
-        items.push(RemovalItem {
-            path: logs_dir.clone(),
-            description: "Log files".to_string(),
-            size: get_dir_size(&logs_dir),
-            requires_sudo: false,
-            category: RemovalCategory::Data,
-        });
-    }
-
-    // Plugins directory
-    let plugins_dir = cortex_home.join("plugins");
-    if plugins_dir.exists() {
-        items.push(RemovalItem {
-            path: plugins_dir.clone(),
-            description: "Installed plugins".to_string(),
-            size: get_dir_size(&plugins_dir),
-            requires_sudo: false,
-            category: RemovalCategory::Plugins,
-        });
-    }
-
-    // Skills directory
-    let skills_dir = cortex_home.join("skills");
-    if skills_dir.exists() {
-        items.push(RemovalItem {
-            path: skills_dir.clone(),
-            description: "Custom skills".to_string(),
-            size: get_dir_size(&skills_dir),
-            requires_sudo: false,
-            category: RemovalCategory::Plugins,
-        });
-    }
-
-    // MCP servers directory
-    let mcp_dir = cortex_home.join("mcp");
-    if mcp_dir.exists() {
-        items.push(RemovalItem {
-            path: mcp_dir.clone(),
-            description: "MCP server configurations".to_string(),
-            size: get_dir_size(&mcp_dir),
-            requires_sudo: false,
-            category: RemovalCategory::Config,
-        });
-    }
-
-    // Agents directory
-    let agents_dir = cortex_home.join("agents");
-    if agents_dir.exists() {
-        items.push(RemovalItem {
-            path: agents_dir.clone(),
-            description: "Custom agents".to_string(),
-            size: get_dir_size(&agents_dir),
-            requires_sudo: false,
-            category: RemovalCategory::Plugins,
-        });
-    }
-
-    // Cache directory
-    let cache_dir = cortex_home.join("cache");
-    if cache_dir.exists() {
-        items.push(RemovalItem {
-            path: cache_dir.clone(),
-            description: "Cached data".to_string(),
-            size: get_dir_size(&cache_dir),
-            requires_sudo: false,
-            category: RemovalCategory::Data,
-        });
-    }
-
-    // If nothing specific was found but the directory exists, add it entirely
-    // (this catches any subdirectories we might have missed)
-    if items
-        .iter()
-        .filter(|i| i.path.starts_with(&cortex_home))
-        .count()
-        == 0
-    {
-        items.push(RemovalItem {
-            path: cortex_home.clone(),
-            description: "Cortex home directory".to_string(),
-            size: get_dir_size(&cortex_home),
-            requires_sudo: false,
-            category: RemovalCategory::Config,
-        });
-    } else {
-        // Add the parent directory itself at the end (to be removed after contents)
-        items.push(RemovalItem {
-            path: cortex_home,
-            description: "Cortex home directory (if empty)".to_string(),
-            size: 0,
-            requires_sudo: false,
-            category: RemovalCategory::Config,
-        });
-    }
-
+    // Never recursively delete unknown files (or preserved data) via the parent.
+    items.push(RemovalItem {
+        path: cortex_home,
+        description: "Cortex home directory (if empty)".to_string(),
+        size: 0,
+        requires_sudo: false,
+        category: Config,
+    });
     Ok(items)
 }
 
@@ -652,6 +556,9 @@ fn get_file_size(path: &Path) -> u64 {
 
 /// Get the total size of a directory recursively.
 fn get_dir_size(path: &Path) -> u64 {
+    if fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return 0;
+    }
     let mut total = 0;
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.flatten() {
@@ -727,13 +634,30 @@ fn create_backup(items: &[RemovalItem]) -> Result<()> {
         let relative_path = item
             .path
             .strip_prefix(dirs::home_dir().unwrap_or_default())
-            .unwrap_or(&item.path);
-        let backup_path = backup_dir.join(relative_path);
+            .ok();
+        let external = item
+            .path
+            .components()
+            .filter_map(|component| match component {
+                std::path::Component::Normal(part) => Some(part),
+                _ => None,
+            })
+            .collect::<PathBuf>();
+        let backup_path = match relative_path {
+            Some(path) => backup_dir.join("home").join(path),
+            None => backup_dir.join("external").join(external),
+        };
 
         if let Some(parent) = backup_path.parent() {
             fs::create_dir_all(parent)?;
         }
 
+        if fs::symlink_metadata(&item.path)?.file_type().is_symlink() {
+            bail!(
+                "Refusing to follow a symbolic link while backing up {}",
+                item.path.display()
+            );
+        }
         if item.path.is_dir() {
             copy_dir_all(&item.path, &backup_path)?;
         } else {
@@ -753,6 +677,12 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
 
+        if entry.file_type()?.is_symlink() {
+            bail!(
+                "Refusing to follow a symbolic link while backing up {}",
+                src_path.display()
+            );
+        }
         if src_path.is_dir() {
             copy_dir_all(&src_path, &dst_path)?;
         } else {
@@ -819,13 +749,23 @@ fn validate_path_safety(path: &Path) -> Result<()> {
     }
 
     // Ensure path contains "Cortex" somewhere (sanity check)
-    if !path_str.to_lowercase().contains("Cortex") {
+    if !path.components().any(|component| {
+        matches!(component, std::path::Component::Normal(name)
+            if name.to_string_lossy().eq_ignore_ascii_case(".cortex")
+                || name.to_string_lossy().eq_ignore_ascii_case("cortex")
+                || name.to_string_lossy().eq_ignore_ascii_case("CortexCompletion"))
+    }) {
         // Allow common binary locations even without "Cortex" in parent path
         let is_binary = path
             .file_name()
             .map(|n| {
                 let name = n.to_string_lossy().to_lowercase();
-                name == "Cortex" || name == "cortex.exe" || name == "cortex.old"
+                name == "cortex"
+                    || name == "cortex.exe"
+                    || name == "cortex.old"
+                    || name == "cortex.old.exe"
+                    || name == "_cortex"
+                    || name == "cortex.fish"
             })
             .unwrap_or(false);
 
@@ -893,19 +833,18 @@ fn clean_shell_completions() -> Result<()> {
 }
 
 /// Remove lines containing cortex-related content from an rc file.
-fn clean_rc_file(path: &Path, patterns: &[&str]) -> Result<()> {
+fn clean_rc_file(path: &Path, _patterns: &[&str]) -> Result<()> {
     let content = fs::read_to_string(path)?;
     let mut new_lines: Vec<&str> = Vec::new();
     let mut removed = false;
 
     for line in content.lines() {
-        let should_remove = patterns.iter().any(|p| {
-            line.contains(p)
-                && (line.contains("completion")
-                    || line.contains("source")
-                    || line.contains("eval")
-                    || line.trim().starts_with('#') && line.to_lowercase().contains("Cortex"))
-        });
+        let should_remove = matches!(
+            line.trim(),
+            "eval \"$(cortex completion bash)\""
+                | "eval \"$(cortex completion zsh)\""
+                | "cortex completion fish | source"
+        );
 
         if should_remove {
             removed = true;
@@ -915,7 +854,10 @@ fn clean_rc_file(path: &Path, patterns: &[&str]) -> Result<()> {
     }
 
     if removed {
-        let new_content = new_lines.join("\n");
+        let mut new_content = new_lines.join("\n");
+        if content.ends_with('\n') {
+            new_content.push('\n');
+        }
         fs::write(path, new_content)?;
         println!("  Cleaned: {}", path.display());
     }
@@ -975,5 +917,82 @@ mod tests {
             | InstallMethod::Installer
             | InstallMethod::Unknown => {}
         }
+    }
+
+    #[test]
+    fn safety_checks_match_cortex_components_not_substrings() {
+        assert!(validate_path_safety(Path::new("/tmp/example/.cortex/config.toml")).is_ok());
+        assert!(validate_path_safety(Path::new("/tmp/example/bin/Cortex")).is_ok());
+        assert!(validate_path_safety(Path::new("/tmp/my-cortex-notes/other-data")).is_err());
+    }
+
+    #[test]
+    fn completion_cleanup_preserves_unrelated_shell_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let rc = dir.path().join("profile");
+        fs::write(&rc, "# Cortex notes\nsource my-Cortex-completion-wrapper\neval \"$(cortex completion bash)\"\n").unwrap();
+        clean_rc_file(&rc, &["Cortex", "# cortex"]).unwrap();
+        assert_eq!(
+            fs::read_to_string(rc).unwrap(),
+            "# Cortex notes\nsource my-Cortex-completion-wrapper\n"
+        );
+    }
+
+    #[test]
+    fn backups_copy_nested_content_and_removal_reports_real_sizes() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join(".cortex");
+        fs::create_dir_all(home.join("sessions/nested")).unwrap();
+        fs::write(home.join("config.toml"), b"fixture = true").unwrap();
+        fs::write(home.join("sessions/nested/history.jsonl"), b"12345").unwrap();
+        // An unrecognized file is never collected, so it survives removal.
+        let unknown = home.join("unknown-data");
+        fs::write(&unknown, b"keep me").unwrap();
+
+        let items = collect_cortex_home_items(dir.path()).unwrap();
+        let find = |name: &str| {
+            items
+                .iter()
+                .find(|item| item.path.ends_with(name))
+                .unwrap_or_else(|| panic!("{name}"))
+        };
+        let (config, sessions) = (find("config.toml"), find("sessions"));
+        assert_eq!(config.category, RemovalCategory::Config);
+        assert_eq!(config.size, 14);
+        assert_eq!(sessions.category, RemovalCategory::Data);
+        assert_eq!(sessions.size, 5);
+
+        let backup = dir.path().join("backup");
+        copy_dir_all(&home, &backup).unwrap();
+        let copied = backup.join("sessions/nested/history.jsonl");
+        assert_eq!(fs::read(&copied).unwrap(), b"12345");
+
+        remove_item(config).unwrap();
+        // Removing an already absent item is a no-op, not an error.
+        remove_item(config).unwrap();
+        remove_item(sessions).unwrap();
+        assert!(!home.join("config.toml").exists());
+        assert!(!home.join("sessions").exists());
+        assert!(copied.exists(), "the backup copy survives removal");
+        // The parent entry only removes an empty directory, never unknown data.
+        remove_item(find(".cortex")).unwrap();
+        assert_eq!(fs::read(&unknown).unwrap(), b"keep me");
+
+        // A home without Cortex data yields nothing to remove at all.
+        let empty = tempfile::tempdir().unwrap();
+        assert!(collect_cortex_home_items(empty.path()).unwrap().is_empty());
+        assert!(collect_completion_items(empty.path()).unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backups_do_not_follow_directory_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let dest = dir.path().join("backup");
+        fs::create_dir(&src).unwrap();
+        std::os::unix::fs::symlink(&src, src.join("loop")).unwrap();
+        assert_eq!(get_dir_size(&src), 0);
+        assert!(copy_dir_all(&src, &dest).is_err());
     }
 }

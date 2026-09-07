@@ -6,7 +6,6 @@ use ratatui::layout::Rect;
 use crate::app::FocusTarget;
 use crate::input::{ClickZoneId, MouseAction, MouseButton};
 use crate::runner::terminal::CortexTerminal;
-use crate::session::CortexSession;
 use crate::views::{QuestionClickZones, QuestionHit};
 
 use super::core::EventLoop;
@@ -281,7 +280,8 @@ impl EventLoop {
             }
 
             (ClickZoneId::NewSessionButton, MouseButton::Left) => {
-                self.app_state.new_session();
+                let result = self.new_local_session();
+                self.report_local_result(result, "New session started");
             }
 
             (ClickZoneId::InputField, MouseButton::Left) => {
@@ -391,25 +391,9 @@ impl EventLoop {
     /// Loads a session by its index in the session history.
     fn load_session_at_index(&mut self, idx: usize) -> Result<()> {
         if let Some(session) = self.app_state.session_history.get(idx) {
-            let session_id = session.id;
-            self.app_state.load_session(session_id);
-
-            let session_id_str = session_id.to_string();
-            if let Ok(loaded_session) = CortexSession::load(&session_id_str) {
-                for msg in loaded_session.messages() {
-                    let message = if msg.role == "user" {
-                        cortex_core::widgets::Message::user(&msg.content)
-                    } else {
-                        cortex_core::widgets::Message::assistant(&msg.content)
-                    };
-                    self.app_state.add_message(message);
-                }
-                self.cortex_session = Some(loaded_session);
-                tracing::info!(
-                    "Loaded session with {} messages",
-                    self.app_state.messages.len()
-                );
-            }
+            let id = session.id.to_string();
+            let result = self.resume_local_session(&id);
+            self.report_local_result(result, "Session resumed");
         }
         Ok(())
     }

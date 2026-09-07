@@ -39,6 +39,7 @@ cortex-compact-ext = { path = "../cortex-compact", package = "cortex-compact" }
 cortex-ratelimits = { workspace = true }
 cortex-migrations = { workspace = true }
 cortex-experimental = { workspace = true }
+cortex-execpolicy = { workspace = true }
 
 # Async
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "fs", "net", "process", "time"] }
@@ -123,6 +124,7 @@ keyring = { workspace = true, features = ["windows-native"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+cortex-sandbox = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

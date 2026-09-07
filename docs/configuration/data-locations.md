@@ -50,9 +50,12 @@ Cortex also reads and writes inside the project you are working in:
 | `.cortex/plugins/` | Project plugins |
 | `.cortex/commands/` | Project slash commands |
 | `.agents/`, `.agent/` | Alternative agent and skill locations that are also scanned |
-| `./debug.txt` | Written by `cortex --debug` |
 
 Project files take priority over personal ones with the same name.
+
+`cortex --debug` records private, content-free events in the Cortex home
+`diagnostics/` directory. `CORTEX_DIAGNOSTICS_DIR` overrides that location.
+It does not create or overwrite project `debug.txt` files.
 
 ## Platform data directories
 

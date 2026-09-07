@@ -17,7 +17,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -27,12 +26,11 @@ use crate::client::{ModelClient, create_client};
 use crate::error::{CortexError, Result};
 
 use super::context::ToolContext;
-use super::handlers::batch::{BatchToolArgs, BatchToolCall, BatchToolExecutor, BatchToolHandler};
 use super::handlers::subagent::{
     ProgressEvent, SubagentConfig, SubagentExecutor, SubagentResult, SubagentType,
 };
 use super::registry::ToolRegistry;
-use super::spec::{ToolDefinition, ToolHandler as ToolHandlerTrait, ToolResult};
+use super::spec::{ToolDefinition, ToolResult};
 
 /// Configuration for creating a UnifiedToolExecutor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,9 +241,10 @@ impl UnifiedToolExecutor {
     /// Get tool definitions for API (for sending to LLM).
     pub fn get_definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions = self.registry.get_definitions();
-
-        // Add Batch tool definition
-        definitions.push(super::handlers::batch::batch_tool_definition());
+        // Task is implemented by this executor, unlike the base registry.
+        if !definitions.iter().any(|tool| tool.name == "Task") {
+            definitions.push(super::handlers::SimpleTaskHandler::definition());
+        }
 
         definitions
     }
@@ -326,6 +325,9 @@ impl UnifiedToolExecutor {
         progress_tx: Option<mpsc::UnboundedSender<ProgressEvent>>,
         ui_session_id: Option<String>,
     ) -> Result<ToolResult> {
+        if let Err(message) = super::boundary::authorize_tool_call(&context, "Task", &arguments) {
+            return Ok(ToolResult::error(context.redact(&message)));
+        }
         // Parse Task arguments
         let description = arguments
             .get("description")
@@ -410,7 +412,7 @@ impl UnifiedToolExecutor {
         } else {
             Some(tokio::spawn(async move {
                 while let Some(event) = rx.recv().await {
-                    tracing::debug!("Subagent progress: {}", event.to_message());
+                    tracing::debug!("Subagent progress received");
                     if event.is_terminal() {
                         break;
                     }
@@ -419,10 +421,19 @@ impl UnifiedToolExecutor {
         };
 
         // Execute the subagent
-        let result = self.subagent_executor.execute(config, progress_tx).await?;
+        let result = self
+            .subagent_executor
+            .execute(config, progress_tx)
+            .await
+            .map_err(|error| {
+                CortexError::tool_execution("Task", context.redact(&error.to_string()))
+            })?;
 
         // Format result
-        Ok(self.format_task_result(result))
+        Ok(super::boundary::redact_result(
+            &context,
+            self.format_task_result(result),
+        ))
     }
 
     /// Format SubagentResult into ToolResult.
@@ -444,50 +455,9 @@ impl UnifiedToolExecutor {
 
     /// Execute the Batch tool - runs multiple tools in parallel.
     async fn execute_batch(&self, arguments: Value, context: ToolContext) -> Result<ToolResult> {
-        // Parse batch arguments
-        let args: BatchToolArgs = serde_json::from_value(arguments.clone()).or_else(|_| {
-            // Try alternative format with "tool_calls" instead of "calls"
-            if let Some(tool_calls) = arguments.get("tool_calls").and_then(|v| v.as_array()) {
-                let calls: Vec<BatchToolCall> = tool_calls
-                    .iter()
-                    .filter_map(|tc| {
-                        let tool = tc.get("tool").and_then(|v| v.as_str())?;
-                        let args = tc
-                            .get("parameters")
-                            .cloned()
-                            .unwrap_or(Value::Object(Default::default()));
-                        Some(BatchToolCall {
-                            tool: tool.to_string(),
-                            arguments: args,
-                        })
-                    })
-                    .collect();
-
-                Ok(BatchToolArgs {
-                    calls,
-                    timeout_secs: arguments.get("timeout_secs").and_then(|v| v.as_u64()),
-                    tool_timeout_secs: arguments.get("tool_timeout_secs").and_then(|v| v.as_u64()),
-                })
-            } else {
-                Err(CortexError::InvalidInput(
-                    "Invalid Batch arguments".to_string(),
-                ))
-            }
-        })?;
-
-        // Create batch handler with self as executor
-        let executor: Arc<dyn BatchToolExecutor> = Arc::new(UnifiedBatchExecutor {
-            registry: self.registry.clone(),
-        });
-
-        let handler = BatchToolHandler::new(executor);
-
-        // Execute batch
-        let batch_args = serde_json::to_value(args).map_err(|e| {
-            CortexError::InvalidInput(format!("Failed to serialize batch args: {}", e))
-        })?;
-
-        ToolHandlerTrait::execute(&handler, batch_args, &context).await
+        self.registry
+            .execute_with_context("Batch", arguments, context)
+            .await
     }
 
     /// Get the subagent executor (for advanced use cases).
@@ -503,33 +473,6 @@ impl UnifiedToolExecutor {
     /// Get the model client.
     pub fn model_client(&self) -> &Arc<dyn ModelClient> {
         &self.model_client
-    }
-}
-
-/// Internal executor for Batch tool that delegates to the registry.
-struct UnifiedBatchExecutor {
-    registry: Arc<ToolRegistry>,
-}
-
-#[async_trait]
-impl BatchToolExecutor for UnifiedBatchExecutor {
-    async fn execute_tool(
-        &self,
-        name: &str,
-        arguments: Value,
-        context: &ToolContext,
-    ) -> Result<ToolResult> {
-        // Prevent recursive batch calls (already handled by BatchToolHandler validation)
-        // Also prevent Task from being called in batch for safety
-        // (being conservative to avoid complex nesting scenarios)
-
-        self.registry
-            .execute_with_context(name, arguments, context.clone())
-            .await
-    }
-
-    fn has_tool(&self, name: &str) -> bool {
-        self.registry.has(name)
     }
 }
 
@@ -559,12 +502,68 @@ mod tests {
         assert_eq!(config.working_dir, PathBuf::from("/tmp"));
     }
 
-    #[test]
-    fn test_has_tool() {
-        // Can't test without API key, but we can test the logic
-        let config = ExecutorConfig::default();
+    struct NoModelCalls;
 
-        // These would require a valid executor, so we just verify config is valid
-        assert!(!config.api_key.is_empty() || config.api_key.is_empty());
+    #[async_trait::async_trait]
+    impl ModelClient for NoModelCalls {
+        fn model(&self) -> &str {
+            "fixture"
+        }
+        fn provider(&self) -> &str {
+            "cortex"
+        }
+        fn capabilities(&self) -> &crate::client::ModelCapabilities {
+            panic!("unexpected model use")
+        }
+        async fn complete(
+            &self,
+            _: crate::client::CompletionRequest,
+        ) -> Result<crate::client::ResponseStream> {
+            panic!("unauthorized model call")
+        }
+        async fn complete_sync(
+            &self,
+            _: crate::client::CompletionRequest,
+        ) -> Result<crate::client::CompletionResponse> {
+            panic!("unauthorized model call")
+        }
+    }
+
+    #[tokio::test]
+    async fn security_boundary_unified_task_and_batch_use_authorization() {
+        let root = tempfile::tempdir().unwrap();
+        let config = ExecutorConfig::default().with_working_dir(root.path().into());
+        let executor = UnifiedToolExecutor::with_registry_and_client(
+            Arc::new(ToolRegistry::new()),
+            Arc::new(NoModelCalls),
+            config,
+        );
+        let definitions = executor.get_definitions();
+        for name in ["Task", "Batch"] {
+            assert!(executor.has_tool(name));
+            assert_eq!(
+                definitions.iter().filter(|tool| tool.name == name).count(),
+                1
+            );
+        }
+        let args = serde_json::json!({"prompt":"must not start"});
+        let context = ToolContext::new(root.path().into());
+        let result = executor
+            .execute("Task", args.clone(), context.clone())
+            .await
+            .unwrap();
+        assert!(!result.success && result.output.contains("Approval required"));
+        let approved = context
+            .clone()
+            .with_approved_tool_call("Task", &args)
+            .with_read_only(true);
+        let result = executor.execute("Task", args, approved).await.unwrap();
+        assert!(!result.success && result.output.contains("Read-only"));
+        let context = context.with_denied_tools(vec!["Batch".into()]);
+        let result = executor
+            .execute("Batch", serde_json::json!({"calls": []}), context)
+            .await
+            .unwrap();
+        assert!(!result.success && result.output.contains("Permission denied"));
     }
 }

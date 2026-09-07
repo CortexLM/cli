@@ -80,7 +80,15 @@ pub struct SandboxArgs {
 
 /// Main entry point.
 pub fn run_main() -> ! {
-    let args = SandboxArgs::parse();
+    run_main_with(std::env::args())
+}
+
+/// Wrapper entry for hosts that re-execute themselves: `args` starts with argv[0].
+pub fn run_main_with<I>(args: I) -> !
+where
+    I: IntoIterator<Item = String>,
+{
+    let args = SandboxArgs::parse_from(args);
 
     // Parse the sandbox policy
     let policy: SandboxPolicy = match serde_json::from_str(&args.sandbox_policy) {
@@ -94,13 +102,17 @@ pub fn run_main() -> ! {
     // Build writable roots from command line args
     let writable_roots: Vec<WritableRoot> = if args.writable_roots.is_empty() {
         // Use cwd as the writable root with standard protections
-        vec![WritableRoot {
-            root: args.sandbox_policy_cwd.clone(),
-            read_only_subpaths: vec![
-                args.sandbox_policy_cwd.join(".git"),
-                args.sandbox_policy_cwd.join(".cortex"),
-            ],
-        }]
+        match &policy {
+            SandboxPolicy::WorkspaceWrite { .. } => vec![WritableRoot {
+                root: args.sandbox_policy_cwd.clone(),
+                read_only_subpaths: vec![
+                    args.sandbox_policy_cwd.join(".git"),
+                    args.sandbox_policy_cwd.join(".cortex"),
+                ],
+            }],
+            SandboxPolicy::Custom { writable_roots, .. } => writable_roots.clone(),
+            _ => Vec::new(),
+        }
     } else {
         args.writable_roots
             .into_iter()
@@ -148,10 +160,7 @@ fn apply_sandbox_policy(
         .collect();
 
     if !read_only_paths.is_empty() {
-        if let Err(e) = apply_read_only_mounts(&read_only_paths) {
-            // Non-fatal: may fail without user namespace support
-            tracing::warn!("Could not apply read-only mounts: {}", e);
-        }
+        apply_read_only_mounts(&read_only_paths)?;
     }
 
     // Apply network filter (seccomp) if network is disabled

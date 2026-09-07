@@ -36,29 +36,35 @@ struct MockPlugin {
     config: tokio::sync::RwLock<HashMap<String, serde_json::Value>>,
 }
 
+fn test_manifest(id: &str, name: &str) -> PluginManifest {
+    PluginManifest {
+        plugin: PluginMetadata {
+            id: id.to_string(),
+            name: name.to_string(),
+            version: "1.0.0".to_string(),
+            description: "A test plugin".to_string(),
+            authors: vec![],
+            homepage: None,
+            license: None,
+            min_cortex_version: None,
+            keywords: vec![],
+            icon: None,
+        },
+        capabilities: vec![],
+        permissions: vec![],
+        dependencies: vec![],
+        commands: vec![],
+        hooks: vec![],
+        config: HashMap::new(),
+        wasm: WasmSettings::default(),
+        runtime: Default::default(),
+        tools: Vec::new(),
+    }
+}
+
 impl MockPlugin {
     fn new(id: &str) -> Self {
-        let manifest = PluginManifest {
-            plugin: PluginMetadata {
-                id: id.to_string(),
-                name: format!("Mock Plugin {}", id),
-                version: "1.0.0".to_string(),
-                description: "A mock plugin for testing".to_string(),
-                authors: vec!["Test Author".to_string()],
-                homepage: None,
-                license: Some("MIT".to_string()),
-                min_cortex_version: None,
-                keywords: vec!["test".to_string()],
-                icon: None,
-            },
-            capabilities: vec![],
-            permissions: vec![],
-            dependencies: vec![],
-            commands: vec![],
-            hooks: vec![],
-            config: HashMap::new(),
-            wasm: WasmSettings::default(),
-        };
+        let manifest = test_manifest(id, &format!("Mock Plugin {}", id));
 
         let info = PluginInfo::from_manifest(&manifest, PathBuf::from("/tmp/test"));
 
@@ -136,27 +142,7 @@ struct FailingInitPlugin {
 
 impl FailingInitPlugin {
     fn new(id: &str) -> Self {
-        let manifest = PluginManifest {
-            plugin: PluginMetadata {
-                id: id.to_string(),
-                name: format!("Failing Plugin {}", id),
-                version: "1.0.0".to_string(),
-                description: "A plugin that fails to initialize".to_string(),
-                authors: vec![],
-                homepage: None,
-                license: None,
-                min_cortex_version: None,
-                keywords: vec![],
-                icon: None,
-            },
-            capabilities: vec![],
-            permissions: vec![],
-            dependencies: vec![],
-            commands: vec![],
-            hooks: vec![],
-            config: HashMap::new(),
-            wasm: WasmSettings::default(),
-        };
+        let manifest = test_manifest(id, &format!("Failing Plugin {}", id));
 
         let info = PluginInfo::from_manifest(&manifest, PathBuf::from("/tmp/test"));
 

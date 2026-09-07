@@ -220,43 +220,29 @@ impl PluginCommandRegistry {
         let name = command.name.clone();
         let plugin_id = command.plugin_id.clone();
 
-        // Check for conflicts
-        {
-            let commands = self.commands.read().await;
-            if commands.contains_key(&name) {
+        let mut commands = self.commands.write().await;
+        let mut aliases = self.aliases.write().await;
+        let mut executors = self.executors.write().await;
+        let mut incoming = std::collections::HashSet::new();
+        for candidate in std::iter::once(&name).chain(&command.aliases) {
+            crate::contract::validate_id(candidate)?;
+            let normalized = candidate.to_ascii_lowercase();
+            if !incoming.insert(normalized.clone())
+                || aliases.contains_key(&normalized)
+                || commands
+                    .keys()
+                    .any(|name| name.eq_ignore_ascii_case(candidate))
+            {
                 return Err(PluginError::CommandError(format!(
-                    "Command '{}' is already registered",
-                    name
+                    "Command or alias '{candidate}' is already registered"
                 )));
             }
         }
-
-        // Register aliases
-        {
-            let mut aliases = self.aliases.write().await;
-            for alias in &command.aliases {
-                if aliases.contains_key(alias) {
-                    return Err(PluginError::CommandError(format!(
-                        "Alias '{}' is already registered",
-                        alias
-                    )));
-                }
-                aliases.insert(alias.clone(), name.clone());
-            }
+        for alias in &command.aliases {
+            aliases.insert(alias.to_ascii_lowercase(), name.clone());
         }
-
-        // Register command
-        {
-            let mut commands = self.commands.write().await;
-            commands.insert(name.clone(), command);
-        }
-
-        // Register executor
-        {
-            let mut executors = self.executors.write().await;
-            let key = format!("{}::{}", plugin_id, name);
-            executors.insert(key, executor);
-        }
+        commands.insert(name.clone(), command);
+        executors.insert(format!("{}::{}", plugin_id, name), executor);
 
         tracing::debug!("Registered command: /{} from plugin {}", name, plugin_id);
         Ok(())
@@ -264,35 +250,17 @@ impl PluginCommandRegistry {
 
     /// Unregister all commands for a plugin.
     pub async fn unregister_plugin(&self, plugin_id: &str) {
-        // Find commands to remove
-        let to_remove: Vec<String> = {
-            let commands = self.commands.read().await;
-            commands
-                .values()
-                .filter(|c| c.plugin_id == plugin_id)
-                .map(|c| c.name.clone())
-                .collect()
-        };
-
-        // Remove aliases
-        {
-            let mut aliases = self.aliases.write().await;
-            aliases.retain(|_, name| !to_remove.contains(name));
-        }
-
-        // Remove commands
-        {
-            let mut commands = self.commands.write().await;
-            for name in &to_remove {
-                commands.remove(name);
-            }
-        }
-
-        // Remove executors
-        {
-            let mut executors = self.executors.write().await;
-            executors.retain(|key, _| !key.starts_with(&format!("{}::", plugin_id)));
-        }
+        let mut commands = self.commands.write().await;
+        let mut aliases = self.aliases.write().await;
+        let mut executors = self.executors.write().await;
+        let to_remove: Vec<_> = commands
+            .values()
+            .filter(|c| c.plugin_id == plugin_id)
+            .map(|c| c.name.clone())
+            .collect();
+        aliases.retain(|_, name| !to_remove.contains(name));
+        commands.retain(|_, command| command.plugin_id != plugin_id);
+        executors.retain(|key, _| !key.starts_with(&format!("{}::", plugin_id)));
 
         tracing::debug!(
             "Unregistered {} commands from plugin {}",

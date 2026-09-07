@@ -167,7 +167,7 @@ impl ToolRegistry {
                 "properties": {
                     "pattern": {
                         "type": "string",
-                        "description": "Search pattern (glob or regex)"
+                        "description": "Glob pattern for matching file names"
                     },
                     "path": {
                         "type": "string",
@@ -457,7 +457,7 @@ impl ToolRegistry {
             ToolDefinition::new(
                 "MultiEdit",
                 "Edit multiple files in a single operation. More efficient than multiple Edit calls when making related changes across files. \
-                This tool ensures atomic application - either all edits succeed or none are applied.",
+                All replacements are validated before writing. A filesystem write failure can leave earlier files changed.",
                 json!({
                     "type": "object",
                     "properties": {

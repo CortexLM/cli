@@ -26,3 +26,4 @@ opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-semantic-conventions = { workspace = true, optional = true }
 
 [dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }

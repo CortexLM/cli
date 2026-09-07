@@ -14,8 +14,8 @@ pub enum SessionMode {
     ContinueLast,
     /// Continue a specific session by ID.
     Continue(String),
-    /// Create a new session with optional title.
-    New { title: Option<String> },
+    /// Create a new session.
+    New,
 }
 
 /// Resolve and validate a session ID, supporting both full UUID and 8-char short IDs.

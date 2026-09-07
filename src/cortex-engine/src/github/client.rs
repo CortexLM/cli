@@ -142,18 +142,14 @@ impl GitHubClient {
             .header("Pragma", "no-cache")
             .send()
             .await
-            .context("Failed to fetch pull request")?;
+            .map_err(|_| anyhow::anyhow!("GitHub is temporarily unavailable"))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("GitHub API error ({}): {}", status, body);
+            bail!("GitHub request failed (status {})", status.as_u16());
         }
 
-        let pr: GitHubPullRequest = response
-            .json()
-            .await
-            .context("Failed to parse pull request response")?;
+        let pr: GitHubPullRequest = read_response(response).await?;
 
         Ok(PullRequestInfo {
             number: pr.number,
@@ -164,6 +160,7 @@ impl GitHubClient {
             head_branch: pr.head.ref_name,
             base_branch: pr.base.ref_name,
             head_sha: pr.head.sha,
+            head_repository: pr.head.repo.map(|repo| repo.full_name),
             mergeable: pr.mergeable,
             draft: pr.draft.unwrap_or(false),
             labels: pr.labels.into_iter().map(|l| l.name).collect(),
@@ -189,18 +186,14 @@ impl GitHubClient {
             .json(&serde_json::json!({ "body": body }))
             .send()
             .await
-            .context("Failed to create comment")?;
+            .map_err(|_| anyhow::anyhow!("GitHub is temporarily unavailable"))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("GitHub API error ({}): {}", status, body);
+            bail!("GitHub request failed (status {})", status.as_u16());
         }
 
-        let comment: GitHubComment = response
-            .json()
-            .await
-            .context("Failed to parse comment response")?;
+        let comment: GitHubComment = read_response(response).await?;
 
         Ok(comment.id)
     }
@@ -225,12 +218,11 @@ impl GitHubClient {
             .json(&serde_json::json!({ "content": reaction }))
             .send()
             .await
-            .context("Failed to add reaction")?;
+            .map_err(|_| anyhow::anyhow!("GitHub is temporarily unavailable"))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("GitHub API error ({}): {}", status, body);
+            bail!("GitHub request failed (status {})", status.as_u16());
         }
 
         Ok(())
@@ -249,18 +241,17 @@ impl GitHubClient {
             request = request.bearer_auth(token);
         }
 
-        let response = request.send().await.context("Failed to fetch issue")?;
+        let response = request
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("GitHub is temporarily unavailable"))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("GitHub API error ({}): {}", status, body);
+            bail!("GitHub request failed (status {})", status.as_u16());
         }
 
-        let issue: GitHubIssue = response
-            .json()
-            .await
-            .context("Failed to parse issue response")?;
+        let issue: GitHubIssue = read_response(response).await?;
 
         Ok(IssueInfo {
             number: issue.number,
@@ -273,48 +264,60 @@ impl GitHubClient {
         })
     }
 
-    /// List files changed in a pull request.
+    /// List the complete bounded file list; never silently review only page one.
     pub async fn list_pull_request_files(&self, number: u64) -> Result<Vec<PullRequestFile>> {
-        let token = self
-            .token
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Authentication required to list PR files"))?;
+        let mut all = Vec::new();
+        for page in 1..=30 {
+            let response = self
+                .get_page(&format!("pulls/{number}/files"), page)
+                .await?;
+            let files: Vec<PullRequestFile> = read_response(response).await?;
+            let last = files.len() < 100;
+            all.extend(files);
+            if last {
+                return Ok(all);
+            }
+        }
+        bail!("The pull request exceeds the supported file limit");
+    }
 
+    /// Check a stable event marker before an explicitly approved publication.
+    pub async fn has_automation_comment(&self, number: u64, marker: &str) -> Result<bool> {
+        for page in 1..=30 {
+            let response = self
+                .get_page(&format!("issues/{number}/comments"), page)
+                .await?;
+            let comments: Vec<serde_json::Value> = read_response(response).await?;
+            if comments.iter().any(|comment| {
+                comment["body"]
+                    .as_str()
+                    .is_some_and(|body| body.contains(marker))
+            }) {
+                return Ok(true);
+            }
+            if comments.len() < 100 {
+                return Ok(false);
+            }
+        }
+        bail!("Cannot safely deduplicate automation comments beyond the supported limit");
+    }
+
+    async fn get_page(&self, path: &str, page: u32) -> Result<reqwest::Response> {
         let url = format!(
-            "{}/repos/{}/{}/pulls/{}/files",
-            self.base_url, self.owner, self.repo, number
+            "{}/repos/{}/{}/{}",
+            self.base_url, self.owner, self.repo, path
         );
-
-        let response = self
+        let mut request = self
             .client
-            .get(&url)
-            .bearer_auth(token)
+            .get(url)
+            .query(&[("per_page", 100), ("page", page)]);
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+        request
             .send()
             .await
-            .context("Failed to list PR files")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("GitHub API error ({}): {}", status, body);
-        }
-
-        let files: Vec<GitHubPullRequestFile> = response
-            .json()
-            .await
-            .context("Failed to parse PR files response")?;
-
-        Ok(files
-            .into_iter()
-            .map(|f| PullRequestFile {
-                filename: f.filename,
-                status: f.status,
-                additions: f.additions,
-                deletions: f.deletions,
-                changes: f.changes,
-                patch: f.patch,
-            })
-            .collect())
+            .map_err(|_| anyhow::anyhow!("GitHub is temporarily unavailable"))
     }
 
     /// Create a review comment on a pull request.
@@ -349,18 +352,14 @@ impl GitHubClient {
             }))
             .send()
             .await
-            .context("Failed to create review comment")?;
+            .map_err(|_| anyhow::anyhow!("GitHub is temporarily unavailable"))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("GitHub API error ({}): {}", status, body);
+            bail!("GitHub request failed (status {})", status.as_u16());
         }
 
-        let comment: GitHubComment = response
-            .json()
-            .await
-            .context("Failed to parse comment response")?;
+        let comment: GitHubComment = read_response(response).await?;
 
         Ok(comment.id)
     }
@@ -398,18 +397,14 @@ impl GitHubClient {
             }))
             .send()
             .await
-            .context("Failed to submit review")?;
+            .map_err(|_| anyhow::anyhow!("GitHub is temporarily unavailable"))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("GitHub API error ({}): {}", status, body);
+            bail!("GitHub request failed (status {})", status.as_u16());
         }
 
-        let review: GitHubReview = response
-            .json()
-            .await
-            .context("Failed to parse review response")?;
+        let review: GitHubReview = read_response(response).await?;
 
         Ok(review.id)
     }
@@ -475,18 +470,14 @@ impl GitHubClient {
             }))
             .send()
             .await
-            .context("Failed to submit batched review")?;
+            .map_err(|_| anyhow::anyhow!("GitHub is temporarily unavailable"))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("GitHub API error ({}): {}", status, body);
+            bail!("GitHub request failed (status {})", status.as_u16());
         }
 
-        let review: GitHubReview = response
-            .json()
-            .await
-            .context("Failed to parse review response")?;
+        let review: GitHubReview = read_response(response).await?;
 
         Ok(review.id)
     }
@@ -506,15 +497,43 @@ pub struct ReviewComment {
 }
 
 /// Parse repository string (owner/repo) into components.
-fn parse_repository(repository: &str) -> Result<(String, String)> {
+pub fn parse_repository(repository: &str) -> Result<(String, String)> {
     let parts: Vec<&str> = repository.split('/').collect();
-    if parts.len() != 2 {
-        bail!(
-            "Invalid repository format. Expected 'owner/repo', got '{}'",
-            repository
-        );
+    let component = |part: &&str| {
+        !part.is_empty()
+            && !matches!(*part, "." | "..")
+            && part
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
+    };
+    if parts.len() != 2 || !parts.iter().all(component) {
+        bail!("Invalid repository format. Expected owner/repo");
     }
     Ok((parts[0].to_string(), parts[1].to_string()))
+}
+
+async fn read_response<T: serde::de::DeserializeOwned>(
+    mut response: reqwest::Response,
+) -> Result<T> {
+    if !response.status().is_success() {
+        bail!(
+            "GitHub request failed (status {})",
+            response.status().as_u16()
+        );
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| anyhow::anyhow!("GitHub response could not be read"))?
+    {
+        if body.len() + chunk.len() > 2 * 1024 * 1024 {
+            bail!("GitHub response is too large");
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body)
+        .map_err(|_| anyhow::anyhow!("GitHub returned an invalid response"))
 }
 
 /// Pull request information.
@@ -528,6 +547,8 @@ pub struct PullRequestInfo {
     pub head_branch: String,
     pub base_branch: String,
     pub head_sha: String,
+    #[serde(default)]
+    pub head_repository: Option<String>,
     pub mergeable: Option<bool>,
     pub draft: bool,
     pub labels: Vec<String>,
@@ -601,6 +622,12 @@ struct GitHubRef {
     #[serde(rename = "ref")]
     ref_name: String,
     sha: String,
+    repo: Option<GitHubRepository>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRepository {
+    full_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -616,16 +643,6 @@ struct GitHubComment {
 #[derive(Debug, Deserialize)]
 struct GitHubReview {
     id: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct GitHubPullRequestFile {
-    filename: String,
-    status: String,
-    additions: u32,
-    deletions: u32,
-    changes: u32,
-    patch: Option<String>,
 }
 
 #[cfg(test)]

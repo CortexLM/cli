@@ -70,11 +70,14 @@
 //! ```
 
 pub mod config;
+pub mod executable;
 pub mod hooks;
 pub mod integration;
 pub mod loader;
 pub mod manager;
 pub mod types;
+/// Authoritative executable plugin runtime; the older manager is metadata-only.
+pub use cortex_plugins_ext as runtime;
 
 // Re-exports for convenience
 pub use config::{PluginConfigBuilder, PluginConfigEntry, PluginSettings, PluginsConfig};

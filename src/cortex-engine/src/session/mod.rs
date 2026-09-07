@@ -4,9 +4,11 @@
 //! the TUI/CLI to the agent loop.
 
 mod agent_loop;
+pub mod control;
 mod handlers;
 mod lifecycle;
 mod prompt;
+mod remote;
 mod types;
 
 use std::sync::Arc;

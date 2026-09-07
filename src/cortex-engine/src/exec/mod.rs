@@ -1,7 +1,11 @@
 //! Command execution with sandboxing.
 
+mod environment;
 mod output;
+mod policy;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod runner;
+pub use environment::{build_safe_environment, is_sensitive_env_name};
 
 pub use output::OutputCapture;
 pub use runner::{

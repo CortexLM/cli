@@ -5,7 +5,6 @@ use anyhow::Result;
 use crate::app::ActiveModal;
 use crate::commands::CommandResult;
 use crate::modal::ModalAction;
-use crate::session::CortexSession;
 
 use super::core::EventLoop;
 
@@ -308,40 +307,19 @@ impl EventLoop {
                 self.app_state.add_to_history(cmd_name);
 
                 let result = self.command_executor.execute_str(&cmd_str);
-                match result {
-                    CommandResult::Success => {}
-                    CommandResult::Message(msg) => {
-                        self.add_system_message(&msg);
-                    }
-                    CommandResult::Error(err) => {
-                        self.add_system_message(&format!("Error: {}", err));
-                    }
-                    CommandResult::Clear => {
-                        self.app_state.clear_messages();
-                    }
-                    CommandResult::Quit => {
-                        self.app_state.set_quit();
-                    }
-                    CommandResult::NotFound(cmd) => {
-                        self.add_system_message(&format!("Unknown command: {}", cmd));
-                    }
-                    _ => {}
+                if let Err(error) = self.handle_command_result(result).await {
+                    self.add_system_message(&format!("Command failed: {error}"));
                 }
             }
             ModalAction::SelectSession(path) => {
-                let session_id = path.to_string_lossy().to_string();
-                if let Ok(session) = CortexSession::load(&session_id) {
-                    self.cortex_session = Some(session);
-                    self.app_state.set_view(crate::app::AppView::Session);
-                    self.add_system_message(&format!("Resumed session: {}", session_id));
-                } else {
-                    self.add_system_message(&format!("Failed to load session: {}", session_id));
-                }
+                let result = self.resume_local_session(&path.to_string_lossy());
+                self.report_local_result(result, "Session resumed");
             }
             ModalAction::NewSession => {
-                self.app_state.new_session();
-                self.add_system_message("New session started");
+                let result = self.new_local_session();
+                self.report_local_result(result, "New session started");
             }
+
             ModalAction::PreviewTheme(theme_name) => {
                 // Live preview: update colors temporarily without persisting
                 self.app_state.start_theme_preview(&theme_name);
@@ -427,7 +405,10 @@ impl EventLoop {
     pub fn open_sessions_modal(&mut self) {
         use crate::modal::{SessionInfo, SessionsModal};
 
-        match CortexSession::list_recent(20) {
+        match self
+            .session_storage()
+            .and_then(|storage| storage.list_recent_sessions(100))
+        {
             Ok(sessions) => {
                 let session_infos: Vec<SessionInfo> = sessions
                     .into_iter()
@@ -711,6 +692,12 @@ impl EventLoop {
                     return self.handle_mcp_server_action(server, &item_id).await;
                 }
                 match custom.as_str() {
+                    "export" => {
+                        if let Some(format) = crate::session::ExportFormat::parse(&item_id) {
+                            let _ = self.handle_export(format).await;
+                        }
+                        return false;
+                    }
                     "mode" => {
                         self.app_state.set_agent_mode(&item_id);
                         self.sync_agent_mode_harness();
@@ -769,12 +756,12 @@ impl EventLoop {
                         return true;
                     }
                     _ => {
-                        tracing::debug!("Unhandled interactive action: {:?}", action);
+                        self.add_system_message("This selection is unsupported in the current session. No operation was performed.");
                     }
                 }
             }
             _ => {
-                tracing::debug!("Unhandled interactive action: {:?}", action);
+                self.add_system_message("This selection is unsupported in the current session. No operation was performed.");
             }
         }
         false

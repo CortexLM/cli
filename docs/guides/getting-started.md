@@ -9,8 +9,10 @@ This page takes you from nothing installed to a working Cortex Code session.
 The install script fetches the release build for your platform from
 [software.cortex.foundation](https://software.cortex.foundation), verifies the
 SHA-256 checksum from the release manifest, and installs into `~/.local/bin`
-(`Cortex`, plus a `cortex` symlink). Add that directory to `PATH` if it is not
-already there.
+(`Cortex`, plus `cortex` and `agent` symlinks). Add that directory to `PATH` if
+it is not already there. Python 3.8 or later is required. Downloads are bounded,
+redirects are rejected, and archive extraction accepts only the release binary.
+The installer refuses to overwrite unrelated commands or binary symlinks.
 
 ```bash
 curl -fsSL https://software.cortex.foundation/install.sh | sh
@@ -22,13 +24,25 @@ Read it first if you would rather not pipe a script into a shell:
 curl -fsSL https://software.cortex.foundation/install.sh | less
 ```
 
-Pin a version with `CORTEX_VERSION=0.1.4`. Update later with `cortex upgrade`
-(same host, same checksum).
+Pin a version by passing `CORTEX_VERSION=0.1.8` to the shell that runs the
+installer (for example, `... | CORTEX_VERSION=0.1.8 sh`). Set
+`CORTEX_INSTALL_DIR` to change the prefix; the executable goes in its `bin`
+directory. `CORTEX_CHANNEL` accepts `stable`, `beta`, or `nightly`.
+
+The installer selects GNU or musl Linux assets separately for x86_64 and
+AArch64, and macOS assets for Intel and Apple silicon. Unknown architectures,
+unknown Linux libc implementations, and missing platform assets fail closed.
+Musl release builds disable audio and must pass a static-link check. These
+matrix entries do not establish minimum kernel/libc/macOS versions or native
+login, sandbox, terminal, and update compatibility; those still need native
+acceptance evidence.
 
 ### Windows
 
-Windows installs into `%LOCALAPPDATA%\Cortex\bin` and adds that folder to the
-user `PATH`:
+Windows x64 installs into `%LOCALAPPDATA%\Cortex\bin`. Add that folder to
+your user `PATH` yourself; the installer does not edit your profile or PATH.
+Native Windows ARM64 and 32-bit builds are not published, and the installer
+does not silently substitute another architecture:
 
 ```powershell
 irm https://software.cortex.foundation/install.ps1 | iex
@@ -36,10 +50,17 @@ irm https://software.cortex.foundation/install.ps1 | iex
 
 ### Homebrew and WinGet
 
-The release pipeline includes `homebrew.yml` and `winget.yml` workflows, so
-tagged releases can publish a Homebrew formula to `CortexLM/homebrew-tap` and a
-WinGet manifest. Use those channels once a release has been cut; the install
-script above always works.
+The release pipeline references `cortex-cli-macos-arm64.tar.gz` for its
+Homebrew formula in `CortexLM/homebrew-tap`, and `cortex-cli-windows-x64.zip`
+for the WinGet package `CortexLM.Cortex`. This does not establish that either
+external package is published or installs successfully. The Homebrew workflow
+currently addresses only the Apple-silicon artifact; Intel/Linux formula
+coverage needs a separately verified tap change.
+
+WinGet publishing requires reviewed `wingetcreate.exe` tooling provisioned on
+the Windows runner with a valid Microsoft signature. It fails rather than
+executing an unpinned tool downloaded during publication. No release signing,
+notarization, provenance attestation, or SBOM infrastructure is supplied here.
 
 ### From source
 
@@ -67,8 +88,33 @@ cortex upgrade --check  # report only
 ```
 
 `cortex upgrade` talks to `https://software.cortex.foundation`
-(`/releases/manifest.json` and `/v1/assets/...`), verifies SHA-256, and
-replaces the current binary.
+(`/releases/manifest.json` and `/v1/assets/...`) and verifies SHA-256 before
+replacement. The CLI retains an adjacent `.old` recovery copy, checks the
+installed `--version` with a deadline and bounded output, and restores the copy
+if that check fails. Lookup failures return a nonzero exit status; an unavailable
+release is not reported as an already-installed success. Version pins use
+SemVer ordering, including prereleases.
+
+The CLI refuses automatic musl replacement until the shared selector is
+libc-aware; use the verified shell installer for those installations. Detected
+package-manager installations are directed to their package manager instead of
+running the shared library's unverified delegation command. The shared update
+library and other callers still need separate fixes/acceptance for ownership
+detection, libc selection, bounded extraction, and Windows deferred replacement.
+
+Re-running the installer stages and checks the target binary's `--version`
+before replacement, then checks it again at the installed path. An existing
+binary is retained as `Cortex.old` (`Cortex.old.exe` on Windows); a failed
+post-install check attempts to restore it. Windows locked-file failures stop
+instead of scheduling an unverified deferred replacement. Keep the previous
+binary until you have checked the new release in your environment. Interruptions,
+filesystem failure, and native Windows/macOS replacement still require platform
+acceptance tests.
+
+SHA-256 values come from the same distribution origin as the archive. They
+detect corruption, **not independent publisher identity**; checksums are not
+signatures. No published asset or third-party package availability is implied
+by local fixture tests.
 
 ## 2. Sign in
 

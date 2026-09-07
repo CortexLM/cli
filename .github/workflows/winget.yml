@@ -40,24 +40,13 @@ jobs:
           $baseUrl = "https://github.com/${{ github.repository }}/releases/download/$tag"
           
           # Download and hash x64
-          $x64Url = "$baseUrl/cortex-windows-x64.zip"
+          $x64Url = "$baseUrl/cortex-cli-windows-x64.zip"
           Invoke-WebRequest -Uri $x64Url -OutFile "cortex-x64.zip" -ErrorAction Stop
           $x64Hash = (Get-FileHash -Path "cortex-x64.zip" -Algorithm SHA256).Hash
           
-          # Download and hash arm64
-          $arm64Url = "$baseUrl/cortex-windows-arm64.zip"
-          try {
-            Invoke-WebRequest -Uri $arm64Url -OutFile "cortex-arm64.zip" -ErrorAction Stop
-            $arm64Hash = (Get-FileHash -Path "cortex-arm64.zip" -Algorithm SHA256).Hash
-          } catch {
-            $arm64Hash = ""
-            $arm64Url = ""
-          }
-          
+          # ARM64 is intentionally absent from the release matrix.
           echo "x64_url=$x64Url" >> $env:GITHUB_OUTPUT
           echo "x64_hash=$x64Hash" >> $env:GITHUB_OUTPUT
-          echo "arm64_url=$arm64Url" >> $env:GITHUB_OUTPUT
-          echo "arm64_hash=$arm64Hash" >> $env:GITHUB_OUTPUT
 
       - name: Create winget manifest directory
         shell: pwsh
@@ -99,15 +88,6 @@ jobs:
               InstallerSha256: ${{ steps.release.outputs.x64_hash }}
           "@
           
-          if ("${{ steps.release.outputs.arm64_hash }}" -ne "") {
-            $installers += @"
-
-            - Architecture: arm64
-              InstallerUrl: ${{ steps.release.outputs.arm64_url }}
-              InstallerSha256: ${{ steps.release.outputs.arm64_hash }}
-          "@
-          }
-          
           $installers += @"
 
           ManifestType: installer
@@ -125,11 +105,11 @@ jobs:
           PackageLocale: en-US
           Publisher: CortexLM
           PublisherUrl: https://github.com/CortexLM
-          PublisherSupportUrl: https://github.com/CortexLM/cortex-cli/issues
+          PublisherSupportUrl: https://github.com/CortexLM/cli/issues
           PackageName: Cortex CLI
-          PackageUrl: https://github.com/CortexLM/cortex-cli
+          PackageUrl: https://github.com/CortexLM/cli
           License: Apache-2.0
-          LicenseUrl: https://github.com/CortexLM/cortex-cli/blob/master/LICENSE
+          LicenseUrl: https://github.com/CortexLM/cli/blob/main/LICENSE
           ShortDescription: Cortex CLI - A modern AI coding agent
           Description: Cortex is a powerful command-line AI coding assistant that helps developers write, debug, and maintain code more efficiently.
           Tags:
@@ -143,20 +123,26 @@ jobs:
           "@
           $content | Out-File -FilePath "${{ env.MANIFEST_DIR }}/${{ env.PACKAGE_ID }}.locale.en-US.yaml" -Encoding utf8
 
-      - name: Install wingetcreate
+      - name: Require provisioned package tooling
         shell: pwsh
         run: |
-          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          # Do not execute an unpinned executable downloaded at publish time.
+          # The Windows runner image must provision the reviewed tooling.
+          $tool = Get-Command wingetcreate.exe -CommandType Application -ErrorAction Stop
+          $signature = Get-AuthenticodeSignature -FilePath $tool.Source
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+            throw 'wingetcreate must have a valid Microsoft signature'
+          }
 
       - name: Validate manifests
         shell: pwsh
         run: |
-          .\wingetcreate.exe validate ${{ env.MANIFEST_DIR }}
+          wingetcreate.exe validate ${{ env.MANIFEST_DIR }}
 
       - name: Submit to winget-pkgs
         shell: pwsh
         run: |
-          .\wingetcreate.exe submit ${{ env.MANIFEST_DIR }} --token ${{ secrets.WINGET_PAT }}
+          wingetcreate.exe submit ${{ env.MANIFEST_DIR }} --token $env:WINGET_PAT
         env:
           WINGET_PAT: ${{ secrets.WINGET_PAT }}
 

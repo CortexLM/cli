@@ -1,12 +1,11 @@
 //! ACP (Agent Client Protocol) server command.
 //!
 //! The ACP protocol enables IDE integration (like Zed) with Cortex.
-//! Supports both stdio and HTTP transports for flexible integration.
+//! Supports stdio only; network transport fails closed.
 
 use anyhow::{Result, bail};
 use clap::Parser;
 use cortex_common::resolve_model_alias;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 /// ACP server CLI command.
@@ -17,8 +16,7 @@ pub struct AcpCli {
     #[arg(long = "cwd", short = 'C', value_name = "DIR")]
     pub cwd: Option<PathBuf>,
 
-    /// Port to listen on (default: random available port).
-    /// If 0, uses stdio transport instead of HTTP.
+    /// Reserved network port. Nonzero values are unsupported.
     #[arg(long = "port", short = 'p', default_value = "0")]
     pub port: u16,
 
@@ -56,22 +54,7 @@ pub struct AcpCli {
 impl AcpCli {
     /// Run the ACP server command.
     pub async fn run(self) -> Result<()> {
-        // Validate agent exists early if specified (Issue #1958)
-        if let Some(ref agent_name) = self.agent {
-            let cortex_home = dirs::home_dir()
-                .map(|h| h.join(".cortex"))
-                .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
-            let cwd = std::env::current_dir().ok();
-            let registry = cortex_engine::AgentRegistry::new(&cortex_home, cwd.as_deref());
-            // Scan for agents in standard locations
-            let _ = registry.scan().await;
-            if !registry.exists(agent_name).await {
-                bail!(
-                    "Agent not found: '{}'. Use 'cortex agent list' to see available agents.",
-                    agent_name
-                );
-            }
-        }
+        self.validate_supported()?;
 
         // Build configuration
         let mut config = cortex_engine::Config::default();
@@ -85,25 +68,17 @@ impl AcpCli {
             config.model = resolve_model_alias(model).to_string();
         }
 
-        // Report tool restrictions (will be applied when server initializes session)
-        if !self.allow_tools.is_empty() {
-            eprintln!("Tool whitelist: {:?}", self.allow_tools);
-            // Note: Tool restrictions are passed via server configuration
-        }
+        self.run_stdio_server(config).await
+    }
 
-        if !self.deny_tools.is_empty() {
-            eprintln!("Tool blacklist: {:?}", self.deny_tools);
-            // Note: Tool restrictions are passed via server configuration
+    fn validate_supported(&self) -> Result<()> {
+        if self.port != 0 || self.host != "127.0.0.1" {
+            bail!("ACP network transport is unsupported; use --stdio");
         }
-
-        // Decide transport mode
-        if self.stdio || self.port == 0 {
-            // Use stdio transport
-            self.run_stdio_server(config).await
-        } else {
-            // Use HTTP transport
-            self.run_http_server(config).await
+        if self.agent.is_some() || !self.allow_tools.is_empty() || !self.deny_tools.is_empty() {
+            bail!("ACP agent selection and tool allow/deny controls are not supported");
         }
+        Ok(())
     }
 
     /// Run ACP server with stdio transport.
@@ -113,22 +88,26 @@ impl AcpCli {
         let server = cortex_engine::acp::AcpServer::new(config);
         server.run_stdio().await
     }
-
-    /// Run ACP server with HTTP transport.
-    async fn run_http_server(&self, config: cortex_engine::Config) -> Result<()> {
-        let addr: SocketAddr = format!("{}:{}", self.host, self.port).parse()?;
-
-        eprintln!("Starting ACP server on http://{}", addr);
-
-        let server = cortex_engine::acp::AcpServer::new(config);
-        server.run_http(addr).await
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[tokio::test]
+    async fn unsupported_controls_fail_before_starting_a_server() {
+        for args in [
+            vec!["acp", "--port", "7777"],
+            vec!["acp", "--host", "0.0.0.0"],
+            vec!["acp", "--agent", "fixture-agent"],
+            vec!["acp", "--allow-tool", "Read"],
+            vec!["acp", "--deny-tool", "Execute"],
+        ] {
+            let cli = AcpCli::try_parse_from(args).unwrap();
+            assert!(cli.run().await.is_err());
+        }
+    }
 
     // ==========================================================================
     // AcpCli default values tests

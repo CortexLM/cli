@@ -314,10 +314,25 @@ impl HookDefinition {
     }
 }
 
+/// Host-owned broker for shell hooks. Implementations must apply the normal
+/// project-trust, approval, execpolicy and sandbox gate, enforce bounded output
+/// and deadlines, and map nonzero exit status to an error. No broker is installed
+/// by default; discovering a script must never execute it automatically.
+#[async_trait]
+pub trait ScriptHookBroker: Send + Sync {
+    async fn execute(
+        &self,
+        definition: &HookDefinition,
+        base: &Path,
+        context: &HookContext,
+    ) -> Result<HookResult>;
+}
+
 /// Script-based hook handler.
 pub struct ScriptHookHandler {
     definition: HookDefinition,
     base_path: PathBuf,
+    broker: Option<Arc<dyn ScriptHookBroker>>,
 }
 
 impl ScriptHookHandler {
@@ -326,7 +341,13 @@ impl ScriptHookHandler {
         Self {
             definition,
             base_path,
+            broker: None,
         }
+    }
+
+    pub fn with_broker(mut self, broker: Arc<dyn ScriptHookBroker>) -> Self {
+        self.broker = Some(broker);
+        self
     }
 
     /// Check if a tool name matches the hook's patterns.
@@ -370,73 +391,17 @@ impl HookHandler for ScriptHookHandler {
             return Ok(HookResult::success());
         }
 
-        // Execute command or script
-        let output = if let Some(ref cmd) = self.definition.command {
-            // Execute inline command
-            let output = tokio::process::Command::new("sh")
-                .arg("-c")
-                .arg(cmd)
-                .current_dir(&context.cwd)
-                .env("CORTEX_SESSION_ID", &context.session_id)
-                .env("CORTEX_TURN_ID", &context.turn_id)
-                .env("CORTEX_HOOK_DATA", context.data.to_string())
-                .envs(&context.env)
-                .output()
-                .await?;
-
-            String::from_utf8_lossy(&output.stdout).to_string()
-        } else if let Some(ref script) = self.definition.script {
-            let script_path = if script.is_absolute() {
-                script.clone()
-            } else {
-                self.base_path.join(script)
-            };
-
-            if !script_path.exists() {
-                return Ok(HookResult::error(format!(
-                    "Hook script not found: {}",
-                    script_path.display()
-                )));
-            }
-
-            // Determine interpreter
-            let ext = script_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
-            let (interpreter, args) = match ext {
-                "py" => ("python3", vec![]),
-                "js" => ("node", vec![]),
-                "ts" => ("npx", vec!["ts-node"]),
-                "sh" | "bash" => ("bash", vec![]),
-                _ => ("sh", vec![]),
-            };
-
-            let mut cmd = tokio::process::Command::new(interpreter);
-            for arg in args {
-                cmd.arg(arg);
-            }
-            cmd.arg(&script_path);
-            cmd.current_dir(&context.cwd);
-            cmd.env("CORTEX_SESSION_ID", &context.session_id);
-            cmd.env("CORTEX_TURN_ID", &context.turn_id);
-            cmd.env("CORTEX_HOOK_DATA", context.data.to_string());
-            cmd.envs(&context.env);
-
-            let output = cmd.output().await?;
-            String::from_utf8_lossy(&output.stdout).to_string()
-        } else {
-            return Ok(HookResult::success());
-        };
-
-        // Parse output as JSON if possible, otherwise use as message
-        if let Ok(result) = serde_json::from_str::<HookResult>(&output) {
-            Ok(result)
-        } else if !output.trim().is_empty() {
-            Ok(HookResult::inject(output.trim()))
-        } else {
-            Ok(HookResult::success())
+        if self.definition.command.is_none() && self.definition.script.is_none() {
+            return Ok(HookResult::error("Hook has no executable action"));
         }
+        let Some(broker) = &self.broker else {
+            return Ok(HookResult::error(
+                "Shell hooks require an explicit project-trust and execution-policy broker; no command was executed",
+            ));
+        };
+        broker
+            .execute(&self.definition, &self.base_path, context)
+            .await
     }
 
     fn name(&self) -> &str {
@@ -764,5 +729,25 @@ mod tests {
 
         let hooks = registry.list().await;
         assert!(!hooks.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod broker_safety_tests {
+    use super::*;
+    #[tokio::test]
+    async fn discovered_shell_hook_does_not_execute_without_broker() {
+        let temp = tempfile::tempdir().unwrap();
+        let marker = temp.path().join("must-not-exist");
+        let definition = HookDefinition::new("untrusted", HookEvent::PreToolUse)
+            .command(format!("touch {}", marker.display()));
+        let handler = ScriptHookHandler::new(definition, temp.path().into());
+        let result = handler
+            .execute(&HookContext::new("test", temp.path()))
+            .await
+            .unwrap();
+        assert!(!result.continue_execution);
+        assert!(result.error.unwrap().contains("no command was executed"));
+        assert!(!marker.exists());
     }
 }

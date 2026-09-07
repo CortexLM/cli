@@ -22,7 +22,7 @@ use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use crate::auth::{AuthResult, AuthService};
+use crate::auth::{AuthResult, AuthService, session_principal};
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -49,7 +49,9 @@ async fn websocket_handler(
     Query(query): Query<WsConnectQuery>,
     auth: Option<Extension<AuthResult>>,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state, query, auth.map(|a| a.0)))
+    ws.max_message_size(state.config.max_body_size.min(1024 * 1024))
+        .max_frame_size(1024 * 1024)
+        .on_upgrade(move |socket| handle_socket(socket, state, query, auth.map(|a| a.0)))
 }
 
 /// Handle session-specific WebSocket.
@@ -63,7 +65,9 @@ async fn session_websocket_handler(
         token: None,
         session_id: Some(session_id),
     };
-    ws.on_upgrade(move |socket| handle_socket(socket, state, query, auth.map(|a| a.0)))
+    ws.max_message_size(state.config.max_body_size.min(1024 * 1024))
+        .max_frame_size(1024 * 1024)
+        .on_upgrade(move |socket| handle_socket(socket, state, query, auth.map(|a| a.0)))
 }
 
 /// Handle a WebSocket connection.
@@ -81,11 +85,11 @@ async fn handle_socket(
     // Create connection context
     let mut ctx = ConnectionContext {
         _id: connection_id.clone(),
-        user_id: auth
-            .as_ref()
-            .and_then(AuthResult::user_id)
-            .map(str::to_string),
-        session_id: query.session_id,
+        user_id: session_principal(auth.as_ref(), state.config.auth.enabled)
+            .ok()
+            .flatten(),
+        session_id: None,
+        subscription: None,
         authenticated: auth.as_ref().is_some_and(AuthResult::is_authenticated),
         created_at: Instant::now(),
         last_ping: Instant::now(),
@@ -99,6 +103,17 @@ async fn handle_socket(
         handle_sender(sender, rx).await;
     });
 
+    if let Some(session_id) = query.session_id {
+        let join = serde_json::json!({"type":"join_session","session_id":session_id}).to_string();
+        if let Err(error) = handle_text_message(&join, &tx, &mut ctx, &state).await {
+            let _ = tx
+                .send(WsMessage::Error {
+                    code: error.error_code().into(),
+                    message: error.public_message().into(),
+                })
+                .await;
+        }
+    }
     // Handle incoming messages
     let _receiver_result = handle_receiver(receiver, tx.clone(), &mut ctx, &state).await;
 
@@ -206,270 +221,133 @@ async fn handle_text_message(
 
     match msg {
         WsClientMessage::Ping { timestamp } => {
-            tx.send(WsMessage::Pong { timestamp }).await.ok();
+            let _ = tx.send(WsMessage::Pong { timestamp }).await;
         }
         WsClientMessage::Auth { token } => {
-            let claims = AuthService::new(state.config.auth.clone()).validate_token(&token);
-            ctx.authenticated = claims.is_ok();
-            ctx.user_id = claims.ok().map(|claims| claims.sub);
-            tx.send(WsMessage::AuthResult {
-                success: ctx.authenticated,
-                user_id: ctx.user_id.clone(),
-            })
-            .await
-            .ok();
+            ctx.detach();
+            let result = AuthService::new(state.config.auth.clone()).validate_token(&token);
+            ctx.authenticated = result.is_ok();
+            ctx.user_id = result.ok().map(|c| format!("jwt:{}", c.sub));
+            let _ = tx
+                .send(WsMessage::AuthResult {
+                    success: ctx.authenticated,
+                    user_id: ctx.user_id.clone(),
+                })
+                .await;
         }
         WsClientMessage::CreateSession { model, cwd } => {
-            // Create a real CLI session using SessionManager
-            use crate::session_manager::CreateSessionOptions;
-
-            let options = CreateSessionOptions {
+            let options = crate::session_manager::CreateSessionOptions {
                 user_id: ctx.user_id.clone(),
                 model,
-                provider: None,
-                cwd: cwd.map(std::path::PathBuf::from),
-                system_prompt: None,
+                cwd: cwd.map(Into::into),
+                ..Default::default()
             };
-
-            match state.cli_sessions.create_session(tx.clone(), options).await {
-                Ok(info) => {
-                    ctx.session_id = Some(info.id.clone());
-                    tx.send(WsMessage::JoinedSession {
-                        session_id: info.id.clone(),
-                    })
-                    .await
-                    .ok();
-                    info!(session_id = %info.id, "Created CLI session");
-                }
-                Err(e) => {
-                    tx.send(WsMessage::Error {
-                        code: "session_error".to_string(),
-                        message: e.to_string(),
-                    })
-                    .await
-                    .ok();
-                }
-            }
+            let info = state.cli_sessions.create_detached(options).await?;
+            join_session(state, ctx, tx, &info.id).await?;
         }
         WsClientMessage::JoinSession { session_id } => {
-            // Check if session exists and update the WebSocket sender
-            if state.cli_sessions.get_session(&session_id).await.is_some() {
-                // Update the WebSocket sender so events go to this connection
-                if let Err(e) = state
-                    .cli_sessions
-                    .update_ws_sender(&session_id, tx.clone())
-                    .await
-                {
-                    error!("Failed to update WebSocket sender: {}", e);
-                }
-
-                ctx.session_id = Some(session_id.clone());
-                tx.send(WsMessage::JoinedSession {
-                    session_id: session_id.clone(),
-                })
-                .await
-                .ok();
-
-                info!(session_id = %session_id, "Client joined existing session");
-            } else {
-                tx.send(WsMessage::Error {
-                    code: "not_found".to_string(),
-                    message: format!("Session not found: {session_id}"),
-                })
-                .await
-                .ok();
-            }
+            join_session(state, ctx, tx, &session_id).await?;
         }
         WsClientMessage::LeaveSession => {
-            let session_id = ctx.session_id.take();
-            tx.send(WsMessage::LeftSession { session_id }).await.ok();
-        }
-        WsClientMessage::SendMessage { content, role: _ } => {
-            // Send message to the real CLI session
-            if let Some(session_id) = &ctx.session_id {
-                match state
-                    .cli_sessions
-                    .send_message(session_id, content.clone())
-                    .await
-                {
-                    Ok(_) => {
-                        debug!(session_id = %session_id, "Message sent to CLI session");
-                    }
-                    Err(e) => {
-                        tx.send(WsMessage::Error {
-                            code: "send_error".to_string(),
-                            message: e.to_string(),
-                        })
-                        .await
-                        .ok();
-                    }
-                }
-            } else {
-                tx.send(WsMessage::Error {
-                    code: "no_session".to_string(),
-                    message: "No active session. Create one first with create_session.".to_string(),
-                })
-                .await
-                .ok();
-            }
-        }
-        WsClientMessage::ApproveExec { call_id, approved } => {
-            if let Some(session_id) = &ctx.session_id {
-                match state
-                    .cli_sessions
-                    .approve_exec(session_id, call_id, approved)
-                    .await
-                {
-                    Ok(_) => {
-                        debug!(session_id = %session_id, "Approval sent to CLI session");
-                    }
-                    Err(e) => {
-                        tx.send(WsMessage::Error {
-                            code: "approval_error".to_string(),
-                            message: e.to_string(),
-                        })
-                        .await
-                        .ok();
-                    }
-                }
-            }
-        }
-        WsClientMessage::Cancel => {
-            if let Some(session_id) = &ctx.session_id {
-                let _ = state.cli_sessions.interrupt(session_id).await;
-            }
-            tx.send(WsMessage::Cancelled).await.ok();
+            let session_id = ctx.session_id.clone();
+            ctx.detach();
+            let _ = tx.send(WsMessage::LeftSession { session_id }).await;
         }
         WsClientMessage::GetStatus => {
-            let _cli_session_count = state.cli_sessions.count().await;
-            tx.send(WsMessage::Status {
-                connected: true,
-                authenticated: ctx.authenticated,
-                session_id: ctx.session_id.clone(),
-                uptime_seconds: ctx.created_at.elapsed().as_secs(),
-            })
-            .await
-            .ok();
+            let _ = tx
+                .send(WsMessage::Status {
+                    connected: true,
+                    authenticated: ctx.authenticated,
+                    session_id: ctx.session_id.clone(),
+                    uptime_seconds: ctx.created_at.elapsed().as_secs(),
+                })
+                .await;
         }
         WsClientMessage::DestroySession { session_id } => {
-            match state.cli_sessions.destroy_session(&session_id).await {
-                Ok(_) => {
-                    if ctx.session_id.as_deref() == Some(&session_id) {
-                        ctx.session_id = None;
-                    }
-                    tx.send(WsMessage::SessionClosed).await.ok();
-                }
-                Err(e) => {
-                    tx.send(WsMessage::Error {
-                        code: "destroy_error".to_string(),
-                        message: e.to_string(),
-                    })
-                    .await
-                    .ok();
-                }
+            state
+                .cli_sessions
+                .authorize(&session_id, ctx.user_id.as_deref())
+                .await?;
+            state.cli_sessions.destroy_session(&session_id).await?;
+            if ctx.session_id.as_deref() == Some(&session_id) {
+                ctx.detach();
             }
+            let _ = tx.send(WsMessage::SessionClosed).await;
         }
-        WsClientMessage::UpdateModel { model } => {
-            if let Some(session_id) = &ctx.session_id {
-                match state.cli_sessions.update_model(session_id, &model).await {
-                    Ok(_) => {
-                        tx.send(WsMessage::ModelUpdated {
-                            model: model.clone(),
-                        })
-                        .await
-                        .ok();
+        other => {
+            let id = ctx
+                .session_id
+                .clone()
+                .ok_or_else(|| AppError::BadRequest("Join a session first".into()))?;
+            state
+                .cli_sessions
+                .authorize(&id, ctx.user_id.as_deref())
+                .await?;
+            match other {
+                WsClientMessage::SendMessage { content, role } => {
+                    if role.as_deref().is_some_and(|r| r != "user") {
+                        return Err(AppError::Validation("Only user turns are supported".into()));
                     }
-                    Err(e) => {
-                        tx.send(WsMessage::Error {
-                            code: "update_model_error".to_string(),
-                            message: e.to_string(),
+                    let turn_id = state.cli_sessions.submit_message(&id, content).await?;
+                    let _ = tx
+                        .send(WsMessage::TurnAccepted {
+                            session_id: id,
+                            turn_id,
                         })
-                        .await
-                        .ok();
-                    }
+                        .await;
                 }
-            } else {
-                tx.send(WsMessage::Error {
-                    code: "no_session".to_string(),
-                    message: "No active session to update model.".to_string(),
-                })
-                .await
-                .ok();
-            }
-        }
-        WsClientMessage::DesignSystemResponse { call_id, config } => {
-            if let Some(session_id) = &ctx.session_id {
-                match state
-                    .cli_sessions
-                    .submit_design_system(session_id, call_id.clone(), config)
-                    .await
-                {
-                    Ok(_) => {
-                        tx.send(WsMessage::DesignSystemReceived {
-                            call_id: call_id.clone(),
-                        })
-                        .await
-                        .ok();
-                    }
-                    Err(e) => {
-                        tx.send(WsMessage::Error {
-                            code: "design_system_error".to_string(),
-                            message: e.to_string(),
-                        })
-                        .await
-                        .ok();
-                    }
+                WsClientMessage::ApproveExec { call_id, approved } => {
+                    state
+                        .cli_sessions
+                        .approve_exec(&id, call_id, approved)
+                        .await?;
                 }
-            } else {
-                tx.send(WsMessage::Error {
-                    code: "no_session".to_string(),
-                    message: "No active session.".to_string(),
-                })
-                .await
-                .ok();
-            }
-        }
-        WsClientMessage::ForkSession { message_index } => {
-            let current_session_id = ctx.session_id.clone();
-            if let Some(session_id) = &current_session_id {
-                match state
-                    .cli_sessions
-                    .fork_session(tx.clone(), session_id, message_index)
-                    .await
-                {
-                    Ok(info) => {
-                        ctx.session_id = Some(info.id.clone());
-                        tx.send(WsMessage::JoinedSession {
-                            session_id: info.id.clone(),
-                        })
-                        .await
-                        .ok();
-                        info!(
-                            session_id = %info.id,
-                            parent_id = %session_id,
-                            "Forked session via WS"
-                        );
-                    }
-                    Err(e) => {
-                        tx.send(WsMessage::Error {
-                            code: "fork_error".to_string(),
-                            message: e.to_string(),
-                        })
-                        .await
-                        .ok();
-                    }
+                WsClientMessage::Cancel => {
+                    state.cli_sessions.interrupt(&id).await?;
+                    let _ = tx.send(WsMessage::CancelRequested { session_id: id }).await;
                 }
-            } else {
-                tx.send(WsMessage::Error {
-                    code: "no_session".to_string(),
-                    message: "No active session to fork.".to_string(),
-                })
-                .await
-                .ok();
+                WsClientMessage::ForkSession { message_index } => {
+                    let info = state
+                        .cli_sessions
+                        .fork_session(tx.clone(), &id, message_index)
+                        .await?;
+                    join_session(state, ctx, tx, &info.id).await?;
+                }
+                WsClientMessage::UpdateModel { .. }
+                | WsClientMessage::DesignSystemResponse { .. } => {
+                    return Err(AppError::NotImplemented(
+                        "Unsupported session control".into(),
+                    ));
+                }
+                _ => return Err(AppError::Validation("Invalid session control".into())),
             }
         }
     }
+    Ok(())
+}
 
+async fn join_session(
+    state: &AppState,
+    ctx: &mut ConnectionContext,
+    tx: &mpsc::Sender<WsMessage>,
+    id: &str,
+) -> Result<(), AppError> {
+    state
+        .cli_sessions
+        .authorize(id, ctx.user_id.as_deref())
+        .await?;
+    let events = state.cli_sessions.subscribe(id).await?;
+    ctx.detach();
+    ctx.session_id = Some(id.into());
+    let _ = tx
+        .send(WsMessage::JoinedSession {
+            session_id: id.into(),
+        })
+        .await;
+    ctx.subscription = Some(crate::session_manager::spawn_ws_subscription(
+        events,
+        tx.clone(),
+    ));
     Ok(())
 }
 
@@ -482,12 +360,28 @@ struct ConnectionContext {
     user_id: Option<String>,
     /// Session ID if joined.
     session_id: Option<String>,
+    /// Current independent event subscription.
+    subscription: Option<tokio::task::JoinHandle<()>>,
     /// Whether authenticated.
     authenticated: bool,
     /// Creation time.
     created_at: Instant,
     /// Last ping time.
     last_ping: Instant,
+}
+
+impl ConnectionContext {
+    fn detach(&mut self) {
+        self.session_id = None;
+        if let Some(task) = self.subscription.take() {
+            task.abort();
+        }
+    }
+}
+impl Drop for ConnectionContext {
+    fn drop(&mut self) {
+        self.detach();
+    }
 }
 
 /// Client-to-server WebSocket messages.
@@ -538,6 +432,17 @@ pub enum WsClientMessage {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsMessage {
+    /// Version 1 live event envelope shared with SSE. No durable replay is supported.
+    SessionEvent {
+        session_id: String,
+        turn_id: Option<String>,
+        sequence: u64,
+        event: Box<WsMessage>,
+    },
+    /// Accepted by the local engine queue, not a successful coding turn.
+    TurnAccepted { session_id: String, turn_id: String },
+    /// Cancellation requested, not yet confirmed by the engine.
+    CancelRequested { session_id: String },
     /// Pong response.
     Pong { timestamp: u64 },
     /// Authentication result.
@@ -801,98 +706,5 @@ impl Default for HeartbeatConfig {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_auth_frames_validate_identity_and_failed_auth_blocks_commands() {
-        let mut config = crate::ServerConfig::default();
-        config.auth.enabled = true;
-        config.auth.jwt_secret = Some(Uuid::new_v4().to_string());
-        let token = AuthService::new(config.auth.clone())
-            .generate_token("fixture-user")
-            .unwrap();
-        let state = AppState::new(config).await.unwrap();
-        let mut ctx = ConnectionContext {
-            _id: "fixture".into(),
-            user_id: None,
-            session_id: None,
-            authenticated: false,
-            created_at: Instant::now(),
-            last_ping: Instant::now(),
-        };
-        let (tx, mut rx) = mpsc::channel(4);
-        let command = r#"{"type":"create_session","model":null,"cwd":null}"#;
-        assert!(matches!(
-            handle_text_message(command, &tx, &mut ctx, &state).await,
-            Err(AppError::Authentication(_))
-        ));
-        let auth = serde_json::json!({"type":"auth","token":token}).to_string();
-        handle_text_message(&auth, &tx, &mut ctx, &state)
-            .await
-            .unwrap();
-        assert!(ctx.authenticated);
-        assert_eq!(ctx.user_id.as_deref(), Some("fixture-user"));
-        assert!(matches!(
-            rx.recv().await,
-            Some(WsMessage::AuthResult { success: true, .. })
-        ));
-        handle_text_message(
-            r#"{"type":"auth","token":"invalid-fixture"}"#,
-            &tx,
-            &mut ctx,
-            &state,
-        )
-        .await
-        .unwrap();
-        assert!(!ctx.authenticated);
-        assert!(ctx.user_id.is_none());
-        assert!(matches!(
-            rx.recv().await,
-            Some(WsMessage::AuthResult { success: false, .. })
-        ));
-        assert!(matches!(
-            handle_text_message(command, &tx, &mut ctx, &state).await,
-            Err(AppError::Authentication(_))
-        ));
-    }
-
-    #[test]
-    fn test_client_message_parsing() {
-        let json = r#"{"type": "ping", "timestamp": 1234567890}"#;
-        let msg: WsClientMessage = serde_json::from_str(json).unwrap();
-        assert!(matches!(
-            msg,
-            WsClientMessage::Ping {
-                timestamp: 1234567890
-            }
-        ));
-    }
-
-    #[test]
-    fn test_server_message_serialization() {
-        let msg = WsMessage::Pong {
-            timestamp: 1234567890,
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("pong"));
-        assert!(json.contains("1234567890"));
-    }
-
-    #[tokio::test]
-    async fn test_connection_manager() {
-        let manager = ConnectionManager::new();
-        let (tx, _rx) = mpsc::channel(100);
-
-        let info = ConnectionInfo::new("test-id".to_string(), tx);
-        manager.register("test-id", info).await;
-
-        assert_eq!(manager.count().await, 1);
-
-        let retrieved = manager.get("test-id").await;
-        assert!(retrieved.is_some());
-
-        manager.unregister("test-id").await;
-        assert_eq!(manager.count().await, 0);
-    }
-}
+#[path = "websocket_tests.rs"]
+mod tests;

@@ -12,7 +12,8 @@ pub struct AcpRequest {
     /// JSON-RPC version.
     pub jsonrpc: String,
     /// Request ID.
-    pub id: AcpRequestId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<AcpRequestId>,
     /// Method name.
     pub method: String,
     /// Parameters.
@@ -25,7 +26,7 @@ impl AcpRequest {
     pub fn new(id: impl Into<AcpRequestId>, method: impl Into<String>) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
-            id: id.into(),
+            id: Some(id.into()),
             method: method.into(),
             params: None,
         }
@@ -108,6 +109,8 @@ impl AcpNotification {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AcpRequestId {
+    /// Null is only used for uncorrelated errors.
+    Null,
     /// Numeric ID.
     Number(i64),
     /// String ID.

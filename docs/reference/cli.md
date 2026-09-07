@@ -40,7 +40,7 @@ A positional prompt seeds that session. Without a terminal, use
 | `--http-timeout <SECONDS>` | HTTP request timeout |
 | `--no-streaming` | Disable streaming responses |
 | `-L`, `--log-level <LEVEL>` | `error`, `warn`, `info`, `debug`, `trace`. Default `info`. |
-| `--debug` | Write all trace logs to `./debug.txt` |
+| `--debug` | Record bounded, content-free local diagnostics under the Cortex home `diagnostics/` directory, or `CORTEX_DIAGNOSTICS_DIR` |
 | `-h`, `--help` | Help |
 | `-V`, `--version` | Version |
 

@@ -10,18 +10,19 @@ The engineering rules this repository holds itself to live in
 
 ## Reporting a bug
 
-The fastest route is from the CLI, which attaches the context we would otherwise
-have to ask for:
+Use a minimal synthetic reproduction. Do not attach sessions, raw logs or
+credentials. The CLI can prepare feedback when you explicitly choose to send it:
 
 ```bash
-cortex feedback bug "describe what happened" --include-logs
+cortex feedback bug "describe what happened"
 ```
 
 If you open a GitHub issue instead, include:
 
 1. **What you ran** — the exact command, including flags.
-2. **What happened** — the complete error message, verbatim. `cortex --debug`
-   writes full trace logs to `./debug.txt`.
+2. **What happened** — the product-facing error, with sensitive content removed.
+   `cortex --debug` records bounded, content-free local diagnostics, not prompts
+   or tool output. See [Privacy](reference/privacy.md).
 3. **What you expected** instead.
 4. **Your environment** — `cortex --version`, your OS and version, and how you
    installed Cortex. `cortex debug system` prints most of this.

@@ -403,13 +403,10 @@ impl PluginIntegration {
             .await
             .map_err(|e| CortexError::Internal(format!("Plugin hook error: {}", e)))?;
 
-        // Validate that third-party plugins aren't auto-granting permissions
         if output.decision.requires_elevated_trust() {
-            tracing::warn!(
-                permission = %permission,
-                resource = %resource,
-                "Permission auto-granted by plugin - ensure plugin is trusted"
-            );
+            return Err(CortexError::Internal(
+                "Plugins cannot grant execution privileges".into(),
+            ));
         }
 
         Ok(output.decision)

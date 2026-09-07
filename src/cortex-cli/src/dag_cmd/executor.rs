@@ -2,6 +2,8 @@
 
 use anyhow::{Context, Result, bail};
 use cortex_agents::task::{Task, TaskStatus};
+use cortex_engine::tools::{ToolContext, ToolRouter};
+use cortex_protocol::SandboxPolicy;
 use std::time::{Duration, Instant};
 
 use crate::styled_output::print_info;
@@ -27,38 +29,23 @@ impl TaskExecutor {
         let start = Instant::now();
         let task_id = task.id.expect("Task must have an ID");
 
-        // Get command from metadata if available
-        let command = task
-            .metadata
-            .get("command")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-
         if self.verbose {
-            if let Some(ref cmd) = command {
-                print_info(&format!("Executing task '{}': {}", task.name, cmd));
-            } else {
-                print_info(&format!(
-                    "Executing task '{}': {}",
-                    task.name, task.description
-                ));
-            }
+            print_info(&format!("Executing task {}", task_id));
         }
 
-        // If there's a command, execute it
-        let (status, output, error) = if let Some(cmd) = command {
-            match self.run_command(&cmd).await {
-                Ok(output) => (TaskStatus::Completed, Some(output), None),
-                Err(e) => (TaskStatus::Failed, None, Some(e.to_string())),
+        let execution = match task.metadata.get("command") {
+            Some(serde_json::Value::String(cmd)) if !cmd.trim().is_empty() => {
+                self.run_command(cmd).await
             }
-        } else {
-            // Simulated task execution (no command)
-            // In a real system, this would delegate to an agent or external executor
-            (
-                TaskStatus::Completed,
-                Some(format!("Task '{}' completed (no command)", task.name)),
-                None,
-            )
+            Some(_) => Err(anyhow::anyhow!("Task command must be a nonempty string")),
+            None => Err(anyhow::anyhow!(
+                "Agent DAG execution is unavailable: this task has no command. \
+                 No agent was started. Supply an explicitly reviewed command task."
+            )),
+        };
+        let (status, output, error) = match execution {
+            Ok(output) => (TaskStatus::Completed, Some(output), None),
+            Err(error) => (TaskStatus::Failed, None, Some(error.to_string())),
         };
 
         TaskExecutionResult {
@@ -71,31 +58,32 @@ impl TaskExecutor {
         }
     }
 
-    /// Run a shell command with timeout.
+    /// Use the same tool authority and process owner as normal CLI execution.
+    /// The user reviewed the DAG file, so each command receives one exact,
+    /// single-use approval; DAG metadata never widens the workspace sandbox.
     async fn run_command(&self, cmd: &str) -> Result<String> {
-        let timeout_duration = self.timeout;
-
-        let result = tokio::time::timeout(timeout_duration, async {
-            let output = tokio::process::Command::new("sh")
-                .arg("-c")
-                .arg(cmd)
-                .output()
-                .await
-                .context("Failed to execute command")?;
-
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                Ok(stdout)
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                bail!("Command failed: {}", stderr);
-            }
-        })
-        .await;
-
-        match result {
-            Ok(inner_result) => inner_result,
-            Err(_) => bail!("Task timed out after {:?}", timeout_duration),
+        let cwd = std::env::current_dir().context("Could not resolve task workspace")?;
+        let command = if cfg!(windows) {
+            vec!["cmd.exe", "/C", cmd]
+        } else {
+            vec!["/bin/sh", "-c", cmd]
+        };
+        let timeout_ms =
+            u64::try_from(self.timeout.as_millis()).context("Task timeout is too large")?;
+        let arguments = serde_json::json!({"command": command, "timeout": timeout_ms});
+        let context = ToolContext::new(cwd)
+            .with_sandbox_policy(SandboxPolicy::new_workspace_write_policy())
+            .with_auto_approve(false)
+            .with_approved_tool_call("Execute", &arguments);
+        let result = ToolRouter::new()
+            .execute("Execute", arguments, &context)
+            .await?;
+        if !result.success {
+            bail!(
+                "{}",
+                result.error.unwrap_or_else(|| "Task command failed".into())
+            );
         }
+        Ok(result.output)
     }
 }

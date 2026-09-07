@@ -163,7 +163,7 @@
       "short": "L"
     },
     {
-      "help": "Enable debug mode: writes ALL trace-level logs to ./debug.txt",
+      "help": "Record private, content-free local diagnostics (never prompts or tool output)",
       "id": "debug",
       "long": "debug",
       "required": false,
@@ -393,7 +393,7 @@
           "short": null
         },
         {
-          "help": "Custom system prompt to use instead of the default. Defines the AI's persona and behavior",
+          "help": "Client instructions sent as additional user context, not a service system override",
           "id": "system_prompt",
           "long": "system",
           "required": false,
@@ -533,14 +533,14 @@
           "short": null
         },
         {
-          "help": "Autonomy level for operations. - read-only: No modifications (default, safest) - low: Basic file operations only - medium: Package install, builds, local git - high: Full access including git push",
+          "help": "Autonomy level for operations. - read-only: No modifications (default, safest) - low/medium: Unsupported client risk thresholds for Code - high: Server-owned agent execution, subject to service permissions",
           "id": "autonomy",
           "long": "auto",
           "required": false,
           "short": null
         },
         {
-          "help": "Skip ALL permission checks (DANGEROUS). Only use in completely isolated environments like Docker containers. Cannot be combined with --auto",
+          "help": "Unsupported for server-owned Code execution; fails before submission. Cannot be combined with --auto",
           "id": "skip_permissions",
           "long": "skip-permissions-unsafe",
           "required": false,
@@ -610,7 +610,7 @@
           "short": null
         },
         {
-          "help": "Maximum number of turns before stopping",
+          "help": "Maximum user turns per session (server-owned tool rounds are not client turns)",
           "id": "max_turns",
           "long": "max-turns",
           "required": false,
@@ -638,7 +638,7 @@
           "short": "v"
         },
         {
-          "help": "Custom system prompt to use instead of the default. Defines the AI's persona and behavior for this execution",
+          "help": "Client instructions sent as additional user context, not a service system override",
           "id": "system_prompt",
           "long": "system",
           "required": false,
@@ -2787,7 +2787,7 @@
           "short": "C"
         },
         {
-          "help": "Port to listen on (default: random available port). If 0, uses stdio transport instead of HTTP",
+          "help": "Reserved network port. Nonzero values are unsupported",
           "id": "port",
           "long": "port",
           "required": false,
@@ -3418,7 +3418,7 @@
               "short": "f"
             },
             {
-              "help": "Include PR review automation in the workflow. When enabled, the agent will: - Automatically review new and updated pull requests - Analyze code changes for bugs, security issues, and best practices - Suggest improvements with inline comments - Respond to review comments and questions",
+              "help": "Include read-only PR analysis. Publication requires --publish",
               "id": "pr_review",
               "long": "pr-review",
               "required": false,
@@ -3512,6 +3512,20 @@
               "help": "Dry run mode - don't execute, just show what would happen",
               "id": "dry_run",
               "long": "dry-run",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Explicitly approve publishing the completed response as a GitHub comment",
+              "id": "publish",
+              "long": "publish",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Save the completed response locally (created exclusively, never overwritten)",
+              "id": "output",
+              "long": "output",
               "required": false,
               "short": null
             },
@@ -6009,7 +6023,14 @@
           "about": "Install a plugin",
           "arguments": [
             {
-              "help": "Plugin name or URL to install",
+              "help": "Trust this exact package to execute native Node code (NOT a sandbox)",
+              "id": "trust_code",
+              "long": "trust-code",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Local package path or registry plugin ID",
               "id": "name",
               "long": null,
               "required": true,
@@ -6321,7 +6342,7 @@
           "subcommands": []
         },
         {
-          "about": "Start development mode with hot-reload",
+          "about": "Rebuild in development mode (no runtime hot-reload)",
           "arguments": [
             {
               "help": "Plugin directory (defaults to current directory)",
@@ -6377,8 +6398,15 @@
           "subcommands": []
         },
         {
-          "about": "Build the plugin WASM file",
+          "about": "Build the selected executable artifact",
           "arguments": [
+            {
+              "help": "Allow native Rust build scripts/procedural macros; not needed for TypeScript stripping",
+              "id": "trust_code",
+              "long": "trust-code",
+              "required": false,
+              "short": null
+            },
             {
               "help": "Plugin directory (defaults to current directory)",
               "id": "path",
@@ -6632,6 +6660,13 @@
           "about": "Update an installed plugin from the registry",
           "arguments": [
             {
+              "help": "Local replacement package; otherwise use the registry",
+              "id": "source",
+              "long": "source",
+              "required": false,
+              "short": null
+            },
+            {
               "help": "Plugin name to update",
               "id": "name",
               "long": null,
@@ -6668,6 +6703,132 @@
             }
           ],
           "name": "update",
+          "subcommands": []
+        },
+        {
+          "about": "Explicitly trust native JavaScript execution for this installed artifact",
+          "arguments": [
+            {
+              "help": null,
+              "id": "name",
+              "long": null,
+              "required": true,
+              "short": null
+            },
+            {
+              "help": "Acknowledge that Node plugins can access files, network and subprocesses",
+              "id": "yes",
+              "long": "yes",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Enable verbose output (same as --log-level debug)",
+              "id": "verbose",
+              "long": "verbose",
+              "required": false,
+              "short": "v"
+            },
+            {
+              "help": "Enable trace-level logging for debugging",
+              "id": "trace",
+              "long": "trace",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Control color output: auto (default), always, or never",
+              "id": "color",
+              "long": "color",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print help (see more with '--help')",
+              "id": "help",
+              "long": "help",
+              "required": false,
+              "short": "h"
+            }
+          ],
+          "name": "trust",
+          "subcommands": []
+        },
+        {
+          "about": "Invoke an installed plugin command or tool through the executable runtime",
+          "arguments": [
+            {
+              "help": null,
+              "id": "name",
+              "long": null,
+              "required": true,
+              "short": null
+            },
+            {
+              "help": null,
+              "id": "command",
+              "long": null,
+              "required": false,
+              "short": null
+            },
+            {
+              "help": null,
+              "id": "args",
+              "long": null,
+              "required": false,
+              "short": null
+            },
+            {
+              "help": null,
+              "id": "tool",
+              "long": "tool",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": null,
+              "id": "input",
+              "long": "input",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": null,
+              "id": "json",
+              "long": "json",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Enable verbose output (same as --log-level debug)",
+              "id": "verbose",
+              "long": "verbose",
+              "required": false,
+              "short": "v"
+            },
+            {
+              "help": "Enable trace-level logging for debugging",
+              "id": "trace",
+              "long": "trace",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Control color output: auto (default), always, or never",
+              "id": "color",
+              "long": "color",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print help (see more with '--help')",
+              "id": "help",
+              "long": "help",
+              "required": false,
+              "short": "h"
+            }
+          ],
+          "name": "run",
           "subcommands": []
         },
         {
@@ -6718,13 +6879,13 @@
               "subcommands": []
             },
             {
-              "about": "Start development mode with hot-reload",
+              "about": "Rebuild in development mode (no runtime hot-reload)",
               "arguments": [],
               "name": "dev",
               "subcommands": []
             },
             {
-              "about": "Build the plugin WASM file",
+              "about": "Build the selected executable artifact",
               "arguments": [],
               "name": "build",
               "subcommands": []
@@ -6757,6 +6918,18 @@
               "about": "Update an installed plugin from the registry",
               "arguments": [],
               "name": "update",
+              "subcommands": []
+            },
+            {
+              "about": "Explicitly trust native JavaScript execution for this installed artifact",
+              "arguments": [],
+              "name": "trust",
+              "subcommands": []
+            },
+            {
+              "about": "Invoke an installed plugin command or tool through the executable runtime",
+              "arguments": [],
+              "name": "run",
               "subcommands": []
             },
             {
@@ -9558,13 +9731,13 @@
               "subcommands": []
             },
             {
-              "about": "Start development mode with hot-reload",
+              "about": "Rebuild in development mode (no runtime hot-reload)",
               "arguments": [],
               "name": "dev",
               "subcommands": []
             },
             {
-              "about": "Build the plugin WASM file",
+              "about": "Build the selected executable artifact",
               "arguments": [],
               "name": "build",
               "subcommands": []
@@ -9597,6 +9770,18 @@
               "about": "Update an installed plugin from the registry",
               "arguments": [],
               "name": "update",
+              "subcommands": []
+            },
+            {
+              "about": "Explicitly trust native JavaScript execution for this installed artifact",
+              "arguments": [],
+              "name": "trust",
+              "subcommands": []
+            },
+            {
+              "about": "Invoke an installed plugin command or tool through the executable runtime",
+              "arguments": [],
+              "name": "run",
               "subcommands": []
             }
           ]

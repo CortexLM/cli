@@ -18,7 +18,81 @@ use cortex_engine::client::{
 };
 use cortex_engine::streaming::StreamEvent;
 
-use super::core::{EventLoop, PendingToolCall, simplify_error_message};
+use super::core::{EventLoop, PendingToolCall};
+
+/// How a failed turn should be reported. Classification is pure so the
+/// product-facing copy can be tested without a live stream.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum StreamErrorKind {
+    Cancelled,
+    AuthenticationRequired,
+    InsufficientBalance,
+    QuotaExhausted,
+    ServiceUnavailable,
+    Actionable,
+}
+
+pub(super) fn classify_stream_error(error: &str) -> StreamErrorKind {
+    let lower = error.to_lowercase();
+    let has = |needles: &[&str]| needles.iter().any(|needle| lower.contains(needle));
+
+    if error.eq_ignore_ascii_case("cancelled")
+        || error.eq_ignore_ascii_case("cancelled.")
+        || lower.contains("cancelled by user")
+    {
+        return StreamErrorKind::Cancelled;
+    }
+    if has(&[
+        "401",
+        "unauthorized",
+        "auth_required",
+        "authentication required",
+        "authentication failed",
+    ]) {
+        return StreamErrorKind::AuthenticationRequired;
+    }
+    if has(&[
+        "402",
+        "insufficient_balance",
+        "insufficient token balance",
+        "payment required",
+    ]) {
+        return StreamErrorKind::InsufficientBalance;
+    }
+    if has(&[
+        "rate limit",
+        "usage limit",
+        "quota exceeded",
+        "quota exhausted",
+        "limit exceeded",
+        "too many requests",
+        "429",
+    ]) {
+        return StreamErrorKind::QuotaExhausted;
+    }
+    // Product-facing copy only - never raw provider or transport names.
+    let actionable = has(&[
+        "cortex login",
+        "cortex_api",
+        "not signed in",
+        "not found",
+        "sign in",
+    ]);
+    if !actionable
+        && has(&[
+            "unavailable",
+            "connection",
+            "timed out",
+            "timeout",
+            "dns",
+            "reqwest",
+            "hyper",
+        ])
+    {
+        return StreamErrorKind::ServiceUnavailable;
+    }
+    StreamErrorKind::Actionable
+}
 
 impl EventLoop {
     /// Handles message submission using the new provider system.
@@ -128,7 +202,7 @@ impl EventLoop {
         };
 
         // Get completion request parameters using read lock
-        let (model, max_tokens, temperature, client) = {
+        let (model, client) = {
             let mut pm = provider_manager.write().await;
 
             // Ensure client is created
@@ -140,11 +214,9 @@ impl EventLoop {
             }
 
             let model = pm.current_model().to_string();
-            let max_tokens = pm.config().max_tokens;
-            let temperature = pm.config().temperature;
             let client = pm.snapshot_client();
 
-            (model, max_tokens, temperature, client)
+            (model, client)
         };
 
         if client.is_none() {
@@ -181,161 +253,16 @@ impl EventLoop {
         let cancelled = self.streaming_cancelled.clone();
 
         // Spawn background streaming task
-        let task = tokio::spawn(async move {
-            let client = client.unwrap();
-
-            let request = CompletionRequest {
-                messages,
-                model,
-                max_tokens: Some(max_tokens),
-                temperature: Some(temperature),
-                seed: None,
-                tools,
-                stream: true,
-            };
-
-            // Start the completion request with timeout
-            let stream_result = tokio::time::timeout(
-                Duration::from_secs(60), // 60 second timeout for initial connection
-                client.complete(request),
-            )
-            .await;
-
-            let mut stream = match stream_result {
-                Ok(Ok(s)) => s,
-                Ok(Err(e)) => {
-                    let _ = tx
-                        .send(StreamEvent::Error(simplify_error_message(&e.to_string())))
-                        .await;
-                    return;
-                }
-                Err(_) => {
-                    let _ = tx
-                        .send(StreamEvent::Error(
-                            "Connection timed out. Please try again.".to_string(),
-                        ))
-                        .await;
-                    return;
-                }
-            };
-
-            let mut content = String::new();
-            let mut reasoning = String::new();
-            let mut tokens: Option<cortex_engine::streaming::StreamTokenUsage> = None;
-
-            // Process stream events using tokio::select! for faster cancellation response
-            loop {
-                tokio::select! {
-                    // Check for cancellation with polling
-                    _ = async {
-                        while !cancelled.load(Ordering::SeqCst) {
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                        }
-                    } => {
-                        let _ = tx
-                            .send(StreamEvent::Error("Cancelled.".to_string()))
-                            .await;
-                        break;
-                    }
-
-                    // Wait for next event with timeout
-                    event = tokio::time::timeout(Duration::from_secs(30), stream.next()) => {
-                        match event {
-                            Ok(Some(Ok(ResponseEvent::Delta(delta)))) => {
-                                content.push_str(&delta);
-                                if tx.send(StreamEvent::Delta(delta)).await.is_err() {
-                                    break; // Receiver dropped
-                                }
-                            }
-                            Ok(Some(Ok(ResponseEvent::Reasoning(r)))) => {
-                                reasoning.push_str(&r);
-                                if tx.send(StreamEvent::Reasoning(r)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Ok(Some(Ok(ResponseEvent::Done(response)))) => {
-                                tokens = Some(cortex_engine::streaming::StreamTokenUsage::from(
-                                    response.usage,
-                                ));
-                                let _ = tx
-                                    .send(StreamEvent::Done {
-                                        content,
-                                        reasoning,
-                                        tokens,
-                                    })
-                                    .await;
-                                break;
-                            }
-                            Ok(Some(Ok(ResponseEvent::Error(e)))) => {
-                                let _ = tx.send(StreamEvent::Error(e)).await;
-                                break;
-                            }
-                            Ok(Some(Ok(ResponseEvent::ToolCall(tool_call)))) => {
-                                // Always send a first-class tool row (label + args).
-                                // `remote: true` skips local re-exec in handle_stream_tool_call.
-                                let mut arguments = serde_json::from_str(&tool_call.arguments)
-                                    .unwrap_or_else(|_| {
-                                        serde_json::json!({"raw": tool_call.arguments})
-                                    });
-                                if tool_call.remote
-                                    && let Some(obj) = arguments.as_object_mut()
-                                {
-                                    obj.insert("remote".into(), serde_json::json!(true));
-                                }
-                                if tx
-                                    .send(StreamEvent::ToolCall {
-                                        id: tool_call.id.clone(),
-                                        name: tool_call.name.clone(),
-                                        arguments,
-                                    })
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            Ok(Some(Ok(ResponseEvent::ToolResult { id, success, output }))) => {
-                                if tx
-                                    .send(StreamEvent::ToolCallComplete {
-                                        id: id.clone(),
-                                        success,
-                                        output,
-                                    })
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            Ok(Some(Err(e))) => {
-                                let _ = tx.send(StreamEvent::Error(e.user_friendly_message())).await;
-                                break;
-                            }
-                            Ok(None) => {
-                                // Stream ended without Done event
-                                let _ = tx
-                                    .send(StreamEvent::Done {
-                                        content,
-                                        reasoning,
-                                        tokens,
-                                    })
-                                    .await;
-                                break;
-                            }
-                            Err(_) => {
-                                // Timeout
-                                let _ = tx
-                                    .send(StreamEvent::Error(
-                                        "The coding service is temporarily unavailable".to_string(),
-                                    ))
-                                    .await;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        let request = CompletionRequest {
+            messages,
+            model,
+            max_tokens: None,
+            temperature: None,
+            seed: None,
+            tools,
+            stream: true,
+        };
+        let task = tokio::spawn(forward_code_stream(client.unwrap(), request, cancelled, tx));
 
         self.streaming_task = Some(task);
 
@@ -468,15 +395,26 @@ impl EventLoop {
             }
         }
 
+        let remote_id = if let Some(pm) = &self.provider_manager {
+            let mut manager = pm.write().await;
+            if let Some(client) = manager.snapshot_client() {
+                let id = client.code_session_id().await;
+                manager.restore_client(client);
+                id
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         if let Some(ref mut session) = self.cortex_session
-            && session.meta.code_session_id.is_none()
+            && let Some(id) = remote_id
         {
-            let cwd = session.meta.cwd.clone();
-            if let Some(id) = cortex_engine::client::cached_code_session_id(&cwd) {
-                session.meta.code_session_id = Some(id);
-                if let Err(e) = session.save() {
-                    tracing::debug!(error = %e, "Could not persist Code session id");
-                }
+            session.meta.code_session_id = Some(id);
+            if let Err(error) = session.save() {
+                self.app_state
+                    .toasts
+                    .error(format!("Could not save Code session identity: {error}"));
             }
         }
 
@@ -522,111 +460,79 @@ impl EventLoop {
     async fn handle_stream_error(&mut self, e: String) {
         self.stream_controller.set_error(e.clone());
         self.app_state.stop_streaming();
-
-        if e.eq_ignore_ascii_case("cancelled")
-            || e.eq_ignore_ascii_case("cancelled.")
-            || e.to_lowercase().contains("cancelled by user")
-        {
-            self.mark_turn_stopped();
-            self.stream_controller.reset();
-            self.streaming_rx = None;
-            self.streaming_task = None;
-            return;
+        self.streaming_cancelled.store(true, Ordering::SeqCst);
+        self.stream_done_received = false;
+        for (_, task) in self.running_tool_tasks.drain() {
+            task.abort();
         }
-
-        // Check if this is an authentication error - trigger login flow
-        let error_lower = e.to_lowercase();
-        if error_lower.contains("401")
-            || error_lower.contains("unauthorized")
-            || error_lower.contains("auth_required")
-            || error_lower.contains("authentication required")
-            || error_lower.contains("authentication failed")
-        {
-            self.add_system_message(
-                "Session expired or authentication required.\n\n\
-                 Opening login screen to re-authenticate...",
-            );
-            self.app_state
-                .toasts
-                .warning("Session expired. Please re-authenticate.");
-
-            // Reset streaming state before starting login
-            self.stream_controller.reset();
-            self.streaming_rx = None;
-            self.streaming_task = None;
-
-            // Trigger the login flow
-            self.start_login_flow().await;
-            return;
+        for (_, task) in self.running_subagents.drain() {
+            task.abort();
         }
+        self.pending_assistant_tool_calls.clear();
+        self.app_state.pending_tool_results.clear();
+        self.app_state.pending_approval = None;
 
-        // Check if this is an insufficient balance error (402 Payment Required)
-        if error_lower.contains("402")
-            || error_lower.contains("insufficient_balance")
-            || error_lower.contains("insufficient token balance")
-            || error_lower.contains("payment required")
-        {
-            self.add_system_message(
-                "Error: Insufficient token balance to continue the conversation.\n\n\
-                 Please recharge your account at: https://app.cortex.foundation\n\n\
-                 Once recharged, you can continue your conversation.",
-            );
-            self.app_state
-                .toasts
-                .error("Insufficient balance. Please recharge at app.cortex.foundation");
-            self.stream_controller.reset();
-            self.streaming_rx = None;
-            self.streaming_task = None;
-            return;
-        }
+        match classify_stream_error(&e) {
+            StreamErrorKind::Cancelled => {
+                self.mark_turn_stopped();
+                self.stream_controller.reset();
+                self.streaming_rx = None;
+                self.streaming_task = None;
+                return;
+            }
+            StreamErrorKind::AuthenticationRequired => {
+                self.add_system_message(
+                    "Session expired or authentication required.\n\n\
+                     Opening login screen to re-authenticate...",
+                );
+                self.app_state
+                    .toasts
+                    .warning("Session expired. Please re-authenticate.");
 
-        // Check if this is a rate limit / usage limit error
-        if error_lower.contains("rate limit")
-            || error_lower.contains("usage limit")
-            || error_lower.contains("quota exceeded")
-            || error_lower.contains("quota exhausted")
-            || error_lower.contains("limit exceeded")
-            || error_lower.contains("too many requests")
-            || error_lower.contains("429")
-        {
-            self.app_state.quota_held = true;
-            self.add_system_message(&format!("x {}", crate::ui::consts::QUOTA_EXHAUSTED));
-            self.add_system_message(
-                "Your work so far is saved in this session. Switch to MAX token billing to continue now, or upgrade at cortex.foundation/billing",
-            );
-            self.app_state
-                .toasts
-                .warning("Agent quota exhausted. Follow-ups are held until it resets.");
-        } else {
-            // Product-facing copy only — never raw provider or transport names.
-            let lower = e.to_lowercase();
-            let actionable = lower.contains("cortex login")
-                || lower.contains("cortex_api")
-                || lower.contains("not signed in")
-                || lower.contains("not found")
-                || lower.contains("sign in");
-            let service_down = !actionable
-                && (lower.contains("unavailable")
-                    || lower.contains("connection")
-                    || lower.contains("timed out")
-                    || lower.contains("timeout")
-                    || lower.contains("dns")
-                    || lower.contains("reqwest")
-                    || lower.contains("hyper"));
-            if service_down {
+                // Reset streaming state before starting login
+                self.stream_controller.reset();
+                self.streaming_rx = None;
+                self.streaming_task = None;
+
+                self.start_login_flow().await;
+                return;
+            }
+            StreamErrorKind::InsufficientBalance => {
+                self.add_system_message(
+                    "Error: Insufficient token balance to continue the conversation.\n\n\
+                     Please recharge your account at: https://app.cortex.foundation\n\n\
+                     Once recharged, you can continue your conversation.",
+                );
+                self.app_state
+                    .toasts
+                    .error("Insufficient balance. Please recharge at app.cortex.foundation");
+                self.stream_controller.reset();
+                self.streaming_rx = None;
+                self.streaming_task = None;
+                return;
+            }
+            StreamErrorKind::QuotaExhausted => {
+                self.app_state.quota_held = true;
+                self.add_system_message(&format!("x {}", crate::ui::consts::QUOTA_EXHAUSTED));
+                self.add_system_message(
+                    "Your work so far is saved in this session. Switch to MAX token billing to continue now, or upgrade at cortex.foundation/billing",
+                );
+                self.app_state
+                    .toasts
+                    .warning("Agent quota exhausted. Follow-ups are held until it resets.");
+            }
+            StreamErrorKind::ServiceUnavailable => {
                 self.add_system_message("The coding service is temporarily unavailable");
                 self.add_system_message(crate::ui::consts::SERVICE_UNAVAILABLE_NEXT_STEP);
-            } else {
-                self.add_system_message(&e);
             }
+            StreamErrorKind::Actionable => self.add_system_message(&e),
         }
 
         self.stream_controller.reset();
         self.streaming_rx = None;
         self.streaming_task = None;
 
-        // Even on error, check for queued messages
-        let _ = self.process_message_queue().await;
+        // Failed turns hold queued follow-ups; do not silently start more work.
     }
 
     /// Handle tool call from stream
@@ -636,13 +542,6 @@ impl EventLoop {
         name: String,
         arguments: serde_json::Value,
     ) {
-        // Store tool call for assistant message (to be added on StreamEvent::Done)
-        self.pending_assistant_tool_calls.push(PendingToolCall {
-            id: id.clone(),
-            name: name.clone(),
-            arguments: arguments.clone(),
-        });
-
         let remote = arguments
             .get("remote")
             .and_then(|v| v.as_bool())
@@ -659,6 +558,13 @@ impl EventLoop {
                 .update_tool_status(&id, crate::views::tool_call::ToolStatus::Running);
             return;
         }
+
+        // Store tool call for assistant message (to be added on StreamEvent::Done)
+        self.pending_assistant_tool_calls.push(PendingToolCall {
+            id: id.clone(),
+            name: name.clone(),
+            arguments: arguments.clone(),
+        });
 
         // Special handling for Questions tool - show interactive TUI
         if (name == "Questions" || name == "question")
@@ -776,8 +682,7 @@ impl EventLoop {
         let provider_manager = match &self.provider_manager {
             Some(pm) => pm.clone(),
             None => {
-                tracing::warn!("No provider manager for tool result continuation");
-                return Ok(());
+                anyhow::bail!("No client is available for tool-result continuation.");
             }
         };
 
@@ -789,8 +694,7 @@ impl EventLoop {
         let session_messages: Vec<Message> = if let Some(ref session) = self.cortex_session {
             session.messages_for_api()
         } else {
-            tracing::warn!("No session for tool result continuation");
-            return Ok(());
+            anyhow::bail!("No session is available for tool-result continuation.");
         };
 
         // Prepend system prompt to messages
@@ -816,7 +720,7 @@ impl EventLoop {
         self.stream_done_received = false;
 
         // Get completion request parameters
-        let (model, max_tokens, temperature, client) = {
+        let (model, client) = {
             let mut pm = provider_manager.write().await;
 
             if let Err(e) = pm.ensure_client() {
@@ -826,11 +730,9 @@ impl EventLoop {
             }
 
             let model = pm.current_model().to_string();
-            let max_tokens = pm.config().max_tokens;
-            let temperature = pm.config().temperature;
             let client = pm.snapshot_client();
 
-            (model, max_tokens, temperature, client)
+            (model, client)
         };
 
         if client.is_none() {
@@ -864,154 +766,16 @@ impl EventLoop {
         let cancelled = self.streaming_cancelled.clone();
 
         // Spawn background streaming task
-        let task = tokio::spawn(async move {
-            let client = client.unwrap();
-
-            let request = CompletionRequest {
-                messages,
-                model,
-                max_tokens: Some(max_tokens),
-                temperature: Some(temperature),
-                seed: None,
-                tools,
-                stream: true,
-            };
-
-            let stream_result =
-                tokio::time::timeout(Duration::from_secs(60), client.complete(request)).await;
-
-            let mut stream = match stream_result {
-                Ok(Ok(s)) => s,
-                Ok(Err(e)) => {
-                    let _ = tx
-                        .send(StreamEvent::Error(simplify_error_message(&e.to_string())))
-                        .await;
-                    return;
-                }
-                Err(_) => {
-                    let _ = tx
-                        .send(StreamEvent::Error(
-                            "Connection timed out. Please try again.".to_string(),
-                        ))
-                        .await;
-                    return;
-                }
-            };
-
-            let mut content = String::new();
-            let mut reasoning = String::new();
-            let mut tokens: Option<cortex_engine::streaming::StreamTokenUsage> = None;
-
-            // Process stream events using tokio::select! for faster cancellation response
-            loop {
-                tokio::select! {
-                    // Check for cancellation with polling
-                    _ = async {
-                        while !cancelled.load(Ordering::SeqCst) {
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                        }
-                    } => {
-                        let _ = tx
-                            .send(StreamEvent::Error("Cancelled.".to_string()))
-                            .await;
-                        break;
-                    }
-
-                    // Wait for next event with timeout
-                    event = tokio::time::timeout(Duration::from_secs(30), stream.next()) => {
-                        match event {
-                            Ok(Some(Ok(ResponseEvent::Delta(delta)))) => {
-                                content.push_str(&delta);
-                                if tx.send(StreamEvent::Delta(delta)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Ok(Some(Ok(ResponseEvent::Reasoning(r)))) => {
-                                reasoning.push_str(&r);
-                                if tx.send(StreamEvent::Reasoning(r)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Ok(Some(Ok(ResponseEvent::Done(response)))) => {
-                                tokens = Some(cortex_engine::streaming::StreamTokenUsage::from(
-                                    response.usage,
-                                ));
-                                let _ = tx
-                                    .send(StreamEvent::Done {
-                                        content,
-                                        reasoning,
-                                        tokens,
-                                    })
-                                    .await;
-                                break;
-                            }
-                            Ok(Some(Ok(ResponseEvent::Error(e)))) => {
-                                let _ = tx.send(StreamEvent::Error(e)).await;
-                                break;
-                            }
-                            Ok(Some(Ok(ResponseEvent::ToolCall(tool_call)))) => {
-                                let mut arguments = serde_json::from_str(&tool_call.arguments)
-                                    .unwrap_or_else(|_| {
-                                        serde_json::json!({"raw": tool_call.arguments})
-                                    });
-                                if tool_call.remote
-                                    && let Some(obj) = arguments.as_object_mut()
-                                {
-                                    obj.insert("remote".into(), serde_json::json!(true));
-                                }
-                                if tx
-                                    .send(StreamEvent::ToolCall {
-                                        id: tool_call.id.clone(),
-                                        name: tool_call.name.clone(),
-                                        arguments,
-                                    })
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            Ok(Some(Ok(ResponseEvent::ToolResult { id, success, output }))) => {
-                                if tx
-                                    .send(StreamEvent::ToolCallComplete {
-                                        id,
-                                        success,
-                                        output,
-                                    })
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            Ok(Some(Err(e))) => {
-                                let _ = tx.send(StreamEvent::Error(e.user_friendly_message())).await;
-                                break;
-                            }
-                            Ok(None) => {
-                                let _ = tx
-                                    .send(StreamEvent::Done {
-                                        content,
-                                        reasoning,
-                                        tokens,
-                                    })
-                                    .await;
-                                break;
-                            }
-                            Err(_) => {
-                                let _ = tx
-                                    .send(StreamEvent::Error(
-                                        "The coding service is temporarily unavailable"
-                                            .to_string(),
-                                    ))
-                                    .await;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        let request = CompletionRequest {
+            messages,
+            model,
+            max_tokens: None,
+            temperature: None,
+            seed: None,
+            tools,
+            stream: true,
+        };
+        let task = tokio::spawn(forward_code_stream(client.unwrap(), request, cancelled, tx));
 
         self.streaming_task = Some(task);
 
@@ -1024,7 +788,7 @@ impl EventLoop {
         if let Some(message) = self.app_state.message_queue.pop_front() {
             tracing::debug!(
                 "Processing queued message: {}",
-                &message[..message.len().min(50)]
+                message.chars().take(50).collect::<String>()
             );
             self.handle_submit_with_provider(message).await?;
         }
@@ -1071,7 +835,11 @@ impl EventLoop {
                 let action = if file_exists { "Replace" } else { "Create" };
 
                 let content_preview = if content.len() > 500 {
-                    format!("{}... ({} bytes)", &content[..500], content.len())
+                    format!(
+                        "{}... ({} bytes)",
+                        content.chars().take(500).collect::<String>(),
+                        content.len()
+                    )
                 } else {
                     content.to_string()
                 };
@@ -1089,5 +857,113 @@ impl EventLoop {
             }
             _ => None,
         }
+    }
+}
+
+/// One terminal decoder for initial turns and local-client continuations.
+async fn forward_code_stream(
+    client: Box<dyn cortex_engine::client::ModelClient>,
+    request: CompletionRequest,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    tx: mpsc::Sender<StreamEvent>,
+) {
+    use cortex_engine::client::runtime_contract::{INCOMPLETE_STREAM, LOCAL_TOOLS_UNSUPPORTED};
+    let result: Result<StreamEvent, String> = async {
+        let mut stream = tokio::select! {
+            _ = cortex_engine::session::control::wait_for_cancellation(&cancelled) => return Err("Cancelled.".into()),
+            result = tokio::time::timeout(Duration::from_secs(60), client.complete(request)) => {
+                result.map_err(|_| "The coding service is temporarily unavailable".to_string())?
+                    .map_err(|error| error.user_friendly_message())?
+            }
+        };
+        let mut content = String::new();
+        let mut reasoning = String::new();
+        let mut observations = std::collections::HashSet::new();
+        loop {
+            let event = tokio::select! {
+                _ = cortex_engine::session::control::wait_for_cancellation(&cancelled) => return Err("Cancelled.".into()),
+                event = tokio::time::timeout(Duration::from_secs(30), stream.next()) => {
+                    event.map_err(|_| "The coding service is temporarily unavailable".to_string())?
+                        .ok_or_else(|| INCOMPLETE_STREAM.to_string())?
+                        .map_err(|error| error.user_friendly_message())?
+                }
+            };
+            let event = match event {
+                ResponseEvent::Delta(delta) => { content.push_str(&delta); StreamEvent::Delta(delta) }
+                ResponseEvent::Reasoning(delta) => { reasoning.push_str(&delta); StreamEvent::Reasoning(delta) }
+                ResponseEvent::Done(response) => {
+                    response.finish_reason.require_success().map_err(|error| error.user_friendly_message())?;
+                    if !observations.is_empty() { return Err(INCOMPLETE_STREAM.into()); }
+                    return Ok(StreamEvent::Done {
+                        content, reasoning,
+                        tokens: Some(cortex_engine::streaming::StreamTokenUsage::from(response.usage)),
+                    });
+                }
+                ResponseEvent::Error(error) => return Err(error),
+                ResponseEvent::ToolCall(call) => {
+                    if !call.remote && client.owns_tool_execution() { return Err(LOCAL_TOOLS_UNSUPPORTED.into()); }
+                    let mut arguments = serde_json::from_str(&call.arguments)
+                        .unwrap_or_else(|_| serde_json::json!({"raw":call.arguments}));
+                    if call.remote {
+                        if call.id.is_empty() || !observations.insert(call.id.clone()) { return Err(INCOMPLETE_STREAM.into()); }
+                        if !arguments.is_object() { arguments = serde_json::json!({"arguments":arguments}); }
+                        arguments["remote"] = serde_json::json!(true);
+                    }
+                    StreamEvent::ToolCall { id:call.id, name:call.name, arguments }
+                }
+                ResponseEvent::ToolResult { id, success, output } => {
+                    if !observations.remove(&id) { return Err(INCOMPLETE_STREAM.into()); }
+                    StreamEvent::ToolCallComplete { id, success, output }
+                }
+            };
+            tx.send(event).await.map_err(|_| "The turn output was closed.".to_string())?;
+        }
+    }.await;
+    let terminal = match result {
+        Ok(done) => done,
+        Err(mut message) => {
+            if let Err(error) = client.cancel_turn_checked().await {
+                message.push_str(&format!(" {}", error.user_friendly_message()));
+            }
+            StreamEvent::Error(message)
+        }
+    };
+    let _ = tx.send(terminal).await;
+}
+
+#[cfg(test)]
+#[path = "runtime_contract_streaming_tests.rs"]
+mod runtime_contract_tests;
+
+#[cfg(test)]
+mod stream_error_tests {
+    use super::{StreamErrorKind, classify_stream_error};
+
+    #[test]
+    fn transport_names_never_reach_the_user_but_actions_do() {
+        assert_eq!(
+            classify_stream_error("hyper: connection reset"),
+            StreamErrorKind::ServiceUnavailable
+        );
+        assert_eq!(
+            classify_stream_error("Run cortex login: not signed in"),
+            StreamErrorKind::Actionable
+        );
+        assert_eq!(
+            classify_stream_error("Cancelled"),
+            StreamErrorKind::Cancelled
+        );
+        assert_eq!(
+            classify_stream_error("HTTP 401 unauthorized"),
+            StreamErrorKind::AuthenticationRequired
+        );
+        assert_eq!(
+            classify_stream_error("402 payment required"),
+            StreamErrorKind::InsufficientBalance
+        );
+        assert_eq!(
+            classify_stream_error("429 too many requests"),
+            StreamErrorKind::QuotaExhausted
+        );
     }
 }

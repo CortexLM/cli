@@ -107,58 +107,15 @@ impl SandboxBackend for WindowsBackend {
         cwd: &PathBuf,
         writable_roots: &[WritableRoot],
     ) -> Result<SandboxedCommand> {
-        if command.is_empty() {
+        let _ = (cwd, writable_roots);
+        if policy.has_full_disk_write_access() {
             return Ok(SandboxedCommand::passthrough(command));
         }
-
-        // Build environment variables for traceability
-        let mut env = vec![(CORTEX_SANDBOX_ENV_VAR.to_string(), "windows".to_string())];
-
-        if !policy.has_full_network_access() {
-            env.push((
-                CORTEX_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
-                "1".to_string(),
-            ));
-        }
-
-        // Serialize policy for debugging/logging
-        if let Ok(policy_json) = serde_json::to_string(policy) {
-            env.push(("CORTEX_SANDBOX_POLICY".to_string(), policy_json));
-        }
-
-        env.push(("CORTEX_SANDBOX_CWD".to_string(), cwd.display().to_string()));
-
-        // Serialize writable roots for potential use by child processes
-        let writable_paths: Vec<String> = writable_roots
-            .iter()
-            .map(|r| r.root.display().to_string())
-            .collect();
-        if let Ok(paths_json) = serde_json::to_string(&writable_paths) {
-            env.push(("CORTEX_SANDBOX_WRITABLE_ROOTS".to_string(), paths_json));
-        }
-
-        // Serialize read-only subpaths
-        let read_only_paths: Vec<String> = writable_roots
-            .iter()
-            .flat_map(|r| r.read_only_subpaths.iter())
-            .map(|p| p.display().to_string())
-            .collect();
-        if let Ok(paths_json) = serde_json::to_string(&read_only_paths) {
-            env.push(("CORTEX_SANDBOX_READ_ONLY_PATHS".to_string(), paths_json));
-        }
-
-        // Add policy level indicator
-        #[cfg(target_os = "windows")]
-        {
-            let level = Self::policy_to_level(policy);
-            env.push(("CORTEX_SANDBOX_LEVEL".to_string(), format!("{:?}", level)));
-        }
-
-        Ok(SandboxedCommand {
-            program: command[0].clone(),
-            args: command[1..].to_vec(),
-            env,
-        })
+        // Environment markers do not apply restricted tokens or filesystem ACLs.
+        // This preparation API cannot establish the required Windows controls.
+        Err(crate::error::CortexError::Sandbox(
+            "Required Windows sandbox controls are unavailable in this execution path; command was not started".into(),
+        ))
     }
 }
 

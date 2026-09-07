@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::config::PluginConfig;
 use crate::manifest::PluginManifest;
 use crate::runtime::{WasmPlugin, WasmRuntime};
-use crate::{MANIFEST_FILE, PluginError, Result, WASM_FILE};
+use crate::{MANIFEST_FILE, Plugin, PluginError, Result, WASM_FILE};
 
 /// Discovered plugin information.
 #[derive(Debug, Clone)]
@@ -60,7 +60,7 @@ impl PluginLoader {
 
             tracing::debug!("Searching for plugins in: {:?}", search_path);
 
-            match self.discover_in_path(search_path).await {
+            match self.discover_in_path(search_path, false).await {
                 Ok(found) => plugins.extend(found),
                 Err(e) => {
                     tracing::warn!("Error discovering plugins in {:?}: {}", search_path, e);
@@ -72,8 +72,19 @@ impl PluginLoader {
         plugins
     }
 
+    /// Startup discovery fails closed instead of turning malformed packages into absence.
+    pub async fn discover_checked(&self) -> Result<Vec<DiscoveredPlugin>> {
+        let mut plugins = Vec::new();
+        for path in &self.config.search_paths {
+            if path.exists() {
+                plugins.extend(self.discover_in_path(path, true).await?);
+            }
+        }
+        Ok(plugins)
+    }
+
     /// Discover plugins in a specific directory.
-    async fn discover_in_path(&self, path: &Path) -> Result<Vec<DiscoveredPlugin>> {
+    async fn discover_in_path(&self, path: &Path, strict: bool) -> Result<Vec<DiscoveredPlugin>> {
         let mut plugins = Vec::new();
 
         let mut entries = tokio::fs::read_dir(path).await?;
@@ -82,7 +93,7 @@ impl PluginLoader {
             let entry_path = entry.path();
 
             // Check if it's a directory
-            if !entry_path.is_dir() {
+            if !entry_path.is_dir() || entry.file_type().await?.is_symlink() {
                 continue;
             }
 
@@ -96,8 +107,11 @@ impl PluginLoader {
             match self.load_manifest(&manifest_path).await {
                 Ok(manifest) => {
                     // Validate manifest
-                    if let Err(e) = manifest.validate() {
-                        tracing::warn!("Invalid manifest in {:?}: {}", manifest_path, e);
+                    if let Err(error) = manifest.validate() {
+                        if strict {
+                            return Err(error);
+                        }
+                        tracing::warn!("Invalid manifest in {:?}: {}", manifest_path, error);
                         continue;
                     }
 
@@ -111,12 +125,12 @@ impl PluginLoader {
                         has_wasm,
                     });
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to load manifest {:?}: {}", manifest_path, e);
-                }
+                Err(error) if strict => return Err(error),
+                Err(error) => tracing::warn!("Invalid manifest in {:?}: {}", manifest_path, error),
             }
         }
 
+        plugins.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(plugins)
     }
 
@@ -126,47 +140,47 @@ impl PluginLoader {
         PluginManifest::parse(&content)
     }
 
-    /// Load a discovered plugin.
-    pub fn load(&self, discovered: &DiscoveredPlugin) -> Result<WasmPlugin> {
-        if !discovered.has_wasm {
-            return Err(PluginError::load_error(
-                discovered.id(),
-                format!(
-                    "No WASM file found at {:?}",
-                    discovered.path.join(WASM_FILE)
-                ),
-            ));
-        }
-
-        let mut plugin = WasmPlugin::new(
-            discovered.manifest.clone(),
-            discovered.path.clone(),
-            self.runtime.clone(),
-        )?;
-
-        plugin.load()?;
-
-        Ok(plugin)
+    /// Load a validated artifact; importing native code still requires pinned trust.
+    pub fn load(&self, discovered: &DiscoveredPlugin) -> Result<Box<dyn Plugin>> {
+        self.load_validated(&discovered.path)
     }
 
-    /// Load a plugin from a specific path.
-    pub async fn load_from_path(&self, path: &Path) -> Result<WasmPlugin> {
-        let manifest_path = if path.is_dir() {
-            path.join(MANIFEST_FILE)
+    fn load_validated(&self, root: &Path) -> Result<Box<dyn Plugin>> {
+        let root = root.canonicalize()?;
+        let manifest = crate::package::validate_package(&root)?;
+        let activation = crate::activation::Activation::load(self.config.state_path.as_deref())?;
+        if activation.disabled.contains(&manifest.plugin.id)
+            || !self.config.is_plugin_enabled(&manifest.plugin.id)
+        {
+            return Err(PluginError::Disabled(manifest.plugin.id.clone()));
+        }
+        match manifest.runtime.kind {
+            crate::contract::RuntimeKind::Node => {
+                let trusted = activation
+                    .trusted
+                    .get(&manifest.plugin.id)
+                    .map(String::as_str)
+                    .unwrap_or("");
+                Ok(Box::new(crate::node::NodePlugin::new(
+                    manifest, root, trusted,
+                )?))
+            }
+            crate::contract::RuntimeKind::Wasm => {
+                let mut plugin = WasmPlugin::new(manifest, root, self.runtime.clone())?;
+                plugin.load()?;
+                Ok(Box::new(plugin))
+            }
+        }
+    }
+
+    pub async fn load_from_path(&self, path: &Path) -> Result<Box<dyn Plugin>> {
+        let directory = if path.is_dir() {
+            path
         } else {
-            path.to_path_buf()
+            path.parent()
+                .ok_or_else(|| PluginError::load_error("path", "Missing plugin directory"))?
         };
-
-        let plugin_dir = manifest_path.parent().unwrap_or(path);
-        let manifest = self.load_manifest(&manifest_path).await?;
-
-        manifest.validate()?;
-
-        let mut plugin = WasmPlugin::new(manifest, plugin_dir.to_path_buf(), self.runtime.clone())?;
-
-        plugin.load()?;
-
-        Ok(plugin)
+        self.load_validated(directory)
     }
 
     /// Get the configuration.

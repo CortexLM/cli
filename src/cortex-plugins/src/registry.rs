@@ -358,111 +358,13 @@ impl PluginRegistry {
     pub async fn download_plugin(
         &self,
         entry: &PluginIndexEntry,
-        target_dir: &Path,
+        _target_dir: &Path,
     ) -> Result<PathBuf> {
-        // Security: Validate plugin ID to prevent directory traversal attacks
-        // Plugin IDs must not contain path separators or ".." sequences
-        if entry.id.contains("..") || entry.id.contains('/') || entry.id.contains('\\') {
-            return Err(PluginError::validation_error(
-                "plugin_id",
-                "Plugin ID contains invalid characters (path separators or '..')",
-            ));
-        }
-
-        // Security: Validate URL to prevent SSRF attacks
-        // Block requests to private IPs, localhost, and dangerous ports
+        crate::contract::validate_id(&entry.id)?;
         Self::validate_download_url(&entry.download_url)?;
-
-        tracing::info!(
-            "Downloading plugin {} v{} from {}",
-            entry.id,
-            entry.version,
-            entry.download_url
-        );
-
-        // Download the plugin package
-        let response = self
-            .http_client
-            .get(&entry.download_url)
-            .send()
-            .await
-            .map_err(|e| {
-                PluginError::NetworkError(format!("Failed to download plugin {}: {}", entry.id, e))
-            })?;
-
-        if !response.status().is_success() {
-            return Err(PluginError::NetworkError(format!(
-                "Failed to download plugin {}: HTTP {}",
-                entry.id,
-                response.status()
-            )));
-        }
-
-        let bytes = response.bytes().await.map_err(|e| {
-            PluginError::NetworkError(format!(
-                "Failed to read plugin data for {}: {}",
-                entry.id, e
-            ))
-        })?;
-
-        // Verify checksum
-        let actual_checksum = PluginSigner::compute_checksum(&bytes);
-        if !actual_checksum.eq_ignore_ascii_case(&entry.checksum) {
-            return Err(PluginError::checksum_mismatch(
-                &entry.id,
-                &entry.checksum,
-                &actual_checksum,
-            ));
-        }
-        tracing::debug!("Checksum verified for plugin {}", entry.id);
-
-        // Verify signature if present
-        if let Some(ref signature) = entry.signature {
-            let signer = self.signer.read().await;
-            if signer.has_trusted_keys() {
-                match signer.verify_plugin_hex(&bytes, signature) {
-                    Ok(true) => {
-                        tracing::debug!("Signature verified for plugin {}", entry.id);
-                    }
-                    Ok(false) => {
-                        return Err(PluginError::SignatureError(format!(
-                            "Plugin {} signature verification failed - not signed by trusted key",
-                            entry.id
-                        )));
-                    }
-                    Err(e) => {
-                        return Err(PluginError::SignatureError(format!(
-                            "Plugin {} signature verification error: {}",
-                            entry.id, e
-                        )));
-                    }
-                }
-            } else {
-                tracing::warn!(
-                    "Plugin {} is signed but no trusted keys configured - skipping signature verification",
-                    entry.id
-                );
-            }
-        } else {
-            tracing::warn!("Plugin {} is not signed", entry.id);
-        }
-
-        // Create plugin directory (safe now that plugin ID is validated)
-        let plugin_dir = target_dir.join(&entry.id);
-        tokio::fs::create_dir_all(&plugin_dir).await?;
-
-        // Save the plugin file (assuming it's a WASM file)
-        let plugin_path = plugin_dir.join("plugin.wasm");
-        tokio::fs::write(&plugin_path, &bytes).await?;
-
-        tracing::info!(
-            "Downloaded plugin {} v{} to {}",
-            entry.id,
-            entry.version,
-            plugin_path.display()
-        );
-
-        Ok(plugin_path)
+        Err(PluginError::RegistryError(
+            "Bare-artifact installation is unsupported; use Cortex plugin install for a verified, atomic package installation".into()
+        ))
     }
 
     /// Validate a URL for SSRF (Server-Side Request Forgery) protection.
@@ -675,17 +577,11 @@ impl PluginRegistry {
         let id = info.id.clone();
 
         {
-            let plugins = self.plugins.read().await;
+            let mut plugins = self.plugins.write().await;
             if plugins.contains_key(&id) {
                 return Err(PluginError::AlreadyExists(id));
             }
-        }
-
-        let handle = PluginHandle::new(plugin);
-
-        {
-            let mut plugins = self.plugins.write().await;
-            plugins.insert(id.clone(), handle);
+            plugins.insert(id.clone(), PluginHandle::new(plugin));
         }
 
         {
@@ -882,6 +778,8 @@ mod tests {
                 hooks: vec![],
                 config: HashMap::new(),
                 wasm: Default::default(),
+                runtime: Default::default(),
+                tools: Vec::new(),
             };
 
             let info = PluginInfo::from_manifest(&manifest, PathBuf::from("/tmp"));

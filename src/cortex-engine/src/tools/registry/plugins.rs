@@ -10,6 +10,10 @@ use crate::tools::spec::{ToolDefinition, ToolResult};
 impl ToolRegistry {
     /// Register a plugin tool.
     pub fn register_plugin(&mut self, plugin: PluginTool) {
+        if self.has(&plugin.name) {
+            tracing::warn!("Plugin registration refused: tool name is already registered");
+            return;
+        }
         // Also register as a regular tool definition
         self.tools.insert(
             plugin.name.clone(),
@@ -94,33 +98,40 @@ impl ToolRegistry {
         &self,
         plugin: &PluginTool,
         arguments: Value,
+        context: &crate::tools::ToolContext,
     ) -> Result<ToolResult> {
-        if !plugin.script_path.exists() {
-            return Ok(ToolResult::error(format!(
-                "Plugin script not found: {}",
-                plugin.script_path.display()
-            )));
-        }
+        let path =
+            match context.resolve_and_validate_path(plugin.script_path.to_str().unwrap_or("")) {
+                Ok(path) => path,
+                Err(message) => return Ok(ToolResult::error(message)),
+            };
 
         // Serialize arguments to JSON for the script
-        let args_json = serde_json::to_string(&arguments).unwrap_or_default();
+        let args_json = serde_json::to_string(&arguments)?;
 
         // Execute the plugin script
-        let output = tokio::process::Command::new(&plugin.script_path)
-            .arg(&args_json)
-            .env("CORTEX_PLUGIN_ARGS", &args_json)
-            .output()
-            .await;
+        let mut env = context.env.clone();
+        env.insert("CORTEX_PLUGIN_ARGS".into(), args_json.clone());
+        let output = crate::exec::execute_command(
+            &[path.to_string_lossy().into_owned(), args_json],
+            crate::exec::ExecOptions {
+                cwd: context
+                    .resolve_and_validate_path(".")
+                    .map_err(crate::error::CortexError::InvalidInput)?,
+                sandbox_policy: context.sandbox_policy.clone(),
+                env,
+                approval_granted: true,
+                ..Default::default()
+            },
+        )
+        .await;
 
         match output {
             Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-
-                if output.status.success() {
-                    Ok(ToolResult::success(stdout.to_string()))
+                if output.exit_code == 0 && !output.timed_out {
+                    Ok(ToolResult::success(output.stdout))
                 } else {
-                    Ok(ToolResult::error(format!("{stdout}{stderr}")))
+                    Ok(ToolResult::error(output.aggregated))
                 }
             }
             Err(e) => Ok(ToolResult::error(format!("Failed to execute plugin: {e}"))),

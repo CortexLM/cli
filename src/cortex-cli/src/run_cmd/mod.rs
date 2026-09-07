@@ -33,3 +33,5 @@ mod tests;
 // Re-export public types
 pub use cli::{OutputFormat, RunCli};
 pub use system::ModelSpec;
+
+mod runtime_contract_options;

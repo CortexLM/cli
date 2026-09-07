@@ -1,514 +1,323 @@
-//! ACP request handlers.
-//!
-//! This module contains the business logic for handling ACP protocol requests,
-//! including session management, prompt processing, and event forwarding.
-
+//! ACP v1 text-only session handling. One engine receiver owns each event queue.
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
-use anyhow::{Context, Result};
+use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::{RwLock, broadcast};
-use tracing::{debug, error, info, warn};
+use tokio::sync::{Mutex, RwLock, broadcast, oneshot};
 
 use crate::acp::protocol::{AcpError, AcpRequestId, AcpResponse};
 use crate::acp::types::*;
 use crate::config::Config;
 use crate::session::{Session, SessionHandle};
-use cortex_protocol::{EventMsg, Op, Submission, UserInput};
+use cortex_protocol::{EventMsg, Op, ReviewDecision, Submission, UserInput};
 
-/// Session state tracked by the ACP handler.
+struct ActivePrompt {
+    waiter: Option<oneshot::Sender<Result<StopReason>>>,
+}
+
 pub struct AcpSessionState {
-    /// The session handle.
     pub handle: SessionHandle,
-    /// Cancel token for this session.
-    pub cancel_tx: broadcast::Sender<()>,
-    /// Session metadata.
-    pub metadata: SessionMetadata,
+    active: Arc<Mutex<Option<ActivePrompt>>>,
+    runner: tokio::task::JoinHandle<()>,
+    forwarder: tokio::task::JoinHandle<()>,
 }
 
-/// Session metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionMetadata {
-    /// Session ID.
-    pub session_id: String,
-    /// Working directory.
-    pub cwd: String,
-    /// Current model.
-    pub model: Option<String>,
-    /// Current agent.
-    pub agent: Option<String>,
-    /// Creation timestamp.
-    pub created_at: chrono::DateTime<chrono::Utc>,
+impl Drop for AcpSessionState {
+    fn drop(&mut self) {
+        self.handle.cancelled.store(true, Ordering::SeqCst);
+        self.runner.abort();
+        self.forwarder.abort();
+    }
 }
 
-/// ACP request handler.
 pub struct AcpHandler {
-    /// Active sessions.
-    sessions: Arc<RwLock<HashMap<String, AcpSessionState>>>,
-    /// Configuration.
+    sessions: RwLock<HashMap<String, AcpSessionState>>,
     config: Config,
-    /// Notification sender for streaming updates.
     notification_tx: broadcast::Sender<AcpNotificationEvent>,
 }
 
-/// Notification event wrapper.
 #[derive(Debug, Clone)]
 pub struct AcpNotificationEvent {
-    /// The method name.
     pub method: String,
-    /// The notification params.
     pub params: Value,
 }
 
 impl AcpHandler {
-    /// Create a new handler.
     pub fn new(config: Config) -> Self {
         let (notification_tx, _) = broadcast::channel(1024);
         Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
+            sessions: RwLock::new(HashMap::new()),
             config,
             notification_tx,
         }
     }
 
-    /// Subscribe to notifications.
     pub fn subscribe(&self) -> broadcast::Receiver<AcpNotificationEvent> {
         self.notification_tx.subscribe()
     }
 
-    /// Handle initialize request.
-    pub async fn handle_initialize(&self, params: InitializeRequest) -> Result<InitializeResponse> {
-        debug!(
-            "Initialize request: version={}, client={}",
-            params.protocol_version, params.client_info.name
-        );
+    pub async fn shutdown(&self) {
+        self.sessions.write().await.clear();
+    }
 
+    pub async fn handle_initialize(&self, params: InitializeRequest) -> Result<InitializeResponse> {
+        if params.protocol_version != PROTOCOL_VERSION {
+            bail!("Unsupported ACP version; this agent supports version 1");
+        }
         Ok(InitializeResponse {
             protocol_version: PROTOCOL_VERSION,
-            agent_capabilities: AgentCapabilities {
-                load_session: true,
-                mcp_capabilities: Some(McpCapabilities {
-                    http: true,
-                    sse: true,
-                }),
-                prompt_capabilities: PromptCapabilities {
-                    embedded_context: true,
-                    image: true,
-                },
-            },
+            agent_capabilities: AgentCapabilities::default(),
             agent_info: AgentInfo {
-                name: "Cortex".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
+                name: "Cortex".into(),
+                version: env!("CARGO_PKG_VERSION").into(),
             },
             auth_methods: vec![],
         })
     }
 
-    /// Handle session/new request.
     pub async fn handle_session_new(
         &self,
         params: NewSessionRequest,
     ) -> Result<NewSessionResponse> {
-        info!("Creating new session with cwd: {}", params.cwd);
-
-        let mut config = self.config.clone();
-        config.cwd = params.cwd.clone().into();
-
-        let (mut session, handle) = Session::new(config)?;
-        let session_id = handle.conversation_id.to_string();
-
-        let (cancel_tx, _) = broadcast::channel(1);
-
-        let metadata = SessionMetadata {
-            session_id: session_id.clone(),
-            cwd: params.cwd,
-            model: Some(self.config.model.clone()),
-            agent: None,
-            created_at: chrono::Utc::now(),
-        };
-
-        let state = AcpSessionState {
-            handle: handle.clone(),
-            cancel_tx: cancel_tx.clone(),
-            metadata: metadata.clone(),
-        };
-
-        // Store session
-        self.sessions
-            .write()
-            .await
-            .insert(session_id.clone(), state);
-
-        // Clone session_id before spawning the session runner
-        let session_id_for_runner = session_id.clone();
-
-        // Spawn session runner
-        tokio::spawn(async move {
-            if let Err(e) = session.run().await {
-                error!("Session {} error: {}", session_id_for_runner, e);
-            }
-        });
-
-        // Spawn event forwarder
-        let session_id_clone = session_id.clone();
-        let notification_tx = self.notification_tx.clone();
-        let event_rx = handle.event_rx.clone();
-        let mut cancel_rx = cancel_tx.subscribe();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    result = event_rx.recv() => {
-                        match result {
-                            Ok(event) => {
-                                if let Some(notification) = event_to_notification(&session_id_clone, event.msg) {
-                                    let _ = notification_tx.send(notification);
-                                }
-                            }
-                            Err(_) => break,
-                        }
-                    }
-                    _ = cancel_rx.recv() => {
-                        debug!("Session {} event forwarder cancelled", session_id_clone);
-                        break;
-                    }
-                }
-            }
-        });
-
-        Ok(NewSessionResponse {
-            session_id,
-            models: Some(SessionModels {
-                current_model_id: self.config.model.clone(),
-                available_models: vec![
-                    ModelInfo {
-                        model_id: "claude-sonnet-4-20250514".to_string(),
-                        name: "Claude Sonnet 4".to_string(),
-                    },
-                    ModelInfo {
-                        model_id: "gpt-4o".to_string(),
-                        name: "GPT-4o".to_string(),
-                    },
-                ],
-            }),
-            modes: Some(SessionModes {
-                current_mode_id: "default".to_string(),
-                available_modes: vec![
-                    ModeInfo {
-                        id: "default".to_string(),
-                        name: "Default".to_string(),
-                        description: "Standard agent mode".to_string(),
-                    },
-                    ModeInfo {
-                        id: "plan".to_string(),
-                        name: "Plan".to_string(),
-                        description: "Planning mode with confirmation".to_string(),
-                    },
-                ],
-            }),
-        })
-    }
-
-    /// Handle session/load request.
-    pub async fn handle_session_load(
-        &self,
-        params: LoadSessionRequest,
-    ) -> Result<LoadSessionResponse> {
-        info!("Loading session: {}", params.session_id);
-
-        // Check if session already loaded
-        let sessions = self.sessions.read().await;
-        if let Some(state) = sessions.get(&params.session_id) {
-            return Ok(LoadSessionResponse {
-                session_id: params.session_id,
-                models: Some(SessionModels {
-                    current_model_id: state.metadata.model.clone().unwrap_or_default(),
-                    available_models: vec![],
-                }),
-                modes: None,
-            });
+        if !params.mcp_servers.is_empty() {
+            bail!("ACP-supplied MCP servers are not supported");
         }
-        drop(sessions);
-
-        // Try to resume from storage
-        let conversation_id: cortex_protocol::ConversationId = params
-            .session_id
-            .parse()
-            .map_err(|_| anyhow::anyhow!("Invalid session ID"))?;
-
-        let config = self.config.clone();
-        let (mut session, handle) = Session::resume(config, conversation_id)?;
-        let session_id = handle.conversation_id.to_string();
-
-        let (cancel_tx, _) = broadcast::channel(1);
-
-        let metadata = SessionMetadata {
-            session_id: session_id.clone(),
-            cwd: self.config.cwd.display().to_string(),
-            model: Some(self.config.model.clone()),
-            agent: None,
-            created_at: chrono::Utc::now(),
-        };
-
-        let state = AcpSessionState {
-            handle: handle.clone(),
-            cancel_tx: cancel_tx.clone(),
-            metadata,
-        };
-
-        self.sessions
-            .write()
-            .await
-            .insert(session_id.clone(), state);
-
-        // Spawn session runner
-        tokio::spawn(async move {
-            if let Err(e) = session.run().await {
-                error!("Session error: {}", e);
-            }
+        let cwd = std::path::PathBuf::from(params.cwd);
+        if !cwd.is_absolute() || !cwd.is_dir() {
+            bail!("Working directory must be an existing absolute directory");
+        }
+        let mut sessions = self.sessions.write().await;
+        if sessions.len() >= 32 {
+            bail!("ACP session limit reached");
+        }
+        let mut config = self.config.clone();
+        config.cwd = cwd.canonicalize()?;
+        let (mut session, handle) = Session::new(config)?;
+        let id = handle.conversation_id.to_string();
+        let runner = tokio::spawn(async move {
+            let _ = session.run().await;
         });
-
-        // Spawn event forwarder
-        let notification_tx = self.notification_tx.clone();
-        let event_rx = handle.event_rx.clone();
-        let session_id_clone = session_id.clone();
-        let mut cancel_rx = cancel_tx.subscribe();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    result = event_rx.recv() => {
-                        match result {
-                            Ok(event) => {
-                                if let Some(notification) = event_to_notification(&session_id_clone, event.msg) {
-                                    let _ = notification_tx.send(notification);
-                                }
-                            }
-                            Err(_) => break,
-                        }
-                    }
-                    _ = cancel_rx.recv() => {
-                        break;
-                    }
-                }
-            }
-        });
-
-        Ok(LoadSessionResponse {
-            session_id,
+        let active = Arc::new(Mutex::new(None));
+        let forwarder = spawn_forwarder(
+            id.clone(),
+            handle.clone(),
+            active.clone(),
+            self.notification_tx.clone(),
+        );
+        sessions.insert(
+            id.clone(),
+            AcpSessionState {
+                handle,
+                active,
+                runner,
+                forwarder,
+            },
+        );
+        Ok(NewSessionResponse {
+            session_id: id,
             models: None,
             modes: None,
         })
     }
 
-    /// Handle session/list request.
-    pub async fn handle_session_list(
-        &self,
-        _params: ListSessionsRequest,
-    ) -> Result<ListSessionsResponse> {
-        let sessions = crate::list_sessions(&self.config.cortex_home)?;
-
-        let session_infos: Vec<SessionListInfo> = sessions
-            .into_iter()
-            .map(|s| SessionListInfo {
-                session_id: s.id,
-                title: None,
-                cwd: s.cwd.display().to_string(),
-                created_at: s.timestamp,
-                message_count: s.message_count,
-            })
-            .collect();
-
-        Ok(ListSessionsResponse {
-            sessions: session_infos,
-        })
+    pub async fn handle_session_prompt(&self, params: PromptRequest) -> Result<PromptResponse> {
+        let receiver = self.begin_prompt(params).await?;
+        let stop_reason = receiver
+            .await
+            .map_err(|_| anyhow!("Session closed before turn completion"))??;
+        Ok(PromptResponse { stop_reason })
     }
 
-    /// Handle session/prompt request.
-    pub async fn handle_session_prompt(&self, params: PromptRequest) -> Result<PromptResponse> {
+    pub(super) async fn begin_prompt(
+        &self,
+        params: PromptRequest,
+    ) -> Result<oneshot::Receiver<Result<StopReason>>> {
+        let items = text_inputs(params.prompt)?;
         let sessions = self.sessions.read().await;
         let state = sessions
             .get(&params.session_id)
-            .context("Session not found")?;
+            .ok_or_else(|| anyhow!("Session not found"))?;
         let handle = state.handle.clone();
-        drop(sessions);
-
-        // Convert prompt content to user inputs
-        let mut user_inputs = Vec::new();
-        for content in params.prompt {
-            match content {
-                PromptContent::Text { text } => {
-                    user_inputs.push(UserInput::Text { text });
-                }
-                PromptContent::Image {
-                    data,
-                    uri,
-                    mime_type,
-                } => {
-                    if let Some(data) = data {
-                        user_inputs.push(UserInput::Image {
-                            media_type: mime_type,
-                            data,
-                        });
-                    } else if let Some(_uri) = uri {
-                        // Image URI fetching not yet implemented - skipping
-                        warn!("Image URI not yet supported, skipping");
-                    }
-                }
-                PromptContent::Resource { resource } => match resource {
-                    Resource::Text { text } => {
-                        user_inputs.push(UserInput::Text { text });
-                    }
-                },
-                PromptContent::ResourceLink { uri } => {
-                    // Include the URI as text context
-                    user_inputs.push(UserInput::Text {
-                        text: format!("Resource: {uri}"),
-                    });
-                }
-            }
+        let active = state.active.clone();
+        let (tx, rx) = oneshot::channel();
+        let mut guard = active.lock().await;
+        if guard.is_some() {
+            bail!("A prompt is already active in this session");
         }
-
-        let submission = Submission {
+        *guard = Some(ActivePrompt { waiter: Some(tx) });
+        // Reserve the turn before queueing; cancellation cannot be lost between the two.
+        let sent = handle.submission_tx.try_send(Submission {
             id: uuid::Uuid::new_v4().to_string(),
-            op: Op::UserInput { items: user_inputs },
-        };
-
-        handle.submission_tx.send(submission).await?;
-
-        // Wait for turn completion
-        let event_rx = handle.event_rx.clone();
-        while let Ok(event) = event_rx.recv().await {
-            match event.msg {
-                EventMsg::TaskComplete(_) => break,
-                EventMsg::Error(_) => break,
-                _ => {}
-            }
+            op: Op::UserInput { items },
+        });
+        if sent.is_err() {
+            *guard = None;
+            bail!("Session is unavailable");
         }
-
-        Ok(PromptResponse {
-            stop_reason: StopReason::EndTurn,
-        })
+        drop(guard);
+        drop(sessions);
+        Ok(rx)
     }
 
-    /// Handle session/cancel request.
     pub async fn handle_session_cancel(&self, params: CancelRequest) -> Result<CancelResponse> {
         let sessions = self.sessions.read().await;
         let state = sessions
             .get(&params.session_id)
-            .context("Session not found")?;
-
-        // Signal cancellation
-        let _ = state.cancel_tx.send(());
-
-        // Send interrupt submission
-        let submission = Submission {
-            id: uuid::Uuid::new_v4().to_string(),
-            op: Op::Interrupt,
-        };
-        let _ = state.handle.submission_tx.send(submission).await;
-
+            .ok_or_else(|| anyhow!("Session not found"))?;
+        if state.active.lock().await.is_none() {
+            return Ok(CancelResponse { cancelled: false });
+        }
+        // Setting the existing public flag interrupts in-flight work; queueing alone cannot.
+        state.handle.cancelled.store(true, Ordering::SeqCst);
+        state
+            .handle
+            .submission_tx
+            .try_send(Submission {
+                id: uuid::Uuid::new_v4().to_string(),
+                op: Op::Interrupt,
+            })
+            .map_err(|_| anyhow!("Session control queue unavailable"))?;
         Ok(CancelResponse { cancelled: true })
     }
 
-    /// Handle models/list request.
-    pub async fn handle_models_list(&self) -> Result<ModelsListResponse> {
-        Ok(ModelsListResponse {
-            models: vec![
-                ModelInfo {
-                    model_id: "claude-sonnet-4-20250514".to_string(),
-                    name: "Claude Sonnet 4".to_string(),
-                },
-                ModelInfo {
-                    model_id: "claude-3-5-sonnet-20241022".to_string(),
-                    name: "Claude 3.5 Sonnet".to_string(),
-                },
-                ModelInfo {
-                    model_id: "gpt-4o".to_string(),
-                    name: "GPT-4o".to_string(),
-                },
-                ModelInfo {
-                    model_id: "gpt-4o-mini".to_string(),
-                    name: "GPT-4o Mini".to_string(),
-                },
-            ],
-        })
-    }
-
-    /// Handle agents/list request.
-    pub async fn handle_agents_list(&self) -> Result<AgentsListResponse> {
-        Ok(AgentsListResponse {
-            agents: vec![AgentInfo {
-                name: "Cortex".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            }],
-        })
-    }
-
-    /// Process a JSON-RPC request and return a response.
     pub async fn process_request(
         &self,
         id: AcpRequestId,
         method: &str,
         params: Value,
     ) -> AcpResponse {
-        match method {
-            "initialize" => match serde_json::from_value::<InitializeRequest>(params) {
-                Ok(req) => match self.handle_initialize(req).await {
-                    Ok(resp) => AcpResponse::success(id, serde_json::to_value(resp).unwrap()),
-                    Err(e) => AcpResponse::error(id, AcpError::internal(e.to_string())),
-                },
-                Err(e) => AcpResponse::error(id, AcpError::invalid_params(e.to_string())),
+        // Unsupported methods deliberately remain absent rather than returning invented data.
+        let result = match method {
+            "initialize" => match serde_json::from_value(params) {
+                Ok(p) => self
+                    .handle_initialize(p)
+                    .await
+                    .and_then(|r| Ok(serde_json::to_value(r)?)),
+                Err(_) => {
+                    return AcpResponse::error(
+                        id,
+                        AcpError::invalid_params("Invalid initialize parameters"),
+                    );
+                }
             },
-            "session/new" => match serde_json::from_value::<NewSessionRequest>(params) {
-                Ok(req) => match self.handle_session_new(req).await {
-                    Ok(resp) => AcpResponse::success(id, serde_json::to_value(resp).unwrap()),
-                    Err(e) => AcpResponse::error(id, AcpError::internal(e.to_string())),
-                },
-                Err(e) => AcpResponse::error(id, AcpError::invalid_params(e.to_string())),
+            "session/new" => match serde_json::from_value(params) {
+                Ok(p) => self
+                    .handle_session_new(p)
+                    .await
+                    .and_then(|r| Ok(serde_json::to_value(r)?)),
+                Err(_) => {
+                    return AcpResponse::error(
+                        id,
+                        AcpError::invalid_params("Invalid session parameters"),
+                    );
+                }
             },
-            "session/load" => match serde_json::from_value::<LoadSessionRequest>(params) {
-                Ok(req) => match self.handle_session_load(req).await {
-                    Ok(resp) => AcpResponse::success(id, serde_json::to_value(resp).unwrap()),
-                    Err(e) => AcpResponse::error(id, AcpError::session_not_found(&e.to_string())),
-                },
-                Err(e) => AcpResponse::error(id, AcpError::invalid_params(e.to_string())),
+            "session/prompt" => match serde_json::from_value(params) {
+                Ok(p) => self
+                    .handle_session_prompt(p)
+                    .await
+                    .and_then(|r| Ok(serde_json::to_value(r)?)),
+                Err(_) => {
+                    return AcpResponse::error(
+                        id,
+                        AcpError::invalid_params("Invalid prompt parameters"),
+                    );
+                }
             },
-            "session/list" => match serde_json::from_value::<ListSessionsRequest>(params) {
-                Ok(req) => match self.handle_session_list(req).await {
-                    Ok(resp) => AcpResponse::success(id, serde_json::to_value(resp).unwrap()),
-                    Err(e) => AcpResponse::error(id, AcpError::internal(e.to_string())),
-                },
-                Err(e) => AcpResponse::error(id, AcpError::invalid_params(e.to_string())),
+            "session/cancel" => match serde_json::from_value(params) {
+                Ok(p) => self
+                    .handle_session_cancel(p)
+                    .await
+                    .and_then(|r| Ok(serde_json::to_value(r)?)),
+                Err(_) => {
+                    return AcpResponse::error(
+                        id,
+                        AcpError::invalid_params("Invalid cancel parameters"),
+                    );
+                }
             },
-            "session/prompt" => match serde_json::from_value::<PromptRequest>(params) {
-                Ok(req) => match self.handle_session_prompt(req).await {
-                    Ok(resp) => AcpResponse::success(id, serde_json::to_value(resp).unwrap()),
-                    Err(e) => AcpResponse::error(id, AcpError::internal(e.to_string())),
-                },
-                Err(e) => AcpResponse::error(id, AcpError::invalid_params(e.to_string())),
-            },
-            "session/cancel" => match serde_json::from_value::<CancelRequest>(params) {
-                Ok(req) => match self.handle_session_cancel(req).await {
-                    Ok(resp) => AcpResponse::success(id, serde_json::to_value(resp).unwrap()),
-                    Err(e) => AcpResponse::error(id, AcpError::session_not_found(&e.to_string())),
-                },
-                Err(e) => AcpResponse::error(id, AcpError::invalid_params(e.to_string())),
-            },
-            "models/list" => match self.handle_models_list().await {
-                Ok(resp) => AcpResponse::success(id, serde_json::to_value(resp).unwrap()),
-                Err(e) => AcpResponse::error(id, AcpError::internal(e.to_string())),
-            },
-            "agents/list" => match self.handle_agents_list().await {
-                Ok(resp) => AcpResponse::success(id, serde_json::to_value(resp).unwrap()),
-                Err(e) => AcpResponse::error(id, AcpError::internal(e.to_string())),
-            },
-            _ => AcpResponse::error(id, AcpError::method_not_found(method)),
+            _ => return AcpResponse::error(id, AcpError::method_not_found(method)),
+        };
+        match result {
+            Ok(value) => AcpResponse::success(id, value),
+            Err(_) => AcpResponse::error(
+                id,
+                AcpError::internal("The requested ACP operation could not be completed"),
+            ),
         }
     }
+}
+
+fn text_inputs(prompt: Vec<PromptContent>) -> Result<Vec<UserInput>> {
+    if prompt.is_empty() {
+        bail!("Prompt must contain text");
+    }
+    prompt
+        .into_iter()
+        .map(|p| match p {
+            PromptContent::Text { text } => Ok(UserInput::Text { text }),
+            _ => bail!("Only text prompts are supported"),
+        })
+        .collect()
+}
+
+fn spawn_forwarder(
+    id: String,
+    handle: SessionHandle,
+    active: Arc<Mutex<Option<ActivePrompt>>>,
+    notifications: broadcast::Sender<AcpNotificationEvent>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Ok(event) = handle.event_rx.recv().await {
+            let terminal = match &event.msg {
+                EventMsg::TaskComplete(_) => Some(Ok(if handle.cancelled.load(Ordering::SeqCst) {
+                    StopReason::Cancelled
+                } else {
+                    StopReason::EndTurn
+                })),
+                EventMsg::TurnAborted(_) => Some(Ok(StopReason::Cancelled)),
+                EventMsg::Error(_) => Some(Err(anyhow!(
+                    "The coding service is temporarily unavailable"
+                ))),
+                EventMsg::ShutdownComplete => Some(Err(anyhow!("Session closed"))),
+                EventMsg::ExecApprovalRequest(req) => {
+                    // No client permission round trip is advertised. Fail closed rather than hang or auto-approve.
+                    let _ = handle.submission_tx.try_send(Submission {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        op: Op::ExecApproval {
+                            id: req.call_id.clone(),
+                            decision: ReviewDecision::Denied,
+                        },
+                    });
+                    None
+                }
+                _ => None,
+            };
+            let failed = matches!(event.msg, EventMsg::Error(_));
+            if let Some(update) = event_to_notification(&id, event.msg) {
+                let _ = notifications.send(update);
+            }
+            if let Some(outcome) = terminal {
+                let mut current = active.lock().await;
+                if let Some(prompt) = current.as_mut() {
+                    if let Some(waiter) = prompt.waiter.take() {
+                        let _ = waiter.send(outcome);
+                    }
+                }
+                // Drain the terminal completion after an error before accepting a new turn.
+                if !failed {
+                    *current = None;
+                }
+            }
+        }
+        if let Some(prompt) = active.lock().await.take() {
+            if let Some(waiter) = prompt.waiter {
+                let _ = waiter.send(Err(anyhow!("Session closed")));
+            }
+        }
+    })
 }
 
 /// Convert an event message to a notification.
@@ -644,4 +453,44 @@ pub struct ModelsListResponse {
 #[serde(rename_all = "camelCase")]
 pub struct AgentsListResponse {
     pub agents: Vec<AgentInfo>,
+}
+
+#[cfg(test)]
+impl AcpHandler {
+    pub(super) async fn install_protocol_peer(
+        &self,
+    ) -> (
+        String,
+        async_channel::Receiver<Submission>,
+        async_channel::Sender<cortex_protocol::Event>,
+    ) {
+        let (submission_tx, submissions) = async_channel::bounded(8);
+        let (events, event_rx) = async_channel::bounded(8);
+        let conversation_id = cortex_protocol::ConversationId::new();
+        let id = conversation_id.to_string();
+        let handle = SessionHandle {
+            submission_tx,
+            event_rx,
+            conversation_id,
+            cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        let active = Arc::new(Mutex::new(None));
+        let forwarder = spawn_forwarder(
+            id.clone(),
+            handle.clone(),
+            active.clone(),
+            self.notification_tx.clone(),
+        );
+        let runner = tokio::spawn(std::future::pending());
+        self.sessions.write().await.insert(
+            id.clone(),
+            AcpSessionState {
+                handle,
+                active,
+                runner,
+                forwarder,
+            },
+        );
+        (id, submissions, events)
+    }
 }

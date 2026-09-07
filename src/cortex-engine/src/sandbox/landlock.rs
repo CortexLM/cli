@@ -18,11 +18,24 @@ use crate::error::Result;
 /// Name of the Linux sandbox wrapper binary.
 const LINUX_SANDBOX_BINARY: &str = "cortex-linux-sandbox";
 
+/// Reserved first argument that makes a registered Cortex binary act as the wrapper.
+pub const SELF_WRAPPER_ARG: &str = "__cortex_linux_sandbox";
+
+static SELF_WRAPPER_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Declare that the running executable dispatches `SELF_WRAPPER_ARG` before
+/// argument parsing. Unregistered hosts (test harnesses, other embedders)
+/// never re-execute themselves and fail closed without a sibling wrapper.
+pub fn enable_self_wrapper() {
+    SELF_WRAPPER_ENABLED.store(true, std::sync::atomic::Ordering::Release);
+}
+
 /// Landlock sandbox backend.
 pub struct LandlockBackend {
     available: bool,
-    /// Path to the sandbox wrapper binary (if found).
-    wrapper_path: Option<PathBuf>,
+    /// Wrapper binary and whether it is the running executable itself.
+    wrapper_path: Option<(PathBuf, bool)>,
 }
 
 impl LandlockBackend {
@@ -65,24 +78,18 @@ impl LandlockBackend {
         }
     }
 
-    /// Find the sandbox wrapper binary.
-    fn find_wrapper_binary() -> Option<PathBuf> {
-        // Check next to the current executable
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                let wrapper = exe_dir.join(LINUX_SANDBOX_BINARY);
-                if wrapper.exists() {
-                    return Some(wrapper);
-                }
-            }
+    /// Find the sandbox wrapper: a sibling binary, else the running
+    /// executable itself, which every Cortex binary re-executes as the
+    /// wrapper when its first argument is `SELF_WRAPPER_ARG`.
+    fn find_wrapper_binary() -> Option<(PathBuf, bool)> {
+        let exe_path = std::env::current_exe().ok()?;
+        let wrapper = exe_path.parent()?.join(LINUX_SANDBOX_BINARY);
+        if wrapper.is_file() {
+            return Some((wrapper, false));
         }
-
-        // Check in PATH
-        if let Ok(path) = which::which(LINUX_SANDBOX_BINARY) {
-            return Some(path);
-        }
-
-        None
+        SELF_WRAPPER_ENABLED
+            .load(std::sync::atomic::Ordering::Acquire)
+            .then_some((exe_path, true))
     }
 
     /// Check if the wrapper binary is available.
@@ -104,7 +111,7 @@ impl SandboxBackend for LandlockBackend {
     }
 
     fn is_available(&self) -> bool {
-        self.available
+        self.available && self.wrapper_path.is_some()
     }
 
     fn prepare_command(
@@ -140,13 +147,17 @@ impl SandboxBackend for LandlockBackend {
         ));
 
         // If we have the wrapper binary, use it
-        if let Some(wrapper) = &self.wrapper_path {
-            let mut args = vec![
+        if let Some((wrapper, self_exec)) = &self.wrapper_path {
+            let mut args = Vec::new();
+            if *self_exec {
+                args.push(SELF_WRAPPER_ARG.to_string());
+            }
+            args.extend([
                 "--sandbox-policy-cwd".to_string(),
                 cwd.display().to_string(),
                 "--sandbox-policy".to_string(),
                 policy_json,
-            ];
+            ]);
 
             // Add writable roots
             for root in writable_roots {
@@ -171,14 +182,8 @@ impl SandboxBackend for LandlockBackend {
             });
         }
 
-        // No wrapper available - pass through with environment variables
-        // The environment variables can be used by the process if it understands them
-        tracing::warn!("Linux sandbox wrapper binary not found, executing without full isolation");
-
-        Ok(SandboxedCommand {
-            program: command[0].clone(),
-            args: command[1..].to_vec(),
-            env,
-        })
+        Err(crate::error::CortexError::Sandbox(
+            "Required sandbox wrapper is unavailable; command was not started".into(),
+        ))
     }
 }

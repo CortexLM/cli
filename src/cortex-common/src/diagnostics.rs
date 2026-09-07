@@ -207,12 +207,17 @@ fn event(operation: Operation, trace: &TraceContext, status: u16, elapsed: Durat
 /// No directory configured means no diagnostic storage and no new network client.
 pub fn init_from_env() -> io::Result<()> {
     if let Some(directory) = std::env::var_os("CORTEX_DIAGNOSTICS_DIR") {
-        let journal = Journal::open(Path::new(&directory))?;
-        JOURNAL
-            .set(journal)
-            .map_err(|_| io::Error::other("Diagnostics already initialized"))?;
+        init(Path::new(&directory))?;
     }
     Ok(())
+}
+
+/// Enable the same private, content-free journal for an explicit CLI opt-in.
+pub fn init(directory: &Path) -> io::Result<()> {
+    let journal = Journal::open(directory)?;
+    JOURNAL
+        .set(journal)
+        .map_err(|_| io::Error::other("Diagnostics already initialized"))
 }
 
 pub fn record(

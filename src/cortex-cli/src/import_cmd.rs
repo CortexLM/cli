@@ -5,16 +5,17 @@
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use std::collections::HashSet;
+#[cfg(test)]
 use std::path::{Path, PathBuf};
 
-use crate::styled_output::{print_info, print_success, print_warning};
-use cortex_engine::rollout::recorder::{RolloutRecorder, SessionMeta};
-use cortex_engine::rollout::{SESSIONS_SUBDIR, get_rollout_path};
+use crate::styled_output::print_success;
+#[cfg(test)]
 use cortex_protocol::{
-    AgentMessageEvent, ConversationId, Event, EventMsg, ExecCommandEndEvent, ExecCommandSource,
-    ParsedCommand, UserMessageEvent,
+    AgentMessageEvent, Event, EventMsg, ExecCommandEndEvent, ExecCommandSource, ParsedCommand,
+    UserMessageEvent,
 };
 
+#[cfg(test)]
 use crate::agent_cmd::load_all_agents;
 use crate::export_cmd::{ExportMessage, SessionExport};
 
@@ -45,220 +46,110 @@ impl ImportCommand {
             bail!("Error: Source path cannot be empty\n\nUsage: cortex import <FILE_OR_URL>");
         }
 
-        let cortex_home = dirs::home_dir()
-            .map(|h| h.join(".cortex"))
-            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
-
-        // Read the export data
-        let (json_content, is_from_url) = if self.source == "-" {
-            // Read from stdin
-            use std::io::Read;
-            let mut content = String::new();
-            std::io::stdin()
-                .read_to_string(&mut content)
-                .with_context(|| "Failed to read from stdin")?;
-            (content, false)
-        } else if self.source.starts_with("http://") || self.source.starts_with("https://") {
-            // Fetch from URL
-            (fetch_url(&self.source).await?, true)
-        } else {
-            // Read from local file
-            let path = PathBuf::from(&self.source);
-            let content = std::fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read file: {}", path.display()))?;
-            (content, false)
-        };
-
-        // Parse the export with helpful error messages
-        let export: SessionExport = serde_json::from_str(&json_content).map_err(|e| {
-            // Create a helpful error message with content preview
-            let preview_len = json_content.len().min(200);
-            let content_preview = &json_content[..preview_len];
-            let truncated = if json_content.len() > 200 {
-                "..."
-            } else {
-                ""
-            };
-
-            let source_type = if is_from_url { "URL" } else { "file" };
-
-            // Detect common non-JSON content types
-            let hint = if content_preview.trim_start().starts_with("<!DOCTYPE")
-                || content_preview.trim_start().starts_with("<html")
-            {
-                "\nHint: The URL returned HTML content, not JSON. Make sure the URL points directly to a JSON export file."
-            } else if content_preview.trim_start().starts_with("<?xml") {
-                "\nHint: The URL returned XML content, not JSON. Make sure the URL points directly to a JSON export file."
-            } else if content_preview.is_empty() {
-                "\nHint: The response was empty. Make sure the URL is accessible and returns JSON content."
-            } else {
-                "\nHint: Ensure the file contains valid JSON. Check for syntax errors like missing commas, unclosed brackets, or invalid characters."
-            };
-
-            anyhow::anyhow!(
-                "Failed to parse JSON from {}: {}\n\nReceived content (first {} bytes):\n{}{}\n{}",
-                source_type,
-                e,
-                preview_len,
-                content_preview,
-                truncated,
-                hint
-            )
-        })?;
-
-        // Validate version
-        if export.version != 1 {
-            bail!(
-                "Unsupported export version: {}. This CLI supports version 1.",
-                export.version
-            );
-        }
-
-        // Validate all messages, including base64 content
-        validate_export_messages(&export.messages)?;
-
-        // Validate agent references in the imported session
-        let missing_agents = validate_agent_references(&export)?;
-        if !missing_agents.is_empty() {
-            eprintln!(
-                "Warning: The following agent references in this session are not available locally:"
-            );
-            for agent in &missing_agents {
-                eprintln!("  - @{}", agent);
-            }
-            eprintln!();
-            eprintln!(
-                "The session will be imported, but agent-related functionality may not work as expected."
-            );
-            eprintln!(
-                "To fix this, create the missing agents using 'cortex agent create <name>' or copy them from the source system."
-            );
-            eprintln!();
-        }
-
-        // Generate a new session ID (we always create a new session on import)
-        let new_conversation_id = ConversationId::new();
-
-        // Check if a session with the original ID already exists
-        let original_id: Result<ConversationId, _> = export.session.id.parse();
-        if let Ok(orig_id) = original_id {
-            let existing_path = get_rollout_path(&cortex_home, &orig_id);
-            if existing_path.exists() && !self.force {
-                print_warning(&format!(
-                    "Original session {} already exists locally.",
-                    export.session.id
-                ));
-                print_info(&format!(
-                    "Creating new session with ID: {new_conversation_id}"
-                ));
-            }
-        }
-
-        // Create sessions directory if needed
-        let sessions_dir = cortex_home.join(SESSIONS_SUBDIR);
-        std::fs::create_dir_all(&sessions_dir)?;
-
-        // Initialize rollout recorder for the new session
-        let mut recorder = RolloutRecorder::new(&cortex_home, new_conversation_id)?;
-        recorder.init()?;
-
-        // Record session metadata
-        let cwd = export
-            .session
-            .cwd
-            .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
-        let meta = SessionMeta {
-            id: new_conversation_id,
-            parent_id: None,
-            fork_point: None,
-            timestamp: export.session.created_at.clone(),
-            cwd: cwd.clone(),
-            model: export
-                .session
-                .model
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string()),
-            cli_version: env!("CARGO_PKG_VERSION").to_string(),
-            instructions: None,
-        };
-        recorder.record_meta(&meta)?;
-
-        // Validate message count to prevent infinite loop on malicious input
-        if export.messages.len() > MAX_PROCESSING_DEPTH {
-            bail!(
-                "Error: Session contains too many messages ({} > {}). \
-                 This may indicate a malformed or malicious session file.",
-                export.messages.len(),
-                MAX_PROCESSING_DEPTH
-            );
-        }
-
-        // Check for circular message references if messages have IDs and reply_to fields
-        // This prevents infinite loops when processing message chains
-        validate_no_circular_references(&export.messages)?;
-
-        // Record messages as events
-        let mut turn_id = 0u64;
-        for message in &export.messages {
-            let event = message_to_event(message, &mut turn_id, &cwd)?;
-            recorder.record_event(&event)?;
-        }
-
-        recorder.flush()?;
-
-        print_success(&format!("Imported session as: {new_conversation_id}"));
-        println!("  Original ID: {}", export.session.id);
-        if let Some(title) = &export.session.title {
-            println!("  Title: {title}");
-        }
-        println!("  Messages: {}", export.messages.len());
-        println!("\nTo resume: cortex resume {new_conversation_id}");
-
+        let store = cortex_engine::rollout::local::SessionStorage::new()?;
+        let content = read_import_source(&self.source)?;
+        let document = parse_session_document(&content)?;
+        let id = store.import_document(document)?;
+        print_success(&format!("Imported session as: {id}"));
+        println!("To resume: cortex resume {id}");
         if self.resume {
-            // Launch resume
-            print_info("Resuming session...");
-            let config = cortex_engine::Config::default();
-
             #[cfg(feature = "cortex-tui")]
             {
-                cortex_tui::resume(config, new_conversation_id).await?;
+                let mut config = cortex_engine::Config::default();
+                config.cortex_home = cortex_engine::rollout::local::default_home()?;
+                cortex_tui::runner::AppRunner::new(config)
+                    .with_cortex_session_id(id)
+                    .run()
+                    .await?;
             }
-
             #[cfg(not(feature = "cortex-tui"))]
-            {
-                compile_error!("The 'cortex-tui' feature must be enabled");
-            }
+            bail!("Interactive resume requires the TUI build");
         }
-
         Ok(())
     }
 }
 
-/// Fetch content from a URL.
-async fn fetch_url(url: &str) -> Result<String> {
-    // Use curl for fetching
-    {
-        // Simple curl-based fallback
-        use std::process::Command;
-
-        let output = Command::new("curl")
-            .args(["-sSL", url])
-            .output()
-            .with_context(|| "Failed to run curl. Install curl or use a local file.")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to fetch URL: {stderr}");
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+fn read_import_source(source: &str) -> Result<String> {
+    use std::io::Read;
+    const MAX_BYTES: u64 = 50 * 1024 * 1024;
+    let mut content = String::new();
+    if source.starts_with("https://") || source.starts_with("http://") {
+        bail!(
+            "Remote session import is unavailable. Download and inspect the export, then import a local JSON or YAML file."
+        );
     }
+    let input: Box<dyn Read> = if source == "-" {
+        Box::new(std::io::stdin())
+    } else {
+        Box::new(std::fs::File::open(source).context("Failed to open session export")?)
+    };
+    input.take(MAX_BYTES + 1).read_to_string(&mut content)?;
+    if content.len() as u64 > MAX_BYTES {
+        bail!("Session export exceeds the 50 MiB limit");
+    }
+    Ok(content)
+}
+
+fn parse_session_document(content: &str) -> Result<cortex_engine::rollout::local::SessionDocument> {
+    use cortex_engine::rollout::local::{
+        SessionDocument, SessionMeta, StoredMessage, StoredToolCall,
+    };
+    let value: serde_json::Value = if content.trim_start().starts_with('{') {
+        serde_json::from_str(content).context("Invalid session JSON")?
+    } else {
+        serde_yaml::from_str(content).context("Invalid session JSON or YAML")?
+    };
+    if value["version"] == 2 {
+        return Ok(serde_json::from_value(value)?);
+    }
+    let export: SessionExport =
+        serde_json::from_value(value).context("Invalid version 1 session export")?;
+    if export.version != 1 {
+        bail!("Unsupported export version: {}", export.version);
+    }
+    if export.messages.len() > MAX_PROCESSING_DEPTH {
+        bail!("Session contains too many messages");
+    }
+    validate_export_messages(&export.messages)?;
+    validate_no_circular_references(&export.messages)?;
+    let mut meta = SessionMeta::new(
+        "cortex",
+        export.session.model.as_deref().unwrap_or("default"),
+    );
+    meta.id = export.session.id;
+    meta.title = export.session.title;
+    meta.created_at = chrono::DateTime::parse_from_rfc3339(&export.session.created_at)?
+        .with_timezone(&chrono::Utc);
+    meta.updated_at = meta.created_at;
+    if let Some(cwd) = export.session.cwd {
+        meta.cwd = cwd;
+    }
+    let mut messages = Vec::new();
+    for source in export.messages {
+        let mut message = StoredMessage::system(source.content);
+        message.role = source.role;
+        message.tool_call_id = source.tool_call_id;
+        message.timestamp = match source.timestamp {
+            Some(time) => chrono::DateTime::parse_from_rfc3339(&time)?.with_timezone(&chrono::Utc),
+            None => meta.created_at,
+        };
+        for tool in source.tool_calls.unwrap_or_default() {
+            message
+                .tool_calls
+                .push(StoredToolCall::new(tool.id, tool.name, tool.arguments));
+        }
+        messages.push(message);
+    }
+    Ok(SessionDocument {
+        version: 2,
+        meta,
+        messages,
+    })
 }
 
 /// Validate agent references in the imported session.
 /// Returns a list of missing agent names that are referenced but not available locally.
+#[cfg(test)]
 fn validate_agent_references(export: &SessionExport) -> Result<Vec<String>> {
     // Get all locally available agents
     let local_agents: HashSet<String> = match load_all_agents() {
@@ -320,7 +211,7 @@ fn validate_no_circular_references(messages: &[ExportMessage]) -> Result<()> {
     for (idx, message) in messages.iter().enumerate() {
         // Track tool call IDs to detect duplicates (potential for circular references)
         if let Some(ref tool_call_id) = message.tool_call_id {
-            if !seen_tool_call_ids.insert(tool_call_id.clone()) {
+            if !referenced_ids.insert(tool_call_id.clone()) {
                 bail!(
                     "Error: Duplicate tool_call_id '{}' detected at message index {}. \
                      This may indicate circular message references.",
@@ -426,6 +317,7 @@ fn validate_export_messages(messages: &[ExportMessage]) -> Result<()> {
 }
 
 /// Convert an export message to a protocol event.
+#[cfg(test)]
 fn message_to_event(message: &ExportMessage, turn_id: &mut u64, cwd: &Path) -> Result<Event> {
     let event_msg = match message.role.as_str() {
         "user" => {
@@ -690,4 +582,28 @@ mod tests {
         assert!(!missing.contains(&"build".to_string()));
         assert!(!missing.contains(&"plan".to_string()));
     }
+}
+
+#[cfg(test)]
+#[test]
+fn ux_contract_v1_import_retains_system_and_tool_pairing() {
+    let document = parse_session_document(r#"{
+        "version": 1,
+        "session": {"id":"old-id", "created_at":"2024-01-01T00:00:00Z", "model":"test", "title":"legacy"},
+        "messages": [
+            {"role":"system", "content":"instructions"},
+            {"role":"user", "content":"question"},
+            {"role":"assistant", "content":"", "tool_calls":[{"id":"call", "name":"Read", "arguments":{"path":"file"}}]},
+            {"role":"tool", "content":"result", "tool_call_id":"call"}
+        ]
+    }"#).unwrap();
+    assert_eq!(document.messages[0].role, "system");
+    assert_eq!(document.messages[2].tool_calls[0].id, "call");
+    assert_eq!(document.messages[3].tool_call_id.as_deref(), Some("call"));
+    let yaml = serde_yaml::to_string(&document).unwrap();
+    let recovered = parse_session_document(&yaml).unwrap();
+    assert_eq!(
+        serde_json::to_value(recovered).unwrap(),
+        serde_json::to_value(document).unwrap()
+    );
 }

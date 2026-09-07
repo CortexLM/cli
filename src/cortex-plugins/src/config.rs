@@ -7,6 +7,9 @@ use std::path::PathBuf;
 /// Plugin system configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginConfig {
+    /// Durable activation and artifact trust. None gives an isolated in-memory manager.
+    #[serde(default = "crate::activation::default_state_path")]
+    pub state_path: Option<PathBuf>,
     /// Plugin search paths
     #[serde(default = "default_search_paths")]
     pub search_paths: Vec<PathBuf>,
@@ -55,6 +58,7 @@ pub struct PluginConfig {
 impl Default for PluginConfig {
     fn default() -> Self {
         Self {
+            state_path: crate::activation::default_state_path(),
             search_paths: default_search_paths(),
             hot_reload: false,
             sandbox_enabled: true,
@@ -138,14 +142,6 @@ fn default_search_paths() -> Vec<PathBuf> {
     if let Some(home) = dirs::home_dir() {
         paths.push(home.join(".cortex").join("plugins"));
     }
-
-    // Config directory plugins
-    if let Some(config) = dirs::config_dir() {
-        paths.push(config.join("cortex").join("plugins"));
-    }
-
-    // Local project plugins
-    paths.push(PathBuf::from(".cortex").join("plugins"));
 
     paths
 }

@@ -194,18 +194,12 @@ fn format_message_markdown(message: &StoredMessage) -> String {
 
 /// Exports a session to JSON format.
 fn export_json(session: &CortexSession) -> Result<String> {
-    #[derive(serde::Serialize)]
-    struct ExportedSession<'a> {
-        meta: &'a super::types::SessionMeta,
-        messages: &'a [StoredMessage],
-    }
-
-    let exported = ExportedSession {
-        meta: &session.meta,
-        messages: session.messages(),
+    let document = cortex_engine::rollout::local::SessionDocument {
+        version: 2,
+        meta: session.meta.clone(),
+        messages: session.messages().to_vec(),
     };
-
-    Ok(serde_json::to_string_pretty(&exported)?)
+    Ok(serde_json::to_string_pretty(&document)?)
 }
 
 /// Exports a session to plain text format.
@@ -298,6 +292,7 @@ pub fn default_export_filename(session: &CortexSession, format: ExportFormat) ->
     // Sanitize title for filename
     let safe_title: String = title
         .chars()
+        .take(40)
         .map(|c| {
             if c.is_alphanumeric() || c == '-' || c == '_' {
                 c

@@ -45,6 +45,7 @@ pub struct BatchToolCall {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchToolArgs {
     /// Array of tool calls to execute in parallel (max 10).
+    #[serde(alias = "tool_calls")]
     pub calls: Vec<BatchToolCall>,
     /// Optional timeout in seconds for the entire batch (default: 300s).
     #[serde(default)]
@@ -293,12 +294,8 @@ impl BatchToolHandler {
                 // Show preview of output
                 if let Some(ref res) = result.result {
                     if let Some(out) = res.get("output").and_then(|o| o.as_str()) {
-                        let preview: String = out.chars().take(300).collect();
-                        let truncated = out.len() > 300;
-                        output.push_str(&format!("    Output: {}", preview));
-                        if truncated {
-                            output.push_str("...[truncated]");
-                        }
+                        output.push_str("    Output: ");
+                        output.push_str(out);
                         output.push('\n');
                     }
                 }
@@ -368,12 +365,19 @@ impl ToolHandler for BatchToolHandler {
         // Format output
         let output = self.format_result(&batch_result);
 
-        // Determine overall success (at least one succeeded, or all were attempted)
-        if batch_result.error_count == batch_result.results.len() {
-            // All failed
-            Ok(ToolResult::error(output))
+        // Preserve the structured results alongside the model-visible full output.
+        let metadata = crate::tools::spec::ToolMetadata {
+            duration_ms: batch_result.total_duration_ms,
+            exit_code: None,
+            files_modified: Vec::new(),
+            data: Some(serde_json::to_value(&batch_result)?),
+        };
+        // Partial success must not hide a child's failure.
+        if batch_result.error_count != 0 {
+            // A partial failure is not a successful batch.
+            Ok(ToolResult::error(output).with_metadata(metadata))
         } else {
-            Ok(ToolResult::success(output))
+            Ok(ToolResult::success(output).with_metadata(metadata))
         }
     }
 }
@@ -628,7 +632,7 @@ mod tests {
         assert!(result.is_ok());
 
         let tool_result = result.unwrap();
-        assert!(tool_result.success); // Partial success still counts as success
+        assert!(!tool_result.success); // A failed child makes the batch unsuccessful
         assert!(tool_result.output.contains("1/2"));
         assert!(tool_result.output.contains("1 failed"));
     }

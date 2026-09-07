@@ -1,334 +1,273 @@
-//! ACP Server implementation.
-//!
-//! Provides both stdio and HTTP transports for the ACP protocol.
-//! The stdio transport is used for local IDE integration (like Zed),
-//! while HTTP enables remote connections and web-based clients.
-
-use std::net::SocketAddr;
-use std::sync::Arc;
-
-use anyhow::Result;
-use serde::Serialize;
+//! Bounded, concurrent ACP v1 stdio transport. Network listeners are unsupported.
+use anyhow::{Result, bail};
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tracing::{debug, error, info};
+use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::{Mutex, mpsc};
+use tokio::task::JoinSet;
 
-use crate::acp::handler::{AcpHandler, AcpNotificationEvent};
+use crate::acp::handler::AcpHandler;
 use crate::acp::protocol::{AcpError, AcpNotification, AcpRequest, AcpRequestId, AcpResponse};
 use crate::config::Config;
 
-/// ACP Server supporting both stdio and HTTP transports.
-#[allow(dead_code)]
+pub(crate) const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+
 pub struct AcpServer {
-    /// Request handler.
     handler: Arc<AcpHandler>,
-    /// Configuration.
-    config: Config,
 }
 
 impl AcpServer {
-    /// Create a new ACP server.
     pub fn new(config: Config) -> Self {
-        let handler = Arc::new(AcpHandler::new(config.clone()));
-        Self { handler, config }
+        Self {
+            handler: Arc::new(AcpHandler::new(config)),
+        }
     }
 
-    /// Run the server with stdio transport.
-    ///
-    /// This reads JSON-RPC requests from stdin and writes responses to stdout.
-    /// Notifications are also written to stdout.
     pub async fn run_stdio(&self) -> Result<()> {
-        info!("Starting ACP server on stdio transport");
-
-        let stdin = tokio::io::stdin();
-        let mut reader = BufReader::new(stdin);
-        let mut line = String::new();
-
-        // Spawn notification forwarder
-        let notification_rx = self.handler.subscribe();
-        tokio::spawn(Self::forward_notifications_to_stdio(notification_rx));
-
-        while reader.read_line(&mut line).await? > 0 {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                line.clear();
-                continue;
-            }
-
-            debug!("Received request: {}", trimmed);
-
-            let request: AcpRequest = match serde_json::from_str(trimmed) {
-                Ok(req) => req,
-                Err(e) => {
-                    let err_response = AcpResponse::error(
-                        AcpRequestId::Number(0),
-                        AcpError::parse_error(e.to_string()),
-                    );
-                    Self::write_to_stdout(&err_response).await?;
-                    line.clear();
-                    continue;
-                }
-            };
-
-            let response = self
-                .handler
-                .process_request(
-                    request.id.clone(),
-                    &request.method,
-                    request.params.unwrap_or(Value::Null),
-                )
-                .await;
-
-            Self::write_to_stdout(&response).await?;
-            line.clear();
-        }
-
-        Ok(())
+        self.run_io(tokio::io::stdin(), tokio::io::stdout()).await
     }
 
-    /// Forward notifications to stdout.
-    async fn forward_notifications_to_stdio(
-        mut rx: tokio::sync::broadcast::Receiver<AcpNotificationEvent>,
-    ) {
-        while let Ok(event) = rx.recv().await {
-            let notification = AcpNotification::new(&event.method).with_params(event.params);
-            if let Err(e) = Self::write_to_stdout(&notification).await {
-                error!("Error writing notification: {}", e);
-            }
-        }
+    pub async fn run_http(&self, _addr: SocketAddr) -> Result<()> {
+        // ponytail: stdio only until authenticated ingress exists; reject even loopback before bind.
+        bail!("ACP network transport is unsupported; use stdio")
     }
 
-    /// Write a serializable value to stdout as JSON.
-    async fn write_to_stdout<T: Serialize>(value: &T) -> Result<()> {
-        let mut json = serde_json::to_vec(value)?;
-        json.push(b'\n');
-        let mut stdout = tokio::io::stdout();
-        stdout.write_all(&json).await?;
-        stdout.flush().await?;
-        Ok(())
-    }
-
-    /// Run the server with HTTP transport.
-    ///
-    /// This creates an HTTP server that accepts JSON-RPC requests
-    /// and streams notifications via Server-Sent Events (SSE).
-    pub async fn run_http(&self, addr: SocketAddr) -> Result<()> {
-        info!("Starting ACP server on http://{}", addr);
-
-        // Create a simple HTTP server using tokio's TCP listener
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        let handler = self.handler.clone();
-
-        loop {
-            let (stream, peer_addr) = listener.accept().await?;
-            debug!("New connection from {}", peer_addr);
-
-            let handler = handler.clone();
-            tokio::spawn(async move {
-                if let Err(e) = Self::handle_http_connection(stream, handler).await {
-                    error!("HTTP connection error: {}", e);
-                }
-            });
-        }
-    }
-
-    /// Handle an HTTP connection.
-    async fn handle_http_connection(
-        mut stream: tokio::net::TcpStream,
-        handler: Arc<AcpHandler>,
-    ) -> Result<()> {
-        use tokio::io::AsyncReadExt;
-
-        let mut buffer = vec![0u8; 8192];
-        let n = stream.read(&mut buffer).await?;
-
-        if n == 0 {
-            return Ok(());
-        }
-
-        let request_str = String::from_utf8_lossy(&buffer[..n]);
-        let lines: Vec<&str> = request_str.lines().collect();
-
-        // Parse HTTP request
-        let first_line = lines.first().unwrap_or(&"");
-        let parts: Vec<&str> = first_line.split_whitespace().collect();
-
-        if parts.len() < 3 {
-            Self::send_http_error(&mut stream, 400, "Bad Request").await?;
-            return Ok(());
-        }
-
-        let method = parts[0];
-        let path = parts[1];
-
-        match (method, path) {
-            ("POST", "/rpc") | ("POST", "/acp/rpc") | ("POST", "/") => {
-                // Find the body (after empty line)
-                let body_start = request_str
-                    .find("\r\n\r\n")
-                    .or_else(|| request_str.find("\n\n"));
-                let body = body_start
-                    .map(|i| {
-                        let skip = if request_str[i..].starts_with("\r\n\r\n") {
-                            4
-                        } else {
-                            2
-                        };
-                        &request_str[i + skip..]
-                    })
-                    .unwrap_or("");
-
-                let request: AcpRequest = match serde_json::from_str(body.trim()) {
-                    Ok(req) => req,
-                    Err(e) => {
-                        let err_response = AcpResponse::error(
-                            AcpRequestId::Number(0),
-                            AcpError::parse_error(e.to_string()),
-                        );
-                        Self::send_http_json(&mut stream, 200, &err_response).await?;
-                        return Ok(());
-                    }
-                };
-
-                let response = handler
-                    .process_request(
-                        request.id.clone(),
-                        &request.method,
-                        request.params.unwrap_or(Value::Null),
-                    )
-                    .await;
-
-                Self::send_http_json(&mut stream, 200, &response).await?;
-            }
-            ("GET", "/events") | ("GET", "/acp/events") => {
-                // Server-Sent Events stream
-                Self::handle_sse_stream(&mut stream, handler).await?;
-            }
-            ("GET", "/health") => {
-                let health = serde_json::json!({
-                    "status": "ok",
-                    "version": env!("CARGO_PKG_VERSION"),
-                });
-                Self::send_http_json(&mut stream, 200, &health).await?;
-            }
-            ("OPTIONS", _) => {
-                // CORS preflight
-                Self::send_http_cors(&mut stream).await?;
-            }
-            _ => {
-                Self::send_http_error(&mut stream, 404, "Not Found").await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle SSE stream.
-    async fn handle_sse_stream(
-        stream: &mut tokio::net::TcpStream,
-        handler: Arc<AcpHandler>,
-    ) -> Result<()> {
-        // Send SSE headers
-        let headers = "HTTP/1.1 200 OK\r\n\
-            Content-Type: text/event-stream\r\n\
-            Cache-Control: no-cache\r\n\
-            Connection: keep-alive\r\n\
-            Access-Control-Allow-Origin: *\r\n\
-            \r\n";
-        stream.write_all(headers.as_bytes()).await?;
-
-        let mut rx = handler.subscribe();
-
-        // Keep connection alive and forward events
-        loop {
-            tokio::select! {
-                result = rx.recv() => {
-                    match result {
-                        Ok(event) => {
-                            let data = serde_json::to_string(&serde_json::json!({
-                                "method": event.method,
-                                "params": event.params,
-                            }))?;
-                            let sse_msg = format!("data: {}\n\n", data);
-                            if stream.write_all(sse_msg.as_bytes()).await.is_err() {
-                                break;
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                            // Catch up
-                            continue;
-                        }
-                        Err(_) => break,
-                    }
-                }
-                _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
-                    // Send keepalive
-                    if stream.write_all(b": keepalive\n\n").await.is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Send HTTP JSON response.
-    async fn send_http_json<T: Serialize>(
-        stream: &mut tokio::net::TcpStream,
-        status: u16,
-        body: &T,
-    ) -> Result<()> {
-        let json = serde_json::to_string(body)?;
-        let status_text = match status {
-            200 => "OK",
-            400 => "Bad Request",
-            404 => "Not Found",
-            500 => "Internal Server Error",
-            _ => "Unknown",
-        };
-        let response = format!(
-            "HTTP/1.1 {} {}\r\n\
-            Content-Type: application/json\r\n\
-            Content-Length: {}\r\n\
-            Access-Control-Allow-Origin: *\r\n\
-            Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n\
-            Access-Control-Allow-Headers: Content-Type\r\n\
-            \r\n\
-            {}",
-            status,
-            status_text,
-            json.len(),
-            json
-        );
-        stream.write_all(response.as_bytes()).await?;
-        Ok(())
-    }
-
-    /// Send HTTP error response.
-    async fn send_http_error(
-        stream: &mut tokio::net::TcpStream,
-        status: u16,
-        message: &str,
-    ) -> Result<()> {
-        let body = serde_json::json!({ "error": message });
-        Self::send_http_json(stream, status, &body).await
-    }
-
-    /// Send CORS preflight response.
-    async fn send_http_cors(stream: &mut tokio::net::TcpStream) -> Result<()> {
-        let response = "HTTP/1.1 204 No Content\r\n\
-            Access-Control-Allow-Origin: *\r\n\
-            Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n\
-            Access-Control-Allow-Headers: Content-Type\r\n\
-            Access-Control-Max-Age: 86400\r\n\
-            \r\n";
-        stream.write_all(response.as_bytes()).await?;
-        Ok(())
-    }
-
-    /// Legacy method for backward compatibility.
     pub async fn run(&self) -> Result<()> {
         self.run_stdio().await
     }
+
+    async fn run_io<R, W>(&self, reader: R, mut writer: W) -> Result<()>
+    where
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin + Send + 'static,
+    {
+        let mut reader = BufReader::new(reader);
+        let (tx, mut rx) = mpsc::channel::<Value>(64);
+        let mut notifications = self.handler.subscribe();
+        let output = tokio::spawn(async move {
+            loop {
+                let value = tokio::select! {
+                    biased;
+                    event = notifications.recv() => match event {
+                        Ok(event) => serde_json::to_value(AcpNotification::new(event.method).with_params(event.params))?,
+                        Err(_) => bail!("ACP event subscription closed or lagged"),
+                    },
+                    value = rx.recv() => match value { Some(value) => value, None => break },
+                };
+                let mut bytes = serde_json::to_vec(&value)?;
+                if bytes.len() > MAX_MESSAGE_BYTES {
+                    bail!("ACP output exceeds message limit");
+                }
+                bytes.push(b'\n');
+                tokio::time::timeout(std::time::Duration::from_secs(30), writer.write_all(&bytes))
+                    .await??;
+                writer.flush().await?;
+            }
+            Ok::<_, anyhow::Error>(())
+        });
+        let active = Arc::new(Mutex::new(HashSet::new()));
+        let mut tasks = JoinSet::new();
+        let mut initialized = false;
+        let result = async {
+            loop {
+                let line = tokio::select! {
+                    line = read_bounded_line(&mut reader) => line?,
+                    _ = tx.closed() => bail!("ACP output closed"),
+                };
+                let Some(line) = line else { break };
+                while tasks.try_join_next().is_some() {}
+                if line.iter().all(u8::is_ascii_whitespace) {
+                    continue;
+                }
+                let request = match decode_frame(&line) {
+                    Ok(request) => request,
+                    Err(response) => {
+                        send_response(&tx, response).await?;
+                        continue;
+                    }
+                };
+                self.dispatch_request(request, &mut initialized, &active, &mut tasks, &tx)
+                    .await?;
+            }
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+        tasks.abort_all();
+        self.handler.shutdown().await;
+        drop(tx);
+        let output_result = output.await?;
+        result.and(output_result)
+    }
+    async fn dispatch_request(
+        &self,
+        request: AcpRequest,
+        initialized: &mut bool,
+        active: &Arc<Mutex<HashSet<AcpRequestId>>>,
+        tasks: &mut JoinSet<()>,
+        tx: &mpsc::Sender<Value>,
+    ) -> Result<()> {
+        let id = request.id.clone();
+        if request.jsonrpc != "2.0" || matches!(id, Some(AcpRequestId::Null)) {
+            send_response(
+                tx,
+                AcpResponse::error(
+                    id.unwrap_or(AcpRequestId::Null),
+                    AcpError::invalid_request(
+                        "Expected JSON-RPC 2.0 and a string or integer request ID",
+                    ),
+                ),
+            )
+            .await?;
+            return Ok(());
+        }
+        let params = request.params.unwrap_or(Value::Null);
+        // Id-less cancellation is a notification, never a response with id:null.
+        let Some(id) = id else {
+            if *initialized && request.method == "session/cancel" {
+                if let Ok(params) = serde_json::from_value(params) {
+                    let _ = self.handler.handle_session_cancel(params).await;
+                }
+            }
+            return Ok(());
+        };
+        if request.method != "initialize" && !*initialized {
+            send_response(
+                tx,
+                AcpResponse::error(id, AcpError::invalid_request("Initialize first")),
+            )
+            .await?;
+            return Ok(());
+        }
+        if active.lock().await.contains(&id) {
+            send_response(
+                tx,
+                AcpResponse::error(
+                    id,
+                    AcpError::invalid_request("Duplicate in-flight request ID"),
+                ),
+            )
+            .await?;
+            return Ok(());
+        }
+        if request.method == "session/prompt" {
+            if tasks.len() >= 32 {
+                send_response(
+                    &tx,
+                    AcpResponse::error(id, AcpError::invalid_request("Too many active requests")),
+                )
+                .await?;
+                return Ok(());
+            }
+            let params = match serde_json::from_value(params) {
+                Ok(params) => params,
+                Err(_) => {
+                    send_response(
+                        &tx,
+                        AcpResponse::error(
+                            id,
+                            AcpError::invalid_params("Invalid prompt parameters"),
+                        ),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            };
+            // Reserve the session turn before reading the next frame, including cancel.
+            let receiver = match self.handler.begin_prompt(params).await {
+                Ok(receiver) => receiver,
+                Err(_) => {
+                    send_response(
+                        &tx,
+                        AcpResponse::error(
+                            id,
+                            AcpError::invalid_params(
+                                "Session unavailable, busy, or unsupported prompt content",
+                            ),
+                        ),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            };
+            active.lock().await.insert(id.clone());
+            let (tx, active) = (tx.clone(), active.clone());
+            tasks.spawn(async move {
+                let response = match receiver.await {
+                    Ok(Ok(reason)) => {
+                        AcpResponse::success(id.clone(), serde_json::json!({"stopReason":reason}))
+                    }
+                    _ => AcpResponse::error(
+                        id.clone(),
+                        AcpError::internal("The coding service is temporarily unavailable"),
+                    ),
+                };
+                let _ = send_response(&tx, response).await;
+                active.lock().await.remove(&id);
+            });
+        } else {
+            let response = self
+                .handler
+                .process_request(id, &request.method, params)
+                .await;
+            if request.method == "initialize" {
+                *initialized = response.error.is_none();
+            }
+            send_response(tx, response).await?;
+        }
+        Ok(())
+    }
 }
+
+fn decode_frame(line: &[u8]) -> std::result::Result<AcpRequest, AcpResponse> {
+    let value: Value = serde_json::from_slice(line).map_err(|_| {
+        AcpResponse::error(AcpRequestId::Null, AcpError::parse_error("Invalid JSON"))
+    })?;
+    let id = value
+        .get("id")
+        .and_then(|id| serde_json::from_value(id.clone()).ok())
+        .unwrap_or(AcpRequestId::Null);
+    if value.get("id").is_some_and(Value::is_null) {
+        return Err(AcpResponse::error(
+            AcpRequestId::Null,
+            AcpError::invalid_request("Request IDs must be strings or integers"),
+        ));
+    }
+    serde_json::from_value(value)
+        .map_err(|_| AcpResponse::error(id, AcpError::invalid_request("Invalid JSON-RPC request")))
+}
+
+async fn send_response(tx: &mpsc::Sender<Value>, response: AcpResponse) -> Result<()> {
+    tx.send(serde_json::to_value(response)?)
+        .await
+        .map_err(|_| anyhow::anyhow!("ACP output closed"))
+}
+
+/// Read without allocating beyond the frame limit; EOF mid-frame is accepted as a last JSON line.
+pub(crate) async fn read_bounded_line<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+) -> Result<Option<Vec<u8>>> {
+    let mut line = Vec::new();
+    loop {
+        let buffer = reader.fill_buf().await?;
+        if buffer.is_empty() {
+            return Ok((!line.is_empty()).then_some(line));
+        }
+        let count = buffer
+            .iter()
+            .position(|b| *b == b'\n')
+            .map_or(buffer.len(), |i| i + 1);
+        if line.len() + count > MAX_MESSAGE_BYTES {
+            bail!("Protocol message exceeds 1 MiB limit");
+        }
+        let complete = buffer[count - 1] == b'\n';
+        line.extend_from_slice(&buffer[..count]);
+        reader.consume(count);
+        if complete {
+            return Ok(Some(line));
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "server_tests.rs"]
+mod tests;

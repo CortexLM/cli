@@ -3,12 +3,13 @@
 use std::sync::Arc;
 
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Path, Query, State},
 };
 use uuid::Uuid;
 
-use crate::error::AppResult;
+use crate::auth::{AuthResult, session_principal};
+use crate::error::{AppError, AppResult};
 use crate::state::{AppState, CreateSessionOptions, SessionMessage, SessionStatus};
 
 use super::types::{
@@ -30,11 +31,12 @@ pub fn format_status(status: &SessionStatus) -> String {
 /// Create a new session.
 pub async fn create_session(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthResult>>,
     Json(req): Json<CreateSessionRequest>,
 ) -> AppResult<Json<SessionResponse>> {
     let session = state
         .create_session(CreateSessionOptions {
-            user_id: None,
+            user_id: session_principal(auth.as_ref().map(|a| &a.0), state.config.auth.enabled)?,
             model: req.model,
             system_prompt: req.system_prompt,
             metadata: req.metadata,
@@ -55,10 +57,14 @@ pub async fn create_session(
 /// List all sessions.
 pub async fn list_sessions(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthResult>>,
     Query(query): Query<ListSessionsQuery>,
-) -> Json<Vec<SessionListItem>> {
-    let sessions = state.list_sessions(query.limit, query.offset).await;
-    Json(
+) -> AppResult<Json<Vec<SessionListItem>>> {
+    let owner = session_principal(auth.as_ref().map(|a| &a.0), state.config.auth.enabled)?;
+    let sessions = state
+        .list_owned_sessions(owner.as_deref(), query.limit, query.offset)
+        .await;
+    Ok(Json(
         sessions
             .into_iter()
             .map(|s| SessionListItem {
@@ -69,14 +75,16 @@ pub async fn list_sessions(
                 total_tokens: s.total_tokens,
             })
             .collect(),
-    )
+    ))
 }
 
 /// Get a session by ID.
 pub async fn get_session(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthResult>>,
     Path(id): Path<String>,
 ) -> AppResult<Json<SessionResponse>> {
+    authorize(&state, auth, &id).await?;
     let session = state.get_session(&id).await?;
     Ok(Json(SessionResponse {
         id: session.id,
@@ -92,8 +100,10 @@ pub async fn get_session(
 /// Delete a session.
 pub async fn delete_session(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthResult>>,
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    authorize(&state, auth, &id).await?;
     state.delete_session(&id).await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
@@ -101,9 +111,11 @@ pub async fn delete_session(
 /// Send a message to a session.
 pub async fn send_message(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthResult>>,
     Path(id): Path<String>,
     Json(req): Json<SendMessageRequest>,
 ) -> AppResult<Json<MessageResponse>> {
+    authorize(&state, auth, &id).await?;
     let message = SessionMessage {
         id: Uuid::new_v4().to_string(),
         role: req.role.unwrap_or_else(|| "user".to_string()),
@@ -132,8 +144,10 @@ pub async fn send_message(
 /// List messages in a session.
 pub async fn list_messages(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthResult>>,
     Path(id): Path<String>,
 ) -> AppResult<Json<Vec<MessageResponse>>> {
+    authorize(&state, auth, &id).await?;
     let session = state.get_session(&id).await?;
     Ok(Json(
         session
@@ -158,6 +172,19 @@ pub async fn list_messages(
             })
             .collect(),
     ))
+}
+
+async fn authorize(
+    state: &AppState,
+    auth: Option<Extension<AuthResult>>,
+    id: &str,
+) -> AppResult<()> {
+    let owner = session_principal(auth.as_ref().map(|a| &a.0), state.config.auth.enabled)?;
+    let session = state.get_session(id).await?;
+    if session.user_id != owner {
+        return Err(AppError::NotFound("Session not found".into()));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

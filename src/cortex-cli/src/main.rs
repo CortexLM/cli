@@ -28,80 +28,10 @@ fn pre_main_hardening() {
     cortex_process_hardening::pre_main_hardening();
 }
 
-/// Guard that ensures debug log file is properly flushed when dropped.
-struct DebugLogGuard {
-    _guard: tracing_appender::non_blocking::WorkerGuard,
-}
-
-/// Set up debug file logging that writes ALL trace-level logs to ./debug.txt.
-fn setup_debug_file_logging() -> Result<DebugLogGuard> {
-    use std::fs::File;
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::util::SubscriberInitExt;
-
-    let debug_file_path = std::env::current_dir()?.join("debug.txt");
-
-    let file = File::create(&debug_file_path).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to create debug.txt: {}. Check write permissions.",
-            e
-        )
-    })?;
-
-    let (non_blocking, guard) = tracing_appender::non_blocking(file);
-
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(non_blocking)
-        .with_ansi(false)
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_thread_names(true)
-        .with_file(true)
-        .with_line_number(true);
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new("trace"))
-        .with(file_layer)
-        .init();
-
-    eprintln!(
-        "Debug mode enabled: logging to {}",
-        debug_file_path.display()
-    );
-
-    Ok(DebugLogGuard { _guard: guard })
-}
-
 /// Check if CORTEX_HOME is writable.
 fn check_cortex_home_writable() -> Result<()> {
-    use anyhow::bail;
-
-    if let Ok(cortex_home_env) = std::env::var("CORTEX_HOME") {
-        let cortex_home_path = std::path::Path::new(&cortex_home_env);
-        if cortex_home_path.exists() {
-            let test_file = cortex_home_path.join(".write_test");
-            match std::fs::File::create(&test_file) {
-                Ok(_) => {
-                    let _ = std::fs::remove_file(&test_file);
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                    bail!(
-                        "Cannot write to CORTEX_HOME: Permission denied\n\n\
-                        CORTEX_HOME is set to: {}\n\
-                        This directory exists but is not writable.\n\n\
-                        To fix this, either:\n\
-                        - Change permissions: chmod u+w {}\n\
-                        - Use a different directory: export CORTEX_HOME=/path/to/writable/dir\n\
-                        - Unset the variable to use default: unset CORTEX_HOME",
-                        cortex_home_env,
-                        cortex_home_env
-                    );
-                }
-                Err(_) => {
-                    // Other errors (e.g., disk full) - continue and let it fail later
-                }
-            }
-        }
+    if let Some(home) = std::env::var_os("CORTEX_HOME") {
+        cortex_cli::startup::check_cortex_home_writable(std::path::Path::new(&home))?;
     }
     Ok(())
 }
@@ -123,6 +53,8 @@ async fn check_for_updates_background() {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    cortex_cli::startup::run_as_sandbox_wrapper_if_requested();
+
     // Install Ctrl+C handler to restore terminal state before exiting
     cortex_cli::install_cleanup_handler();
 
@@ -130,8 +62,7 @@ async fn main() -> Result<()> {
     cortex_cli::install_panic_hook();
 
     let cli = Cli::parse();
-    cortex_common::diagnostics::init_from_env()
-        .map_err(|_| anyhow::anyhow!("Local diagnostics could not be initialized"))?;
+    cortex_cli::startup::initialize_diagnostics(cli.interactive.debug)?;
 
     // Handle color mode
     // SAFETY: Environment variable mutations happen early before threads spawn
@@ -146,13 +77,6 @@ async fn main() -> Result<()> {
     if !is_debug_cmd {
         check_cortex_home_writable()?;
     }
-
-    // Initialize debug file logging if --debug flag is passed
-    let _debug_guard = if cli.interactive.debug {
-        Some(setup_debug_file_logging()?)
-    } else {
-        None
-    };
 
     // Initialize logging for non-TUI commands (when not in debug mode)
     if cli.command.is_some() && !cli.interactive.debug {
@@ -180,14 +104,16 @@ async fn main() -> Result<()> {
 
         tracing_subscriber::fmt()
             .with_env_filter(&filter_str)
+            .with_writer(std::io::stderr)
             .init();
     }
 
     // Background update check (non-blocking)
-    let skip_auto_update = matches!(
-        &cli.command,
-        Some(Commands::Upgrade(_) | Commands::Serve(_))
-    );
+    let skip_auto_update = cli.interactive.debug
+        || matches!(
+            &cli.command,
+            Some(Commands::Upgrade(_) | Commands::Serve(_))
+        );
     let is_tui_mode = cli.command.is_none();
     if !skip_auto_update && !is_tui_mode && !is_debug_cmd {
         tokio::spawn(async {

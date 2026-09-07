@@ -125,7 +125,7 @@ impl CortexClient {
             base_url: resolved_base,
             model,
             capabilities: ModelCapabilities {
-                vision: true,
+                vision: false,
                 tools: true,
                 reasoning: true,
                 context_window: 262_144,
@@ -560,7 +560,8 @@ impl ModelClient for CortexClient {
 
     async fn complete(&self, request: CompletionRequest) -> Result<ResponseStream> {
         self.configure_from_request(&request);
-        let message = CodeAgentClient::last_user_message(&request);
+        let message = super::runtime_contract::code_message(&request)?;
+        self.code_agent.set_model(&request.model);
         if message.is_empty() {
             return Err(CortexError::BackendError {
                 message: "Nothing to send.".into(),
@@ -612,7 +613,6 @@ impl ModelClient for CortexClient {
             content_type = "application/json",
             accept = "text/event-stream",
             has_auth = auth.is_some(),
-            auth_prefix = auth.as_ref().map(|a| &a[..20.min(a.len())]),
             body_model = %request.model,
             ">>> OUTGOING REQUEST"
         );
@@ -621,11 +621,6 @@ impl ModelClient for CortexClient {
             req = req.header("Authorization", auth);
         } else {
             tracing::warn!("No authorization header - request will likely fail with 401");
-        }
-
-        // Log the full request body for debugging
-        if let Ok(body_json) = serde_json::to_string(&body) {
-            tracing::info!(body = %body_json, "Request body");
         }
 
         let resp = req.json(&body).send().await.map_err(|e| {
@@ -822,7 +817,7 @@ impl ModelClient for CortexClient {
 
     async fn complete_sync(&self, request: CompletionRequest) -> Result<CompletionResponse> {
         let mut stream = self.complete(request).await?;
-        let mut response = CompletionResponse::default();
+        let mut response = None;
         let mut text = String::new();
 
         while let Some(event_result) = stream.next().await {
@@ -831,7 +826,9 @@ impl ModelClient for CortexClient {
                     text.push_str(&delta);
                 }
                 ResponseEvent::Done(completion) => {
-                    response = completion;
+                    completion.finish_reason.require_success()?;
+                    response = Some(completion);
+                    break;
                 }
                 ResponseEvent::Error(err) => {
                     return Err(CortexError::BackendError { message: err });
@@ -840,6 +837,9 @@ impl ModelClient for CortexClient {
             }
         }
 
+        let mut response = response.ok_or_else(|| CortexError::BackendError {
+            message: super::runtime_contract::INCOMPLETE_STREAM.into(),
+        })?;
         if response.message.is_none() && !text.is_empty() {
             response.message = Some(Message {
                 role: MessageRole::Assistant,
@@ -858,6 +858,41 @@ impl ModelClient for CortexClient {
 
     async fn cancel_turn(&self) {
         self.code_agent.cancel_in_flight().await;
+    }
+
+    fn owns_tool_execution(&self) -> bool {
+        true
+    }
+
+    fn configure_session_identity(
+        &self,
+        home: &std::path::Path,
+        id: &str,
+        resume: bool,
+    ) -> Result<()> {
+        self.code_agent.configure_session_identity(home, id, resume)
+    }
+
+    async fn resume_code_session(&self, id: &str) -> Result<()> {
+        self.code_agent.resume_session(id).await
+    }
+
+    async fn cancel_turn_checked(&self) -> Result<()> {
+        self.code_agent.cancel_in_flight_checked().await
+    }
+
+    fn fresh_clone_box(&self) -> Option<Box<dyn ModelClient>> {
+        let mut child = Self::new(self.model.clone(), Some(self.base_url.clone()));
+        if let Some(token) = &self.auth_token {
+            child = child.with_auth_token(token.clone());
+        }
+        if let Some(key) = &self.api_key {
+            child = child.with_api_key(key.clone());
+        }
+        child
+            .code_agent
+            .set_turn_context(self.code_agent.turn_context());
+        Some(Box::new(child))
     }
 
     fn clone_box(&self) -> Option<Box<dyn ModelClient>> {

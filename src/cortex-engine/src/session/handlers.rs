@@ -6,12 +6,12 @@ use chrono::Utc;
 use tracing::info;
 
 use cortex_protocol::{
-    AgentMessageEvent, ErrorEvent, EventMsg, SessionConfiguredEvent, TaskCompleteEvent,
-    TaskStartedEvent, TurnDiffEvent, UserMessageEvent,
+    AgentMessageEvent, EventMsg, SessionConfiguredEvent, TaskStartedEvent, TurnDiffEvent,
+    UserMessageEvent,
 };
 
 use crate::client::{Message, MessageRole};
-use crate::error::Result;
+use crate::error::{CortexError, Result};
 use crate::rollout::RolloutRecorder;
 use crate::rollout::recorder::SessionMeta;
 use crate::summarization::SummarizationStrategy;
@@ -37,7 +37,9 @@ impl Session {
             }
             Op::Interrupt => {
                 // Set cancellation flag to stop current request
-                self.cancelled.store(true, Ordering::SeqCst);
+                self.pending_approvals.clear();
+                self.client.cancel_turn_checked().await?;
+                self.cancelled.store(false, Ordering::SeqCst);
                 self.emit(EventMsg::TurnAborted(cortex_protocol::TurnAbortedEvent {
                     reason: cortex_protocol::TurnAbortReason::Interrupted,
                 }))
@@ -181,6 +183,18 @@ impl Session {
         self.turn_id += 1;
         let turn_id = self.turn_id.to_string();
 
+        if items
+            .iter()
+            .any(|item| !matches!(item, cortex_protocol::UserInput::Text { .. }))
+        {
+            return Err(CortexError::InvalidInput("The coding service does not support inline image or document inputs on Code turns.".into()));
+        }
+        if !self.pending_approvals.is_empty() {
+            return Err(CortexError::InvalidInput(
+                "Resolve or cancel the pending approval before submitting another turn.".into(),
+            ));
+        }
+
         // Extract text from user input
         let user_text: String = items
             .iter()
@@ -196,7 +210,7 @@ impl Session {
 
         if user_text.is_empty() {
             tracing::warn!("Session received empty user input");
-            return Ok(());
+            return Err(CortexError::InvalidInput("Nothing to send.".into()));
         }
 
         tracing::debug!("User message: {}", user_text);
@@ -274,21 +288,7 @@ impl Session {
 
         // Run the agent loop until complete
         tracing::info!("Starting agent loop for turn {}...", turn_id);
-        if let Err(e) = self.run_agent_loop(&turn_id).await {
-            tracing::error!("Agent loop failed: {}", e);
-            // Emit error event so TUI can display it
-            self.emit(EventMsg::Error(ErrorEvent {
-                message: e.to_string(),
-                cortex_error_info: None,
-            }))
-            .await;
-            // Emit TaskComplete to reset TUI state
-            self.emit(EventMsg::TaskComplete(TaskCompleteEvent {
-                last_agent_message: None,
-            }))
-            .await;
-            return Err(e);
-        }
+        self.run_agent_loop(&turn_id).await?;
         tracing::info!("Agent loop completed for turn {}", turn_id);
 
         // Fast git-based diff (if we have a pre-snapshot)
@@ -327,6 +327,9 @@ impl Session {
         use crate::client::ResponseEvent;
         use tokio_stream::StreamExt;
 
+        if self.client.owns_tool_execution() {
+            return Err(CortexError::InvalidInput("Code context compaction is owned by the coding service; local history replacement is unsupported.".into()));
+        }
         let strategy = SummarizationStrategy::default();
         let (to_summarize, to_keep) = strategy.split_messages(&self.messages);
 
@@ -339,7 +342,7 @@ impl Session {
 
         // Call model to summarize
         let request = CompletionRequest {
-            model: "gpt-4o-mini".to_string(), // Use a cheaper model for summarization
+            model: self.config.model.clone(),
             messages: prompt,
             max_tokens: Some(strategy.target_summary_tokens as u32),
             temperature: Some(0.3),
@@ -348,11 +351,25 @@ impl Session {
 
         let mut stream = self.client.complete(request).await?;
         let mut summary = String::new();
+        let mut complete = false;
 
         while let Some(event) = stream.next().await {
-            if let ResponseEvent::Delta(delta) = event? {
-                summary.push_str(&delta);
+            match event? {
+                ResponseEvent::Delta(delta) => summary.push_str(&delta),
+                ResponseEvent::Done(response) => {
+                    response.finish_reason.require_success()?;
+                    complete = true;
+                    break;
+                }
+                ResponseEvent::Error(message) => return Err(CortexError::BackendError { message }),
+                _ => {}
             }
+        }
+        if !complete || summary.trim().is_empty() {
+            return Err(CortexError::InvalidInput(
+                "Compaction did not produce a complete summary. Original context was retained."
+                    .into(),
+            ));
         }
 
         // Replace messages
@@ -592,6 +609,11 @@ impl Session {
 
         use crate::tools::ToolContext;
 
+        if self.client.owns_tool_execution() {
+            return Err(CortexError::InvalidInput(
+                crate::client::runtime_contract::LOCAL_TOOLS_UNSUPPORTED.into(),
+            ));
+        }
         if let Some(pending) = self.pending_approvals.remove(call_id) {
             match decision {
                 ReviewDecision::Approved | ReviewDecision::ApprovedForSession => {
@@ -625,6 +647,7 @@ impl Session {
                         &pending.tool_call_id,
                         "Command was rejected by user.",
                     ));
+                    return Err(CortexError::Cancelled);
                 }
             }
         }

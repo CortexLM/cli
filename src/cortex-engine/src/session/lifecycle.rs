@@ -27,12 +27,6 @@ use super::types::{SessionHandle, SessionInfo, TokenCounter};
 impl Session {
     /// Create a new session with channels.
     pub fn new(config: Config) -> Result<(Self, SessionHandle)> {
-        let (submission_tx, submission_rx) = unbounded();
-        let (event_tx, event_rx) = unbounded();
-
-        let conversation_id = ConversationId::new();
-        let cancelled = Arc::new(AtomicBool::new(false));
-
         // Get API key using centralized auth module
         let api_key = crate::auth_token::get_auth_token(None)
             .map_err(|e| anyhow::anyhow!("Authentication required: {}", e))?;
@@ -43,6 +37,40 @@ impl Session {
             &api_key,
             Some(config.model_provider.base_url.as_str()),
         )?;
+
+        Self::with_client(config, client)
+    }
+
+    /// Construct a session with an explicit transport. This does not read auth
+    /// or contact a service; callers still own the real completion contract.
+    pub fn with_client(
+        config: Config,
+        client: Box<dyn crate::client::ModelClient>,
+    ) -> Result<(Self, SessionHandle)> {
+        let (submission_tx, submission_rx) = unbounded();
+        let (event_tx, event_rx) = unbounded();
+        let conversation_id = ConversationId::new();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        client.configure_session_identity(
+            &config.cortex_home,
+            &conversation_id.to_string(),
+            false,
+        )?;
+        client.configure_code_turn(crate::client::CodeTurnContext {
+            workspace: Some(config.cwd.display().to_string()),
+            computer: crate::client::ComputerKind::detect(),
+            turn_mode: Some(
+                if matches!(
+                    config.sandbox_policy,
+                    cortex_protocol::SandboxPolicy::ReadOnly
+                ) {
+                    crate::client::CodeTurnMode::Chat
+                } else {
+                    crate::client::CodeTurnMode::Code
+                },
+            ),
+            ssh_target: None,
+        });
 
         let mut tool_router = ToolRouter::new();
 
@@ -95,6 +123,10 @@ impl Session {
 
         tool_router.set_lsp(lsp.clone());
 
+        let turn_id = messages
+            .iter()
+            .filter(|m| m.role == crate::client::MessageRole::User)
+            .count() as u64;
         let session = Self {
             config,
             conversation_id,
@@ -103,7 +135,7 @@ impl Session {
             messages,
             submission_rx,
             event_tx,
-            turn_id: 0,
+            turn_id,
             total_usage: TokenUsage::default(),
             token_counter: Arc::new(TokenCounter::default()),
             running: true,
@@ -149,6 +181,27 @@ impl Session {
             &api_key,
             Some(config.model_provider.base_url.as_str()),
         )?;
+
+        client.configure_session_identity(
+            &config.cortex_home,
+            &conversation_id.to_string(),
+            true,
+        )?;
+        client.configure_code_turn(crate::client::CodeTurnContext {
+            workspace: Some(config.cwd.display().to_string()),
+            computer: crate::client::ComputerKind::detect(),
+            turn_mode: Some(
+                if matches!(
+                    config.sandbox_policy,
+                    cortex_protocol::SandboxPolicy::ReadOnly
+                ) {
+                    crate::client::CodeTurnMode::Chat
+                } else {
+                    crate::client::CodeTurnMode::Code
+                },
+            ),
+            ssh_target: None,
+        });
 
         let mut tool_router = ToolRouter::new();
 
@@ -210,6 +263,10 @@ impl Session {
 
         let cancelled = Arc::new(AtomicBool::new(false));
 
+        let turn_id = messages
+            .iter()
+            .filter(|m| m.role == crate::client::MessageRole::User)
+            .count() as u64;
         let session = Self {
             config,
             conversation_id,
@@ -218,7 +275,7 @@ impl Session {
             messages,
             submission_rx,
             event_tx,
-            turn_id: 0,
+            turn_id,
             total_usage: TokenUsage::default(),
             token_counter: Arc::new(TokenCounter::default()),
             running: true,
@@ -264,6 +321,27 @@ impl Session {
             &api_key,
             Some(config.model_provider.base_url.as_str()),
         )?;
+
+        client.configure_session_identity(
+            &config.cortex_home,
+            &new_conversation_id.to_string(),
+            false,
+        )?;
+        client.configure_code_turn(crate::client::CodeTurnContext {
+            workspace: Some(config.cwd.display().to_string()),
+            computer: crate::client::ComputerKind::detect(),
+            turn_mode: Some(
+                if matches!(
+                    config.sandbox_policy,
+                    cortex_protocol::SandboxPolicy::ReadOnly
+                ) {
+                    crate::client::CodeTurnMode::Chat
+                } else {
+                    crate::client::CodeTurnMode::Code
+                },
+            ),
+            ssh_target: None,
+        });
 
         let mut tool_router = ToolRouter::new();
 

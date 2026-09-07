@@ -1,515 +1,240 @@
-//! Subagent spawning and event handling.
+//! Isolated delegation to the server-owned Code harness.
 
-use std::time::{Duration, Instant};
-
+use super::core::EventLoop;
 use crate::app::SubagentTaskDisplay;
 use crate::events::ToolEvent;
-
-use cortex_engine::client::{Message, ResponseEvent, ToolDefinition as ClientToolDefinition};
+use cortex_engine::client::runtime_contract::{INCOMPLETE_STREAM, LOCAL_TOOLS_UNSUPPORTED};
+use cortex_engine::client::{CompletionRequest, Message, ModelClient, ResponseEvent};
+use std::time::{Duration, Instant};
 use tokio_stream::StreamExt;
 
-use super::core::{EventLoop, simplify_error_message};
+static CHILD_LIMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
 
 impl EventLoop {
-    /// Spawns a subagent task (for Task tool).
-    /// Handles agent spawning, progress tracking, and result collection.
     pub(super) fn spawn_subagent(&mut self, tool_call_id: String, args: serde_json::Value) {
-        tracing::info!("Spawning subagent for tool call: {}", tool_call_id);
-
-        // Support both API format and internal format
-        let agent = args.get("agent").and_then(|v| v.as_str());
-        let task = args.get("task").and_then(|v| v.as_str());
-        let context = args.get("context").and_then(|v| v.as_str());
-
-        let description = args
-            .get("description")
-            .and_then(|v| v.as_str())
-            .or(agent)
-            .unwrap_or("Subagent task")
-            .to_string();
-
-        let prompt = args
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .or(task)
-            .map(|p| {
-                if let Some(ctx) = context {
-                    format!("{}\n\nContext: {}", p, ctx)
-                } else {
-                    p.to_string()
-                }
-            })
-            .unwrap_or_default();
-
-        let subagent_type = args
-            .get("subagent_type")
-            .and_then(|v| v.as_str())
-            .or(agent)
-            .unwrap_or("code")
-            .to_string();
-
-        if prompt.is_empty() {
-            self.app_state.add_pending_tool_result(
-                tool_call_id,
-                "Task".to_string(),
-                "Task tool requires a 'task' or 'prompt' parameter with instructions for the subagent.".to_string(),
-                false,
-            );
-            return;
-        }
-
-        // Get dependencies for the spawned task
-        let Some(registry) = self.tool_registry.clone() else {
-            self.app_state.add_pending_tool_result(
-                tool_call_id,
-                "Task".to_string(),
-                "Tool registry not available for subagent.".to_string(),
-                false,
-            );
-            return;
-        };
-
-        let Some(provider_manager) = self.provider_manager.clone() else {
-            self.app_state.add_pending_tool_result(
-                tool_call_id,
-                "Task".to_string(),
-                "Provider not configured for subagent.".to_string(),
-                false,
-            );
-            return;
-        };
-
-        let tool_tx = self.tool_event_tx.clone();
-        let id = tool_call_id.clone();
-
-        // Add to UI display
-        self.app_state.add_subagent_task(SubagentTaskDisplay::new(
-            format!("subagent_{}", id),
-            id.clone(),
-            description.clone(),
-            subagent_type.clone(),
-        ));
-
-        // Mark that we're in delegation mode for UI status indicator
-        self.app_state.streaming.start_delegation();
-
-        // Spawn background task with full agentic loop
-        let task = tokio::spawn(async move {
-            let started_at = Instant::now();
-
-            // Send started event
-            if let Err(e) = tool_tx
-                .send(ToolEvent::Started {
-                    id: id.clone(),
-                    name: "Task".to_string(),
-                    started_at,
-                })
-                .await
-            {
-                tracing::error!(
-                    "Failed to send ToolEvent::Started for subagent {}: {:?}",
-                    id,
-                    e
+        let parsed = parse_child_request(&args);
+        let (prompt, description, role, timeout_secs, model) = match parsed {
+            Ok(request) => request,
+            Err(error) => {
+                self.app_state.add_pending_tool_result(
+                    tool_call_id,
+                    "Task".into(),
+                    error.to_string(),
+                    false,
                 );
                 return;
             }
-
-            // Build subagent system prompt
-            let system_prompt = format!(
-                "You are a specialized {} subagent working on: {}\n\n\
-                 You have access to tools like Read, Edit, Grep, Glob, LS, Execute, Batch, TodoWrite, etc.\n\
-                 Note: You cannot use the Task tool (no nested delegation).\n\n\
-                 IMPORTANT - Todo List:\n\
-                 - For any multi-step task, IMMEDIATELY use TodoWrite to create a todo list\n\
-                 - Update the todo list as you progress (mark items in_progress or completed)\n\
-                 - This provides real-time visibility to the user\n\
-                 - Keep only ONE item as in_progress at a time\n\n\
-                 Use Batch to execute multiple tools in parallel for efficiency.\n\
-                 If a tool fails, try an alternative approach instead of giving up.\n\
-                 Complete the task and provide a clear summary when done.",
-                subagent_type, description
+        };
+        let Some(manager) = self.provider_manager.clone() else {
+            self.app_state.add_pending_tool_result(
+                tool_call_id,
+                "Task".into(),
+                "No client is configured for delegation.".into(),
+                false,
             );
-
-            // Build initial messages for subagent
-            let mut messages = vec![Message::system(system_prompt), Message::user(&prompt)];
-
-            // Get tool definitions - filter based on subagent permissions
-            let tools: Vec<ClientToolDefinition> = registry
-                .get_definitions()
-                .into_iter()
-                .filter(|t| {
-                    let name_lower = t.name.to_lowercase();
-                    name_lower != "task"
-                })
-                .map(|t| ClientToolDefinition::function(t.name, t.description, t.parameters))
-                .collect();
-
-            // Get model info
-            let model = {
-                let pm = provider_manager.read().await;
-                pm.current_model().to_string()
-            };
-
-            let mut final_content = String::new();
-            let mut tool_calls_executed: Vec<String> = Vec::new();
-            let max_iterations = 500;
-
-            // Agentic loop - continues until no more tool calls
-            for iteration in 0..max_iterations {
-                tracing::info!("Subagent iteration {}", iteration + 1);
-
-                // Get fresh client for each iteration
-                let client = {
-                    let mut pm = provider_manager.write().await;
-                    if let Err(e) = pm.ensure_client() {
-                        let error_msg = format!("Failed to initialize provider: {}", e);
-                        tracing::error!("Subagent {}: {}", id, error_msg);
-                        if let Err(send_err) = tool_tx
-                            .send(ToolEvent::Failed {
-                                id: id.clone(),
-                                name: "Task".to_string(),
-                                error: error_msg,
-                                duration: started_at.elapsed(),
-                            })
-                            .await
-                        {
-                            tracing::error!("Failed to send ToolEvent::Failed: {:?}", send_err);
-                        }
-                        return;
-                    }
-                    pm.take_client()
-                };
-
-                let Some(client) = client else {
-                    tracing::error!("Subagent {}: No client available", id);
-                    if let Err(e) = tool_tx
-                        .send(ToolEvent::Failed {
-                            id: id.clone(),
-                            name: "Task".to_string(),
-                            error: "No client available".to_string(),
-                            duration: started_at.elapsed(),
-                        })
-                        .await
-                    {
-                        tracing::error!("Failed to send ToolEvent::Failed: {:?}", e);
-                    }
-                    return;
-                };
-
-                // Make LLM request
-                let request = cortex_engine::client::CompletionRequest {
-                    messages: messages.clone(),
-                    model: model.clone(),
-                    max_tokens: Some(8192),
-                    temperature: Some(0.7),
-                    seed: None,
-                    tools: tools.clone(),
-                    stream: true,
-                };
-
-                let stream_result =
-                    tokio::time::timeout(Duration::from_secs(120), client.complete(request)).await;
-
-                let mut stream = match stream_result {
-                    Ok(Ok(s)) => s,
-                    Ok(Err(e)) => {
-                        let error_msg = simplify_error_message(&e.to_string());
-                        tracing::error!("Subagent {} LLM request failed: {}", id, error_msg);
-                        if let Err(send_err) = tool_tx
-                            .send(ToolEvent::Failed {
-                                id: id.clone(),
-                                name: "Task".to_string(),
-                                error: error_msg,
-                                duration: started_at.elapsed(),
-                            })
-                            .await
-                        {
-                            tracing::error!("Failed to send ToolEvent::Failed: {:?}", send_err);
-                        }
-                        return;
-                    }
-                    Err(_) => {
-                        tracing::error!("Subagent {} connection timeout (120s)", id);
-                        if let Err(e) = tool_tx
-                            .send(ToolEvent::Failed {
-                                id: id.clone(),
-                                name: "Task".to_string(),
-                                error: "Connection timeout".to_string(),
-                                duration: started_at.elapsed(),
-                            })
-                            .await
-                        {
-                            tracing::error!("Failed to send ToolEvent::Failed: {:?}", e);
-                        }
-                        return;
-                    }
-                };
-
-                // Collect response from this iteration
-                let mut iteration_content = String::new();
-                let mut iteration_tool_calls: Vec<(String, String, serde_json::Value)> = Vec::new();
-
-                loop {
-                    let event = tokio::time::timeout(Duration::from_secs(60), stream.next()).await;
-
-                    match event {
-                        Ok(Some(Ok(ResponseEvent::Delta(delta)))) => {
-                            iteration_content.push_str(&delta);
-                        }
-                        Ok(Some(Ok(ResponseEvent::Done(_)))) => {
-                            break;
-                        }
-                        Ok(Some(Ok(ResponseEvent::ToolCall(tc)))) => {
-                            let args: serde_json::Value = serde_json::from_str(&tc.arguments)
-                                .unwrap_or(serde_json::json!({}));
-                            iteration_tool_calls.push((tc.id, tc.name, args));
-                        }
-                        Ok(Some(Ok(ResponseEvent::Reasoning(_))))
-                        | Ok(Some(Ok(ResponseEvent::ToolResult { .. }))) => {}
-                        Ok(Some(Ok(ResponseEvent::Error(e)))) => {
-                            tracing::error!("Subagent {} received error from LLM: {}", id, e);
-                            if let Err(send_err) = tool_tx
-                                .send(ToolEvent::Failed {
-                                    id: id.clone(),
-                                    name: "Task".to_string(),
-                                    error: e,
-                                    duration: started_at.elapsed(),
-                                })
-                                .await
-                            {
-                                tracing::error!("Failed to send ToolEvent::Failed: {:?}", send_err);
-                            }
-                            return;
-                        }
-                        Ok(Some(Err(e))) => {
-                            tracing::error!("Subagent {} stream error: {}", id, e);
-                            if let Err(send_err) = tool_tx
-                                .send(ToolEvent::Failed {
-                                    id: id.clone(),
-                                    name: "Task".to_string(),
-                                    error: e.to_string(),
-                                    duration: started_at.elapsed(),
-                                })
-                                .await
-                            {
-                                tracing::error!("Failed to send ToolEvent::Failed: {:?}", send_err);
-                            }
-                            return;
-                        }
-                        Ok(None) => {
-                            tracing::warn!(
-                                "Subagent {} stream ended without Done event at iteration {}",
-                                id,
-                                iteration + 1
-                            );
-                            break;
-                        }
-                        Err(_) => {
-                            tracing::error!(
-                                "Subagent {} response timeout at iteration {}",
-                                id,
-                                iteration + 1
-                            );
-                            if let Err(e) = tool_tx
-                                .send(ToolEvent::Failed {
-                                    id: id.clone(),
-                                    name: "Task".to_string(),
-                                    error: "The provider appears to be overloaded or your internet connection/proxy is experiencing issues communicating with it.".to_string(),
-                                    duration: started_at.elapsed(),
-                                })
-                                .await
-                            {
-                                tracing::error!("Failed to send ToolEvent::Failed: {:?}", e);
-                            }
-                            return;
-                        }
-                    }
-                }
-
-                // If no tool calls, we're done
-                if iteration_tool_calls.is_empty() {
-                    if !tool_calls_executed.is_empty() && iteration_content.trim().is_empty() {
-                        // Request explicit summary if LLM didn't provide one
-                        final_content = format!(
-                            "Task completed with {} tool call(s).",
-                            tool_calls_executed.len()
-                        );
-                    } else {
-                        final_content = iteration_content;
-                    }
-                    break;
-                }
-
-                // Execute tool calls
-                let mut tool_results: Vec<(String, String)> = Vec::new();
-                let tool_calls_for_msg: Vec<cortex_engine::client::ToolCall> = iteration_tool_calls
-                    .iter()
-                    .map(
-                        |(tc_id, tc_name, tc_args)| cortex_engine::client::ToolCall {
-                            id: tc_id.clone(),
-                            call_type: "function".to_string(),
-                            function: cortex_engine::client::FunctionCall {
-                                name: tc_name.clone(),
-                                arguments: tc_args.to_string(),
-                            },
-                        },
-                    )
-                    .collect();
-
-                const MAX_TOOL_OUTPUT_SIZE: usize = 32_000;
-
-                for (tc_id, tc_name, tc_args) in &iteration_tool_calls {
-                    tracing::info!("Subagent executing tool: {} ({})", tc_name, tc_id);
-
-                    // Handle TodoWrite for progress tracking
-                    if tc_name == "TodoWrite"
-                        && let Some(todos_arr) = tc_args.get("todos").and_then(|v| v.as_array())
-                    {
-                        let todos: Vec<(String, String)> = todos_arr
-                            .iter()
-                            .filter_map(|t| {
-                                let content = t.get("content").and_then(|v| v.as_str())?;
-                                let status = t
-                                    .get("status")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("pending");
-                                Some((content.to_string(), status.to_string()))
-                            })
-                            .collect();
-
-                        if !todos.is_empty()
-                            && let Err(e) = tool_tx
-                                .send(ToolEvent::TodoUpdated {
-                                    session_id: format!("subagent_{}", id),
-                                    todos,
-                                })
-                                .await
-                        {
-                            tracing::warn!("Failed to send TodoUpdated event: {:?}", e);
-                        }
-                    }
-
-                    let result = registry.execute(tc_name, tc_args.clone()).await;
-                    match result {
-                        Ok(tool_result) => {
-                            let status = if tool_result.success {
-                                "success"
-                            } else {
-                                "failed"
-                            };
-                            tool_calls_executed.push(format!("{}: {}", tc_name, status));
-
-                            let output = if tool_result.output.len() > MAX_TOOL_OUTPUT_SIZE {
-                                let truncated = &tool_result.output[..MAX_TOOL_OUTPUT_SIZE];
-                                format!(
-                                    "{}...\n\n[Output truncated: {} bytes total, showing first {} bytes]",
-                                    truncated,
-                                    tool_result.output.len(),
-                                    MAX_TOOL_OUTPUT_SIZE
-                                )
-                            } else {
-                                tool_result.output
-                            };
-                            tool_results.push((tc_id.clone(), output));
-                        }
-                        Err(e) => {
-                            let error_msg = format!("Error executing {}: {}", tc_name, e);
-                            tool_calls_executed.push(format!("{}: error", tc_name));
-                            tool_results.push((tc_id.clone(), error_msg));
-                        }
-                    }
-                }
-
-                // Add assistant message with tool calls to conversation
-                let assistant_msg = Message {
-                    role: cortex_engine::client::MessageRole::Assistant,
-                    content: cortex_engine::client::MessageContent::Text(iteration_content.clone()),
-                    tool_call_id: None,
-                    tool_calls: Some(tool_calls_for_msg),
-                };
-                messages.push(assistant_msg);
-
-                // Add tool results to conversation
-                for (tc_id, output) in tool_results {
-                    messages.push(Message::tool_result(&tc_id, &output));
-                }
-
-                // Store content for final output
-                if !iteration_content.is_empty() {
-                    final_content = iteration_content;
-                }
+            return;
+        };
+        let permit = match CHILD_LIMIT.try_acquire() {
+            Ok(permit) => permit,
+            Err(_) => {
+                self.app_state.add_pending_tool_result(tool_call_id, "Task".into(), "The four-child concurrency limit was reached. Wait for an active child to finish.".into(), false);
+                return;
             }
-
-            // Build output with metadata
-            let tools_summary = if tool_calls_executed.is_empty() {
-                "No tools executed".to_string()
-            } else {
-                tool_calls_executed.join("\n")
-            };
-
-            // Handle case where LLM produced no text output
-            let effective_content = if final_content.trim().is_empty() {
-                if tool_calls_executed.is_empty() {
-                    format!(
-                        "The {} subagent completed but produced no output or tool calls. \
-                         This may indicate an issue with the task or model response.",
-                        subagent_type
-                    )
-                } else {
-                    let success_count = tool_calls_executed
-                        .iter()
-                        .filter(|s| s.contains("success"))
-                        .count();
-                    let error_count = tool_calls_executed
-                        .iter()
-                        .filter(|s| s.contains("error") || s.contains("failed"))
-                        .count();
-                    format!(
-                        "The {} subagent completed {} tool call(s) ({} successful, {} failed) \
-                         but did not provide a textual summary. Task: {}",
-                        subagent_type,
-                        tool_calls_executed.len(),
-                        success_count,
-                        error_count,
-                        description
-                    )
-                }
-            } else {
-                final_content
-            };
-
-            let output = format!(
-                "{}\n\n\
-                 Tools executed:\n{}\n\n\
-                 <task_metadata>\n\
-                 session_id: subagent_{}\n\
-                 agent_type: {}\n\
-                 description: {}\n\
-                 </task_metadata>",
-                effective_content, tools_summary, id, subagent_type, description
-            );
-
-            let duration = started_at.elapsed();
-
-            if let Err(e) = tool_tx
-                .send(ToolEvent::Completed {
+        };
+        let display_id = format!("subagent_{tool_call_id}");
+        self.app_state.add_subagent_task(SubagentTaskDisplay::new(
+            display_id,
+            tool_call_id.clone(),
+            description,
+            role.clone(),
+        ));
+        self.app_state.streaming.start_delegation();
+        let tool_tx = self.tool_event_tx.clone();
+        let id = tool_call_id.clone();
+        let task = tokio::spawn(async move {
+            let _permit = permit;
+            let started_at = Instant::now();
+            let _ = tool_tx
+                .send(ToolEvent::Started {
                     id: id.clone(),
-                    name: "Task".to_string(),
-                    output: output.clone(),
-                    success: true,
-                    duration,
+                    name: "Task".into(),
+                    started_at,
                 })
-                .await
-            {
-                tracing::error!(
-                    "CRITICAL: Failed to send ToolEvent::Completed for subagent {}: {:?}. Output was: {}",
+                .await;
+            let client = {
+                let mut manager = manager.write().await;
+                manager.ensure_client().ok();
+                manager.snapshot_client().and_then(|client| {
+                    let child = client.fresh_clone_box();
+                    // snapshot_client can transfer ownership for non-cloneable
+                    // clients; never consume the parent's transport.
+                    manager.restore_client(client);
+                    child
+                })
+            };
+            let Some(client) = client else {
+                let _ = tool_tx.send(ToolEvent::Failed { id, name: "Task".into(), error: "The active client cannot provide an isolated child session. No task was started.".into(), duration: started_at.elapsed() }).await;
+                return;
+            };
+            let request = CompletionRequest {
+                model: model.unwrap_or_else(|| client.model().to_string()),
+                messages: vec![
+                    Message::system(format!(
+                        "Delegated role: {role}. Complete only the assigned task. This role is guidance, not a permission grant."
+                    )),
+                    Message::user(prompt),
+                ],
+                ..Default::default()
+            };
+            let outcome = tokio::time::timeout(
+                Duration::from_secs(timeout_secs),
+                collect_child_turn(client.as_ref(), request),
+            )
+            .await;
+            let outcome = match outcome {
+                Ok(result) => result,
+                Err(_) => {
+                    let cancellation = client.cancel_turn_checked().await;
+                    Err(anyhow::anyhow!(
+                        "Child deadline reached. {}",
+                        cancellation
+                            .err()
+                            .map(|e| e.user_friendly_message())
+                            .unwrap_or_else(|| "Remote cancellation was requested.".into())
+                    ))
+                }
+            };
+            let event = match outcome {
+                Ok(output) => ToolEvent::Completed {
                     id,
-                    e,
-                    &output[..output.len().min(500)]
-                );
-            }
+                    name: "Task".into(),
+                    output,
+                    success: true,
+                    duration: started_at.elapsed(),
+                },
+                Err(error) => ToolEvent::Failed {
+                    id,
+                    name: "Task".into(),
+                    error: error.to_string(),
+                    duration: started_at.elapsed(),
+                },
+            };
+            let _ = tool_tx.send(event).await;
         });
-
         self.running_tool_tasks.insert(tool_call_id, task);
     }
 }
+
+type ChildRequest = (String, String, String, u64, Option<String>);
+fn parse_child_request(args: &serde_json::Value) -> anyhow::Result<ChildRequest> {
+    let object = args
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("Task requires an object."))?;
+    for key in object.keys() {
+        if ![
+            "prompt",
+            "task",
+            "description",
+            "agent",
+            "subagent_type",
+            "context",
+            "timeout_secs",
+            "model",
+        ]
+        .contains(&key.as_str())
+        {
+            anyhow::bail!(
+                "Task option '{key}' is unsupported by the Code delegation contract. No task was started."
+            );
+        }
+    }
+    let mut prompt = args
+        .get("prompt")
+        .or_else(|| args.get("task"))
+        .and_then(|v| v.as_str())
+        .filter(|p| !p.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Task requires a nonempty prompt or task."))?
+        .to_string();
+    if let Some(context) = args.get("context") {
+        let context = context
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Task context must be text."))?;
+        prompt.push_str(&format!("\n\nAssigned context:\n{context}"));
+    }
+    for key in ["subagent_type", "agent", "description"] {
+        if args.get(key).is_some_and(|value| !value.is_string()) {
+            anyhow::bail!("Task {key} must be text.");
+        }
+    }
+    let role = args
+        .get("subagent_type")
+        .or_else(|| args.get("agent"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("code")
+        .to_string();
+    let description = args
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Delegated task")
+        .to_string();
+    let timeout = match args.get("timeout_secs") {
+        None => 300,
+        Some(value) => value
+            .as_u64()
+            .filter(|v| (1..=600).contains(v))
+            .ok_or_else(|| anyhow::anyhow!("Task timeout_secs must be between 1 and 600."))?,
+    };
+    let model = args
+        .get("model")
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| anyhow::anyhow!("Task model must be nonempty text."))
+        })
+        .transpose()?;
+    Ok((prompt, description, role, timeout, model))
+}
+
+async fn collect_child_turn(
+    client: &dyn ModelClient,
+    request: CompletionRequest,
+) -> anyhow::Result<String> {
+    let mut stream = client
+        .complete(request)
+        .await
+        .map_err(|error| anyhow::anyhow!(error.user_friendly_message()))?;
+    let mut text = String::new();
+    let mut observations = std::collections::HashSet::new();
+    while let Some(event) = stream.next().await {
+        match event.map_err(|error| anyhow::anyhow!(error.user_friendly_message()))? {
+            ResponseEvent::Delta(delta) => text.push_str(&delta),
+            ResponseEvent::ToolCall(call) => {
+                if !call.remote {
+                    anyhow::bail!(LOCAL_TOOLS_UNSUPPORTED);
+                }
+                observations.insert(call.id);
+            }
+            ResponseEvent::ToolResult { id, .. } => {
+                if !observations.remove(&id) {
+                    anyhow::bail!(INCOMPLETE_STREAM);
+                }
+            }
+            ResponseEvent::Done(response) => {
+                response.finish_reason.require_success()?;
+                if !observations.is_empty() {
+                    anyhow::bail!(INCOMPLETE_STREAM);
+                }
+                return Ok(text);
+            }
+            ResponseEvent::Error(error) => anyhow::bail!("{error}"),
+            ResponseEvent::Reasoning(_) => {}
+        }
+    }
+    anyhow::bail!(INCOMPLETE_STREAM)
+}
+
+#[cfg(test)]
+#[path = "runtime_contract_subagent_tests.rs"]
+mod runtime_contract_tests;

@@ -1,3 +1,5 @@
+//! Legacy source-generation helpers. Use `Cortex plugin new` for protocol-1 packages.
+//! The old filesystem scaffolding entrypoints fail rather than emitting incompatible packages.
 //! Plugin SDK for developing Cortex plugins.
 //!
 //! This module provides utilities and documentation for plugin developers.
@@ -81,13 +83,13 @@
 //!
 //! ```bash
 //! # Add wasm32 target
-//! rustup target add wasm32-wasi
+//! rustup target add wasm32-unknown-unknown
 //!
 //! # Build
-//! cargo build --target wasm32-wasi --release
+//! cargo build --target wasm32-unknown-unknown --release
 //!
 //! # Copy to plugin directory
-//! cp target/wasm32-wasi/release/my_plugin.wasm ~/.cortex/plugins/my-awesome-plugin/plugin.wasm
+//! cp target/wasm32-unknown-unknown/release/my_plugin.wasm ~/.cortex/plugins/my-awesome-plugin/plugin.wasm
 //! ```
 //!
 //! ## 4. Install your plugin
@@ -149,7 +151,7 @@ timeout_ms = 30000    # 30 seconds
 /// Example Rust code template for a plugin.
 pub const RUST_TEMPLATE: &str = r#"//! {{plugin_name}} - A Cortex plugin
 //!
-//! Build with: cargo build --target wasm32-wasi --release
+//! Build with: cargo build --target wasm32-unknown-unknown --release
 
 #![no_std]
 
@@ -309,7 +311,7 @@ name = "{{plugin_id}}"
 version = "0.1.0"
 edition = "2021"
 
-# Build for WASM target: cargo build --target wasm32-wasi --release
+# Build for WASM target: cargo build --target wasm32-unknown-unknown --release
 
 [lib]
 crate-type = ["cdylib"]
@@ -364,48 +366,11 @@ impl PluginDev {
         description: &str,
         author: &str,
     ) -> std::io::Result<()> {
-        use std::fs;
-
-        // Create directory structure
-        let plugin_dir = output_dir.join(plugin_id);
-        let src_dir = plugin_dir.join("src");
-
-        fs::create_dir_all(&src_dir)?;
-
-        // Generate files
-        let manifest = generate_manifest(
-            plugin_id,
-            plugin_name,
-            description,
-            author,
-            "example",
-            "An example command",
-        );
-
-        let rust_code = generate_rust_code(plugin_name, "example");
-        let cargo_toml = generate_cargo_toml(plugin_id);
-
-        // Write files
-        fs::write(plugin_dir.join("plugin.toml"), manifest)?;
-        fs::write(src_dir.join("lib.rs"), rust_code)?;
-        fs::write(plugin_dir.join("Cargo.toml"), cargo_toml)?;
-
-        // Write README
-        let readme = format!(
-            "# {}\n\n{}\n\n## Building\n\n```bash\ncargo build --target wasm32-wasi --release\n```\n\n## Installing\n\nCopy the compiled WASM and manifest to your Cortex plugins directory:\n\n```bash\nmkdir -p ~/.cortex/plugins/{}\ncp target/wasm32-wasi/release/{}.wasm ~/.cortex/plugins/{}/plugin.wasm\ncp plugin.toml ~/.cortex/plugins/{}/\n```\n",
-            plugin_name,
-            description,
-            plugin_id,
-            plugin_id.replace('-', "_"),
-            plugin_id,
-            plugin_id,
-        );
-        fs::write(plugin_dir.join("README.md"), readme)?;
-
-        // Write .gitignore
-        fs::write(plugin_dir.join(".gitignore"), "target/\n")?;
-
-        Ok(())
+        let _ = (output_dir, plugin_id, plugin_name, description, author);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Legacy scaffolding is unsupported; use Cortex plugin new (optionally --typescript)",
+        ))
     }
 }
 
@@ -414,101 +379,21 @@ impl PluginDev {
 // ============================================================================
 
 /// TypeScript template for plugin development (for JavaScript/TypeScript plugins).
-pub const TYPESCRIPT_TEMPLATE: &str = r#"/**
- * {{plugin_name}} - A Cortex Plugin
- * 
- * This template provides a TypeScript-based plugin structure.
- * Compile with: npx tsc && npx wasm-pack build
- */
-
-// Plugin metadata
+pub const TYPESCRIPT_TEMPLATE: &str = r#"/** {{plugin_name}} — Cortex protocol 1; build with Cortex plugin build. */
 export const PLUGIN_ID = "{{plugin_id}}";
-export const PLUGIN_VERSION = "0.1.0";
-
-// ============================================================================
-// Plugin Lifecycle
-// ============================================================================
-
-/**
- * Called when the plugin is initialized.
- */
-export function init(): number {
-    console.log(`${PLUGIN_ID} initialized`);
-    return 0;
+export function init() { return { data: null }; }
+export function shutdown() { return { data: null }; }
+export function cmd_{{command_name_snake}}(args: string[], context: unknown) {
+    return { data: { args, context } };
 }
-
-/**
- * Called when the plugin is shutting down.
- */
-export function shutdown(): number {
-    console.log(`${PLUGIN_ID} shutting down`);
-    return 0;
-}
-
-// ============================================================================
-// Command Handlers
-// ============================================================================
-
-/**
- * Handler for the /{{command_name}} command.
- */
-export function cmd_{{command_name_snake}}(args: string[]): number {
-    console.log("{{command_name}} command executed with args:", args);
-    return 0;
-}
-
-// ============================================================================
-// Hook Handlers
-// ============================================================================
-
-/**
- * Called before a tool is executed.
- * Return: 0 = continue, 1 = skip, 2 = abort
- */
-export function hook_tool_execute_before(input: ToolExecuteBeforeInput): number {
-    console.log(`Tool ${input.tool} about to execute`);
-    return 0;
-}
-
-/**
- * Called when UI is being rendered.
- */
-export function hook_ui_render(input: UiRenderInput): UiRenderOutput {
-    return {
-        styles: {},
-        widgets: [],
-        result: "continue"
-    };
-}
-
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-interface ToolExecuteBeforeInput {
-    tool: string;
-    session_id: string;
-    call_id: string;
-    args: Record<string, unknown>;
-}
-
-interface UiRenderInput {
-    session_id: string;
-    component: string;
-    theme: string;
-    dimensions: [number, number];
-}
-
-interface UiRenderOutput {
-    styles: Record<string, string>;
-    widgets: Widget[];
-    result: "continue" | "skip" | "abort";
-}
-
-interface Widget {
-    type: string;
-    [key: string]: unknown;
-}
+export default {
+    protocol: 1,
+    init,
+    shutdown,
+    commands: { "{{command_name}}": cmd_{{command_name_snake}} },
+    tools: {},
+    hooks: {},
+};
 "#;
 
 /// tsconfig.json template for TypeScript plugins.
@@ -562,10 +447,10 @@ log_reloads = true
 
 [build]
 # Build command for the plugin
-command = "cargo build --target wasm32-wasi --release"
+command = "cargo build --target wasm32-unknown-unknown --release"
 
 # Output path for the compiled WASM
-output = "target/wasm32-wasi/release/{{plugin_id}}.wasm"
+output = "target/wasm32-unknown-unknown/release/{{plugin_id}}.wasm"
 
 # Pre-build commands (optional)
 pre_build = []
@@ -713,7 +598,7 @@ pub const RUST_ADVANCED_TEMPLATE: &str = r#"//! {{plugin_name}} - Advanced Corte
 //! - Keyboard bindings
 //! - Event handling
 //!
-//! Build with: cargo build --target wasm32-wasi --release
+//! Build with: cargo build --target wasm32-unknown-unknown --release
 
 #![no_std]
 
@@ -1103,135 +988,18 @@ impl PluginDev {
         author: &str,
         use_typescript: bool,
     ) -> std::io::Result<()> {
-        use std::fs;
-
-        // Create directory structure
-        let plugin_dir = output_dir.join(plugin_id);
-        let src_dir = plugin_dir.join("src");
-        let tests_dir = plugin_dir.join("tests");
-
-        fs::create_dir_all(&src_dir)?;
-        fs::create_dir_all(&tests_dir)?;
-
-        // Generate manifest
-        let manifest = generate_manifest(
+        let _ = (
+            output_dir,
             plugin_id,
             plugin_name,
             description,
             author,
-            "example",
-            "An example command",
+            use_typescript,
         );
-
-        // Write manifest
-        fs::write(plugin_dir.join("plugin.toml"), manifest)?;
-
-        // Generate hot-reload config
-        let hot_reload = generate_hot_reload_config(plugin_id);
-        fs::write(plugin_dir.join("hot-reload.toml"), hot_reload)?;
-
-        if use_typescript {
-            // TypeScript project
-            let ts_code = generate_typescript_code(plugin_id, plugin_name, "example");
-            fs::write(src_dir.join("index.ts"), ts_code)?;
-            fs::write(plugin_dir.join("tsconfig.json"), TSCONFIG_TEMPLATE)?;
-
-            // package.json
-            let package_json = format!(
-                r#"{{
-    "name": "{}",
-    "version": "0.1.0",
-    "description": "{}",
-    "main": "dist/index.js",
-    "scripts": {{
-        "build": "tsc",
-        "watch": "tsc --watch"
-    }},
-    "devDependencies": {{
-        "typescript": "^5.0.0"
-    }}
-}}"#,
-                plugin_id, description
-            );
-            fs::write(plugin_dir.join("package.json"), package_json)?;
-        } else {
-            // Rust project with advanced template
-            let rust_code = generate_advanced_rust_code(plugin_id, plugin_name, "example");
-            fs::write(src_dir.join("lib.rs"), rust_code)?;
-
-            // Cargo.toml
-            let cargo_toml = generate_cargo_toml(plugin_id);
-            fs::write(plugin_dir.join("Cargo.toml"), cargo_toml)?;
-
-            // Test utilities
-            let test_utils = generate_test_utils(plugin_name);
-            fs::write(tests_dir.join("utils.rs"), test_utils)?;
-        }
-
-        // Write README
-        let readme = format!(
-            r#"# {}
-
-{}
-
-## Features
-
-- Custom widgets and UI customization
-- Keyboard bindings
-- Event handling
-- Hot-reload support for development
-
-## Building
-
-{}
-
-## Development
-
-Enable hot-reload during development:
-
-```bash
-cortex plugin dev --watch
-```
-
-## Testing
-
-```bash
-cargo test
-```
-
-## Installing
-
-Copy the compiled WASM and manifest to your Cortex plugins directory:
-
-```bash
-mkdir -p ~/.cortex/plugins/{}
-cp target/wasm32-wasi/release/{}.wasm ~/.cortex/plugins/{}/plugin.wasm
-cp plugin.toml ~/.cortex/plugins/{}/
-```
-"#,
-            plugin_name,
-            description,
-            if use_typescript {
-                "```bash\nnpm install\nnpm run build\n```"
-            } else {
-                "```bash\ncargo build --target wasm32-wasi --release\n```"
-            },
-            plugin_id,
-            plugin_id.replace('-', "_"),
-            plugin_id,
-            plugin_id,
-        );
-        fs::write(plugin_dir.join("README.md"), readme)?;
-
-        // Write .gitignore
-        let gitignore = if use_typescript {
-            "node_modules/\ndist/\n*.wasm\n"
-        } else {
-            "target/\n*.wasm\n"
-        };
-        fs::write(plugin_dir.join(".gitignore"), gitignore)?;
-
-        Ok(())
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Legacy advanced scaffolding is unsupported; use Cortex plugin new --typescript",
+        ))
     }
 }
 
@@ -1269,7 +1037,7 @@ mod tests {
         let cargo = generate_cargo_toml("my-plugin");
 
         assert!(cargo.contains("my-plugin"));
-        assert!(cargo.contains("wasm32-wasi"));
+        assert!(cargo.contains("wasm32-unknown-unknown"));
     }
 
     #[test]

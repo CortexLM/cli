@@ -22,3 +22,6 @@ pub use autonomy::{AutonomyLevel, is_read_only_command};
 pub use cli::ExecCli;
 pub use helpers::{ensure_utf8_locale, validate_path_environment};
 pub use output::{ExecInputFormat, ExecOutputFormat};
+
+mod runtime_contract_options;
+mod runtime_contract_protocol;

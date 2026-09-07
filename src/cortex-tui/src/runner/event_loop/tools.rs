@@ -3,7 +3,6 @@
 use std::time::{Duration, Instant};
 
 use crate::events::ToolEvent;
-use crate::session::StoredToolCall;
 use crate::views::tool_call::format_result_summary;
 
 use super::core::EventLoop;
@@ -37,6 +36,9 @@ impl EventLoop {
         let id = tool_call_id.clone();
         let name = tool_name.clone();
         let mcp_manager = self.mcp_manager.clone();
+        // Every caller reaches here only after the permission manager passed
+        // the call or the user approved it in the modal.
+        let context = self.tool_context(&tool_call_id, &tool_name, &args, true);
 
         // Spawn background task for tool execution
         let task = tokio::spawn(async move {
@@ -69,7 +71,7 @@ impl EventLoop {
                     Err(e) => Err(cortex_engine::CortexError::mcp(name.clone(), e.to_string())),
                 }
             } else {
-                registry.execute(&name, args).await
+                registry.execute_with_context(&name, args, context).await
             };
             let duration = started_at.elapsed();
 
@@ -121,149 +123,68 @@ impl EventLoop {
             return;
         }
 
-        // Parse args for Batch: { tool_calls: [{ tool, parameters }, ...] }
-        let tool_calls = match args.get("tool_calls").and_then(|v| v.as_array()) {
-            Some(calls) => calls.clone(),
-            None => {
+        let batch = match parse_batch_request(args) {
+            Ok(batch) => batch,
+            Err(error) => {
                 self.app_state.add_pending_tool_result(
                     tool_call_id,
                     tool_name,
-                    "Batch tool requires 'tool_calls' array parameter.".to_string(),
+                    error.to_string(),
                     false,
                 );
                 return;
             }
         };
-
-        // Validate: max 10 tools
-        if tool_calls.len() > 10 {
-            self.app_state.add_pending_tool_result(
-                tool_call_id,
-                tool_name,
-                format!("Batch tool allows max 10 tools, got {}.", tool_calls.len()),
-                false,
-            );
-            return;
+        for call in &batch.calls {
+            if self.permission_manager.should_ask(&call.tool) {
+                self.app_state.add_pending_tool_result(tool_call_id, tool_name,
+                    format!("Batch contains '{}' which requires individual approval. No batch tools were run.", call.tool), false);
+                return;
+            }
         }
-
-        // Get tool registry
         let Some(registry) = self.tool_registry.clone() else {
             self.app_state.add_pending_tool_result(
                 tool_call_id,
                 tool_name,
-                "Tool registry not available for batch execution.".to_string(),
+                "Tool registry not available for Batch.".into(),
                 false,
             );
             return;
         };
-
         let tool_tx = self.tool_event_tx.clone();
         let id = tool_call_id.clone();
-
-        // Spawn background task for parallel execution
+        // Each child passed the permission screen above, so each gets an exact
+        // single-use approval for its own call rather than inheriting the parent's.
+        let parent = self.tool_context(&tool_call_id, &tool_name, &serde_json::json!({}), false);
         let task = tokio::spawn(async move {
             let started_at = Instant::now();
-
-            // Send started event
             let _ = tool_tx
                 .send(ToolEvent::Started {
                     id: id.clone(),
-                    name: "Batch".to_string(),
+                    name: "Batch".into(),
                     started_at,
                 })
                 .await;
-
-            // Execute tools in parallel
-            let mut handles = Vec::new();
-
-            for call in tool_calls {
-                let tool_name_inner = call
-                    .get("tool")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let params = call
-                    .get("parameters")
-                    .cloned()
-                    .unwrap_or(serde_json::json!({}));
-
-                // Skip batch in batch (prevent recursion)
-                if tool_name_inner.to_lowercase() == "batch" {
-                    continue;
-                }
-
-                let reg = registry.clone();
-                let handle = tokio::spawn(async move {
-                    let result = reg.execute(&tool_name_inner, params).await;
-                    (tool_name_inner, result)
-                });
-                handles.push(handle);
-            }
-
-            // Wait for all to complete
-            let mut results = Vec::new();
-            for handle in handles {
-                results.push(handle.await);
-            }
-
-            let mut successful = 0;
-            let mut failed = 0;
-            let mut details = Vec::new();
-
-            for result in results {
-                match result {
-                    Ok((name, Ok(tool_result))) => {
-                        if tool_result.success {
-                            successful += 1;
-                        } else {
-                            failed += 1;
-                        }
-                        details.push(format!(
-                            "- {}: {}",
-                            name,
-                            if tool_result.success {
-                                "success"
-                            } else {
-                                "failed"
-                            }
-                        ));
-                    }
-                    Ok((name, Err(e))) => {
-                        failed += 1;
-                        details.push(format!("- {}: error - {}", name, e));
-                    }
-                    Err(e) => {
-                        failed += 1;
-                        details.push(format!("- <task error>: {}", e));
-                    }
-                }
-            }
-
-            let total = successful + failed;
-            let output = format!(
-                "Batch execution completed: {}/{} successful\n\n{}\n\n\
-                 <batch_metadata>\n\
-                 total_calls: {}\n\
-                 successful: {}\n\
-                 failed: {}\n\
-                 </batch_metadata>",
-                successful,
-                total,
-                details.join("\n"),
-                total,
-                successful,
-                failed
-            );
-
-            let duration = started_at.elapsed();
-
+            // join_all owns the futures: dropping this task drops every child,
+            // unlike detached JoinHandles that can keep mutating the workspace.
+            let results = execute_batch_calls(batch, &id, |name, args| {
+                let registry = registry.clone();
+                let context = parent
+                    .clone()
+                    .for_child()
+                    .with_approved_tool_call(&name, &args);
+                async move { registry.execute_with_context(&name, args, context).await }
+            })
+            .await;
+            let success = results.iter().all(|result| result["success"] == true);
+            let output = serde_json::json!({"results": results, "success": success}).to_string();
             let _ = tool_tx
                 .send(ToolEvent::Completed {
                     id,
-                    name: "Batch".to_string(),
+                    name: "Batch".into(),
                     output,
-                    success: failed == 0,
-                    duration,
+                    success,
+                    duration: started_at.elapsed(),
                 })
                 .await;
         });
@@ -434,26 +355,6 @@ impl EventLoop {
         // Remove from running tasks
         self.running_tool_tasks.remove(&id);
 
-        // Force-save assistant message if stream not done
-        if !self.stream_done_received && !self.pending_assistant_tool_calls.is_empty() {
-            if let Some(ref mut session) = self.cortex_session {
-                let tool_calls_for_message = std::mem::take(&mut self.pending_assistant_tool_calls);
-                let content = self.stream_controller.full_text();
-
-                let mut stored_msg = crate::session::StoredMessage::assistant(&content);
-                for tc in &tool_calls_for_message {
-                    let tool_call = StoredToolCall::new(&tc.id, &tc.name, tc.arguments.clone());
-                    stored_msg = stored_msg.with_tool_call(tool_call);
-                }
-                session.add_message_raw(stored_msg);
-                tracing::debug!(
-                    "Force-saved assistant message with {} tool calls before stream done",
-                    tool_calls_for_message.len()
-                );
-            }
-            self.stream_done_received = true;
-        }
-
         // Continue agentic loop if no more tools are running
         tracing::info!(
             running_tools = self.running_tool_tasks.len(),
@@ -463,7 +364,10 @@ impl EventLoop {
             "ToolEvent::Completed - checking continuation state"
         );
 
-        if self.running_tool_tasks.is_empty() && self.running_subagents.is_empty() {
+        if self.stream_done_received
+            && self.running_tool_tasks.is_empty()
+            && self.running_subagents.is_empty()
+        {
             if self.app_state.has_pending_tool_results() {
                 tracing::info!("Calling continue_with_tool_results from ToolEvent::Completed");
                 let _ = self.continue_with_tool_results().await;
@@ -575,24 +479,11 @@ impl EventLoop {
 
         self.running_tool_tasks.remove(&id);
 
-        // Same as Completed: force-save assistant message if stream not done
-        if !self.stream_done_received && !self.pending_assistant_tool_calls.is_empty() {
-            if let Some(ref mut session) = self.cortex_session {
-                let tool_calls_for_message = std::mem::take(&mut self.pending_assistant_tool_calls);
-                let content = self.stream_controller.full_text();
-
-                let mut stored_msg = crate::session::StoredMessage::assistant(&content);
-                for tc in &tool_calls_for_message {
-                    let tool_call = StoredToolCall::new(&tc.id, &tc.name, tc.arguments.clone());
-                    stored_msg = stored_msg.with_tool_call(tool_call);
-                }
-                session.add_message_raw(stored_msg);
-            }
-            self.stream_done_received = true;
-        }
-
         // Continue agentic loop if no more tools are running
-        if self.running_tool_tasks.is_empty() && self.running_subagents.is_empty() {
+        if self.stream_done_received
+            && self.running_tool_tasks.is_empty()
+            && self.running_subagents.is_empty()
+        {
             if self.app_state.has_pending_tool_results() {
                 let _ = self.continue_with_tool_results().await;
             } else if self.app_state.has_queued_messages() {
@@ -687,3 +578,89 @@ impl EventLoop {
         }
     }
 }
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeBatch {
+    #[serde(alias = "tool_calls")]
+    calls: Vec<RuntimeBatchCall>,
+    timeout_secs: Option<u64>,
+    tool_timeout_secs: Option<u64>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeBatchCall {
+    tool: String,
+    #[serde(alias = "parameters")]
+    arguments: serde_json::Value,
+}
+
+fn parse_batch_request(args: serde_json::Value) -> anyhow::Result<RuntimeBatch> {
+    let batch: RuntimeBatch = serde_json::from_value(args)
+        .map_err(|_| anyhow::anyhow!("Batch requires calls[].tool and calls[].arguments."))?;
+    if batch.calls.is_empty() || batch.calls.len() > 10 {
+        anyhow::bail!("Batch requires between 1 and 10 calls.");
+    }
+    if batch.timeout_secs.is_some_and(|n| !(1..=600).contains(&n))
+        || batch
+            .tool_timeout_secs
+            .is_some_and(|n| !(1..=300).contains(&n))
+    {
+        anyhow::bail!("Batch timeouts must be positive and within the advertised limits.");
+    }
+    for call in &batch.calls {
+        if call.tool.trim().is_empty() || !call.arguments.is_object() {
+            anyhow::bail!("Each Batch call needs a tool name and an arguments object.");
+        }
+        if ["batch", "task", "agent", "questions", "question"]
+            .contains(&call.tool.to_ascii_lowercase().as_str())
+        {
+            anyhow::bail!(
+                "Nested Batch, delegation, and interactive questions are not supported inside this Batch executor. No calls were run."
+            );
+        }
+        if cortex_engine::mcp::parse_qualified_name(&call.tool).is_some() {
+            anyhow::bail!(
+                "MCP calls must run individually, not through the built-in Batch executor."
+            );
+        }
+    }
+    Ok(batch)
+}
+
+async fn execute_batch_calls<F, Fut>(
+    batch: RuntimeBatch,
+    id: &str,
+    execute: F,
+) -> Vec<serde_json::Value>
+where
+    F: Fn(String, serde_json::Value) -> Fut,
+    Fut: std::future::Future<Output = cortex_engine::Result<cortex_engine::tools::ToolResult>>,
+{
+    let timeout = Duration::from_secs(
+        batch
+            .tool_timeout_secs
+            .unwrap_or(60)
+            .min(batch.timeout_secs.unwrap_or(300)),
+    );
+    let futures = batch.calls.into_iter().enumerate().map(|(index, call)| {
+        let future = execute(call.tool.clone(), call.arguments);
+        async move {
+            let started = Instant::now();
+            let result = tokio::time::timeout(timeout, future).await;
+            let (success, output, error, timed_out, metadata) = match result {
+                Ok(Ok(result)) => (result.success, result.output, None, false, result.metadata.map(|m| serde_json::json!({"duration_ms": m.duration_ms, "exit_code": m.exit_code, "files_modified": m.files_modified, "data": m.data}))),
+                Ok(Err(error)) => (false, String::new(), Some(error.user_friendly_message()), false, None),
+                Err(_) => (false, String::new(), Some("Tool deadline exceeded.".into()), true, None),
+            };
+            serde_json::json!({"id": format!("{id}/{index}"), "index":index, "tool":call.tool, "success":success,
+                "output":output, "error":error, "timed_out":timed_out, "metadata":metadata, "duration_ms":started.elapsed().as_millis() as u64})
+        }
+    });
+    futures::future::join_all(futures).await
+}
+
+#[cfg(test)]
+#[path = "runtime_contract_tools_tests.rs"]
+mod runtime_contract_tests;

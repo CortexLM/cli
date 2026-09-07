@@ -159,6 +159,25 @@ pub trait Plugin: Send + Sync {
         ctx: &crate::PluginContext,
     ) -> Result<String>;
 
+    /// Versioned hook/tool invocation; default implementations fail closed.
+    async fn invoke(
+        &self,
+        _method: &str,
+        _name: &str,
+        _input: serde_json::Value,
+        _ctx: &crate::PluginContext,
+    ) -> Result<crate::contract::InvocationResult> {
+        Err(crate::PluginError::execution_error(
+            self.info().id.clone(),
+            "Runtime operation unsupported",
+        ))
+    }
+
+    /// Drain validated effects so the caller must explicitly render or reject them.
+    async fn take_notifications(&self) -> Vec<crate::contract::Notification> {
+        Vec::new()
+    }
+
     /// Get plugin configuration.
     fn get_config(&self, key: &str) -> Option<serde_json::Value>;
 
@@ -192,7 +211,13 @@ impl PluginHandle {
 
     /// Get plugin info.
     pub async fn info(&self) -> PluginInfo {
-        self.inner.read().await.info().clone()
+        let plugin = self.inner.read().await;
+        let mut info = plugin.info().clone();
+        info.enabled = !matches!(
+            plugin.state(),
+            PluginState::Unloaded | PluginState::Disabled
+        );
+        info
     }
 
     /// Get plugin state.

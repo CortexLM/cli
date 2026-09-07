@@ -43,7 +43,7 @@ $functionAsts = $ast.FindAll({
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
     }, $true)
 
-foreach ($name in @("Resolve-CortexInstallPlatform", "Get-CortexRuntimeOsArchitecture")) {
+foreach ($name in @("Resolve-CortexInstallPlatform", "Get-CortexRuntimeOsArchitecture", "Expand-CortexBinary")) {
     $fn = $functionAsts | Where-Object { $_.Name -eq $name } | Select-Object -First 1
     if ($null -eq $fn) {
         throw "test-install-ps1: function $name not found in install.ps1"
@@ -91,8 +91,12 @@ function Assert-ThrowsLike {
 Assert-Platform -RuntimeOsArchitecture "X64" -ProcessorArchitecture "" -Is64BitOperatingSystem $false -Expected "windows-x86_64"
 Assert-Platform -RuntimeOsArchitecture "" -ProcessorArchitecture "AMD64" -Is64BitOperatingSystem $false -Expected "windows-x86_64"
 Assert-Platform -RuntimeOsArchitecture "" -ProcessorArchitecture "amd64" -Is64BitOperatingSystem $false -Expected "windows-x86_64"
-Assert-Platform -RuntimeOsArchitecture "" -ProcessorArchitecture "x86" -Is64BitOperatingSystem $true -Expected "windows-x86_64"
-Assert-Platform -RuntimeOsArchitecture "" -ProcessorArchitecture "" -Is64BitOperatingSystem $true -Expected "windows-x86_64"
+Assert-ThrowsLike -Label "ambiguous 64-bit architecture" -Pattern "unsupported architecture" -Script {
+    Resolve-CortexInstallPlatform -RuntimeOsArchitecture "" -ProcessorArchitecture "x86" -Is64BitOperatingSystem $true
+}
+Assert-ThrowsLike -Label "unknown 64-bit architecture" -Pattern "unsupported architecture" -Script {
+    Resolve-CortexInstallPlatform -RuntimeOsArchitecture "" -ProcessorArchitecture "" -Is64BitOperatingSystem $true
+}
 
 Assert-ThrowsLike -Label "Arm64 runtime" -Pattern "Windows ARM64 builds are not published yet" -Script {
     Resolve-CortexInstallPlatform -RuntimeOsArchitecture "Arm64" -ProcessorArchitecture "" -Is64BitOperatingSystem $true
@@ -138,5 +142,35 @@ try {
 if (-not $strictThrew) {
     throw "test-install-ps1: StrictMode should reject [CortexInstallArchProbe]::OSArchitecture"
 }
+
+# Exercise extraction with local zip fixtures; never execute the fixture bytes.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('cortex-installer-test-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
+try {
+    foreach ($name in @('../Cortex.exe', '/Cortex.exe', 'nested/Cortex.exe', 'other.exe', 'Cortex.exe')) {
+        $zipPath = Join-Path $fixtureRoot 'fixture.zip'
+        $destination = Join-Path $fixtureRoot 'extracted.exe'
+        $zip = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
+        try {
+            $entry = $zip.CreateEntry($name)
+            $writer = New-Object IO.StreamWriter($entry.Open())
+            try { $writer.Write('fixture bytes, not an executable') } finally { $writer.Dispose() }
+        } finally { $zip.Dispose() }
+        if ($name -ceq 'Cortex.exe') {
+            Expand-CortexBinary $zipPath $destination
+            if ((Get-Content -LiteralPath $destination -Raw) -cne 'fixture bytes, not an executable') {
+                throw 'test-install-ps1: extracted binary contents differ'
+            }
+            Remove-Item -LiteralPath $destination
+        } else {
+            Assert-ThrowsLike -Label "unsafe archive entry $name" -Pattern 'invalid archive entry' -Script {
+                Expand-CortexBinary $zipPath $destination
+            }
+            if (Test-Path -LiteralPath $destination) { throw 'test-install-ps1: unsafe archive was extracted' }
+        }
+        Remove-Item -LiteralPath $zipPath
+    }
+} finally { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
 
 Write-Host "test-install-ps1: ok"

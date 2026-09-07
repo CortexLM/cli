@@ -3,7 +3,7 @@
 #[cfg(feature = "otel")]
 use opentelemetry::trace::{Span, SpanKind, Status, Tracer};
 #[cfg(feature = "otel")]
-use opentelemetry_sdk::trace::Tracer as SdkTracer;
+use opentelemetry_sdk::trace::SdkTracer;
 
 /// Event types for telemetry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,5 +119,36 @@ impl OtelEventManager {
 impl Default for OtelEventManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(all(test, feature = "otel"))]
+mod tests {
+    use super::*;
+    use opentelemetry::trace::TracerProvider;
+    use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+
+    #[test]
+    fn records_events_and_errors_with_the_patched_sdk() {
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let manager = OtelEventManager::new(provider.tracer("migration-test"));
+        manager.record_event(EventType::SessionStart, vec![("kind", "offline".into())]);
+        manager.record_error("fixture failure", vec![]);
+        manager.start_span("operation").end();
+        provider.force_flush().unwrap();
+        let spans = exporter.get_finished_spans().unwrap();
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].name, "session_start");
+        assert!(
+            spans[0]
+                .attributes
+                .contains(&opentelemetry::KeyValue::new("kind", "offline"))
+        );
+        assert_eq!(spans[1].status, Status::error("fixture failure"));
+        assert_eq!(spans[2].name, "operation");
+        provider.shutdown().unwrap();
     }
 }

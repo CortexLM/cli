@@ -39,7 +39,7 @@ pub struct ClientCapabilities {
 
 /// File System Capability.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct FileSystemCapability {
     pub read_text_file: bool,
     pub write_text_file: bool,
@@ -50,6 +50,7 @@ pub struct FileSystemCapability {
 #[serde(rename_all = "camelCase")]
 pub struct AgentCapabilities {
     pub load_session: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_capabilities: Option<McpCapabilities>,
     pub prompt_capabilities: PromptCapabilities,
 }
@@ -108,7 +109,11 @@ pub struct NewSessionRequest {
 
 /// MCP Server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum McpServer {
     Stdio(McpServerStdio),
     Http(McpServerHttp),
@@ -152,7 +157,9 @@ pub struct HttpHeader {
 #[serde(rename_all = "camelCase")]
 pub struct NewSessionResponse {
     pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub models: Option<SessionModels>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub modes: Option<SessionModes>,
 }
 
@@ -199,7 +206,11 @@ pub struct PromptRequest {
 
 /// Prompt Content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum PromptContent {
     Text {
         text: String,
@@ -250,7 +261,11 @@ pub struct SessionNotification {
 
 /// Session Update.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "sessionUpdate", rename_all = "snake_case")]
+#[serde(
+    tag = "sessionUpdate",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum SessionUpdate {
     AgentMessageChunk {
         content: MessageContent,
@@ -281,7 +296,11 @@ pub enum SessionUpdate {
 
 /// Message Content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum MessageContent {
     Text { text: String },
 }
@@ -316,7 +335,11 @@ pub struct Location {
 
 /// Tool Call Content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum ToolCallContent {
     Content {
         content: MessageContent,

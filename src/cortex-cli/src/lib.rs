@@ -29,6 +29,7 @@
 //! - `styled_output` - Themed terminal output formatting
 //! - `login` - Authentication management
 
+use std::io::IsTerminal;
 use std::panic;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
@@ -36,6 +37,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 pub mod cli;
 
 // Re-export the utilities module for shared functionality
+pub mod startup;
 pub mod utils;
 
 static CLEANUP_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -62,98 +64,7 @@ pub fn install_cleanup_handler() {
     // Install panic hook to track background thread panics (#2805)
     install_panic_hook();
 
-    // Install Ctrl+C (SIGINT) handler
-    let _ = ctrlc::set_handler(move || {
-        // Perform cleanup
-        perform_cleanup();
-
-        // Restore terminal state
-        restore_terminal();
-
-        // Exit with standard interrupt code
-        std::process::exit(130);
-    });
-
-    // Install SIGTERM handler on Unix systems for graceful container shutdown
-    #[cfg(unix)]
-    {
-        use std::sync::Once;
-        static SIGTERM_HANDLER: Once = Once::new();
-        SIGTERM_HANDLER.call_once(|| {
-            // Use a simple approach: spawn a thread that waits for SIGTERM
-            std::thread::spawn(|| {
-                // Create a signal iterator for SIGTERM
-                let mut signals =
-                    signal_hook::iterator::Signals::new([signal_hook::consts::SIGTERM])
-                        .expect("Failed to create signal handler");
-
-                for sig in signals.forever() {
-                    if sig == signal_hook::consts::SIGTERM {
-                        // Print graceful shutdown message
-                        eprintln!("\nShutting down gracefully...");
-
-                        // Perform cleanup
-                        perform_cleanup();
-
-                        // Restore terminal state
-                        restore_terminal();
-
-                        // Exit with SIGTERM code (128 + 15 = 143)
-                        std::process::exit(143);
-                    }
-                }
-            });
-        });
-    }
-}
-
-/// Perform cleanup operations before exit.
-/// Removes lock files and temporary files.
-fn perform_cleanup() {
-    // Clean up lock files in cortex home directory
-    if let Some(home) = dirs::home_dir() {
-        let cortex_home = home.join(".cortex");
-        cleanup_lock_files(&cortex_home);
-    }
-
-    // Clean up temporary files
-    let temp_dir = std::env::temp_dir();
-    cleanup_temp_files(&temp_dir);
-}
-
-/// Clean up lock files in the given directory.
-fn cleanup_lock_files(dir: &std::path::Path) {
-    if !dir.exists() {
-        return;
-    }
-
-    // Remove .lock files
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "lock") {
-                let _ = std::fs::remove_file(&path);
-            }
-        }
-    }
-}
-
-/// Clean up temporary files created by cortex.
-fn cleanup_temp_files(temp_dir: &std::path::Path) {
-    if let Ok(entries) = std::fs::read_dir(temp_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            // Remove cortex-prefixed temp files
-            if file_name.starts_with("cortex-") || file_name.starts_with(".cortex") {
-                if path.is_dir() {
-                    let _ = std::fs::remove_dir_all(&path);
-                } else {
-                    let _ = std::fs::remove_file(&path);
-                }
-            }
-        }
-    }
+    startup::install_signal_handler();
 }
 
 /// Install a panic hook that tracks panics in background threads.
@@ -240,6 +151,9 @@ pub fn get_panic_exit_code() -> i32 {
 /// Called on Ctrl+C or panic to ensure clean terminal state.
 /// This addresses issue #2766 where mouse mode wasn't reset after abnormal termination.
 pub fn restore_terminal() {
+    if !std::io::stderr().is_terminal() {
+        return;
+    }
     // Show cursor (in case it was hidden by a spinner)
     eprint!("\x1b[?25h");
     // Disable mouse tracking modes that may have been enabled (#2766)
@@ -389,135 +303,6 @@ mod tests {
         // This test just ensures restore_terminal doesn't panic
         // It writes ANSI escape codes to stderr
         restore_terminal();
-    }
-
-    // =========================================================================
-    // Cleanup functions tests
-    // =========================================================================
-
-    #[test]
-    fn test_cleanup_lock_files_nonexistent_dir() {
-        // Should not panic when directory doesn't exist
-        let nonexistent = std::path::Path::new("/nonexistent/path/that/does/not/exist");
-        cleanup_lock_files(nonexistent);
-    }
-
-    #[test]
-    fn test_cleanup_lock_files_empty_dir() {
-        // Create a temp directory with no lock files
-        let temp_dir =
-            std::env::temp_dir().join(format!("test_cleanup_lock_{}", std::process::id()));
-        std::fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-
-        cleanup_lock_files(&temp_dir);
-
-        // Cleanup
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_cleanup_lock_files_removes_lock_files() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("test_cleanup_lock_remove_{}", std::process::id()));
-        std::fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-
-        // Create some lock files
-        let lock_file1 = temp_dir.join("test1.lock");
-        let lock_file2 = temp_dir.join("test2.lock");
-        let normal_file = temp_dir.join("normal.txt");
-
-        std::fs::write(&lock_file1, "lock1").expect("Failed to write lock file 1");
-        std::fs::write(&lock_file2, "lock2").expect("Failed to write lock file 2");
-        std::fs::write(&normal_file, "normal").expect("Failed to write normal file");
-
-        // Verify files exist before cleanup
-        assert!(lock_file1.exists());
-        assert!(lock_file2.exists());
-        assert!(normal_file.exists());
-
-        // Run cleanup
-        cleanup_lock_files(&temp_dir);
-
-        // Lock files should be removed
-        assert!(!lock_file1.exists());
-        assert!(!lock_file2.exists());
-        // Normal file should remain
-        assert!(normal_file.exists());
-
-        // Cleanup
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_cleanup_temp_files_nonexistent_dir() {
-        // Should not panic when directory doesn't exist
-        let nonexistent = std::path::Path::new("/nonexistent/temp/path");
-        cleanup_temp_files(nonexistent);
-    }
-
-    #[test]
-    fn test_cleanup_temp_files_removes_cortex_prefixed() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("test_cleanup_temp_{}", std::process::id()));
-        std::fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-
-        // Create some test files
-        let cortex_file = temp_dir.join("cortex-test-file.tmp");
-        let dot_cortex_file = temp_dir.join(".cortex-temp");
-        let other_file = temp_dir.join("other-file.txt");
-
-        std::fs::write(&cortex_file, "cortex").expect("Failed to write cortex file");
-        std::fs::write(&dot_cortex_file, ".cortex").expect("Failed to write .cortex file");
-        std::fs::write(&other_file, "other").expect("Failed to write other file");
-
-        // Verify files exist before cleanup
-        assert!(cortex_file.exists());
-        assert!(dot_cortex_file.exists());
-        assert!(other_file.exists());
-
-        // Run cleanup
-        cleanup_temp_files(&temp_dir);
-
-        // Cortex files should be removed
-        assert!(!cortex_file.exists());
-        assert!(!dot_cortex_file.exists());
-        // Other file should remain
-        assert!(other_file.exists());
-
-        // Cleanup
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_cleanup_temp_files_removes_cortex_directories() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("test_cleanup_temp_dir_{}", std::process::id()));
-        std::fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-
-        // Create a cortex-prefixed directory with contents
-        let cortex_dir = temp_dir.join("cortex-session-abc123");
-        std::fs::create_dir_all(&cortex_dir).expect("Failed to create cortex dir");
-        std::fs::write(cortex_dir.join("file.txt"), "content")
-            .expect("Failed to write file in cortex dir");
-
-        // Create a non-cortex directory
-        let other_dir = temp_dir.join("other-dir");
-        std::fs::create_dir_all(&other_dir).expect("Failed to create other dir");
-
-        // Verify directories exist before cleanup
-        assert!(cortex_dir.exists());
-        assert!(other_dir.exists());
-
-        // Run cleanup
-        cleanup_temp_files(&temp_dir);
-
-        // Cortex directory should be removed (including contents)
-        assert!(!cortex_dir.exists());
-        // Other directory should remain
-        assert!(other_dir.exists());
-
-        // Cleanup
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     // =========================================================================

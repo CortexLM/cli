@@ -144,6 +144,7 @@ impl Orchestrator {
             ExecutorConfig {
                 default_timeout: config.tool_timeout,
                 sandbox_policy: config.sandbox_policy,
+                working_directory: config.working_directory.clone(),
                 ..Default::default()
             },
         ));

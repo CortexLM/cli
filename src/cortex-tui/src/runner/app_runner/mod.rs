@@ -45,6 +45,7 @@
 
 mod auth_status;
 mod exit_info;
+mod local_startup;
 mod quick_start;
 mod runner;
 mod trusted_workspaces;

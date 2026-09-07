@@ -387,6 +387,32 @@ version = "1.0.0"
 mod registry_edge_cases {
     use super::*;
 
+    fn test_manifest(id: &str, name: &str) -> PluginManifest {
+        PluginManifest {
+            plugin: cortex_plugins::manifest::PluginMetadata {
+                id: id.to_string(),
+                name: name.to_string(),
+                version: "1.0.0".to_string(),
+                description: "A test plugin".to_string(),
+                authors: vec![],
+                homepage: None,
+                license: None,
+                min_cortex_version: None,
+                keywords: vec![],
+                icon: None,
+            },
+            capabilities: vec![],
+            permissions: vec![],
+            dependencies: vec![],
+            commands: vec![],
+            hooks: vec![],
+            config: HashMap::new(),
+            wasm: Default::default(),
+            runtime: Default::default(),
+            tools: Vec::new(),
+        }
+    }
+
     #[tokio::test]
     async fn test_registry_ssrf_ipv4_mapped_ipv6() {
         // IPv4-mapped IPv6 addresses should also be blocked
@@ -538,7 +564,6 @@ mod registry_edge_cases {
     #[tokio::test]
     async fn test_registry_duplicate_registration() {
         use cortex_plugins::{Plugin, PluginContext, PluginInfo, PluginState};
-        use std::collections::HashMap;
 
         // Create mock plugin
         struct MockPlugin {
@@ -549,27 +574,7 @@ mod registry_edge_cases {
 
         impl MockPlugin {
             fn new(id: &str) -> Self {
-                let manifest = PluginManifest {
-                    plugin: cortex_plugins::manifest::PluginMetadata {
-                        id: id.to_string(),
-                        name: format!("Test Plugin {}", id),
-                        version: "1.0.0".to_string(),
-                        description: "A test plugin".to_string(),
-                        authors: vec![],
-                        homepage: None,
-                        license: None,
-                        min_cortex_version: None,
-                        keywords: vec![],
-                        icon: None,
-                    },
-                    capabilities: vec![],
-                    permissions: vec![],
-                    dependencies: vec![],
-                    commands: vec![],
-                    hooks: vec![],
-                    config: HashMap::new(),
-                    wasm: Default::default(),
-                };
+                let manifest = test_manifest(id, &format!("Test Plugin {}", id));
 
                 let info = PluginInfo::from_manifest(&manifest, PathBuf::from("/tmp"));
 
@@ -661,27 +666,7 @@ mod registry_edge_cases {
 
         impl ReloadablePlugin {
             fn new(id: &str) -> Self {
-                let manifest = PluginManifest {
-                    plugin: cortex_plugins::manifest::PluginMetadata {
-                        id: id.to_string(),
-                        name: format!("Reloadable Plugin {}", id),
-                        version: "1.0.0".to_string(),
-                        description: "A reloadable test plugin".to_string(),
-                        authors: vec![],
-                        homepage: None,
-                        license: None,
-                        min_cortex_version: None,
-                        keywords: vec![],
-                        icon: None,
-                    },
-                    capabilities: vec![],
-                    permissions: vec![],
-                    dependencies: vec![],
-                    commands: vec![],
-                    hooks: vec![],
-                    config: HashMap::new(),
-                    wasm: Default::default(),
-                };
+                let manifest = test_manifest(id, &format!("Reloadable Plugin {}", id));
 
                 let info = PluginInfo::from_manifest(&manifest, PathBuf::from("/tmp"));
 

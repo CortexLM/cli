@@ -217,6 +217,11 @@ impl SsrfProtection {
     pub fn validate_url(&self, url_str: &str) -> SsrfResult<Url> {
         // Parse the URL
         let url = Url::parse(url_str).map_err(|e| SsrfError::InvalidUrl(e.to_string()))?;
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(SsrfError::InvalidUrl(
+                "URL credentials are not allowed".into(),
+            ));
+        }
 
         // Check protocol
         self.check_protocol(&url)?;
@@ -234,8 +239,10 @@ impl SsrfProtection {
         self.check_allowlist(host)?;
 
         // Check if host is an IP address
-        if let Ok(ip) = host.parse::<IpAddr>() {
-            self.check_ip_address(ip)?;
+        match url.host() {
+            Some(url::Host::Ipv4(ip)) => self.check_ip_address(IpAddr::V4(ip))?,
+            Some(url::Host::Ipv6(ip)) => self.check_ip_address(IpAddr::V6(ip))?,
+            _ => {}
         }
 
         // Perform DNS resolution check to prevent DNS rebinding
@@ -256,7 +263,7 @@ impl SsrfProtection {
 
     /// Check for localhost and local domain patterns.
     fn check_localhost(&self, host: &str) -> SsrfResult<()> {
-        let host_lower = host.to_lowercase();
+        let host_lower = host.trim_end_matches('.').to_lowercase();
 
         // Explicit localhost checks
         let localhost_patterns = [
@@ -329,7 +336,7 @@ impl SsrfProtection {
         let host_lower = host.to_lowercase();
 
         for allowed in &self.config.allowed_domains {
-            if host_lower == *allowed || host_lower.ends_with(&format!(".{}", allowed)) {
+            if host_lower == *allowed {
                 return Ok(());
             }
         }
@@ -462,6 +469,11 @@ impl SsrfProtection {
         }
 
         let segments = ip.segments();
+        // Only global-unicast space (plus checked IPv4-mapped addresses above).
+        // Reject deprecated IPv4-compatible, NAT64, and future reserved forms.
+        if segments[0] & 0xe000 != 0x2000 {
+            return true;
+        }
 
         // Link-local: fe80::/10 (fe80:: - febf::)
         if segments[0] & 0xffc0 == 0xfe80 {
@@ -727,7 +739,8 @@ mod tests {
 
     #[test]
     fn test_is_safe_url() {
-        assert!(is_safe_url("https://example.com"));
+        let offline = SsrfProtection::with_config(SsrfConfig::new().skip_dns_resolution());
+        assert!(offline.validate_url("https://example.com").is_ok());
         assert!(!is_safe_url("http://localhost"));
         assert!(!is_safe_url("http://192.168.1.1"));
         assert!(!is_safe_url("file:///etc/passwd"));

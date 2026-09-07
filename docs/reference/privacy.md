@@ -8,19 +8,22 @@ do **not** change that business traffic and do not add diagnostic destinations.
 | --- | --- | --- |
 | Authentication | OS keyring or protected process environment | Never log, snapshot, commit, or attach |
 | Sessions, messages, tool outputs | Existing session stores | May contain personal/customer data; minimize access and retention |
-| Local diagnostic events | Explicit `CORTEX_DIAGNOSTICS_DIR` | Closed allowlist, no content or user IDs, bounded seven-day retention |
+| Local diagnostic events | Explicit `CORTEX_DIAGNOSTICS_DIR`, or the home `diagnostics/` directory with `--debug` | Closed allowlist, no content or user IDs, bounded seven-day retention |
 | CI test/coverage reports | Repository CI artifacts | Synthetic test data only; 14–30 day retention |
 | CPU profiles / existing debug logs | Operator-selected local files | Potentially sensitive; no automatic upload |
 
 Consent is explicit: diagnostics are disabled unless the operator chooses an
-output directory. Unset the variable to stop recording. Remove only that
+output directory or passes `--debug`. Unset the variable and omit `--debug` to
+stop recording. `--debug` no longer creates or overwrites `./debug.txt`.
+Remove only that
 operator-selected generated diagnostic directory to erase diagnostic history.
 This does not erase session stores, backups, keyring credentials, or third-party
 service data. Handle those separately through their existing lifecycle.
 
 For bug reports, use aggregate counts and a minimal synthetic reproduction.
-Review any attachment manually. Existing `--debug` logs and session exports
-are not made safe by this diagnostic allowlist. Do not feed them to external
+Review any attachment manually. Raw debug logs from older versions, verbose
+console output and session exports are not made safe by this diagnostic
+allowlist. Do not feed them to external
 analytics or automated issue creation.
 
 There is no claim of regulatory certification, centralized consent management,

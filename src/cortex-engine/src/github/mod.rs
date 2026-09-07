@@ -3,6 +3,7 @@
 //! This module provides GitHub API client, event parsing, and workflow generation
 //! for CI/CD automation with Cortex.
 
+pub mod automation;
 pub mod client;
 pub mod events;
 pub mod workflow;

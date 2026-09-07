@@ -301,11 +301,13 @@ impl AppRunner {
     /// let exit_info = AppRunner::new(config).run().await?;
     /// println!("Exited: {:?}", exit_info.exit_reason);
     /// ```
-    pub async fn run(self) -> Result<AppExitInfo> {
+    pub async fn run(mut self) -> Result<AppExitInfo> {
         tracing::info!("Starting Cortex TUI");
 
         // Use direct provider mode if enabled
         if self.use_direct_provider {
+            // Resolve and validate a resumed session before the TUI starts.
+            self.prepare_local_store()?;
             return self.run_direct_provider().await;
         }
 
@@ -327,6 +329,8 @@ impl AppRunner {
     ///
     /// The TUI should appear almost instantly after trust verification and auth check.
     async fn run_direct_provider(self) -> Result<AppExitInfo> {
+        let storage = self.local_store();
+        std::env::set_current_dir(&self.config.cwd)?;
         // Initialize sound system early for audio notifications
         // This spawns a background thread for audio playback
         crate::sound::init();
@@ -359,6 +363,8 @@ impl AppRunner {
             tracing::warn!("Failed to load provider config, using defaults: {}", e);
             ProviderManager::new(Default::default())
         });
+
+        provider_manager.set_model(&self.config.model)?;
 
         // Try to load auth token from keyring and set it on the provider manager
         if let Some(token) = cortex_login::get_auth_token() {
@@ -523,15 +529,12 @@ impl AppRunner {
         tracing::info!("Provider: {}, Model: {}", provider, model);
 
         // Create or resume Cortex session
-        let cortex_session = if let Some(ref session_id) = self.cortex_session_id {
-            tracing::info!("Resuming Cortex session: {}", session_id);
-            CortexSession::load(session_id)?
-        } else {
-            tracing::info!("Creating new Cortex session");
-            CortexSession::new(&provider, &model)?
-        };
-
-        let _session_id = cortex_session.id().to_string();
+        let cortex_session = Self::load_or_create_local_session(
+            storage,
+            &provider,
+            &model,
+            self.cortex_session_id.as_deref(),
+        )?;
 
         // Create app state with user info already loaded
         let mut app_state = AppState::new()
@@ -711,63 +714,8 @@ impl AppRunner {
 
         // Create unified tool executor for Task and Batch tools
         // This requires an API key for the subagent's model client
-        let unified_executor = {
-            use cortex_engine::tools::{ExecutorConfig, UnifiedToolExecutor};
-            use std::sync::Arc;
-
-            // Get auth token using the centralized auth module
-            // This properly handles: instance token → env var → keyring
-            // Previous bug: only checked CORTEX_AUTH_TOKEN env var, missing keyring auth
-            let api_key = cortex_engine::auth_token::get_auth_token(None).ok();
-            let base_url = provider_manager.config().get_base_url(&provider);
-
-            match api_key {
-                Some(api_key) if !api_key.is_empty() => {
-                    tracing::debug!(
-                        "Using API key for UnifiedToolExecutor (length: {})",
-                        api_key.len()
-                    );
-                    let mut config = ExecutorConfig::new(&provider, &model, &api_key)
-                        .with_working_dir(std::env::current_dir().unwrap_or_default());
-
-                    // Add base URL if configured
-                    if let Some(url) = base_url {
-                        config = config.with_base_url(url);
-                    }
-
-                    match UnifiedToolExecutor::new(config) {
-                        Ok(executor) => {
-                            tracing::info!(
-                                "UnifiedToolExecutor initialized - Task and Batch tools enabled"
-                            );
-                            Some(Arc::new(executor))
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to create UnifiedToolExecutor: {} - Task/Batch will use fallback",
-                                e
-                            );
-                            None
-                        }
-                    }
-                }
-                Some(_) => {
-                    // Empty API key - treat same as None
-                    tracing::warn!(
-                        "Empty API key for provider '{}' - Task/Batch tools will use fallback",
-                        provider
-                    );
-                    None
-                }
-                None => {
-                    tracing::warn!(
-                        "No API key configured for provider '{}' - Task/Batch tools will use fallback",
-                        provider
-                    );
-                    None
-                }
-            }
-        };
+        let unified_executor =
+            super::local_startup::build_unified_executor(&provider_manager, &provider, &model);
 
         // Create tool registry for executing tools
         let tool_registry = {
@@ -782,8 +730,9 @@ impl AppRunner {
         // Create event loop with provider manager, cortex session, and tool registry
         let mut event_loop = EventLoop::new(app_state)
             .with_provider_manager(provider_manager)
-            .with_cortex_session(cortex_session)
-            .with_tool_registry(tool_registry);
+            .try_with_cortex_session(cortex_session)?
+            .with_tool_registry(tool_registry)
+            .with_sandbox_policy(self.config.sandbox_policy.clone());
 
         // Add unified executor if available
         if let Some(executor) = unified_executor {
@@ -795,8 +744,7 @@ impl AppRunner {
 
         // Handle initial prompt if provided
         if let Some(prompt) = self.initial_prompt {
-            tracing::debug!("Initial prompt queued: {}", prompt);
-            // Initial prompt sending planned for future implementation
+            event_loop.submit_initial_prompt(prompt).await?;
         }
 
         // Run the main event loop
@@ -911,14 +859,15 @@ impl AppRunner {
         // Create event loop with session bridge and tool registry
         let mut event_loop = EventLoop::new(app_state)
             .with_session(session_bridge)
-            .with_tool_registry(tool_registry);
+            .with_tool_registry(tool_registry)
+            .with_sandbox_policy(self.config.sandbox_policy.clone());
 
         // Load persisted MCP server configurations
         event_loop.load_mcp_servers();
 
         // Handle initial prompt if provided
         if let Some(prompt) = self.initial_prompt {
-            tracing::debug!("Initial prompt queued: {}", prompt);
+            event_loop.submit_initial_prompt(prompt).await?;
         }
 
         // Run the main event loop
@@ -1032,96 +981,5 @@ fn launched_as_agent() -> bool {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::runner::terminal::TerminalOptions;
-
-    #[test]
-    fn test_app_runner_builder() {
-        let config = Config::default();
-
-        let runner = AppRunner::new(config.clone())
-            .with_initial_prompt("Hello")
-            .inline();
-
-        assert_eq!(runner.initial_prompt, Some("Hello".to_string()));
-        assert!(!runner.terminal_options.alternate_screen);
-    }
-
-    #[test]
-    fn test_app_runner_model_provider() {
-        let config = Config::default();
-        let runner = AppRunner::new(config);
-
-        // Default config values
-        assert!(!runner.model().is_empty());
-        assert!(!runner.provider().is_empty());
-    }
-
-    #[test]
-    fn test_app_runner_terminal_options() {
-        let config = Config::default();
-
-        // Default: alternate screen (always)
-        let runner = AppRunner::new(config.clone());
-        assert!(
-            runner.terminal_options.alternate_screen,
-            "default must enter the alternate screen (always)"
-        );
-        assert!(runner.terminal_options.clear_on_start);
-
-        let mut inline = config.clone();
-        inline.alternate_screen = false;
-        let runner = AppRunner::new(inline);
-        assert!(!runner.terminal_options.alternate_screen);
-        assert!(!runner.terminal_options.clear_on_start);
-
-        // Custom options
-        let custom_options = TerminalOptions::new()
-            .alternate_screen(false)
-            .mouse_capture(false);
-
-        let runner = AppRunner::new(config.clone()).with_terminal_options(custom_options);
-        assert!(!runner.terminal_options.alternate_screen);
-        assert!(!runner.terminal_options.mouse_capture);
-
-        // Inline mode
-        let runner = AppRunner::new(config).inline();
-        assert!(!runner.terminal_options.alternate_screen);
-    }
-
-    #[test]
-    fn test_app_runner_direct_provider_mode() {
-        let config = Config::default();
-
-        // Default is direct provider mode
-        let runner = AppRunner::new(config.clone());
-        assert!(runner.use_direct_provider);
-
-        // Can explicitly enable
-        let runner = AppRunner::new(config.clone()).direct_provider(true);
-        assert!(runner.use_direct_provider);
-
-        // Can switch to legacy mode
-        let runner = AppRunner::new(config.clone()).legacy_backend();
-        assert!(!runner.use_direct_provider);
-
-        // with_conversation_id switches to legacy
-        let id = ConversationId::new();
-        let runner = AppRunner::new(config).with_conversation_id(id);
-        assert!(!runner.use_direct_provider);
-    }
-
-    #[test]
-    fn test_app_runner_cortex_session_id() {
-        let config = Config::default();
-
-        let runner = AppRunner::new(config).with_cortex_session_id("test-session-123");
-        assert_eq!(
-            runner.cortex_session_id,
-            Some("test-session-123".to_string())
-        );
-        // Direct provider mode should still be enabled
-        assert!(runner.use_direct_provider);
-    }
-}
+#[path = "ux_runner_tests.rs"]
+mod tests;

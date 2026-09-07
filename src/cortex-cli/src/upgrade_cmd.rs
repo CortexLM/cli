@@ -56,6 +56,9 @@ pub struct UpgradeCli {
 impl UpgradeCli {
     /// Run the upgrade command.
     pub async fn run(self) -> Result<()> {
+        if let Some(version) = &self.version {
+            parse_version(version)?;
+        }
         println!("Cortex CLI Upgrade");
         println!("{}", "=".repeat(40));
         println!("Current version: v{}", CLI_VERSION);
@@ -97,17 +100,9 @@ impl UpgradeCli {
             println!("\nChecking version {}...", version);
             match check_specific_version(&manager, version).await {
                 Ok(info) => Some(info),
-                Err(e) => {
-                    // Check if user asked for current version (Issue #1968)
-                    let normalized_version = version.trim_start_matches('v');
-                    let normalized_current = CLI_VERSION.trim_start_matches('v');
-                    if normalized_version == normalized_current {
-                        println!("\n✓ Already on version v{}. No action needed.", CLI_VERSION);
-                        return Ok(());
-                    }
-                    eprintln!("Error: {}", e);
-                    return Ok(());
-                }
+                Err(_) => bail!(
+                    "Could not retrieve the requested Cortex release. No update was installed."
+                ),
             }
         } else {
             println!("\nChecking for updates ({} channel)...", self.channel);
@@ -127,10 +122,8 @@ impl UpgradeCli {
                     );
                     return Ok(());
                 }
-                Err(e) => {
-                    eprintln!("Failed to check for updates: {}", e);
-                    eprintln!("\nTip: Check {} manually.", SOFTWARE_URL);
-                    return Ok(());
+                Err(_) => {
+                    bail!("The update service is temporarily unavailable. No update was installed.")
                 }
             }
         };
@@ -141,7 +134,7 @@ impl UpgradeCli {
 
         // Display update info
         // Check if versions are the same (or if current is already newer for downgrades)
-        let version_cmp = semver_compare(&info.current_version, &info.latest_version);
+        let version_cmp = semver_compare(&info.current_version, &info.latest_version)?;
 
         if version_cmp == 0 && !self.force {
             println!(
@@ -216,14 +209,29 @@ impl UpgradeCli {
 
 /// Check for a specific version
 async fn check_specific_version(manager: &UpdateManager, version: &str) -> Result<UpdateInfo> {
-    manager
-        .check_version(version)
+    let version = parse_version(version)?.to_string();
+    let info = manager
+        .check_version(&version)
         .await
-        .context(format!("Version {} not found", version))
+        .map_err(|_| anyhow::anyhow!("Could not retrieve the requested Cortex release"))?;
+    if info.latest_version != version {
+        bail!("The update service returned a different release. No update was installed.");
+    }
+    Ok(info)
 }
 
 /// Perform the actual upgrade
 async fn perform_upgrade(manager: &UpdateManager, info: &UpdateInfo) -> Result<()> {
+    // The shared selector does not yet distinguish Linux libc. Never replace a
+    // portable musl executable with its GNU sibling while that is unresolved.
+    if cfg!(all(target_os = "linux", target_env = "musl")) {
+        bail!("Use the verified Cortex installer to update musl installations.");
+    }
+    if info.install_method.uses_package_manager() {
+        bail!(
+            "Update this installation through its package manager: brew upgrade cortex, or winget upgrade --id CortexLM.Cortex --exact. No binary was replaced."
+        );
+    }
     println!("\nDownloading v{}...", info.latest_version);
     println!("  Size: {} bytes", info.asset.size);
 
@@ -255,16 +263,32 @@ async fn perform_upgrade(manager: &UpdateManager, info: &UpdateInfo) -> Result<(
     // Install
     print!("Installing... ");
     stdout().flush()?;
-    let outcome = manager
-        .install(&download)
-        .await
-        .context("Installation failed")?;
+    let executable = std::env::current_exe().context("Could not locate the installed binary")?;
+    let backup = backup_binary(&executable)?;
+    let outcome = manager.install(&download).await.with_context(|| {
+        format!(
+            "Installation failed. Previous binary retained at {}",
+            backup.display()
+        )
+    })?;
+    if let Err(error) = verify_installed_version(&executable, &info.latest_version).await {
+        restore_binary(&backup, &executable).with_context(|| {
+            format!(
+                "Version check failed. Restore {} manually",
+                backup.display()
+            )
+        })?;
+        return Err(error.context("Upgrade failed; the previous binary was restored"));
+    }
     println!("✓");
 
     match outcome {
         UpdateOutcome::Updated { from, to } => {
             println!("\n✓ Successfully upgraded from v{} to v{}!", from, to);
-            println!("  Run `cortex --version` to verify.");
+            println!(
+                "  Verified installed version. Previous binary: {}",
+                backup.display()
+            );
         }
         UpdateOutcome::RequiresRestart => {
             println!("\n✓ Update installed. Please restart Cortex to complete.");
@@ -275,31 +299,81 @@ async fn perform_upgrade(manager: &UpdateManager, info: &UpdateInfo) -> Result<(
     Ok(())
 }
 
-/// Simple semver comparison (returns -1, 0, or 1)
-fn semver_compare(a: &str, b: &str) -> i32 {
-    let parse = |v: &str| -> Vec<u32> {
-        v.trim_start_matches('v')
-            .split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect()
-    };
+/// Stage the recovery copy in the installation directory before replacement.
+fn backup_binary(executable: &std::path::Path) -> Result<std::path::PathBuf> {
+    let metadata = std::fs::symlink_metadata(executable)?;
+    if !metadata.file_type().is_file() {
+        bail!("Refusing to replace a non-regular Cortex binary");
+    }
+    let parent = executable
+        .parent()
+        .context("Missing installation directory")?;
+    let backup = executable.with_extension("old");
+    if let Ok(metadata) = std::fs::symlink_metadata(&backup)
+        && !metadata.file_type().is_file()
+    {
+        bail!("Refusing to overwrite a non-regular recovery path");
+    }
+    let staged = tempfile::NamedTempFile::new_in(parent)?;
+    std::fs::copy(executable, staged.path())?;
+    staged.as_file().sync_all()?;
+    staged.persist(&backup).map_err(|error| error.error)?;
+    Ok(backup)
+}
 
-    let a_parts = parse(a);
-    let b_parts = parse(b);
+fn restore_binary(backup: &std::path::Path, executable: &std::path::Path) -> Result<()> {
+    let parent = executable
+        .parent()
+        .context("Missing installation directory")?;
+    let staged = tempfile::NamedTempFile::new_in(parent)?;
+    std::fs::copy(backup, staged.path())?;
+    staged.as_file().sync_all()?;
+    staged.persist(executable).map_err(|error| error.error)?;
+    Ok(())
+}
 
-    for (av, bv) in a_parts.iter().zip(b_parts.iter()) {
-        match av.cmp(bv) {
-            std::cmp::Ordering::Less => return -1,
-            std::cmp::Ordering::Greater => return 1,
-            std::cmp::Ordering::Equal => continue,
+async fn verify_installed_version(executable: &std::path::Path, version: &str) -> Result<()> {
+    use tokio::io::AsyncReadExt;
+    let mut process = tokio::process::Command::new(executable)
+        .arg("--version")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .context("Could not verify the installed Cortex version")?;
+    let output = process.stdout.take().context("Missing version output")?;
+    let (status, bytes) = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let mut bytes = Vec::new();
+        output.take(4097).read_to_end(&mut bytes).await?;
+        if bytes.len() > 4096 {
+            bail!("Invalid Cortex version output");
         }
+        let status = process.wait().await?;
+        Ok::<_, anyhow::Error>((status, bytes))
+    })
+    .await
+    .context("Installed Cortex version check timed out")??;
+    let output = std::str::from_utf8(&bytes).context("Invalid Cortex version output")?;
+    if !status.success() || output.split_whitespace().last() != Some(version) {
+        bail!("Installed Cortex version did not match the requested release");
     }
+    Ok(())
+}
 
-    match a_parts.len().cmp(&b_parts.len()) {
+/// Parse the complete version instead of silently dropping invalid components.
+fn parse_version(version: &str) -> Result<semver::Version> {
+    semver::Version::parse(version.strip_prefix('v').unwrap_or(version))
+        .map_err(|_| anyhow::anyhow!("Invalid Cortex release version"))
+}
+
+/// Compare SemVer precedence, including prereleases but not build metadata.
+fn semver_compare(a: &str, b: &str) -> Result<i32> {
+    Ok(match parse_version(a)?.cmp_precedence(&parse_version(b)?) {
         std::cmp::Ordering::Less => -1,
-        std::cmp::Ordering::Greater => 1,
         std::cmp::Ordering::Equal => 0,
-    }
+        std::cmp::Ordering::Greater => 1,
+    })
 }
 
 /// Print a line, handling broken pipe gracefully (Issue #1966).
@@ -470,10 +544,135 @@ mod tests {
 
     #[test]
     fn test_semver_compare() {
-        assert_eq!(semver_compare("1.0.0", "1.0.0"), 0);
-        assert_eq!(semver_compare("1.0.0", "1.0.1"), -1);
-        assert_eq!(semver_compare("1.0.1", "1.0.0"), 1);
-        assert_eq!(semver_compare("1.0.0", "2.0.0"), -1);
-        assert_eq!(semver_compare("v1.0.0", "1.0.0"), 0);
+        for (a, b, expected) in [
+            ("1.0.0", "1.0.0", 0),
+            ("1.0.0", "1.0.1", -1),
+            ("1.0.1", "1.0.0", 1),
+            ("v1.0.0", "1.0.0", 0),
+            ("1.0.0-beta.2", "1.0.0-beta.10", -1),
+            ("1.0.0-beta", "1.0.0", -1),
+            ("1.0.0+old", "1.0.0+new", 0),
+        ] {
+            assert_eq!(semver_compare(a, b).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn invalid_versions_are_rejected_before_any_lookup() {
+        for version in [
+            "1.0",
+            "1.0.0.1",
+            "vv1.0.0",
+            "../1.0.0",
+            "1.0.no",
+            "1.0.0-beta.01",
+        ] {
+            assert!(parse_version(version).is_err(), "{version}");
+        }
+    }
+
+    #[test]
+    fn binary_backup_and_restore_preserve_recovery_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("Cortex");
+        std::fs::write(&binary, b"previous binary").unwrap();
+        let backup = backup_binary(&binary).unwrap();
+        std::fs::write(&binary, b"invalid new binary").unwrap();
+        restore_binary(&backup, &binary).unwrap();
+        assert_eq!(std::fs::read(&binary).unwrap(), b"previous binary");
+        assert_eq!(std::fs::read(&backup).unwrap(), b"previous binary");
+    }
+
+    #[test]
+    fn backup_refuses_to_overwrite_a_non_regular_recovery_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("Cortex");
+        std::fs::write(&binary, b"previous binary").unwrap();
+        // `Cortex.old` is the fixed recovery path; a directory there means the
+        // previous binary could not be preserved, so replacement must not start.
+        std::fs::create_dir(binary.with_extension("old")).unwrap();
+        assert!(backup_binary(&binary).is_err());
+        assert_eq!(std::fs::read(&binary).unwrap(), b"previous binary");
+    }
+
+    #[test]
+    fn backup_and_restore_require_a_real_installation_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing-dir").join("Cortex");
+        assert!(backup_binary(&missing).is_err());
+        let backup = dir.path().join("source");
+        std::fs::write(&backup, b"previous binary").unwrap();
+        assert!(restore_binary(&backup, &missing).is_err());
+    }
+
+    #[test]
+    fn changelog_urls_resolve_to_raw_content_without_leaving_the_host() {
+        assert_eq!(
+            convert_to_raw_url("https://github.com/owner/repo/blob/main/CHANGELOG.md"),
+            "https://raw.githubusercontent.com/owner/repo/main/CHANGELOG.md"
+        );
+        assert_eq!(
+            convert_to_raw_url("https://github.com/owner/repo/releases"),
+            "https://raw.githubusercontent.com/owner/repo/main/CHANGELOG.md"
+        );
+        // Anything else is passed through unchanged rather than rewritten.
+        for url in [
+            "https://software.cortex.foundation/changelog",
+            "https://example.test/notes.md",
+        ] {
+            assert_eq!(convert_to_raw_url(url), url);
+        }
+    }
+
+    #[test]
+    fn html_changelogs_are_stripped_of_markup_and_scripts() {
+        let stripped = strip_html_tags(
+            "<html><head><style>body{color:red}</style></head><body>\n\
+             <script>steal()</script>\n<h1>Release 1.2.3</h1>\n<p>Fixed a bug</p>\n\
+             </body></html>",
+        );
+        assert_eq!(stripped, "Release 1.2.3\nFixed a bug");
+        assert!(!stripped.contains("steal"));
+        assert!(!stripped.contains("color:red"));
+    }
+
+    #[test]
+    fn printing_a_line_succeeds_on_an_open_stream() {
+        // The broken-pipe branch needs a closed downstream reader, which the
+        // captured harness stdout never is; it stays uncovered deliberately.
+        assert!(print_line("changelog line").unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_rejects_symlink_targets() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("other");
+        let binary = dir.path().join("Cortex");
+        std::fs::write(&target, b"other command").unwrap();
+        std::os::unix::fs::symlink(&target, &binary).unwrap();
+        assert!(backup_binary(&binary).is_err());
+        assert_eq!(std::fs::read(target).unwrap(), b"other command");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn installed_version_must_be_successful_and_exact() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("Cortex");
+        for (body, valid) in [
+            ("echo Cortex 9.8.7", true),
+            ("echo Cortex 9.8.6", false),
+            ("echo Cortex 9.8.7; exit 1", false),
+            ("head -c 5000 /dev/zero", false),
+        ] {
+            std::fs::write(&binary, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert_eq!(
+                verify_installed_version(&binary, "9.8.7").await.is_ok(),
+                valid
+            );
+        }
     }
 }

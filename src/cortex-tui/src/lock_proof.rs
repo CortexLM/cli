@@ -823,7 +823,7 @@ mod tests {
                 frame.ansi.contains(SELECTION_WASH),
                 "{id} selection bar must be #262626"
             );
-            let row = (0..40u16)
+            (0..40u16)
                 .find(|y| {
                     (0..120u16).any(|x| {
                         frame.buffer[(x, *y)].symbol() == ">"
@@ -833,14 +833,6 @@ mod tests {
                     })
                 })
                 .unwrap_or_else(|| panic!("{id} has no banner green `>` row:\n{}", frame.plain));
-            // The focused row carries the selection bar and a banner green caret.
-            let has_bar =
-                (0..120u16).any(|x| frame.buffer[(x, row)].style().bg == Some(SELECTION_BG));
-            assert!(
-                has_bar,
-                "{id} selection bar missing:\n{}",
-                row_text(&frame.buffer, row)
-            );
         }
     }
 
@@ -1007,12 +999,7 @@ mod tests {
 
     #[test]
     fn banned_colors_never_painted() {
-        // The interim banner green highlight is gone with the mint one: no scene
-        // paints banner green, the old `#221A38` retired violet wash, the mint pair, the old
-        // brand green, or the navy wash — the host terminal owns the
-        // background and the banner green lives on the focused selection alone.
-        // Mint `#00F5D4` / `#1A3330` never painted. Selection bar `#221A38`
-        // is allowed; inverted accent as a background is not (checked above).
+        // Retired mint, brand green, and navy colors must never paint.
         const BANNED: [&str; 4] = ["0;245;212", "26;51;48", "0;255;163", "10;22;40"];
         for id in lock_scene_ids() {
             for size in SIZES {

@@ -785,26 +785,51 @@ fn bar(filled: u16, total: u16) -> String {
     s
 }
 
-/// Splash hint row: full, 40-col, or short — picked by character budget.
-/// Uses the full area width (not [`inner_width`]) so `v0.1.10` still fits
-/// the 40-column mid form `v{version} · / commands · @ files · ! shell`.
+/// Join `v{version}` to a hint legend, ellipsizing the version — never the
+/// legend — when the pair is wider than `width`.
 pub(crate) fn splash_legend(version: &str, width: usize) -> String {
-    let full_h = format!("v{version} · {LAUNCH_HINTS}");
-    let mid_h = format!("v{version} · {LAUNCH_HINTS_NARROW}");
-    if full_h.chars().count() <= width {
-        full_h
-    } else if mid_h.chars().count() <= width {
-        mid_h
-    } else {
-        format!("v{version} · / commands")
+    let ver = format!("v{version}");
+    for legend in [LAUNCH_HINTS, LAUNCH_HINTS_NARROW] {
+        let line = format!("{ver} · {legend}");
+        if line.chars().count() <= width {
+            return line;
+        }
     }
+    // Keep `/ commands · @ files · ! shell` (and `& cloud` when it fits).
+    // A longer package version is shortened; the keystroke legend is not.
+    for legend in [LAUNCH_HINTS, LAUNCH_HINTS_NARROW] {
+        let suffix = format!(" · {legend}");
+        let suffix_len = suffix.chars().count();
+        if suffix_len >= width {
+            continue;
+        }
+        let shown = ellipsis_prefix(&ver, width - suffix_len);
+        if shown.is_empty() {
+            continue;
+        }
+        return format!("{shown}{suffix}");
+    }
+    LAUNCH_HINTS_NARROW.to_string()
+}
+
+fn ellipsis_prefix(text: &str, budget: usize) -> String {
+    if text.chars().count() <= budget {
+        return text.to_string();
+    }
+    if budget == 0 {
+        return String::new();
+    }
+    if budget == 1 {
+        return "…".to_string();
+    }
+    format!("{}…", text.chars().take(budget - 1).collect::<String>())
 }
 
 /// Launch header: `Welcome to Cortex, the coding agent CLI` then
 /// `v{version} · / commands · …`. No fake `> cortex` or painted cwd.
 fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
-    // Full terminal width: the 40-col lock is exactly the mid hint budget
-    // once the package version is seven characters (`v0.1.10`).
+    // Full terminal width so the 40-col lock can hold the mid legend; a
+    // longer version is ellipsized instead of dropping `@ files · ! shell`.
     let w = area.width.max(1) as usize;
     let mut y = area.y;
     let dim = Style::default().fg(TEXT_DIM);

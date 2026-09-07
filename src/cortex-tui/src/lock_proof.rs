@@ -2338,42 +2338,34 @@ mod tests {
     }
 
     #[test]
-    fn splash_legend_keeps_mid_hints_at_40_for_package_version() {
-        let version = env!("CARGO_PKG_VERSION");
-        let legend = crate::lock_boards::splash_legend(version, 40);
-        assert!(
-            legend.contains("/ commands · @ files · ! shell"),
-            "40-col splash must keep mid hints for v{version}: {legend}"
-        );
-        assert!(
-            !legend.contains("& cloud"),
-            "40-col splash shortens before & cloud: {legend}"
-        );
+    fn splash_legend_keeps_mid_hints_when_version_grows() {
+        for version in [env!("CARGO_PKG_VERSION"), "0.1.10", "10.20.30-rc.1"] {
+            let legend = crate::lock_boards::splash_legend(version, 40);
+            assert!(
+                legend.contains("/ commands · @ files · ! shell"),
+                "40-col splash must keep mid hints for v{version}: {legend}"
+            );
+            assert!(
+                !legend.contains("& cloud"),
+                "40-col splash shortens before & cloud: {legend}"
+            );
+        }
     }
 
     #[test]
     fn splash_has_session_chrome() {
-        let version = env!("CARGO_PKG_VERSION");
-        let mid = format!("v{version} · / commands · @ files · ! shell");
         for size in SIZES {
             let frame = render_lock_scene("splash", size.0, size.1).expect("splash");
             for needle in [
                 "Welcome to",
                 "the coding agent CLI",
-                "/ commands",
+                "/ commands · @ files · ! shell",
                 "Plan, search, build anything",
                 "Cortex Mini 1",
             ] {
                 assert!(
                     frame.plain.contains(needle),
                     "splash missing `{needle}` at {size:?}:\n{}",
-                    frame.plain
-                );
-            }
-            if mid.chars().count() <= size.0 as usize {
-                assert!(
-                    frame.plain.contains(&mid),
-                    "splash missing mid chrome `{mid}` at {size:?}:\n{}",
                     frame.plain
                 );
             }

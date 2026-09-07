@@ -24,3 +24,6 @@ pub fn get_rollout_path(cortex_home: &PathBuf, conversation_id: &ConversationId)
         .join(SESSIONS_SUBDIR)
         .join(format!("{conversation_id}.jsonl"))
 }
+
+/// Interoperable local CLI/TUI sessions (not server REST/WS sessions).
+pub mod local;

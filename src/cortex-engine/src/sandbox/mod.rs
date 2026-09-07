@@ -19,6 +19,8 @@ mod policy;
 mod runner;
 
 // Re-export main types
+#[cfg(target_os = "linux")]
+pub use landlock::{SELF_WRAPPER_ARG, enable_self_wrapper};
 pub use manager::{
     CORTEX_SANDBOX_CWD_ENV_VAR, CORTEX_SANDBOX_ENV_VAR, CORTEX_SANDBOX_NETWORK_DISABLED_ENV_VAR,
     CORTEX_SANDBOX_POLICY_ENV_VAR, SandboxManager,

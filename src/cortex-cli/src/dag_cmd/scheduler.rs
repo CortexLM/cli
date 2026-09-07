@@ -1,23 +1,24 @@
-//! DAG scheduler for coordinating task execution.
+//! DAG scheduler with bounded admission and a single owner of task state.
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use cortex_agents::task::{Task, TaskDag, TaskStatus};
+use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use std::time::Instant;
+use tokio::sync::{Mutex, RwLock};
 
-use crate::styled_output::{print_error, print_info, print_success};
+use crate::styled_output::{print_error, print_info};
 
 use super::executor::TaskExecutor;
 use super::types::{DagExecutionStats, FailureMode, TaskExecutionResult};
 
-/// DAG scheduler that handles execution ordering and parallelism.
 pub struct DagScheduler {
     pub dag: Arc<RwLock<TaskDag>>,
     executor: Arc<TaskExecutor>,
     max_concurrent: usize,
     failure_mode: FailureMode,
-    stats: Arc<Mutex<DagExecutionStats>>,
+    stats: Mutex<DagExecutionStats>,
     quiet: bool,
 }
 
@@ -30,306 +31,137 @@ impl DagScheduler {
         verbose: bool,
         quiet: bool,
     ) -> Self {
-        let total_tasks = dag.len();
         Self {
             dag: Arc::new(RwLock::new(dag)),
             executor: Arc::new(TaskExecutor::new(timeout_secs, verbose)),
             max_concurrent,
             failure_mode,
-            stats: Arc::new(Mutex::new(DagExecutionStats {
-                total_tasks,
-                ..Default::default()
-            })),
+            stats: Mutex::new(DagExecutionStats::default()),
             quiet,
         }
     }
 
-    /// Execute the DAG with the configured strategy.
     pub async fn execute(&self) -> Result<DagExecutionStats> {
-        let start = Instant::now();
-
-        // Validate DAG has no cycles
-        {
-            let dag = self.dag.read().await;
-            dag.topological_sort()
-                .map_err(|e| anyhow::anyhow!("DAG validation failed: {}", e))?;
-        }
-
-        // Execute tasks
-        self.run_parallel().await?;
-
-        // Finalize stats
-        let mut stats = self.stats.lock().await;
-        stats.total_duration = start.elapsed();
-        Ok(stats.clone())
+        self.run(self.max_concurrent).await
     }
 
-    /// Execute tasks in parallel with dependency awareness.
-    async fn run_parallel(&self) -> Result<()> {
-        let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
-        let mut handles: Vec<tokio::task::JoinHandle<Result<TaskExecutionResult>>> = Vec::new();
-        let mut should_stop = false;
+    pub async fn execute_sequential(&self) -> Result<DagExecutionStats> {
+        self.run(1).await
+    }
 
+    async fn run(&self, concurrency: usize) -> Result<DagExecutionStats> {
+        if concurrency == 0 || self.max_concurrent == 0 {
+            bail!("--jobs must be at least 1");
+        }
+        let start = Instant::now();
+        {
+            let dag = self.dag.read().await;
+            dag.topological_sort().context("DAG validation failed")?;
+            if dag
+                .all_tasks()
+                .any(|task| task.status == TaskStatus::Running)
+            {
+                bail!("DAG contains interrupted running tasks; reconcile them before resuming");
+            }
+        }
+        *self.stats.lock().await = DagExecutionStats::default();
+        // Futures are owned here, never detached on scheduler cancellation.
+        let mut running = FuturesUnordered::new();
+        let mut stop = false;
         loop {
-            // Check if we should stop due to failure
-            if should_stop {
+            if !stop {
+                for task in self.take_ready(concurrency - running.len()).await? {
+                    running.push(self.execute_task(task));
+                }
+            }
+            let Some(result) = running.next().await else {
                 break;
-            }
-
-            // Get ready tasks
-            let ready_tasks: Vec<Task> = {
-                let dag = self.dag.read().await;
-                dag.get_ready_tasks_by_priority()
-                    .into_iter()
-                    .cloned()
-                    .collect()
             };
+            let failed = result.status == TaskStatus::Failed;
+            self.record_result(result).await?;
+            // Observe each failure before admitting more tasks. Already running
+            // work drains through its normal execution owner's timeout/cleanup.
+            stop |= failed && matches!(self.failure_mode, FailureMode::FailFast);
+        }
+        self.finish(start, stop).await
+    }
 
-            if ready_tasks.is_empty() {
-                // Wait for any running tasks to complete
-                if handles.is_empty() {
-                    break;
-                }
-
-                // Wait for at least one task to complete
-                let (completed, _idx, remaining) = futures::future::select_all(handles).await;
-                handles = remaining;
-
-                match completed {
-                    Ok(Ok(result)) => {
-                        should_stop = self.handle_task_result(result).await?;
-                    }
-                    Ok(Err(e)) => {
-                        print_error(&format!("Task execution error: {}", e));
-                        if matches!(self.failure_mode, FailureMode::FailFast) {
-                            should_stop = true;
-                        }
-                    }
-                    Err(e) => {
-                        print_error(&format!("Task panicked: {}", e));
-                        if matches!(self.failure_mode, FailureMode::FailFast) {
-                            should_stop = true;
-                        }
-                    }
-                }
-                continue;
+    async fn take_ready(&self, limit: usize) -> Result<Vec<Task>> {
+        let mut dag = self.dag.write().await;
+        let ready: Vec<Task> = dag
+            .get_ready_tasks_by_priority()
+            .into_iter()
+            .take(limit)
+            .cloned()
+            .collect();
+        for task in &ready {
+            let id = task.id.context("DAG task has no ID")?;
+            dag.start_task(id, None)?;
+            if !self.quiet {
+                print_info(&format!("Starting task {id}"));
             }
+        }
+        Ok(ready)
+    }
 
-            // Start ready tasks up to concurrency limit
-            for task in ready_tasks {
-                let task_id = task.id.expect("Task must have ID");
+    async fn execute_task(&self, task: Task) -> TaskExecutionResult {
+        let start = Instant::now();
+        match AssertUnwindSafe(self.executor.execute(&task))
+            .catch_unwind()
+            .await
+        {
+            Ok(result) => result,
+            Err(_) => TaskExecutionResult {
+                task_id: task.id.expect("Admitted task has an ID"),
+                task_name: task.name,
+                status: TaskStatus::Failed,
+                duration: start.elapsed(),
+                output: None,
+                error: Some("Task execution failed unexpectedly".into()),
+            },
+        }
+    }
 
-                // Try to start the task
-                {
-                    let mut dag = self.dag.write().await;
-                    if let Err(e) = dag.start_task(task_id, None) {
-                        // Task may have been started by another iteration
-                        if !self.quiet {
-                            tracing::debug!("Could not start task {}: {}", task.name, e);
-                        }
-                        continue;
-                    }
-                }
-
+    async fn record_result(&self, result: TaskExecutionResult) -> Result<()> {
+        let mut dag = self.dag.write().await;
+        match result.status {
+            TaskStatus::Completed => dag.complete_task(result.task_id, result.output.clone())?,
+            TaskStatus::Failed => {
+                dag.fail_task(result.task_id, result.error.clone().unwrap_or_default())?;
                 if !self.quiet {
-                    print_info(&format!("⏳ Starting: {}", task.name));
-                }
-
-                let permit = semaphore.clone().acquire_owned().await.unwrap();
-                let executor = self.executor.clone();
-                let dag = self.dag.clone();
-                let stats = self.stats.clone();
-                let _failure_mode = self.failure_mode;
-                let quiet = self.quiet;
-
-                let handle = tokio::spawn(async move {
-                    let result = executor.execute(&task).await;
-                    drop(permit); // Release semaphore
-
-                    // Update DAG state
-                    let mut dag = dag.write().await;
-                    match result.status {
-                        TaskStatus::Completed => {
-                            dag.complete_task(result.task_id, result.output.clone())
-                                .ok();
-                            if !quiet {
-                                print_success(&format!(
-                                    "✓ Completed: {} ({:.2}s)",
-                                    result.task_name,
-                                    result.duration.as_secs_f64()
-                                ));
-                            }
-                        }
-                        TaskStatus::Failed => {
-                            dag.fail_task(result.task_id, result.error.clone().unwrap_or_default())
-                                .ok();
-                            print_error(&format!(
-                                "✗ Failed: {} - {}",
-                                result.task_name,
-                                result.error.as_deref().unwrap_or("Unknown error")
-                            ));
-                        }
-                        _ => {}
-                    }
-
-                    // Update stats
-                    let mut stats = stats.lock().await;
-                    match result.status {
-                        TaskStatus::Completed => stats.completed_tasks += 1,
-                        TaskStatus::Failed => stats.failed_tasks += 1,
-                        TaskStatus::Skipped => stats.skipped_tasks += 1,
-                        _ => {}
-                    }
-                    stats.task_results.push(result.clone());
-
-                    Ok(result)
-                });
-
-                handles.push(handle);
-            }
-
-            // Small delay to prevent busy-waiting
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        // Wait for remaining tasks
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(result)) => {
-                    self.handle_task_result(result).await.ok();
-                }
-                Ok(Err(e)) => {
-                    print_error(&format!("Task error: {}", e));
-                }
-                Err(e) => {
-                    print_error(&format!("Task panicked: {}", e));
+                    print_error(&format!("Task {} failed", result.task_id));
                 }
             }
+            _ => bail!("Task executor returned a nonterminal result"),
         }
-
+        self.stats.lock().await.task_results.push(result);
         Ok(())
     }
 
-    /// Handle a task result and determine if execution should stop.
-    async fn handle_task_result(&self, result: TaskExecutionResult) -> Result<bool> {
-        match result.status {
-            TaskStatus::Failed => match self.failure_mode {
-                FailureMode::FailFast => Ok(true),
-                FailureMode::SkipDependents => {
-                    // Skip dependents is already handled by the DAG's fail_task method
-                    Ok(false)
+    async fn finish(&self, start: Instant, stopped: bool) -> Result<DagExecutionStats> {
+        let mut dag = self.dag.write().await;
+        if stopped {
+            let pending: Vec<_> = dag
+                .all_tasks()
+                .filter(|task| !task.status.is_terminal())
+                .filter_map(|task| task.id)
+                .collect();
+            for id in pending {
+                if !dag.get_task(id).expect("Task exists").status.is_terminal() {
+                    dag.skip_task(id)?;
                 }
-                FailureMode::Continue => Ok(false),
-            },
-            _ => Ok(false),
-        }
-    }
-
-    /// Execute tasks sequentially in topological order.
-    pub async fn execute_sequential(&self) -> Result<DagExecutionStats> {
-        let start = Instant::now();
-
-        // Get topological order
-        let order = {
-            let dag = self.dag.read().await;
-            dag.topological_sort()
-                .map_err(|e| anyhow::anyhow!("DAG validation failed: {}", e))?
-        };
-
-        for task_id in order {
-            let task = {
-                let dag = self.dag.read().await;
-                dag.get_task(task_id).cloned()
-            };
-
-            let Some(task) = task else {
-                continue;
-            };
-
-            // Skip if not ready (dependencies failed)
-            if task.status != TaskStatus::Ready && task.status != TaskStatus::Pending {
-                continue;
-            }
-
-            // Check if dependencies are satisfied
-            {
-                let dag = self.dag.read().await;
-                let deps = dag.get_dependencies(task_id);
-                if let Some(deps) = deps {
-                    let any_failed = deps.iter().any(|&dep_id| {
-                        dag.get_task(dep_id)
-                            .map(|t| matches!(t.status, TaskStatus::Failed | TaskStatus::Skipped))
-                            .unwrap_or(false)
-                    });
-
-                    if any_failed {
-                        let mut dag_mut = self.dag.write().await;
-                        dag_mut.skip_task(task_id).ok();
-                        continue;
-                    }
-                }
-            }
-
-            // Start task
-            {
-                let mut dag = self.dag.write().await;
-                dag.start_task(task_id, None).ok();
-            }
-
-            if !self.quiet {
-                print_info(&format!("⏳ Running: {}", task.name));
-            }
-
-            // Execute
-            let result = self.executor.execute(&task).await;
-
-            // Update DAG
-            {
-                let mut dag = self.dag.write().await;
-                match result.status {
-                    TaskStatus::Completed => {
-                        dag.complete_task(result.task_id, result.output.clone())
-                            .ok();
-                        if !self.quiet {
-                            print_success(&format!(
-                                "✓ Completed: {} ({:.2}s)",
-                                result.task_name,
-                                result.duration.as_secs_f64()
-                            ));
-                        }
-                    }
-                    TaskStatus::Failed => {
-                        dag.fail_task(result.task_id, result.error.clone().unwrap_or_default())
-                            .ok();
-                        print_error(&format!(
-                            "✗ Failed: {} - {}",
-                            result.task_name,
-                            result.error.as_deref().unwrap_or("Unknown error")
-                        ));
-
-                        if matches!(self.failure_mode, FailureMode::FailFast) {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            // Update stats
-            {
-                let mut stats = self.stats.lock().await;
-                match result.status {
-                    TaskStatus::Completed => stats.completed_tasks += 1,
-                    TaskStatus::Failed => stats.failed_tasks += 1,
-                    TaskStatus::Skipped => stats.skipped_tasks += 1,
-                    _ => {}
-                }
-                stats.task_results.push(result);
             }
         }
-
-        // Finalize stats
+        if !dag.is_complete() {
+            bail!("DAG stopped with unresolved tasks; execution did not complete");
+        }
+        let counts = dag.status_counts();
         let mut stats = self.stats.lock().await;
+        stats.total_tasks = dag.len();
+        stats.completed_tasks = *counts.get(&TaskStatus::Completed).unwrap_or(&0);
+        stats.failed_tasks = *counts.get(&TaskStatus::Failed).unwrap_or(&0)
+            + *counts.get(&TaskStatus::Cancelled).unwrap_or(&0);
+        stats.skipped_tasks = *counts.get(&TaskStatus::Skipped).unwrap_or(&0);
         stats.total_duration = start.elapsed();
         Ok(stats.clone())
     }

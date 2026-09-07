@@ -21,6 +21,13 @@ use crate::tools::context::ToolOutputChunk;
 use super::Session;
 use super::types::PendingToolCall;
 
+/// Whether the agent loop may continue after a tool call.
+#[derive(Debug, PartialEq, Eq)]
+enum ToolCallFlow {
+    Continue,
+    AwaitingApproval,
+}
+
 impl Session {
     /// Run the main session loop, processing submissions.
     pub async fn run(&mut self) -> Result<()> {
@@ -45,36 +52,70 @@ impl Session {
         )))
         .await;
 
+        let submissions = self.submission_rx.clone();
+        let mut queued = std::collections::VecDeque::new();
+        let mut cancellation_error = None;
         while self.running {
-            // Check cancellation flag periodically using a timeout
-            let submission = tokio::select! {
-                result = self.submission_rx.recv() => {
-                    match result {
-                        Ok(s) => s,
-                        Err(_) => break,
+            let submission = match queued.pop_front() {
+                Some(submission) => submission,
+                None => match submissions.recv().await {
+                    Ok(s) => s,
+                    Err(_) => break,
+                },
+            };
+            let cancelled = self.cancelled.clone();
+            let mut shutdown = false;
+            let outcome = {
+                let work = self.handle_submission(submission);
+                tokio::pin!(work);
+                loop {
+                    tokio::select! {
+                        biased;
+                        control = submissions.recv() => match control {
+                            Ok(s) if matches!(s.op, cortex_protocol::Op::Interrupt | cortex_protocol::Op::Shutdown) => {
+                                shutdown = matches!(s.op, cortex_protocol::Op::Shutdown);
+                                break Err(CortexError::Cancelled);
+                            }
+                            Ok(s) => queued.push_back(s),
+                            Err(_) => { shutdown = true; break Err(CortexError::Cancelled); }
+                        },
+                        _ = super::control::wait_for_cancellation(&cancelled) => break Err(CortexError::Cancelled),
+                        result = &mut work => break result,
                     }
-                }
-                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                    // Check if we should exit due to cancellation
-                    if self.cancelled.load(Ordering::SeqCst) {
-                        tracing::info!("Session detected cancellation, exiting run loop");
-                        self.running = false;
-                        break;
-                    }
-                    continue;
                 }
             };
-
-            if let Err(e) = self.handle_submission(submission).await {
-                self.emit(EventMsg::Error(ErrorEvent {
-                    message: e.to_string(),
-                    cortex_error_info: None,
-                }))
-                .await;
+            if let Err(error) = outcome {
+                self.pending_approvals.clear();
+                if matches!(error, CortexError::Cancelled) || self.client.owns_tool_execution() {
+                    if let Err(error) = self.client.cancel_turn_checked().await {
+                        self.emit(EventMsg::Warning(cortex_protocol::WarningEvent {
+                            message: error.user_friendly_message(),
+                        }))
+                        .await;
+                        cancellation_error = Some(error);
+                    }
+                }
+                if matches!(error, CortexError::Cancelled) {
+                    self.cancelled.store(false, Ordering::SeqCst);
+                    self.emit(EventMsg::TurnAborted(cortex_protocol::TurnAbortedEvent {
+                        reason: cortex_protocol::TurnAbortReason::Interrupted,
+                    }))
+                    .await;
+                } else {
+                    self.emit(EventMsg::Error(ErrorEvent {
+                        message: error.user_friendly_message(),
+                        cortex_error_info: None,
+                    }))
+                    .await;
+                }
+            }
+            if shutdown {
+                self.running = false;
+                self.emit(EventMsg::ShutdownComplete).await;
             }
         }
 
-        Ok(())
+        cancellation_error.map_or(Ok(()), Err)
     }
 
     /// Capture a snapshot of the current workspace.
@@ -129,6 +170,9 @@ impl Session {
 
     /// Run the agent loop until completion or interruption.
     pub(super) async fn run_agent_loop(&mut self, _turn_id: &str) -> Result<()> {
+        if self.client.owns_tool_execution() {
+            return self.run_remote_turn().await;
+        }
         let max_iterations = 200;
         let mut iteration = 0;
 
@@ -136,17 +180,14 @@ impl Session {
             // Check for cancellation
             if self.cancelled.load(Ordering::SeqCst) {
                 tracing::info!("Agent loop cancelled by user");
-                break;
+                return Err(CortexError::Cancelled);
             }
 
             iteration += 1;
             if iteration > max_iterations {
-                self.emit(EventMsg::Error(ErrorEvent {
-                    message: "Maximum iterations reached".to_string(),
-                    cortex_error_info: None,
-                }))
-                .await;
-                break;
+                return Err(CortexError::InvalidInput(
+                    "Maximum iterations reached. The task is incomplete.".into(),
+                ));
             }
 
             // Build completion request
@@ -202,13 +243,14 @@ impl Session {
 
             let mut full_content = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
+            let mut finish_reason = None;
 
             // Process stream
             while let Some(event) = stream.next().await {
                 // Check for cancellation during streaming
                 if self.cancelled.load(Ordering::SeqCst) {
                     tracing::info!("Stream processing cancelled by user");
-                    return Ok(());
+                    return Err(CortexError::Cancelled);
                 }
 
                 match event? {
@@ -220,6 +262,9 @@ impl Session {
                         .await;
                     }
                     ResponseEvent::ToolCall(tc) => {
+                        if tc.remote {
+                            continue;
+                        }
                         tracing::info!("Session received tool call: {} (id: {})", tc.name, tc.id);
                         tool_calls.push(ToolCall {
                             id: tc.id,
@@ -231,6 +276,7 @@ impl Session {
                         });
                     }
                     ResponseEvent::Done(response) => {
+                        finish_reason = Some(response.finish_reason.clone());
                         // Update token usage
                         self.total_usage.input_tokens += response.usage.input_tokens;
                         self.total_usage.output_tokens += response.usage.output_tokens;
@@ -254,15 +300,20 @@ impl Session {
                         .await;
                     }
                     ResponseEvent::Error(e) => {
-                        self.emit(EventMsg::Error(ErrorEvent {
-                            message: e,
-                            cortex_error_info: None,
-                        }))
-                        .await;
-                        return Ok(());
+                        return Err(CortexError::BackendError { message: e });
                     }
                     _ => {}
                 }
+            }
+
+            let finish_reason = finish_reason.ok_or_else(|| CortexError::BackendError {
+                message: crate::client::runtime_contract::INCOMPLETE_STREAM.into(),
+            })?;
+            if finish_reason != crate::client::FinishReason::ToolCalls {
+                finish_reason.require_success()?;
+            }
+            if tool_calls.is_empty() {
+                finish_reason.require_success()?;
             }
 
             // Emit full message if we have content
@@ -271,7 +322,7 @@ impl Session {
                     id: None,
                     parent_id: None,
                     message: full_content.clone(),
-                    finish_reason: None,
+                    finish_reason: Some(finish_reason.as_str().into()),
                 }))
                 .await;
             }
@@ -291,253 +342,8 @@ impl Session {
             // Execute tool calls
             tracing::info!("Processing {} tool calls", tool_calls.len());
             for tool_call in tool_calls {
-                // Check for cancellation before each tool
-                if self.cancelled.load(Ordering::SeqCst) {
-                    tracing::info!("Tool execution cancelled by user");
+                if self.execute_tool_call(tool_call).await? == ToolCallFlow::AwaitingApproval {
                     return Ok(());
-                }
-
-                let tool_name = &tool_call.function.name;
-                tracing::info!("Processing tool call: {} (id: {})", tool_name, tool_call.id);
-                let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
-                    .unwrap_or(serde_json::Value::Null);
-
-                // Check if approval is needed for shell commands
-                let needs_approval = if tool_name == "Execute" {
-                    if let Some(cmd_array) = args.get("command").and_then(|c| c.as_array()) {
-                        let cmd: Vec<String> = cmd_array
-                            .iter()
-                            .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
-                            .collect();
-
-                        let analysis = crate::safety::analyze_command(&cmd, &self.config.cwd);
-                        let requires = crate::safety::requires_approval(
-                            &analysis,
-                            &self.config.approval_policy,
-                        );
-
-                        if requires {
-                            // Emit approval request
-                            self.emit(EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
-                                call_id: tool_call.id.clone(),
-                                turn_id: self.turn_id.to_string(),
-                                command: cmd.clone(),
-                                cwd: self.config.cwd.clone(),
-                                sandbox_assessment: None,
-                            }))
-                            .await;
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                };
-
-                // If approval needed, store pending and wait for user response
-                tracing::info!("needs_approval for {}: {}", tool_name, needs_approval);
-                if needs_approval {
-                    tracing::info!("Tool {} requires approval, storing pending", tool_name);
-                    self.pending_approvals.insert(
-                        tool_call.id.clone(),
-                        PendingToolCall {
-                            tool_name: tool_name.clone(),
-                            arguments: args,
-                            tool_call_id: tool_call.id.clone(),
-                        },
-                    );
-                    // Return early - we'll continue when approval comes
-                    return Ok(());
-                }
-                tracing::info!("Tool {} does NOT require approval, executing", tool_name);
-
-                // Handle PatchApply events
-                if tool_name == "ApplyPatch" {
-                    if let Some(patch) = args.get("patch").and_then(|p| p.as_str()) {
-                        if let Ok(file_changes) =
-                            crate::tools::handlers::apply_patch::parse_unified_diff(patch)
-                        {
-                            let mut protocol_changes = std::collections::HashMap::new();
-                            for change in file_changes {
-                                if let Some(path) = change.new_path.or(change.old_path) {
-                                    let protocol_change = if change.is_new_file {
-                                        cortex_protocol::FileChange::Add {
-                                            content: String::new(),
-                                        }
-                                    } else if change.is_deleted {
-                                        cortex_protocol::FileChange::Delete {
-                                            content: String::new(),
-                                        }
-                                    } else {
-                                        cortex_protocol::FileChange::Update {
-                                            unified_diff: String::new(),
-                                            move_path: None,
-                                        }
-                                    };
-                                    protocol_changes.insert(path, protocol_change);
-                                }
-                            }
-                            self.emit(EventMsg::PatchApplyBegin(
-                                cortex_protocol::PatchApplyBeginEvent {
-                                    call_id: tool_call.id.clone(),
-                                    turn_id: self.turn_id.to_string(),
-                                    auto_approved: true,
-                                    changes: protocol_changes,
-                                },
-                            ))
-                            .await;
-                        }
-                    }
-                }
-
-                // Get command for event (for shell tools, parse the command array)
-                let command_for_event: Vec<String> = if tool_name == "Execute" {
-                    args.get("command")
-                        .and_then(|c| c.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|v| v.as_str().map(String::from))
-                                .collect()
-                        })
-                        .unwrap_or_else(|| vec![tool_name.clone()])
-                } else {
-                    vec![tool_name.clone()]
-                };
-
-                // Emit ExecCommandBegin event
-                let exec_start = std::time::Instant::now();
-                self.emit(EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
-                    call_id: tool_call.id.clone(),
-                    turn_id: self.turn_id.to_string(),
-                    command: command_for_event.clone(),
-                    cwd: self.config.cwd.clone(),
-                    parsed_cmd: vec![ParsedCommand {
-                        program: command_for_event.first().cloned().unwrap_or_default(),
-                        args: command_for_event.iter().skip(1).cloned().collect(),
-                    }],
-                    source: ExecCommandSource::Agent,
-                    interaction_input: None,
-                    tool_name: Some(tool_name.clone()),
-                    tool_arguments: Some(args.clone()),
-                }))
-                .await;
-
-                // Create channel for streaming output
-                let (output_tx, mut output_rx) =
-                    tokio::sync::mpsc::channel::<(String, ToolOutputChunk)>(100);
-
-                // Execute tool with streaming context
-                let context = ToolContext::new(self.config.cwd.clone())
-                    .with_sandbox_policy(self.config.sandbox_policy.clone())
-                    .with_turn_id(self.turn_id.to_string())
-                    .with_conversation_id(self.conversation_id.to_string())
-                    .with_call_id(tool_call.id.clone())
-                    .with_output_sender(output_tx)
-                    .with_lsp(self.lsp.clone());
-
-                // Clone event sender for the streaming task
-                let event_tx = self.event_tx.clone();
-                let turn_id = self.turn_id;
-
-                // Spawn task to forward output chunks as events
-                let streaming_task = tokio::spawn(async move {
-                    while let Some((call_id, chunk)) = output_rx.recv().await {
-                        let (stream, data) = match chunk {
-                            ToolOutputChunk::Stdout(s) => (ExecOutputStream::Stdout, s),
-                            ToolOutputChunk::Stderr(s) => (ExecOutputStream::Stderr, s),
-                        };
-
-                        // Encode chunk as base64
-                        use base64::Engine;
-                        let chunk_b64 =
-                            base64::engine::general_purpose::STANDARD.encode(data.as_bytes());
-
-                        let event = cortex_protocol::Event {
-                            id: turn_id.to_string(),
-                            msg: EventMsg::ExecCommandOutputDelta(ExecCommandOutputDeltaEvent {
-                                call_id,
-                                stream,
-                                chunk: chunk_b64,
-                            }),
-                        };
-
-                        let _ = event_tx.send(event).await;
-                    }
-                });
-
-                tracing::info!("About to execute tool {} via tool_router", tool_name);
-                let result = self
-                    .tool_router
-                    .execute(tool_name, args.clone(), &context)
-                    .await;
-                match &result {
-                    Ok(r) => tracing::info!(
-                        "Tool {} succeeded: {:?}",
-                        tool_name,
-                        r.output.chars().take(100).collect::<String>()
-                    ),
-                    Err(e) => tracing::error!("Tool {} FAILED: {}", tool_name, e),
-                }
-
-                // Drop the context to close the output channel
-                drop(context);
-
-                // Wait for streaming to finish (will complete now that sender is dropped)
-                let _ = streaming_task.await;
-                tracing::info!("Streaming task completed for tool {}", tool_name);
-
-                let (result_text, exit_code, metadata) = match &result {
-                    Ok(r) => {
-                        let meta = r.metadata.as_ref().and_then(|m| m.data.clone());
-                        (r.output.clone(), if r.success { 0 } else { 1 }, meta)
-                    }
-                    Err(e) => (format!("Error: {e}"), 1, None),
-                };
-
-                // Emit ExecCommandEnd event
-                tracing::info!("Emitting ExecCommandEnd for tool {}", tool_call.id);
-                let duration_ms = exec_start.elapsed().as_millis() as u64;
-                self.emit(EventMsg::ExecCommandEnd(Box::new(ExecCommandEndEvent {
-                    call_id: tool_call.id.clone(),
-                    turn_id: self.turn_id.to_string(),
-                    command: command_for_event.clone(),
-                    cwd: self.config.cwd.clone(),
-                    parsed_cmd: vec![ParsedCommand {
-                        program: command_for_event.first().cloned().unwrap_or_default(),
-                        args: command_for_event.iter().skip(1).cloned().collect(),
-                    }],
-                    source: ExecCommandSource::Agent,
-                    interaction_input: None,
-                    stdout: result_text.clone(),
-                    stderr: String::new(),
-                    aggregated_output: result_text.clone(),
-                    exit_code,
-                    duration_ms,
-                    formatted_output: result_text.clone(),
-                    metadata,
-                })))
-                .await;
-
-                // Add tool result to messages
-                self.messages
-                    .push(Message::tool_result(&tool_call.id, &result_text));
-
-                // Handle PatchApplyEnd
-                if tool_name == "ApplyPatch" {
-                    self.emit(EventMsg::PatchApplyEnd(
-                        cortex_protocol::PatchApplyEndEvent {
-                            call_id: tool_call.id.clone(),
-                            turn_id: self.turn_id.to_string(),
-                            stdout: result_text.clone(),
-                            stderr: String::new(),
-                            success: exit_code == 0,
-                            changes: std::collections::HashMap::new(),
-                        },
-                    ))
-                    .await;
                 }
             }
         }
@@ -555,5 +361,261 @@ impl Session {
         .await;
 
         Ok(())
+    }
+
+    /// Run one approved tool call, emitting its begin/output/end events.
+    ///
+    /// Returns `AwaitingApproval` when the call was parked for user approval;
+    /// the loop then stops and resumes from the approval handler.
+    async fn execute_tool_call(&mut self, tool_call: ToolCall) -> Result<ToolCallFlow> {
+        // Check for cancellation before each tool
+
+        // Check for cancellation before each tool
+        if self.cancelled.load(Ordering::SeqCst) {
+            tracing::info!("Tool execution cancelled by user");
+            return Err(CortexError::Cancelled);
+        }
+
+        let tool_name = &tool_call.function.name;
+        tracing::info!("Processing tool call: {} (id: {})", tool_name, tool_call.id);
+        let args: serde_json::Value =
+            serde_json::from_str(&tool_call.function.arguments).unwrap_or(serde_json::Value::Null);
+
+        // Check if approval is needed for shell commands
+        let needs_approval = if tool_name == "Execute" {
+            if let Some(cmd_array) = args.get("command").and_then(|c| c.as_array()) {
+                let cmd: Vec<String> = cmd_array
+                    .iter()
+                    .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
+                    .collect();
+
+                let analysis = crate::safety::analyze_command(&cmd, &self.config.cwd);
+                let requires =
+                    crate::safety::requires_approval(&analysis, &self.config.approval_policy);
+
+                if requires {
+                    // Emit approval request
+                    self.emit(EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
+                        call_id: tool_call.id.clone(),
+                        turn_id: self.turn_id.to_string(),
+                        command: cmd.clone(),
+                        cwd: self.config.cwd.clone(),
+                        sandbox_assessment: None,
+                    }))
+                    .await;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        // If approval needed, store pending and wait for user response
+        tracing::info!("needs_approval for {}: {}", tool_name, needs_approval);
+        if needs_approval {
+            tracing::info!("Tool {} requires approval, storing pending", tool_name);
+            self.pending_approvals.insert(
+                tool_call.id.clone(),
+                PendingToolCall {
+                    tool_name: tool_name.clone(),
+                    arguments: args,
+                    tool_call_id: tool_call.id.clone(),
+                },
+            );
+            // Return early - we'll continue when approval comes
+            return Ok(ToolCallFlow::AwaitingApproval);
+        }
+        tracing::info!("Tool {} does NOT require approval, executing", tool_name);
+
+        // Handle PatchApply events
+        if tool_name == "ApplyPatch" {
+            if let Some(patch) = args.get("patch").and_then(|p| p.as_str()) {
+                if let Ok(file_changes) =
+                    crate::tools::handlers::apply_patch::parse_unified_diff(patch)
+                {
+                    let mut protocol_changes = std::collections::HashMap::new();
+                    for change in file_changes {
+                        if let Some(path) = change.new_path.or(change.old_path) {
+                            let protocol_change = if change.is_new_file {
+                                cortex_protocol::FileChange::Add {
+                                    content: String::new(),
+                                }
+                            } else if change.is_deleted {
+                                cortex_protocol::FileChange::Delete {
+                                    content: String::new(),
+                                }
+                            } else {
+                                cortex_protocol::FileChange::Update {
+                                    unified_diff: String::new(),
+                                    move_path: None,
+                                }
+                            };
+                            protocol_changes.insert(path, protocol_change);
+                        }
+                    }
+                    self.emit(EventMsg::PatchApplyBegin(
+                        cortex_protocol::PatchApplyBeginEvent {
+                            call_id: tool_call.id.clone(),
+                            turn_id: self.turn_id.to_string(),
+                            auto_approved: true,
+                            changes: protocol_changes,
+                        },
+                    ))
+                    .await;
+                }
+            }
+        }
+
+        // Get command for event (for shell tools, parse the command array)
+        let command_for_event: Vec<String> = if tool_name == "Execute" {
+            args.get("command")
+                .and_then(|c| c.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_else(|| vec![tool_name.clone()])
+        } else {
+            vec![tool_name.clone()]
+        };
+
+        // Emit ExecCommandBegin event
+        let exec_start = std::time::Instant::now();
+        self.emit(EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
+            call_id: tool_call.id.clone(),
+            turn_id: self.turn_id.to_string(),
+            command: command_for_event.clone(),
+            cwd: self.config.cwd.clone(),
+            parsed_cmd: vec![ParsedCommand {
+                program: command_for_event.first().cloned().unwrap_or_default(),
+                args: command_for_event.iter().skip(1).cloned().collect(),
+            }],
+            source: ExecCommandSource::Agent,
+            interaction_input: None,
+            tool_name: Some(tool_name.clone()),
+            tool_arguments: Some(args.clone()),
+        }))
+        .await;
+
+        // Create channel for streaming output
+        let (output_tx, mut output_rx) =
+            tokio::sync::mpsc::channel::<(String, ToolOutputChunk)>(100);
+
+        // Execute tool with streaming context
+        let context = ToolContext::new(self.config.cwd.clone())
+            .with_sandbox_policy(self.config.sandbox_policy.clone())
+            .with_turn_id(self.turn_id.to_string())
+            .with_conversation_id(self.conversation_id.to_string())
+            .with_call_id(tool_call.id.clone())
+            .with_output_sender(output_tx)
+            .with_lsp(self.lsp.clone());
+
+        // Clone event sender for the streaming task
+        let event_tx = self.event_tx.clone();
+        let turn_id = self.turn_id;
+
+        // Spawn task to forward output chunks as events
+        let streaming_task = tokio::spawn(async move {
+            while let Some((call_id, chunk)) = output_rx.recv().await {
+                let (stream, data) = match chunk {
+                    ToolOutputChunk::Stdout(s) => (ExecOutputStream::Stdout, s),
+                    ToolOutputChunk::Stderr(s) => (ExecOutputStream::Stderr, s),
+                };
+
+                // Encode chunk as base64
+                use base64::Engine;
+                let chunk_b64 = base64::engine::general_purpose::STANDARD.encode(data.as_bytes());
+
+                let event = cortex_protocol::Event {
+                    id: turn_id.to_string(),
+                    msg: EventMsg::ExecCommandOutputDelta(ExecCommandOutputDeltaEvent {
+                        call_id,
+                        stream,
+                        chunk: chunk_b64,
+                    }),
+                };
+
+                let _ = event_tx.send(event).await;
+            }
+        });
+
+        tracing::info!("About to execute tool {} via tool_router", tool_name);
+        let result = self
+            .tool_router
+            .execute(tool_name, args.clone(), &context)
+            .await;
+        match &result {
+            Ok(r) => tracing::info!(
+                "Tool {} succeeded: {:?}",
+                tool_name,
+                r.output.chars().take(100).collect::<String>()
+            ),
+            Err(e) => tracing::error!("Tool {} FAILED: {}", tool_name, e),
+        }
+
+        // Drop the context to close the output channel
+        drop(context);
+
+        // Wait for streaming to finish (will complete now that sender is dropped)
+        let _ = streaming_task.await;
+        tracing::info!("Streaming task completed for tool {}", tool_name);
+
+        let (result_text, exit_code, metadata) = match &result {
+            Ok(r) => {
+                let meta = r.metadata.as_ref().and_then(|m| m.data.clone());
+                (r.output.clone(), if r.success { 0 } else { 1 }, meta)
+            }
+            Err(e) => (format!("Error: {e}"), 1, None),
+        };
+
+        // Emit ExecCommandEnd event
+        tracing::info!("Emitting ExecCommandEnd for tool {}", tool_call.id);
+        let duration_ms = exec_start.elapsed().as_millis() as u64;
+        self.emit(EventMsg::ExecCommandEnd(Box::new(ExecCommandEndEvent {
+            call_id: tool_call.id.clone(),
+            turn_id: self.turn_id.to_string(),
+            command: command_for_event.clone(),
+            cwd: self.config.cwd.clone(),
+            parsed_cmd: vec![ParsedCommand {
+                program: command_for_event.first().cloned().unwrap_or_default(),
+                args: command_for_event.iter().skip(1).cloned().collect(),
+            }],
+            source: ExecCommandSource::Agent,
+            interaction_input: None,
+            stdout: result_text.clone(),
+            stderr: String::new(),
+            aggregated_output: result_text.clone(),
+            exit_code,
+            duration_ms,
+            formatted_output: result_text.clone(),
+            metadata,
+        })))
+        .await;
+
+        // Add tool result to messages
+        self.messages
+            .push(Message::tool_result(&tool_call.id, &result_text));
+
+        // Handle PatchApplyEnd
+        if tool_name == "ApplyPatch" {
+            self.emit(EventMsg::PatchApplyEnd(
+                cortex_protocol::PatchApplyEndEvent {
+                    call_id: tool_call.id.clone(),
+                    turn_id: self.turn_id.to_string(),
+                    stdout: result_text.clone(),
+                    stderr: String::new(),
+                    success: exit_code == 0,
+                    changes: std::collections::HashMap::new(),
+                },
+            ))
+            .await;
+        }
+
+        Ok(ToolCallFlow::Continue)
     }
 }

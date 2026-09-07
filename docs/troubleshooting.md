@@ -11,8 +11,11 @@ cortex debug system      # platform and environment details
 cortex logs -n 200       # recent log output
 ```
 
-For a single run, `-v` gives more detail, `--trace` gives a lot more, and
-`--debug` writes every trace log to `./debug.txt` in the working directory.
+For a single run, `-v` and `--trace` increase console verbosity and can expose
+sensitive context. `--debug` instead records bounded, content-free local
+diagnostics under the Cortex home `diagnostics/` directory, or the explicit
+`CORTEX_DIAGNOSTICS_DIR`. It never overwrites `./debug.txt` or uploads diagnostics.
+See [Privacy](reference/privacy.md).
 
 ## "The coding service is temporarily unavailable"
 

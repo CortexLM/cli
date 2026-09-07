@@ -1,93 +1,25 @@
-//! Tool router.
-
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use serde_json::Value;
-
+//! Router compatibility API over the shared, context-enforcing registry.
 use super::context::ToolContext;
-use super::handlers::batch::{BatchToolExecutor, BatchToolHandler, batch_tool_definition};
-use super::handlers::*;
+use super::handlers::batch::BatchToolExecutor;
 use super::registry::ToolRegistry;
 use super::spec::{ToolDefinition, ToolHandler, ToolResult};
-use crate::error::{CortexError, Result};
+use crate::error::Result;
+use async_trait::async_trait;
+use serde_json::Value;
+use std::sync::Arc;
 
-/// Routes tool calls to appropriate handlers.
 pub struct ToolRouter {
     registry: ToolRegistry,
-    handlers: HashMap<String, Box<dyn ToolHandler>>,
 }
 
-/// Arc-wrapped router that can be used as a BatchToolExecutor.
-/// This allows the Batch tool to execute other tools through the router.
+/// Batch shares the same handlers and state, not a weaker reconstructed subset.
 pub struct RouterExecutor {
-    handlers: HashMap<String, Box<dyn ToolHandler>>,
+    registry: ToolRegistry,
 }
 
 impl RouterExecutor {
-    /// Create a new RouterExecutor with a copy of the handlers.
-    fn new(handlers: &HashMap<String, Box<dyn ToolHandler>>) -> Self {
-        // We need to clone the handlers map, but Box<dyn ToolHandler> isn't Clone.
-        // Instead, we'll create a new set of handlers.
-        let mut new_handlers: HashMap<String, Box<dyn ToolHandler>> = HashMap::new();
-
-        // Re-create all the handlers
-        new_handlers.insert("Execute".to_string(), Box::new(LocalShellHandler::new()));
-        new_handlers.insert("Read".to_string(), Box::new(ReadFileHandler::new()));
-        new_handlers.insert("Create".to_string(), Box::new(WriteFileHandler::new()));
-        new_handlers.insert("Tree".to_string(), Box::new(TreeHandler::new()));
-        new_handlers.insert("LS".to_string(), Box::new(TreeHandler::new()));
-        new_handlers.insert(
-            "SearchFiles".to_string(),
-            Box::new(SearchFilesHandler::new()),
-        );
-        new_handlers.insert(
-            "ApplyPatch".to_string(),
-            Box::new(crate::agent::tools::PatchTool::new()),
-        );
-        new_handlers.insert("WebSearch".to_string(), Box::new(WebSearchHandler::new()));
-        new_handlers.insert("Patch".to_string(), Box::new(PatchHandler::new()));
-        new_handlers.insert(
-            "MultiEdit".to_string(),
-            Box::new(crate::agent::tools::MultiEditTool::new()),
-        );
-        new_handlers.insert("Grep".to_string(), Box::new(GrepHandler::new()));
-        new_handlers.insert("Glob".to_string(), Box::new(GlobHandler::new()));
-        new_handlers.insert(
-            "FetchUrl".to_string(),
-            Box::new(crate::agent::tools::WebFetchTool::new()),
-        );
-        new_handlers.insert(
-            "WebFetch".to_string(),
-            Box::new(crate::agent::tools::WebFetchTool::new()),
-        );
-        new_handlers.insert("TodoWrite".to_string(), Box::new(TodoWriteHandler::new()));
-        new_handlers.insert("TodoRead".to_string(), Box::new(TodoReadHandler::new()));
-        new_handlers.insert("Plan".to_string(), Box::new(PlanHandler::new()));
-        new_handlers.insert("Propose".to_string(), Box::new(ProposeHandler::new()));
-        new_handlers.insert("Questions".to_string(), Box::new(QuestionsHandler::new()));
-        new_handlers.insert(
-            "LspHover".to_string(),
-            Box::new(crate::agent::tools::LspHoverTool::new()),
-        );
-        new_handlers.insert(
-            "LspDiagnostics".to_string(),
-            Box::new(crate::agent::tools::LspDiagnosticsTool::new_handler()),
-        );
-
-        // Also include any custom handlers that were registered
-        for name in handlers.keys() {
-            if !new_handlers.contains_key(name) {
-                // For custom handlers we can't recreate, we skip them in batch
-                // This is a limitation, but necessary for safety
-                tracing::debug!("Custom handler '{}' not available in batch execution", name);
-            }
-        }
-
-        Self {
-            handlers: new_handlers,
-        }
+    pub(crate) fn from_registry(registry: ToolRegistry) -> Self {
+        Self { registry }
     }
 }
 
@@ -99,165 +31,50 @@ impl BatchToolExecutor for RouterExecutor {
         arguments: Value,
         context: &ToolContext,
     ) -> Result<ToolResult> {
-        let handler = self
-            .handlers
-            .get(name)
-            .ok_or_else(|| CortexError::UnknownTool {
-                name: name.to_string(),
-            })?;
-
-        handler.execute(arguments, context).await
+        self.registry
+            .execute_with_context(name, arguments, context.clone())
+            .await
     }
-
     fn has_tool(&self, name: &str) -> bool {
-        self.handlers.contains_key(name)
+        self.registry.has(name)
     }
 }
 
 impl ToolRouter {
-    /// Create a new tool router with default tools.
     pub fn new() -> Self {
-        let mut registry = ToolRegistry::new();
-        let mut handlers: HashMap<String, Box<dyn ToolHandler>> = HashMap::new();
-
-        // Register default handlers with standardized names matching system prompt
-        handlers.insert("Execute".to_string(), Box::new(LocalShellHandler::new()));
-        handlers.insert("Read".to_string(), Box::new(ReadFileHandler::new()));
-        handlers.insert("Create".to_string(), Box::new(WriteFileHandler::new()));
-        handlers.insert("Tree".to_string(), Box::new(TreeHandler::new()));
-        handlers.insert("LS".to_string(), Box::new(TreeHandler::new()));
-        handlers.insert(
-            "SearchFiles".to_string(),
-            Box::new(SearchFilesHandler::new()),
-        );
-        handlers.insert(
-            "ApplyPatch".to_string(),
-            Box::new(crate::agent::tools::PatchTool::new()),
-        );
-        handlers.insert("WebSearch".to_string(), Box::new(WebSearchHandler::new()));
-
-        // Additional handlers
-        handlers.insert("Patch".to_string(), Box::new(PatchHandler::new()));
-        handlers.insert(
-            "MultiEdit".to_string(),
-            Box::new(crate::agent::tools::MultiEditTool::new()),
-        );
-        handlers.insert("Grep".to_string(), Box::new(GrepHandler::new()));
-        handlers.insert("Glob".to_string(), Box::new(GlobHandler::new()));
-        handlers.insert(
-            "FetchUrl".to_string(),
-            Box::new(crate::agent::tools::WebFetchTool::new()),
-        );
-        handlers.insert(
-            "WebFetch".to_string(),
-            Box::new(crate::agent::tools::WebFetchTool::new()),
-        );
-        handlers.insert("TodoWrite".to_string(), Box::new(TodoWriteHandler::new()));
-        handlers.insert("TodoRead".to_string(), Box::new(TodoReadHandler::new()));
-        handlers.insert("Plan".to_string(), Box::new(PlanHandler::new()));
-        handlers.insert("Propose".to_string(), Box::new(ProposeHandler::new()));
-        handlers.insert("Questions".to_string(), Box::new(QuestionsHandler::new()));
-        handlers.insert(
-            "ExitSpecMode".to_string(),
-            Box::new(ExitSpecModeHandler::new()),
-        );
-        handlers.insert(
-            "LspHover".to_string(),
-            Box::new(crate::agent::tools::LspHoverTool::new()),
-        );
-        handlers.insert(
-            "LspDiagnostics".to_string(),
-            Box::new(crate::agent::tools::LspDiagnosticsTool::new_handler()),
-        );
-
-        // Create the Batch tool handler with a RouterExecutor
-        let router_executor = Arc::new(RouterExecutor::new(&handlers));
-        let batch_handler = BatchToolHandler::new(router_executor);
-        handlers.insert("Batch".to_string(), Box::new(batch_handler));
-
-        // Register batch tool definition
-        registry.register(batch_tool_definition());
-
-        Self { registry, handlers }
+        Self {
+            registry: ToolRegistry::new(),
+        }
     }
-
-    /// Execute a tool.
     pub async fn execute(
         &self,
-        tool_name: &str,
+        name: &str,
         arguments: Value,
         context: &ToolContext,
     ) -> Result<ToolResult> {
-        let surface = crate::harness::AgentSurface::parse(
-            context
-                .env
-                .get("CORTEX_SURFACE")
-                .map(String::as_str)
-                .unwrap_or("code"),
-        );
-        let spec_mode = context
-            .env
-            .get("CORTEX_SPEC_MODE")
-            .is_some_and(|v| v == "1")
-            || context
-                .env
-                .get("CORTEX_OPERATION_MODE")
-                .is_some_and(|v| v.eq_ignore_ascii_case("spec") || v.eq_ignore_ascii_case("plan"));
-        let is_child = context
-            .env
-            .get("CORTEX_CHILD_TASK")
-            .is_some_and(|v| v == "1")
-            || context.conversation_id.starts_with("sub_")
-            || context.conversation_id.starts_with("task_");
-        if let Err(message) =
-            crate::harness::gate_tool_call(surface, tool_name, spec_mode, is_child)
-        {
-            return Ok(ToolResult::error(message));
-        }
-
-        let handler = self
-            .handlers
-            .get(tool_name)
-            .ok_or_else(|| CortexError::UnknownTool {
-                name: tool_name.to_string(),
-            })?;
-
-        let result = handler.execute(arguments, context).await?;
-        Ok(ToolResult {
-            output: crate::harness::redact_secrets(&result.output),
-            success: result.success,
-            error: result.error.map(|e| crate::harness::redact_secrets(&e)),
-            metadata: result.metadata,
-        })
+        self.registry
+            .execute_with_context(name, arguments, context.clone())
+            .await
     }
-
-    /// Get tool definitions for the model.
     pub fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.registry.all().into_iter().cloned().collect()
+        self.registry.get_definitions()
     }
-
-    /// Check if a tool is available.
     pub fn has_tool(&self, name: &str) -> bool {
-        self.handlers.contains_key(name)
+        self.registry.has(name)
     }
-
-    /// Register a custom tool handler.
     pub fn register_handler(&mut self, handler: Box<dyn ToolHandler>) {
-        self.handlers.insert(handler.name().to_string(), handler);
+        self.registry
+            .handlers
+            .insert(handler.name().to_string(), Arc::from(handler));
     }
-
-    /// Register a tool with both its definition and handler.
     pub fn register(&mut self, definition: ToolDefinition, handler: Box<dyn ToolHandler>) {
-        self.registry.register(definition);
-        self.handlers.insert(handler.name().to_string(), handler);
+        self.registry
+            .register_with_handler(definition, Arc::from(handler));
     }
-
-    /// Set the LSP integration.
-    pub fn set_lsp(&mut self, lsp: std::sync::Arc<crate::integrations::LspIntegration>) {
+    pub fn set_lsp(&mut self, lsp: Arc<crate::integrations::LspIntegration>) {
         self.registry.set_lsp(lsp);
     }
 }
-
 impl Default for ToolRouter {
     fn default() -> Self {
         Self::new()

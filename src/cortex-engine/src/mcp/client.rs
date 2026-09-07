@@ -1,509 +1,347 @@
-//! MCP Client - Connects to MCP servers and executes tools.
-//!
-//! Supports:
-//! - Stdio transport (local processes)
-//! - HTTP/SSE transport (remote servers)
-//! - Tool listing and execution
-//! - Resource reading
-//! - Prompt retrieval
-
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicI64, Ordering};
-
-use anyhow::{Context, Result, anyhow};
-use serde::Deserialize;
-use serde_json::{Value, json};
-use tokio::sync::{Mutex, RwLock};
-use tracing::{error, info, warn};
-
-use cortex_mcp_types::{
-    CallToolParams, CallToolResult, InitializeParams, InitializeResult, JSONRPC_VERSION,
-    JsonRpcRequest, JsonRpcResponse, ListResourcesResult, ListToolsResult, ReadResourceParams,
-    ReadResourceResult, Resource, Tool, methods,
-};
-
-use cortex_common::create_default_client;
-
+//! Active MCP runtime client. Stdio and Streamable HTTP are explicitly negotiated.
+use super::http::HttpTransport;
+use super::stdio::StdioTransport;
 use super::{McpServerConfig, TransportType};
+use anyhow::{Result, anyhow, bail};
+use cortex_mcp_types::{
+    CallToolResult, GetPromptResult, InitializeParams, InitializeResult, JsonRpcRequest,
+    JsonRpcResponse, Prompt, ReadResourceResult, Resource, Tool,
+};
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicI64, Ordering},
+};
+use std::time::Duration;
+use tokio::sync::{Mutex, RwLock, broadcast};
 
-/// MCP client connection state.
+/// Version-pinned support, not a claim to implement draft/latest specifications.
+pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2024-11-05", "2025-03-26"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionState {
-    /// Not connected.
     Disconnected,
-    /// Connection in progress.
     Connecting,
-    /// Connected and initialized.
     Connected,
-    /// Connection failed.
     Failed,
 }
 
-/// MCP client for connecting to a single server.
 pub struct McpClient {
-    /// Server configuration.
     config: McpServerConfig,
-    /// Connection state.
     state: RwLock<ConnectionState>,
-    /// Server capabilities (after initialization).
     server_info: RwLock<Option<InitializeResult>>,
-    /// Request ID counter.
     request_id: AtomicI64,
-    /// Stdio transport (process handle).
-    stdio_process: Mutex<Option<StdioTransport>>,
-    /// HTTP/SSE transport.
-    http_client: reqwest::Client,
-    /// Cached tools.
+    stdio: RwLock<Option<Arc<StdioTransport>>>,
+    http: HttpTransport,
     cached_tools: RwLock<Vec<Tool>>,
-    /// Cached resources.
     cached_resources: RwLock<Vec<Resource>>,
+    lifecycle: Mutex<()>,
+    notifications: broadcast::Sender<Value>,
+    changes: Mutex<broadcast::Receiver<Value>>,
+    timeout: Duration,
+    tools_dirty: AtomicBool,
 }
-
-/// Stdio transport for local MCP servers.
-struct StdioTransport {
-    child: Child,
-    // We'll use synchronous I/O for simplicity
-}
-
 impl McpClient {
-    /// Create a new MCP client for the given server configuration.
     pub fn new(config: McpServerConfig) -> Self {
-        let http_client = create_default_client().expect("HTTP client");
+        Self::with_timeout(config, Duration::from_secs(30))
+    }
+    pub fn with_timeout(config: McpServerConfig, timeout: Duration) -> Self {
+        let (notifications, changes) = broadcast::channel(128);
         Self {
+            http: HttpTransport::new(config.clone()),
             config,
             state: RwLock::new(ConnectionState::Disconnected),
             server_info: RwLock::new(None),
             request_id: AtomicI64::new(1),
-            stdio_process: Mutex::new(None),
-            http_client,
-            cached_tools: RwLock::new(Vec::new()),
-            cached_resources: RwLock::new(Vec::new()),
+            stdio: RwLock::new(None),
+            cached_tools: RwLock::new(vec![]),
+            cached_resources: RwLock::new(vec![]),
+            lifecycle: Mutex::new(()),
+            notifications,
+            changes: Mutex::new(changes),
+            timeout,
+            tools_dirty: AtomicBool::new(false),
         }
     }
-
-    /// Get the server name.
     pub fn name(&self) -> &str {
         &self.config.name
     }
-
-    /// Get the connection state.
     pub async fn state(&self) -> ConnectionState {
-        *self.state.read().await
+        let state = *self.state.read().await;
+        if state == ConnectionState::Connected
+            && self.config.transport == TransportType::Stdio
+            && self
+                .stdio
+                .read()
+                .await
+                .as_ref()
+                .is_none_or(|s| !s.is_open())
+        {
+            *self.state.write().await = ConnectionState::Failed;
+            return ConnectionState::Failed;
+        }
+        state
     }
-
-    /// Check if connected.
     pub async fn is_connected(&self) -> bool {
-        *self.state.read().await == ConnectionState::Connected
+        self.state().await == ConnectionState::Connected
     }
-
-    /// Get server info (after connection).
     pub async fn server_info(&self) -> Option<InitializeResult> {
         self.server_info.read().await.clone()
     }
-
-    /// Get cached tools.
     pub async fn tools(&self) -> Vec<Tool> {
         self.cached_tools.read().await.clone()
     }
-
-    /// Get cached resources.
     pub async fn resources(&self) -> Vec<Resource> {
         self.cached_resources.read().await.clone()
     }
+    pub fn subscribe_notifications(&self) -> broadcast::Receiver<Value> {
+        self.notifications.subscribe()
+    }
 
-    /// Connect to the MCP server.
     pub async fn connect(&self) -> Result<()> {
-        {
-            let mut state = self.state.write().await;
-            if *state == ConnectionState::Connected {
-                return Ok(());
-            }
-            *state = ConnectionState::Connecting;
+        let _lock = self.lifecycle.lock().await;
+        if self.is_connected().await {
+            return Ok(());
         }
-
-        let result = match self.config.transport {
-            TransportType::Stdio => self.connect_stdio().await,
-            TransportType::Sse | TransportType::Http => self.connect_http().await,
-            TransportType::WebSocket => Err(anyhow!("WebSocket transport not yet implemented")),
-        };
-
-        match result {
-            Ok(_) => {
-                *self.state.write().await = ConnectionState::Connected;
-                info!("Connected to MCP server: {}", self.config.name);
-
-                // Refresh tools and resources
-                let _ = self.refresh_tools().await;
-                let _ = self.refresh_resources().await;
-
-                Ok(())
+        *self.state.write().await = ConnectionState::Connecting;
+        let result = tokio::time::timeout(self.timeout, self.connect_inner())
+            .await
+            .unwrap_or_else(|_| Err(anyhow!("MCP initialization timed out")));
+        if result.is_ok() {
+            *self.state.write().await = ConnectionState::Connected;
+        } else {
+            if let Some(transport) = self.stdio.write().await.take() {
+                transport.close();
             }
-            Err(e) => {
-                *self.state.write().await = ConnectionState::Failed;
-                error!(
-                    "Failed to connect to MCP server {}: {}",
-                    self.config.name, e
-                );
-                Err(e)
-            }
+            *self.state.write().await = ConnectionState::Failed;
+            *self.server_info.write().await = None;
+            self.cached_tools.write().await.clear();
+            self.cached_resources.write().await.clear();
         }
+        result
     }
-
-    /// Patterns in variable names that indicate sensitive data (case-insensitive).
-    /// These will be excluded from the environment passed to MCP server processes.
-    const SENSITIVE_PATTERNS: &'static [&'static str] = &[
-        "KEY",        // API_KEY, SSH_KEY, etc.
-        "SECRET",     // AWS_SECRET, etc.
-        "TOKEN",      // AUTH_TOKEN, etc. (except CORTEX_TOKEN which MCP servers may need)
-        "PASSWORD",   // DB_PASSWORD, etc.
-        "CREDENTIAL", // GOOGLE_CREDENTIALS, etc.
-        "PRIVATE",    // PRIVATE_KEY, etc.
-    ];
-
-    /// Environment variables that are explicitly allowed even if they match sensitive patterns.
-    /// These are needed for MCP servers to function properly.
-    const ALLOWED_ENV_VARS: &'static [&'static str] = &[
-        "CORTEX_TOKEN", // MCP servers may need this to communicate
-        "PATH",         // Essential for finding executables
-        "HOME",         // Many tools need this
-        "USER",         // User information
-        "SHELL",        // Shell information
-    ];
-
-    /// Connect using stdio transport.
-    async fn connect_stdio(&self) -> Result<()> {
-        let mut cmd = Command::new(&self.config.command);
-        cmd.args(&self.config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        // Build a filtered environment to prevent leaking sensitive data to MCP servers.
-        // Start with a clean environment and selectively add safe variables.
-        cmd.env_clear();
-
-        // Add filtered environment variables from the parent process
-        for (key, value) in std::env::vars() {
-            // Check if explicitly allowed
-            if Self::ALLOWED_ENV_VARS.iter().any(|&allowed| key == allowed) {
-                cmd.env(&key, &value);
-                continue;
+    async fn connect_inner(&self) -> Result<()> {
+        match self.config.transport {
+            TransportType::Stdio => {
+                *self.stdio.write().await = Some(Arc::new(StdioTransport::spawn(
+                    &self.config,
+                    self.notifications.clone(),
+                )?));
             }
-
-            // Check if matches sensitive patterns (case-insensitive)
-            let key_upper = key.to_uppercase();
-            let is_sensitive = Self::SENSITIVE_PATTERNS
-                .iter()
-                .any(|pattern| key_upper.contains(pattern));
-
-            if !is_sensitive {
-                cmd.env(&key, &value);
+            TransportType::Http => {
+                self.http.validate_url()?;
             }
+            TransportType::Sse => bail!(
+                "Legacy MCP SSE transport is unsupported; explicitly configure Streamable HTTP"
+            ),
+            TransportType::WebSocket => bail!("MCP WebSocket transport is unsupported"),
         }
-
-        // Add explicitly configured environment variables (these override filtered ones)
-        // Note: Config-specified env vars are trusted since they come from user configuration
-        for (key, value) in &self.config.env {
-            cmd.env(key, value);
+        let mut params = InitializeParams::default();
+        if self.config.transport == TransportType::Http {
+            params.protocol_version = "2025-03-26".into();
         }
-
-        // Set working directory
-        if let Some(ref cwd) = self.config.cwd {
-            cmd.current_dir(cwd);
-        }
-
-        let child = cmd
-            .spawn()
-            .with_context(|| format!("Failed to spawn MCP server: {}", self.config.command))?;
-
-        *self.stdio_process.lock().await = Some(StdioTransport { child });
-
-        // Send initialize request
-        self.initialize().await?;
-
-        Ok(())
-    }
-
-    /// Connect using HTTP/SSE transport.
-    async fn connect_http(&self) -> Result<()> {
-        let _url = self
-            .config
-            .sse_url
-            .as_ref()
-            .ok_or_else(|| anyhow!("SSE URL not configured for HTTP transport"))?;
-
-        // Test connection by sending initialize
-        self.initialize().await?;
-
-        Ok(())
-    }
-
-    /// Send initialize request.
-    async fn initialize(&self) -> Result<InitializeResult> {
-        let params = InitializeParams::default();
-
-        let response: InitializeResult = self
-            .request(methods::INITIALIZE, Some(serde_json::to_value(&params)?))
+        let info: InitializeResult = self
+            .request("initialize", Some(serde_json::to_value(params)?))
             .await?;
-
-        *self.server_info.write().await = Some(response.clone());
-
-        // Send initialized notification
-        self.notify(methods::INITIALIZED, None).await?;
-
-        Ok(response)
-    }
-
-    /// Disconnect from the server.
-    pub async fn disconnect(&self) -> Result<()> {
-        let mut process = self.stdio_process.lock().await;
-        if let Some(mut transport) = process.take() {
-            let _ = transport.child.kill();
+        if !SUPPORTED_PROTOCOL_VERSIONS.contains(&info.protocol_version.as_str()) {
+            bail!("MCP server selected an unsupported protocol version");
         }
-
+        if self.config.transport == TransportType::Http && info.protocol_version != "2025-03-26" {
+            bail!("Streamable HTTP requires MCP 2025-03-26");
+        }
+        self.http.set_version(&info.protocol_version).await;
+        *self.server_info.write().await = Some(info.clone());
+        self.notify("notifications/initialized", None).await?;
+        if info.capabilities.tools.is_some() {
+            self.refresh_tools().await?;
+        }
+        if info.capabilities.resources.is_some() {
+            self.refresh_resources().await?;
+        }
+        if info.capabilities.prompts.is_some() {
+            self.list_prompts().await?;
+        }
+        Ok(())
+    }
+    pub async fn disconnect(&self) -> Result<()> {
+        let _lock = self.lifecycle.lock().await;
+        if let Some(transport) = self.stdio.write().await.take() {
+            transport.close();
+        }
+        let result = if self.config.transport == TransportType::Http {
+            self.http.close().await
+        } else {
+            Ok(())
+        };
         *self.state.write().await = ConnectionState::Disconnected;
         *self.server_info.write().await = None;
         self.cached_tools.write().await.clear();
         self.cached_resources.write().await.clear();
-
-        info!("Disconnected from MCP server: {}", self.config.name);
-        Ok(())
+        result
     }
-
-    /// Refresh the list of available tools.
     pub async fn refresh_tools(&self) -> Result<Vec<Tool>> {
-        let result: ListToolsResult = self.request(methods::TOOLS_LIST, None).await?;
-        *self.cached_tools.write().await = result.tools.clone();
-        Ok(result.tools)
+        let tools = self.list("tools/list", "tools").await?;
+        *self.cached_tools.write().await = tools.clone();
+        self.tools_dirty.store(false, Ordering::Release);
+        Ok(tools)
     }
-
-    /// Refresh the list of available resources.
+    /// Fresh tool schemas after list-changed notifications; failures are not hidden.
+    pub async fn discovered_tools(&self) -> Result<Vec<Tool>> {
+        let mut changed = false;
+        let mut rx = self.changes.lock().await;
+        loop {
+            match rx.try_recv() {
+                Ok(v) => {
+                    changed |= v.get("method").and_then(Value::as_str)
+                        == Some("notifications/tools/list_changed")
+                }
+                Err(broadcast::error::TryRecvError::Lagged(_)) => changed = true,
+                Err(_) => break,
+            }
+        }
+        drop(rx);
+        if changed {
+            self.tools_dirty.store(true, Ordering::Release);
+        }
+        if self.tools_dirty.load(Ordering::Acquire) {
+            self.refresh_tools().await
+        } else {
+            Ok(self.tools().await)
+        }
+    }
     pub async fn refresh_resources(&self) -> Result<Vec<Resource>> {
-        let result: ListResourcesResult = self.request(methods::RESOURCES_LIST, None).await?;
-        *self.cached_resources.write().await = result.resources.clone();
-        Ok(result.resources)
+        let resources = self.list("resources/list", "resources").await?;
+        *self.cached_resources.write().await = resources.clone();
+        Ok(resources)
     }
-
-    /// Call a tool.
-    pub async fn call_tool(&self, name: &str, arguments: Option<Value>) -> Result<CallToolResult> {
-        let params = CallToolParams {
-            name: name.to_string(),
-            arguments,
-        };
-
-        self.request(methods::TOOLS_CALL, Some(serde_json::to_value(&params)?))
-            .await
+    pub async fn list_prompts(&self) -> Result<Vec<Prompt>> {
+        self.list("prompts/list", "prompts").await
     }
-
-    /// Read a resource.
-    pub async fn read_resource(&self, uri: &str) -> Result<ReadResourceResult> {
-        let params = ReadResourceParams {
-            uri: uri.to_string(),
-        };
-
-        self.request(
-            methods::RESOURCES_READ,
-            Some(serde_json::to_value(&params)?),
-        )
-        .await
-    }
-
-    /// Send a JSON-RPC request and wait for response.
-    async fn request<T: for<'de> Deserialize<'de>>(
+    pub async fn get_prompt(
         &self,
-        method: &str,
-        params: Option<Value>,
-    ) -> Result<T> {
-        let id = self.request_id.fetch_add(1, Ordering::SeqCst);
-
-        let request = JsonRpcRequest {
-            jsonrpc: JSONRPC_VERSION.to_string(),
-            id: id.into(),
-            method: method.to_string(),
-            params,
-        };
-
-        let response = match self.config.transport {
-            TransportType::Stdio => self.send_stdio_request(&request).await?,
-            TransportType::Sse | TransportType::Http => self.send_http_request(&request).await?,
-            TransportType::WebSocket => {
-                return Err(anyhow!("WebSocket transport not yet implemented"));
-            }
-        };
-
-        if let Some(error) = response.error {
-            return Err(anyhow!(
-                "MCP error: {} (code {})",
-                error.message,
-                error.code
-            ));
-        }
-
-        let result = response
-            .result
-            .ok_or_else(|| anyhow!("No result in response"))?;
-        serde_json::from_value(result).context("Failed to parse MCP response")
-    }
-
-    /// Send a JSON-RPC notification (no response expected).
-    async fn notify(&self, method: &str, params: Option<Value>) -> Result<()> {
-        let notification = json!({
-            "jsonrpc": JSONRPC_VERSION,
-            "method": method,
-            "params": params
-        });
-
-        match self.config.transport {
-            TransportType::Stdio => self.send_stdio_notification(&notification).await,
-            TransportType::Sse | TransportType::Http => {
-                self.send_http_notification(&notification).await
-            }
-            TransportType::WebSocket => Err(anyhow!("WebSocket transport not yet implemented")),
-        }
-    }
-
-    /// Send a request via stdio transport.
-    async fn send_stdio_request(&self, request: &JsonRpcRequest) -> Result<JsonRpcResponse> {
-        let mut process = self.stdio_process.lock().await;
-        let transport = process.as_mut().ok_or_else(|| anyhow!("Not connected"))?;
-
-        let stdin = transport
-            .child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| anyhow!("No stdin"))?;
-        let stdout = transport
-            .child
-            .stdout
-            .as_mut()
-            .ok_or_else(|| anyhow!("No stdout"))?;
-
-        // Write request
-        let request_json = serde_json::to_string(request)?;
-        writeln!(stdin, "{}", request_json)?;
-        stdin.flush()?;
-
-        // Read response
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
-
-        serde_json::from_str(&line).context("Failed to parse JSON-RPC response")
-    }
-
-    /// Send a notification via stdio transport.
-    async fn send_stdio_notification(&self, notification: &Value) -> Result<()> {
-        let mut process = self.stdio_process.lock().await;
-        let transport = process.as_mut().ok_or_else(|| anyhow!("Not connected"))?;
-
-        let stdin = transport
-            .child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| anyhow!("No stdin"))?;
-
-        let json = serde_json::to_string(notification)?;
-        writeln!(stdin, "{}", json)?;
-        stdin.flush()?;
-
-        Ok(())
-    }
-
-    /// Send a request via HTTP transport.
-    async fn send_http_request(&self, request: &JsonRpcRequest) -> Result<JsonRpcResponse> {
-        let url = self
-            .config
-            .sse_post_url
-            .as_ref()
-            .or(self.config.sse_url.as_ref())
-            .ok_or_else(|| anyhow!("No HTTP URL configured"))?;
-
-        let mut req = self.http_client.post(url).json(request);
-        req = apply_mcp_http_auth(req, &self.config);
-        let response = req.send().await.context("HTTP request failed")?;
-
-        if !response.status().is_success() {
-            return Err(anyhow!("HTTP error: {}", response.status()));
-        }
-
-        response
-            .json()
+        name: &str,
+        arguments: Option<Value>,
+    ) -> Result<GetPromptResult> {
+        self.request("prompts/get", Some(named_arguments(name, arguments)?))
             .await
-            .context("Failed to parse JSON-RPC response")
     }
-
-    /// Send a notification via HTTP transport.
-    async fn send_http_notification(&self, notification: &Value) -> Result<()> {
-        let url = self
-            .config
-            .sse_post_url
-            .as_ref()
-            .or(self.config.sse_url.as_ref())
-            .ok_or_else(|| anyhow!("No HTTP URL configured"))?;
-
-        let mut req = self.http_client.post(url).json(notification);
-        req = apply_mcp_http_auth(req, &self.config);
-        let response = req.send().await.context("HTTP notification failed")?;
-
-        if !response.status().is_success() {
-            warn!("HTTP notification returned error: {}", response.status());
+    pub async fn call_tool(&self, name: &str, arguments: Option<Value>) -> Result<CallToolResult> {
+        if !self.is_connected().await {
+            bail!("MCP server is not connected");
         }
-
-        Ok(())
+        if !self
+            .discovered_tools()
+            .await?
+            .iter()
+            .any(|t| t.name == name)
+        {
+            bail!("MCP tool is not available");
+        }
+        self.request("tools/call", Some(named_arguments(name, arguments)?))
+            .await
     }
-}
-
-fn resolve_header_value(raw: &str) -> String {
-    if let Some(var) = raw.strip_prefix("env:") {
-        std::env::var(var).unwrap_or_default()
-    } else {
-        raw.to_string()
+    pub async fn read_resource(&self, uri: &str) -> Result<ReadResourceResult> {
+        self.request("resources/read", Some(json!({"uri":uri})))
+            .await
     }
-}
-
-fn apply_mcp_http_auth(
-    mut req: reqwest::RequestBuilder,
-    config: &super::McpServerConfig,
-) -> reqwest::RequestBuilder {
-    for (key, value) in &config.headers {
-        req = req.header(key, resolve_header_value(value));
-    }
-    if let Some(var) = &config.bearer_token_env_var
-        && let Ok(token) = std::env::var(var)
-        && !token.is_empty()
-    {
-        req = req.bearer_auth(token);
-    }
-    req
-}
-
-impl Drop for McpClient {
-    fn drop(&mut self) {
-        // Kill child process if running
-        if let Ok(mut process) = self.stdio_process.try_lock() {
-            if let Some(mut transport) = process.take() {
-                let _ = transport.child.kill();
+    async fn list<T: DeserializeOwned>(&self, method: &str, field: &str) -> Result<Vec<T>> {
+        let mut result = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..100 {
+            let page: Value = self
+                .request(method, cursor.as_ref().map(|c| json!({"cursor":c})))
+                .await?;
+            let values = page
+                .get(field)
+                .and_then(Value::as_array)
+                .ok_or_else(|| anyhow!("Invalid MCP list response"))?;
+            if result.len() + values.len() > 10_000 {
+                bail!("MCP discovery limit exceeded");
+            }
+            for value in values {
+                result.push(serde_json::from_value(value.clone())?);
+            }
+            cursor = page
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let Some(next) = &cursor else {
+                return Ok(result);
+            };
+            if !seen.insert(next.clone()) {
+                bail!("Repeated MCP pagination cursor");
             }
         }
+        bail!("MCP pagination limit exceeded")
     }
+    async fn request<T: DeserializeOwned>(&self, method: &str, params: Option<Value>) -> Result<T> {
+        let mut request =
+            JsonRpcRequest::new(self.request_id.fetch_add(1, Ordering::Relaxed), method);
+        request.params = params;
+        let response: JsonRpcResponse = match self.config.transport {
+            TransportType::Stdio => {
+                let transport = self
+                    .stdio
+                    .read()
+                    .await
+                    .clone()
+                    .ok_or_else(|| anyhow!("MCP server is not connected"))?;
+                transport.request(&request, self.timeout).await?
+            }
+            TransportType::Http => tokio::time::timeout(
+                self.timeout,
+                self.http.request(&request, &self.notifications),
+            )
+            .await
+            .map_err(|_| anyhow!("MCP request timed out"))??,
+            _ => bail!("Unsupported MCP transport"),
+        };
+        if response.jsonrpc != "2.0" || response.id != request.id {
+            bail!("MCP response correlation failed");
+        }
+        if let Some(error) = response.error {
+            bail!("MCP server rejected {method} (code {})", error.code);
+        }
+        serde_json::from_value(response.result.unwrap_or(Value::Null))
+            .map_err(|_| anyhow!("Invalid MCP response payload"))
+    }
+    async fn notify(&self, method: &str, params: Option<Value>) -> Result<()> {
+        let value = serde_json::to_value(cortex_mcp_types::JsonRpcNotification {
+            jsonrpc: "2.0".into(),
+            method: method.into(),
+            params,
+        })?;
+        match self.config.transport {
+            TransportType::Stdio => {
+                self.stdio
+                    .read()
+                    .await
+                    .clone()
+                    .ok_or_else(|| anyhow!("MCP server is not connected"))?
+                    .notify(value)
+                    .await
+            }
+            TransportType::Http => self.http.notify(&value).await,
+            _ => bail!("Unsupported MCP transport"),
+        }
+    }
+}
+fn named_arguments(name: &str, arguments: Option<Value>) -> Result<Value> {
+    let mut params = json!({"name":name});
+    if let Some(arguments) = arguments {
+        if !arguments.is_object() {
+            bail!("MCP arguments must be an object");
+        }
+        params["arguments"] = arguments;
+    }
+    Ok(params)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "client_tests.rs"]
+mod tests;
 
-    #[test]
-    fn test_connection_state() {
-        assert_ne!(ConnectionState::Connected, ConnectionState::Disconnected);
-    }
-
-    #[tokio::test]
-    async fn test_client_creation() {
-        let config = McpServerConfig::new("test", "echo");
-        let client = McpClient::new(config);
-
-        assert_eq!(client.name(), "test");
-        assert_eq!(client.state().await, ConnectionState::Disconnected);
-    }
-}
+#[cfg(test)]
+#[path = "http_tests.rs"]
+mod http_tests;

@@ -13,10 +13,10 @@
 //! - `GET|POST /v1/code/hosts` — This PC pairing
 //!
 //! Device login is implemented in `cortex-login` against `/v1/auth/device`.
-//! Cancel: abort the local SSE task. `POST .../cancel` is still 404 —
-//! TODO(backend): add an explicit cancel route.
-//! Cloud turns currently emit no VM `tool_start` events. This PC still
-//! registers a host and executes local tools when the SSE carries arguments.
+//! Code tool events describe server-owned execution, including paired/SSH
+//! runtimes. No local invocation/result continuation contract is exposed.
+//! Cancellation uses the explicit session cancel route; disconnect is not an
+//! acknowledgement that remote work stopped.
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -25,22 +25,17 @@ use std::time::Duration;
 
 use eventsource_stream::Eventsource;
 use futures::Stream;
-use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, mpsc};
 use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
 
-use super::{
-    CompletionRequest, CompletionResponse, FinishReason, Message, MessageContent, MessageRole,
-    ResponseEvent, ResponseStream, TokenUsage, ToolCallEvent,
-};
+use super::{CompletionRequest, MessageRole, ResponseEvent, ResponseStream};
 use crate::error::{CortexError, Result};
-use crate::harness::{TOOL_TIMEOUT_SECS, redact_secrets};
+use crate::harness::TOOL_TIMEOUT_SECS;
 
 const DEFAULT_CORTEX_URL: &str = "https://api.cortex.foundation";
-const CHUNK_TIMEOUT_SECS: u64 = 60;
 const GUEST_COOKIE_NAME: &str = "cortex_gt";
 
 /// Product-facing copy for a true outage / unreachable API.
@@ -331,6 +326,9 @@ pub struct CodeAgentClient {
     session_id: Arc<Mutex<Option<String>>>,
     cancel: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
     turn_context: Arc<std::sync::Mutex<CodeTurnContext>>,
+    model: Arc<std::sync::Mutex<Option<String>>>,
+    identity_path: Arc<std::sync::Mutex<Option<std::path::PathBuf>>>,
+    turn_lock: Arc<Mutex<()>>,
 }
 
 impl CodeAgentClient {
@@ -344,12 +342,10 @@ impl CodeAgentClient {
                 std::env::var("CORTEX_API_URL").unwrap_or_else(|_| DEFAULT_CORTEX_URL.to_string())
             })),
             auth: Arc::new(Mutex::new(auth)),
-            session_id: Arc::new(Mutex::new(load_cached_session_id(
-                &std::env::current_dir()
-                    .ok()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default(),
-            ))),
+            session_id: Arc::new(Mutex::new(None)),
+            model: Arc::new(std::sync::Mutex::new(None)),
+            identity_path: Arc::new(std::sync::Mutex::new(None)),
+            turn_lock: Arc::new(Mutex::new(())),
             cancel: Arc::new(Mutex::new(None)),
             turn_context: Arc::new(std::sync::Mutex::new(CodeTurnContext {
                 computer: ComputerKind::detect(),
@@ -440,6 +436,14 @@ impl CodeAgentClient {
         *self.session_id.lock().await = Some(id.into());
     }
 
+    pub async fn resume_session(&self, id: &str) -> Result<()> {
+        if !valid_session_id(id) {
+            return Err(CortexError::InvalidInput("Invalid Code session ID.".into()));
+        }
+        self.set_session_id(id).await;
+        Ok(())
+    }
+
     pub fn set_turn_context(&self, ctx: CodeTurnContext) {
         if let Ok(mut guard) = self.turn_context.lock() {
             *guard = ctx;
@@ -485,15 +489,20 @@ impl CodeAgentClient {
         if let Some(host_id) = req.host_id.filter(|t| !t.is_empty()) {
             body.insert("host_id".into(), serde_json::Value::String(host_id));
         }
+        if let Some(model) = self.model.lock().ok().and_then(|m| m.clone()) {
+            body.insert("model_slug".into(), serde_json::Value::String(model));
+        }
         let resp = self
             .authed_post(&url, &serde_json::Value::Object(body))
             .await?;
         let session: CodeSession = parse_json(resp).await?;
         *self.session_id.lock().await = Some(session.id.clone());
-        persist_session_id(
-            self.turn_context().workspace.as_deref().unwrap_or(""),
-            &session.id,
-        );
+        if let Some(path) = self.identity_path.lock().ok().and_then(|p| p.clone()) {
+            let identity = serde_json::json!({"session_id": session.id, "origin": self.base_url});
+            let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+            std::fs::write(&temporary, serde_json::to_vec(&identity)?)?;
+            std::fs::rename(temporary, path)?;
+        }
         Ok(session)
     }
 
@@ -505,41 +514,87 @@ impl CodeAgentClient {
         parse_json(resp).await
     }
 
-    /// Ensure a reusable session id exists.
+    /// Reuse only the explicitly bound session. Network/auth failures never
+    /// create a replacement conversation or switch runtime ownership.
     pub async fn ensure_session(&self) -> Result<String> {
-        if let Some(id) = self.session_id.lock().await.clone() {
-            match self.get_session(&id).await {
-                Ok(_) => return Ok(id),
-                Err(_) => {
-                    tracing::debug!(id = %id, "Cached Code session is gone; creating a new one");
-                    *self.session_id.lock().await = None;
-                }
+        let existing = self.session_id.lock().await.clone();
+        if let Some(id) = existing {
+            let session = self.get_session(&id).await?;
+            let model = self.model.lock().ok().and_then(|m| m.clone());
+            if model
+                .as_deref()
+                .is_some_and(|m| m != session.model_slug && m != session.model_ref)
+            {
+                return Err(CortexError::InvalidInput(
+                    "The selected model differs from the resumed Code session. Start a new session to change models.".into()
+                ));
             }
+            return Ok(id);
         }
         let ctx = self.turn_context();
-        let mut req = CreateCodeSession::default();
-        match ctx.computer {
-            ComputerKind::ThisPc | ComputerKind::Ssh => {
-                let name = hostname::get()
-                    .ok()
-                    .and_then(|h| h.into_string().ok())
-                    .unwrap_or_else(|| "Cortex CLI".to_string());
-                match self.register_host(&name).await {
-                    Ok(pairing) => {
-                        req.host_id = Some(pairing.host.id);
-                        req.runtime = Some("paired".to_string());
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            "This PC host registration failed; opening a cloud Code session"
-                        );
-                    }
-                }
-            }
-            ComputerKind::Cloud => {}
+        if ctx.computer != ComputerKind::Cloud {
+            return Err(CortexError::InvalidInput(
+                "Local and SSH Code execution require an already connected Code session. Connect a host and resume that session, or explicitly select Cloud. No runtime was substituted.".into()
+            ));
         }
-        Ok(self.create_session_with(req).await?.id)
+        Ok(self
+            .create_session_with(CreateCodeSession {
+                runtime: Some("cloud".into()),
+                ..Default::default()
+            })
+            .await?
+            .id)
+    }
+
+    pub fn set_model(&self, model: &str) {
+        if let Ok(mut selected) = self.model.lock() {
+            *selected = Some(model.to_string());
+        }
+    }
+
+    pub fn configure_session_identity(
+        &self,
+        home: &std::path::Path,
+        id: &str,
+        resume: bool,
+    ) -> Result<()> {
+        // Local IDs come from ConversationId, never from a remote path segment.
+        let id = uuid::Uuid::parse_str(id)
+            .map_err(|_| CortexError::InvalidInput("Invalid local session ID.".into()))?;
+        let path = home
+            .join("sessions")
+            .join(format!("{id}.code-session.json"));
+        let remote = if resume {
+            let data = std::fs::read(&path).map_err(|_| CortexError::InvalidInput(
+                "This local session has no remote Code identity. It cannot be resumed safely; start a new session.".into()
+            ))?;
+            let value: serde_json::Value = serde_json::from_slice(&data)?;
+            if value["origin"].as_str() != Some(self.base_url.as_str()) {
+                return Err(CortexError::InvalidInput(
+                    "The saved Code session belongs to a different API origin.".into(),
+                ));
+            }
+            Some(
+                value["session_id"]
+                    .as_str()
+                    .filter(|id| valid_session_id(id))
+                    .ok_or_else(|| {
+                        CortexError::InvalidInput("Invalid saved Code session ID.".into())
+                    })?
+                    .to_owned(),
+            )
+        } else {
+            None
+        };
+        *self
+            .session_id
+            .try_lock()
+            .map_err(|_| CortexError::InvalidInput("A Code turn is already running.".into()))? =
+            remote;
+        *self.identity_path.lock().map_err(|_| {
+            CortexError::InvalidInput("Code session state is unavailable.".into())
+        })? = Some(path);
+        Ok(())
     }
 
     /// Transcript for a Code session (server-side persistence).
@@ -566,49 +621,51 @@ impl CodeAgentClient {
         parse_json(resp).await
     }
 
-    /// Cancel the in-flight turn by aborting the local SSE task.
-    ///
-    /// Also POSTs `/v1/code/sessions/{id}/cancel` when a session exists.
-    /// The live API currently returns 404 for that route (TODO(backend)).
+    /// Stop local streaming and request remote cancellation. The checked form
+    /// distinguishes acknowledgement failure from confirmed cancellation.
     pub async fn cancel_in_flight(&self) {
+        let _ = self.cancel_in_flight_checked().await;
+    }
+
+    pub async fn cancel_in_flight_checked(&self) -> Result<()> {
         if let Some(handle) = self.cancel.lock().await.take() {
             handle.abort();
         }
-        let session_id = self.session_id.lock().await.clone();
-        let Some(session_id) = session_id else {
-            return;
+        let Some(session_id) = self.session_id.lock().await.clone() else {
+            return Ok(());
         };
         let url = format!("{}/v1/code/sessions/{session_id}/cancel", self.base_url);
-        let body = serde_json::json!({});
-        match self.authed_post(&url, &body).await {
-            Ok(_) => tracing::debug!("Code session cancel accepted"),
-            Err(e) => tracing::debug!(error = %e, "Code session cancel route missing or failed"),
+        match timeout(
+            Duration::from_secs(3),
+            self.authed_post(&url, &serde_json::json!({})),
+        )
+        .await
+        {
+            Ok(Ok(_)) => Ok(()),
+            _ => Err(CortexError::BackendError {
+                message: super::runtime_contract::REMOTE_CANCEL_UNCONFIRMED.into(),
+            }),
         }
     }
 
-    /// Stream a turn against the Code agent API.
     pub async fn stream_turn(&self, message: &str, mode: CodeTurnMode) -> Result<ResponseStream> {
         self.ensure_auth().await?;
-        let ctx = self.turn_context();
-        let mode = ctx.turn_mode.unwrap_or(mode);
-        match self.post_turn(message, mode).await {
-            Ok(stream) => Ok(stream),
-            Err(e) if is_not_found_error(&e) => {
-                tracing::debug!("Code session turn returned 404; creating a new session");
-                *self.session_id.lock().await = None;
-                self.post_turn(message, mode).await
-            }
-            Err(e) => Err(e),
-        }
+        self.post_turn(message, self.turn_context().turn_mode.unwrap_or(mode))
+            .await
     }
 
     async fn post_turn(&self, message: &str, mode: CodeTurnMode) -> Result<ResponseStream> {
-        let ctx = self.turn_context();
+        let turn_guard = self.turn_lock.clone().try_lock_owned().map_err(|_| {
+            CortexError::InvalidInput("A Code turn is already running in this session.".into())
+        })?;
         let session_id = self.ensure_session().await?;
         let url = format!("{}/v1/code/sessions/{session_id}/turns", self.base_url);
         let body = serde_json::json!({
             "message": message,
             "mode": mode.as_str(),
+            // An existing Code conversation keeps its mode. Interaction is the
+            // supported per-turn read-only/planning control in the backend.
+            "interaction": if mode == CodeTurnMode::Chat { "plan" } else { "agent" },
         });
 
         let mut req = self
@@ -633,9 +690,9 @@ impl CodeAgentClient {
 
         let (tx, rx) = mpsc::channel::<Result<ResponseEvent>>(64);
         let stream = resp.bytes_stream().eventsource();
-        let execute_local = matches!(ctx.computer, ComputerKind::ThisPc | ComputerKind::Ssh);
+
         let task = tokio::spawn(async move {
-            pump_sse(stream, tx, execute_local).await;
+            pump_sse(stream, tx).await;
         });
         let abort = task.abort_handle();
         *self.cancel.lock().await = Some(abort.clone());
@@ -643,6 +700,7 @@ impl CodeAgentClient {
         Ok(Box::pin(AbortOnDropStream {
             inner: ReceiverStream::new(rx),
             abort,
+            _turn_guard: turn_guard,
         }))
     }
 
@@ -702,6 +760,7 @@ impl CodeAgentClient {
 struct AbortOnDropStream {
     inner: ReceiverStream<Result<ResponseEvent>>,
     abort: tokio::task::AbortHandle,
+    _turn_guard: tokio::sync::OwnedMutexGuard<()>,
 }
 
 impl Stream for AbortOnDropStream {
@@ -723,6 +782,7 @@ pub fn cached_code_session_id(workspace: &str) -> Option<String> {
     load_cached_session_id(workspace)
 }
 
+#[cfg(test)]
 fn persist_session_id(workspace: &str, session_id: &str) {
     let Some(path) = code_session_cache_path() else {
         return;
@@ -789,8 +849,11 @@ async fn parse_json<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Re
     })
 }
 
-fn is_not_found_error(err: &CortexError) -> bool {
-    err.to_string().contains("not found")
+fn valid_session_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 fn map_api_error(status: reqwest::StatusCode, body: &str) -> CortexError {
@@ -843,201 +906,16 @@ fn sanitize_api_detail(detail: Option<String>) -> String {
     raw
 }
 
-async fn pump_sse<S>(stream: S, tx: mpsc::Sender<Result<ResponseEvent>>, execute_local: bool)
-where
-    S: futures::Stream<
-            Item = std::result::Result<
-                eventsource_stream::Event,
-                eventsource_stream::EventStreamError<reqwest::Error>,
-            >,
-        > + Unpin,
-{
-    let mut stream = stream;
-    let mut accumulated = String::new();
-    let mut usage = TokenUsage::default();
-    let mut tool_calls = Vec::new();
-    let chunk_timeout = Duration::from_secs(CHUNK_TIMEOUT_SECS);
-
-    loop {
-        let event_result = match timeout(chunk_timeout, stream.next()).await {
-            Ok(Some(result)) => result,
-            Ok(None) => break,
-            Err(_) => {
-                let _ = tx.send(Err(CortexError::Timeout)).await;
-                break;
-            }
-        };
-
-        let event = match event_result {
-            Ok(ev) => ev,
-            Err(e) => {
-                let _ = tx
-                    .send(Err(CortexError::BackendError {
-                        message: format!("Stream error: {e}"),
-                    }))
-                    .await;
-                break;
-            }
-        };
-
-        if event.data.is_empty() || event.data == "[DONE]" {
-            continue;
-        }
-
-        let parsed = match serde_json::from_str::<CodeTurnEvent>(&event.data) {
-            Ok(ev) => ev,
-            Err(e) => {
-                tracing::debug!(error = %e, data = %event.data, "Unknown Code turn SSE event");
-                continue;
-            }
-        };
-
-        let mapped = match parsed {
-            CodeTurnEvent::ReasoningDelta { delta, .. } => Some(ResponseEvent::Reasoning(delta)),
-            CodeTurnEvent::TextDelta { delta, .. } => {
-                accumulated.push_str(&delta);
-                Some(ResponseEvent::Delta(delta))
-            }
-            CodeTurnEvent::ToolStart {
-                invocation_id,
-                tool_name,
-                label,
-                arguments,
-            } => {
-                let has_explicit_args = arguments.as_ref().is_some_and(|v| {
-                    !v.is_null()
-                        && (v.get("command").is_some()
-                            || v.get("file_path").is_some()
-                            || v.get("path").is_some()
-                            || v.as_object().is_some_and(|o| o.len() > 1))
-                });
-                let args = match arguments {
-                    Some(v) if !v.is_null() => v,
-                    _ => serde_json::json!({"label": label}),
-                };
-                let remote = !(execute_local && has_explicit_args);
-                tool_calls.push(super::ToolCall {
-                    id: invocation_id.clone(),
-                    call_type: "function".to_string(),
-                    function: super::FunctionCall {
-                        name: tool_name.clone(),
-                        arguments: args.to_string(),
-                    },
-                });
-                Some(ResponseEvent::ToolCall(ToolCallEvent {
-                    id: invocation_id,
-                    name: tool_name,
-                    arguments: args.to_string(),
-                    remote,
-                }))
-            }
-            CodeTurnEvent::ToolEnd {
-                invocation_id,
-                outcome,
-                error_detail,
-                output,
-                ..
-            } => {
-                let success = outcome.eq_ignore_ascii_case("ok")
-                    || outcome.eq_ignore_ascii_case("success")
-                    || outcome.eq_ignore_ascii_case("completed");
-                let raw = output.or(error_detail).unwrap_or_default();
-                Some(ResponseEvent::ToolResult {
-                    id: invocation_id,
-                    success,
-                    output: redact_secrets(&raw),
-                })
-            }
-            CodeTurnEvent::Usage {
-                input_tokens,
-                output_tokens,
-                ..
-            } => {
-                usage = TokenUsage {
-                    input_tokens,
-                    output_tokens,
-                    total_tokens: input_tokens + output_tokens,
-                };
-                None
-            }
-            CodeTurnEvent::Done { finish_reason, .. } => {
-                let reason = if finish_reason.contains("tool") {
-                    FinishReason::ToolCalls
-                } else {
-                    FinishReason::Stop
-                };
-                Some(ResponseEvent::Done(CompletionResponse {
-                    message: Some(Message {
-                        role: MessageRole::Assistant,
-                        content: MessageContent::Text(accumulated.clone()),
-                        tool_call_id: None,
-                        tool_calls: None,
-                    }),
-                    usage: usage.clone(),
-                    finish_reason: reason,
-                    tool_calls: tool_calls.clone(),
-                }))
-            }
-            CodeTurnEvent::Cancelled { .. } => Some(ResponseEvent::Error("Cancelled".into())),
-            CodeTurnEvent::Error { message, detail } => {
-                let raw = if message.is_empty() {
-                    detail.unwrap_or_default()
-                } else {
-                    message
-                };
-                let mapped = map_sse_error_copy(&raw);
-                Some(ResponseEvent::Error(mapped))
-            }
-            CodeTurnEvent::Question {
-                invocation_id,
-                questions,
-            } => Some(ResponseEvent::ToolCall(ToolCallEvent {
-                id: invocation_id,
-                name: "Questions".into(),
-                arguments: questions.to_string(),
-                remote: false,
-            })),
-            CodeTurnEvent::ReasoningDone { .. } | CodeTurnEvent::Unknown => None,
-        };
-
-        if let Some(ev) = mapped
-            && tx.send(Ok(ev)).await.is_err()
-        {
-            break;
-        }
-    }
-}
-
-fn map_sse_error_copy(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return SERVICE_UNAVAILABLE.to_string();
-    }
-    let lower = trimmed.to_lowercase();
-    if lower.contains("unauthorized")
-        || lower.contains("unauthenticated")
-        || lower.contains("401")
-        || lower.contains("403")
-        || lower.contains("invalid api key")
-        || lower.contains("invalid token")
-    {
-        return AUTH_REQUIRED.to_string();
-    }
-    if lower.contains("not found") || lower.contains("404") {
-        return ENDPOINT_NOT_FOUND.to_string();
-    }
-    if lower.contains("429") || lower.contains("rate limit") || lower.contains("quota") {
-        return TOO_MANY_REQUESTS.to_string();
-    }
-    if lower.contains("reqwest") || lower.contains("hyper") {
-        return SERVICE_UNAVAILABLE.to_string();
-    }
-    trimmed.to_string()
-}
+#[path = "code_sse.rs"]
+mod code_sse;
+#[cfg(test)]
+use code_sse::map_sse_error_copy;
+use code_sse::pump_sse;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::Message;
     use futures::StreamExt;
 
     #[test]

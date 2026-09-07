@@ -9,7 +9,7 @@ use anyhow::Result;
 
 use crate::app::AppView;
 use crate::commands::{CommandResult, FormRegistry, ModalType, ViewType};
-use crate::session::{CortexSession, ExportFormat, default_export_filename, export_session};
+use crate::session::{ExportFormat, default_export_filename, export_session};
 
 use super::core::EventLoop;
 
@@ -33,6 +33,7 @@ impl EventLoop {
 
             CommandResult::Clear => {
                 self.app_state.clear_messages();
+                self.add_system_message("Display cleared. Stored conversation context is unchanged; use /new for a fresh conversation.");
             }
 
             CommandResult::Interrupt => {
@@ -40,17 +41,13 @@ impl EventLoop {
             }
 
             CommandResult::NewSession => {
-                self.app_state.new_session();
+                let result = self.new_local_session();
+                self.report_local_result(result, "New session started");
             }
 
             CommandResult::ResumeSession(id) => {
-                if let Ok(session) = CortexSession::load(&id) {
-                    self.cortex_session = Some(session);
-                    self.app_state.set_view(AppView::Session);
-                    self.add_system_message(&format!("Resumed session: {}", id));
-                } else {
-                    self.add_system_message(&format!("Failed to load session: {}", id));
-                }
+                let result = self.resume_local_session(&id);
+                self.report_local_result(result, "Session resumed");
             }
 
             CommandResult::Toggle(feature) => {
@@ -111,24 +108,15 @@ impl EventLoop {
                     .info(format!("Compact mode: {}", state));
             }
             "favorite" => {
-                if self.cortex_session.is_some() {
-                    let key = "session_favorite".to_string();
-                    let is_fav = self
-                        .app_state
-                        .settings
-                        .get(&key)
-                        .map(|v| v == "true")
-                        .unwrap_or(false);
-                    self.app_state.settings.insert(key, (!is_fav).to_string());
-                    if !is_fav {
-                        self.app_state.toasts.success("Marked as favorite");
-                    } else {
-                        self.app_state.toasts.info("Favorite removed");
-                    }
-                } else {
-                    self.app_state.toasts.error("No active session");
-                }
+                let value = self
+                    .cortex_session
+                    .as_ref()
+                    .is_some_and(|s| !s.meta.favorite);
+                let result =
+                    self.change_session_metadata("favorite", if value { "true" } else { "false" });
+                self.report_local_result(result, "Favorite updated");
             }
+
             "debug" => {
                 self.app_state.toggle_debug();
                 let state = if self.app_state.debug_mode {
@@ -280,9 +268,10 @@ impl EventLoop {
                 self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::Timeline => {
-                self.app_state
-                    .toasts
-                    .info("Timeline: Use scroll to navigate messages");
+                self.app_state.toasts.info(
+                    "Timeline opens the persisted transcript; workspace restore is unavailable.",
+                );
+                self.handle_transcript();
             }
             ModalType::ThemePicker => {
                 use crate::modal::ThemeSelectorModal;
@@ -292,15 +281,10 @@ impl EventLoop {
                     .push(Box::new(ThemeSelectorModal::new(&current_theme)));
             }
             ModalType::Fork => {
-                if let Some(ref session) = self.cortex_session {
-                    let fork_name = format!("{} (fork)", session.title());
-                    self.app_state
-                        .toasts
-                        .success(format!("Forked: {}", fork_name));
-                } else {
-                    self.app_state.toasts.error("No active session to fork");
-                }
+                let result = self.fork_local_session(None);
+                self.report_local_result(result, "Fork created; original session unchanged");
             }
+
             ModalType::FilePicker => {
                 let cwd = std::env::current_dir().unwrap_or_default();
                 let interactive = crate::interactive::builders::build_file_browser(&cwd);
@@ -330,7 +314,7 @@ impl EventLoop {
                 }
             }
             ModalType::Confirm(msg) => {
-                self.app_state.toasts.info(&msg);
+                self.add_system_message(&format!("{msg} Use cortex delete SESSION_ID from the CLI for protected, confirmed deletion. No session was deleted."));
             }
             ModalType::Login => {
                 self.start_login_flow().await;
@@ -372,11 +356,31 @@ impl EventLoop {
 
     /// Handle async commands
     pub(super) async fn handle_async_command(&mut self, cmd: &str) -> Result<()> {
-        // This is a stub - the full implementation is in the main event_loop module
-        // For now, we handle basic commands here
         tracing::debug!("Async command: {}", cmd);
 
         match cmd {
+            "sessions:list" => self.open_sessions_modal(),
+            "undo" => {
+                let result = self.rewind_conversation(1);
+                self.report_local_result(result, "");
+            }
+            "redo" => {
+                let result = self.redo_conversation();
+                self.report_local_result(result, "");
+            }
+            cmd if cmd.starts_with("export:") => {
+                if let Some(format) = ExportFormat::parse(&cmd[7..]) {
+                    self.handle_export(format).await?;
+                } else {
+                    self.add_system_message("Unsupported export format");
+                }
+            }
+            cmd if cmd == "diff" || cmd.starts_with("diff:") || cmd.starts_with("review:") => {
+                self.show_local_diff(cmd).await;
+            }
+            cmd if cmd == "images" || cmd.starts_with("images:") => {
+                self.add_system_message("Image attachments are not supported by this interactive session. No image was sent.");
+            }
             "providers:list" => {
                 self.handle_providers_list();
             }
@@ -423,9 +427,9 @@ impl EventLoop {
                 self.invoke_skill_command(cmd).await;
             }
             _ => {
-                self.app_state
-                    .toasts
-                    .warning(format!("Command not yet implemented: {}", cmd));
+                self.add_system_message(&format!(
+                    "Unsupported command in this session: {cmd}. No operation was performed."
+                ));
             }
         }
 
@@ -448,17 +452,25 @@ impl EventLoop {
             }
         };
 
-        let export_dir = dirs::document_dir()
-            .or_else(dirs::home_dir)
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let export_dir = session.storage().base_dir().join(".exports");
+        if std::fs::symlink_metadata(&export_dir).is_ok_and(|m| m.file_type().is_symlink()) {
+            self.add_system_message("Export directory must not be a symbolic link");
+            return Ok(());
+        }
+        if let Err(error) = std::fs::create_dir_all(&export_dir) {
+            self.add_system_message(&format!("Export failed: {error}"));
+            return Ok(());
+        }
         let export_path = export_dir.join(&filename);
 
         self.add_system_message(&format!("Exporting session as {}...", format.name()));
 
         let export_path_clone = export_path.clone();
 
-        let result =
-            tokio::task::spawn_blocking(move || std::fs::write(&export_path_clone, content)).await;
+        let result = tokio::task::spawn_blocking(move || {
+            super::local_workflows::write_export(&export_path_clone, &content)
+        })
+        .await;
 
         if let Some(last_msg) = self.app_state.messages.last()
             && last_msg.content.starts_with("Exporting session as")
@@ -553,27 +565,24 @@ impl EventLoop {
 
     /// Handle history command
     fn handle_history(&mut self) {
-        if self.app_state.command_history.is_empty() {
-            self.add_system_message("No command history yet. Try running some commands first!");
-            return;
+        let result = (|| -> Result<String> {
+            let storage = self.session_storage()?;
+            let mut output = String::from("Persisted prompt history:\n");
+            for summary in storage.list_recent_sessions(20)? {
+                for message in storage
+                    .load_messages(&summary.id)?
+                    .into_iter()
+                    .filter(|m| m.is_user())
+                {
+                    output.push_str(&format!("{} | {}\n", summary.short_id(), message.content));
+                }
+            }
+            Ok(output)
+        })();
+        match result {
+            Ok(output) => self.add_system_message(&output),
+            Err(error) => self.add_system_message(&format!("History unavailable: {error}")),
         }
-
-        let mut output = String::from("📜 Command History\n");
-        output.push_str(&"─".repeat(40));
-        output.push('\n');
-
-        for (i, cmd) in self
-            .app_state
-            .command_history
-            .iter()
-            .rev()
-            .take(20)
-            .enumerate()
-        {
-            output.push_str(&format!("{}. /{}\n", i + 1, cmd));
-        }
-
-        self.add_system_message(&output);
     }
 
     /// Handle set value commands
@@ -639,11 +648,21 @@ impl EventLoop {
                 self.add_system_message(&format!("Provider set to: {}", value));
             }
             "session_name" => {
-                if let Some(ref mut session) = self.cortex_session {
-                    session.set_title(value);
-                }
-                self.app_state.toasts.success(format!("Renamed: {}", value));
+                let result = self.change_session_metadata(key, value);
+                self.report_local_result(result, "Session renamed");
             }
+            "favorite" | "protected" => {
+                let result = self.change_session_metadata(key, value);
+                self.report_local_result(result, "Session setting saved");
+            }
+            "rewind" => {
+                let result = value
+                    .parse::<usize>()
+                    .map_err(anyhow::Error::from)
+                    .and_then(|turns| self.rewind_conversation(turns));
+                self.report_local_result(result, "");
+            }
+
             "temperature" => {
                 if let Ok(temp) = value.parse::<f32>() {
                     let temp = temp.clamp(0.0, 2.0);
@@ -679,9 +698,9 @@ impl EventLoop {
                     .info(format!("Permissions: {}", value));
             }
             _ => {
-                self.app_state
-                    .settings
-                    .insert(key.to_string(), value.to_string());
+                self.add_system_message(&format!(
+                    "Setting '{key}' is unsupported in this session. No setting was changed."
+                ));
             }
         }
     }

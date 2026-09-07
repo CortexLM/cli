@@ -390,9 +390,10 @@ mod tests {
     #[test]
     fn install_sh_verifies_checksum_against_software_host() {
         let script = include_str!("../../../scripts/install.sh");
-        assert!(script.contains("verify_sha256"));
+        assert!(script.contains("hashlib.sha256()"));
+        assert!(script.contains("SHA-256 mismatch"));
         assert!(script.contains("https://software.cortex.foundation"));
-        assert!(script.contains("$HOME/.local"));
+        assert!(script.contains("${HOME}/.local"));
     }
 
     #[test]

@@ -40,14 +40,12 @@ pub struct ExecCli {
 
     /// Autonomy level for operations.
     /// - read-only: No modifications (default, safest)
-    /// - low: Basic file operations only
-    /// - medium: Package install, builds, local git
-    /// - high: Full access including git push
+    /// - low/medium: Unsupported client risk thresholds for Code
+    /// - high: Server-owned agent execution, subject to service permissions
     #[arg(long = "auto", value_enum)]
     pub autonomy: Option<AutonomyLevel>,
 
-    /// Skip ALL permission checks (DANGEROUS).
-    /// Only use in completely isolated environments like Docker containers.
+    /// Unsupported for server-owned Code execution; fails before submission.
     /// Cannot be combined with --auto.
     #[arg(long = "skip-permissions-unsafe", conflicts_with = "autonomy")]
     pub skip_permissions: bool,
@@ -88,7 +86,7 @@ pub struct ExecCli {
     #[arg(long = "cwd", value_name = "PATH")]
     pub cwd: Option<PathBuf>,
 
-    /// Maximum number of turns before stopping.
+    /// Maximum user turns per session (server-owned tool rounds are not client turns).
     #[arg(long = "max-turns", default_value = "100")]
     pub max_turns: usize,
 
@@ -104,8 +102,7 @@ pub struct ExecCli {
     #[arg(short = 'v', long = "verbose")]
     pub verbose: bool,
 
-    /// Custom system prompt to use instead of the default.
-    /// Defines the AI's persona and behavior for this execution.
+    /// Client instructions sent as additional user context, not a service system override.
     #[arg(long = "system")]
     pub system_prompt: Option<String>,
 

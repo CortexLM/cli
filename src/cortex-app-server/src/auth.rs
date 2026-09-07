@@ -173,12 +173,8 @@ impl AuthService {
 
     /// Hash an API key for storage.
     pub fn hash_api_key(api_key: &str) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        api_key.hash(&mut hasher);
-        format!("{:x}", hasher.finish())
+        // Reuse the installed SHA-256/base64url primitive; never persist a raw API key.
+        cortex_engine::mcp::Pkce::generate_code_challenge(api_key)
     }
 }
 
@@ -206,6 +202,16 @@ impl AuthResult {
     /// Check if the user is authenticated.
     pub fn is_authenticated(&self) -> bool {
         !matches!(self, Self::Anonymous)
+    }
+}
+
+/// Namespaced session ownership; JWT subjects cannot impersonate API-key principals.
+pub fn session_principal(auth: Option<&AuthResult>, enabled: bool) -> AppResult<Option<String>> {
+    match auth {
+        Some(AuthResult::Jwt(claims)) => Ok(Some(format!("jwt:{}", claims.sub))),
+        Some(AuthResult::ApiKey(id)) => Ok(Some(format!("api:{id}"))),
+        _ if !enabled => Ok(None),
+        _ => Err(AppError::Authentication("Authentication required".into())),
     }
 }
 
@@ -307,8 +313,8 @@ pub async fn auth_middleware(
                     constant_time_compare(api_key.as_bytes(), configured_key.as_bytes())
                 });
 
-            if let Some(index) = key_index {
-                AuthResult::ApiKey(format!("server-key-{index}"))
+            if key_index.is_some() {
+                AuthResult::ApiKey(format!("sha256:{}", AuthService::hash_api_key(api_key)))
             } else {
                 tracing::warn!("Invalid API key attempted");
                 return Err(StatusCode::UNAUTHORIZED);

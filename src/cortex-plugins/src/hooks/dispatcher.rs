@@ -110,6 +110,11 @@ impl HookDispatcher {
         for registered in hooks.iter() {
             registered.hook.execute(&input, &mut output).await?;
 
+            if output.decision == PermissionDecision::Allow {
+                return Err(crate::PluginError::PermissionDenied(
+                    "Plugins cannot grant execution privileges".into(),
+                ));
+            }
             // Stop if a decision was made
             if output.decision != PermissionDecision::Ask {
                 break;

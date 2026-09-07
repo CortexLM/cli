@@ -1,0 +1,42 @@
+capabilities = ["commands", "hooks", "tools"]
+permissions = ["notifications"]
+
+[plugin]
+id = "hello-typescript"
+name = "Hello TypeScript"
+version = "0.1.0"
+description = "Real Node command, tool, lifecycle notification and veto"
+license = "Apache-2.0"
+
+[runtime]
+kind = "node"
+protocol = 1
+entrypoint = "dist/plugin.mjs"
+timeout_ms = 1000
+
+[[commands]]
+name = "hello"
+description = "Greet a name"
+
+[[hooks]]
+hook_type = "session_start"
+function = "session_start"
+
+[[hooks]]
+hook_type = "tool_execute_before"
+function = "tool_before"
+pattern = "greet"
+
+[[hooks]]
+hook_type = "session_end"
+function = "session_end"
+
+[[tools]]
+name = "greet"
+description = "Greet a name with a persistent call counter"
+[tools.input_schema]
+type = "object"
+additionalProperties = false
+required = ["name"]
+[tools.input_schema.properties.name]
+type = "string"

@@ -14,15 +14,19 @@ mod plugins;
 mod types;
 
 pub use types::PluginTool;
+type TodoState = Arc<tokio::sync::RwLock<Vec<super::handlers::TodoItem>>>;
+// ponytail: registry-lifetime state only; use caller-owned storage for cross-session persistence.
+type TodoLists = Arc<tokio::sync::RwLock<HashMap<(std::path::PathBuf, String), TodoState>>>;
 
 /// Registry of available tools.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ToolRegistry {
     pub(crate) tools: HashMap<String, ToolDefinition>,
     pub(crate) plugins: HashMap<String, PluginTool>,
     pub(crate) handlers: HashMap<String, Arc<dyn ToolHandler>>,
     /// LSP integration.
     pub(crate) lsp: Option<Arc<crate::integrations::LspIntegration>>,
+    pub(crate) todo_lists: TodoLists,
 }
 
 impl std::fmt::Debug for ToolRegistry {
@@ -75,8 +79,8 @@ impl ToolRegistry {
 
     /// Register a tool with handler.
     pub fn register_with_handler(&mut self, tool: ToolDefinition, handler: Arc<dyn ToolHandler>) {
+        self.handlers.insert(tool.name.clone(), handler);
         self.tools.insert(tool.name.clone(), tool);
-        self.handlers.insert(handler.name().to_string(), handler);
     }
 
     /// Set the LSP integration.
@@ -96,7 +100,16 @@ impl ToolRegistry {
 
     /// Get tool definitions for API.
     pub fn get_definitions(&self) -> Vec<ToolDefinition> {
-        self.tools.values().cloned().collect()
+        self.tools
+            .values()
+            .filter(|tool| match tool.name.as_str() {
+                "LspSymbols" | "WebSearch" => false,
+                "LspDiagnostics" | "LspHover" => self.lsp.is_some(),
+                "Task" => self.handlers.contains_key("Task"),
+                _ => true,
+            })
+            .cloned()
+            .collect()
     }
 
     /// Check if a tool is registered.
@@ -108,12 +121,10 @@ impl ToolRegistry {
 
     /// Execute a tool.
     pub async fn execute(&self, name: &str, arguments: Value) -> Result<ToolResult> {
-        let mut context =
-            super::context::ToolContext::new(std::env::current_dir().unwrap_or_default());
-        if let Some(lsp) = &self.lsp {
-            context = context.with_lsp(lsp.clone());
-        }
-        self.execute_with_context(name, arguments, context).await
+        let _ = (name, arguments);
+        Ok(ToolResult::error(
+            "Tool execution requires an explicit workspace and authorization context",
+        ))
     }
 
     /// Execute a tool with a custom context (for output streaming support).
@@ -121,40 +132,92 @@ impl ToolRegistry {
         &self,
         name: &str,
         arguments: Value,
-        context: super::context::ToolContext,
+        mut context: super::context::ToolContext,
     ) -> Result<ToolResult> {
         if !self.has(name) {
-            return Ok(ToolResult::error(format!("Unknown tool: {name}")));
+            return Err(crate::error::CortexError::UnknownTool {
+                name: context.redact(name),
+            });
         }
+        if let Err(message) = super::boundary::authorize_tool_call(&context, name, &arguments) {
+            return Ok(ToolResult::error(context.redact(&message)));
+        }
+        let arguments = match super::boundary::prepare_arguments(&context, name, arguments) {
+            Ok(arguments) => arguments,
+            Err(message) => return Ok(ToolResult::error(context.redact(&message))),
+        };
+        if !super::boundary::is_read_only_tool(name) {
+            // Preserve the exact authorized call after canonical path rewriting.
+            context = context.with_approved_tool_call(name, &arguments);
+        }
+        if context.lsp.is_none() {
+            context.lsp = self.lsp.clone();
+        }
+        let result = self.dispatch(name, arguments, &context).await;
+        match result {
+            Ok(result) => Ok(super::boundary::redact_result(&context, result)),
+            Err(error) => Err(crate::error::CortexError::tool_execution(
+                context.redact(name),
+                context.redact(&error.to_string()),
+            )),
+        }
+    }
 
-        // Check if it's a dynamic handler first
+    async fn dispatch(
+        &self,
+        name: &str,
+        arguments: Value,
+        context: &super::context::ToolContext,
+    ) -> Result<ToolResult> {
+        // Every handler, including plugins and Batch children, enters above.
         if let Some(handler) = self.handlers.get(name) {
-            return handler.execute(arguments, &context).await;
+            return handler.execute(arguments, context).await;
         }
-
-        // Check if it's a plugin tool next
         if let Some(plugin) = self.plugins.get(name) {
-            return self.execute_plugin(plugin, arguments).await;
+            return self.execute_plugin(plugin, arguments, context).await;
         }
-
-        // Dispatch to handler based on tool name
-        // Note: "Execute" is handled by LocalShellHandler via the handlers map above
         match name {
-            "Read" => self.execute_read_file(arguments).await,
-            "Create" => self.execute_write_file(arguments).await,
-            "LS" => self.execute_list_dir(arguments).await,
-            "SearchFiles" => self.execute_search_files(arguments).await,
-            "Edit" => self.execute_edit_file(arguments).await,
-            "Grep" => self.execute_grep(arguments).await,
-            "Glob" => self.execute_glob(arguments).await,
-            "FetchUrl" | "WebFetch" => self.execute_fetch_url(arguments).await,
-            "TodoWrite" => self.execute_todo_write(arguments).await,
-            "TodoRead" => self.execute_todo_read(arguments).await,
-            "Task" => self.execute_task(arguments).await,
-            "ListSubagents" => self.execute_list_subagents(arguments).await,
-            "LspDiagnostics" => self.execute_lsp_diagnostics(arguments).await,
-            "LspHover" => self.execute_lsp_hover(arguments).await,
-            "LspSymbols" => self.execute_lsp_symbols(arguments).await,
+            "Read" => self.execute_read_file(arguments, context).await,
+            "Create" => self.execute_write_file(arguments, context).await,
+            "LS" | "Tree" => self.execute_list_dir(arguments, context).await,
+            "SearchFiles" => self.execute_search_files(arguments, context).await,
+            "Edit" => self.execute_edit_file(arguments, context).await,
+            "Grep" => self.execute_grep(arguments, context).await,
+            "Glob" => self.execute_glob(arguments, context).await,
+            "FetchUrl" | "WebFetch" => self.execute_fetch_url(arguments, context).await,
+            "TodoWrite" => self.execute_todo_write(arguments, context).await,
+            "TodoRead" => self.execute_todo_read(arguments, context).await,
+            "Task" => self.execute_task(arguments, context).await,
+            "ListSubagents" => self.execute_list_subagents(arguments, context).await,
+            "Batch" => {
+                use super::handlers::batch::BatchToolHandler;
+                let executor = Arc::new(super::router::RouterExecutor::from_registry(self.clone()));
+                BatchToolHandler::new(executor)
+                    .execute(arguments, context)
+                    .await
+            }
+            "Plan" => {
+                super::handlers::PlanHandler::new()
+                    .execute(arguments, context)
+                    .await
+            }
+            "Propose" => {
+                super::handlers::ProposeHandler::new()
+                    .execute(arguments, context)
+                    .await
+            }
+            "Questions" => {
+                super::handlers::QuestionsHandler::new()
+                    .execute(arguments, context)
+                    .await
+            }
+            // A tool must not unlock its own read-only authorization.
+            "ExitSpecMode" => Ok(ToolResult::error(
+                "Mode changes require explicit user confirmation",
+            )),
+            "LspDiagnostics" | "LspHover" | "LspSymbols" => Ok(ToolResult::error(
+                "This language-server capability is unavailable",
+            )),
             _ => Ok(ToolResult::error(format!("Tool not implemented: {name}"))),
         }
     }

@@ -76,3 +76,6 @@ gethostname = "0.5"
 [dev-dependencies]
 tower = { workspace = true }
 tempfile = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+cortex-linux-sandbox = { workspace = true }

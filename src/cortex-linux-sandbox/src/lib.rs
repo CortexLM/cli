@@ -25,6 +25,15 @@ pub fn run_main() -> ! {
     run_main::run_main()
 }
 
+/// Run the sandbox with explicit arguments (argv[0] first).
+#[cfg(target_os = "linux")]
+pub fn run_main_with<I>(args: I) -> !
+where
+    I: IntoIterator<Item = String>,
+{
+    run_main::run_main_with(args)
+}
+
 #[cfg(not(target_os = "linux"))]
 pub fn run_main() -> ! {
     eprintln!("cortex-linux-sandbox is only supported on Linux");

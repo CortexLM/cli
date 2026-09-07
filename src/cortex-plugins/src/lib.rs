@@ -46,16 +46,22 @@
 //! }
 //! ```
 
+mod abi;
+pub mod activation;
 pub mod api;
 pub mod commands;
 pub mod config;
+pub mod contract;
 pub mod error;
 pub mod events;
+pub mod executable_hooks;
 pub mod hooks;
 pub mod host;
 pub mod loader;
 pub mod manager;
 pub mod manifest;
+pub mod node;
+pub mod package;
 pub mod plugin;
 pub mod registry;
 pub mod runtime;

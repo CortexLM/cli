@@ -137,10 +137,10 @@ anyhow = "1.0"
 # Tracing & Observability
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.31"
-opentelemetry = "0.31"
-opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.31", features = ["tonic"] }
+tracing-opentelemetry = "0.33"
+opentelemetry = "0.32"
+opentelemetry_sdk = { version = "0.32.1", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls", "trace"] }
 
 # Utilities
 uuid = { version = "1.20", features = ["v4", "serde"] }
@@ -297,6 +297,7 @@ dunce = "1"
 which = "6"
 shlex = "1"
 similar = "2"
+semver = "1.0"
 diffy = "0.4"
 walkdir = "2"
 ignore = "0.4"
@@ -350,7 +351,7 @@ wiremock = "0.6"
 
 # CLI - OpenTelemetry
 opentelemetry-semantic-conventions = "0.32"
-opentelemetry-appender-tracing = "0.31"
+opentelemetry-appender-tracing = "0.32"
 
 # CLI - TypeScript bindings
 ts-rs = { version = "11", features = ["uuid-impl", "serde-json-impl", "no-serde-warnings"] }

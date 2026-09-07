@@ -1,7 +1,6 @@
 //! Local shell tool handler.
 //!
-//! NOTE: Cortex uses DangerFullAccess by default - no sandbox restrictions.
-//! Commands are executed directly without Landlock/seccomp filtering.
+//! Every command uses the context's authorization and required sandbox policy.
 //!
 //! SECURITY: This module uses the exec/runner module which provides:
 //! - Process isolation via kill_on_drop and setpgid
@@ -22,35 +21,6 @@ use crate::exec::{ExecOptions, ExecOutput, OutputChunk, execute_command_streamin
 use crate::tools::context::ToolOutputChunk;
 use crate::tools::spec::ToolMetadata;
 
-/// Characters and patterns that indicate shell metacharacters requiring shell interpretation.
-/// These are checked to determine if we need to use shell execution mode.
-const SHELL_METACHAR_PATTERNS: &[&str] = &[
-    "&&", "||", "|", ";", ">", ">>", "<", "<<", "$", "`", "(", ")", "{", "}", "*", "?", "[", "]",
-    "~", "!", "#", "&",
-];
-
-/// Patterns that indicate bash-specific syntax not supported by dash/sh.
-/// When detected, we prefer bash over /bin/sh to avoid compatibility issues (#2808).
-const BASH_SPECIFIC_PATTERNS: &[&str] = &[
-    "[[",      // Bash conditional expressions
-    "]]",      // Bash conditional expressions (closing)
-    "<(",      // Process substitution
-    ">(",      // Process substitution
-    "${!",     // Indirect expansion
-    "${#",     // String length
-    "**",      // Bash exponentiation (2**10)
-    "source ", // Bash-specific (POSIX uses '.')
-    "shopt",   // Bash-specific shell options
-    "declare", // Bash-specific variable declaration
-    "local ",  // While POSIX has local, some sh don't
-    "typeset", // Bash/ksh specific
-    "+=",      // Append assignment
-    ";&",      // Bash case fall-through
-    ";;&",     // Bash case pattern testing
-    "&>>",     // Bash append redirect both streams
-    "|&",      // Bash pipe both streams
-];
-
 /// Handler for local_shell tool.
 pub struct LocalShellHandler;
 
@@ -70,69 +40,10 @@ impl LocalShellHandler {
         Self
     }
 
-    /// Build the final command, handling shell metacharacters properly.
+    /// The advertised contract is argv, not a shell fragment. Shell syntax must
+    /// be requested explicitly as ["/bin/sh", "-c", script].
     fn build_command(args: &LocalShellArgs) -> Vec<String> {
-        // Check if command contains shell operators that need shell interpretation
-        // SECURITY: We check for shell metacharacters to determine execution mode
-        let needs_shell = args.command[0] == "cd"
-            || args.command.iter().any(|arg| {
-                SHELL_METACHAR_PATTERNS
-                    .iter()
-                    .any(|pattern| arg.contains(pattern))
-            });
-
-        if needs_shell {
-            // SECURITY: When shell interpretation is needed, properly escape each argument
-            // using shlex to prevent injection attacks. Each argument is individually
-            // escaped, then joined with spaces for shell execution.
-            let escaped_args: Vec<String> = args
-                .command
-                .iter()
-                .map(|arg| {
-                    // Use shlex::try_quote which handles all special characters safely
-                    // Fall back to single-quote wrapping if shlex fails
-                    shlex::try_quote(arg)
-                        .map(|s| s.into_owned())
-                        .unwrap_or_else(|_| format!("'{}'", arg.replace('\'', "'\\''")))
-                })
-                .collect();
-            let full_cmd = escaped_args.join(" ");
-
-            #[cfg(target_os = "windows")]
-            {
-                vec!["cmd.exe".to_string(), "/C".to_string(), full_cmd]
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                // Detect if bash-specific syntax is used (#2808)
-                // On Ubuntu and similar systems, /bin/sh is dash which doesn't support
-                // bash-specific features like [[, <(), **, source, etc.
-                let needs_bash = args.command.iter().any(|arg| {
-                    BASH_SPECIFIC_PATTERNS
-                        .iter()
-                        .any(|pattern| arg.contains(pattern))
-                });
-
-                if needs_bash {
-                    // Use bash explicitly for bash-specific syntax
-                    // Try /bin/bash first, fall back to bash in PATH
-                    let bash_path = if std::path::Path::new("/bin/bash").exists() {
-                        "/bin/bash".to_string()
-                    } else if std::path::Path::new("/usr/bin/bash").exists() {
-                        "/usr/bin/bash".to_string()
-                    } else {
-                        "bash".to_string()
-                    };
-                    vec![bash_path, "-c".to_string(), full_cmd]
-                } else {
-                    // Use POSIX sh for simple shell commands
-                    vec!["/bin/sh".to_string(), "-c".to_string(), full_cmd]
-                }
-            }
-        } else {
-            // Direct execution without shell - arguments are passed safely as array
-            args.command.clone()
-        }
+        args.command.clone()
     }
 }
 
@@ -149,20 +60,30 @@ impl ToolHandler for LocalShellHandler {
     }
 
     async fn execute(&self, arguments: Value, context: &ToolContext) -> Result<ToolResult> {
+        if let Err(message) =
+            crate::tools::boundary::check_tool_call(context, "Execute", &arguments)
+        {
+            return Ok(ToolResult::error(message));
+        }
         let args: LocalShellArgs = serde_json::from_value(arguments)?;
 
         if args.command.is_empty() {
             return Ok(ToolResult::error("Empty command"));
+        }
+        if args.background == Some(true) {
+            return Ok(ToolResult::error(
+                "Background execution is unavailable; command was not started",
+            ));
         }
 
         // Build the command (handles shell metacharacters)
         let command = Self::build_command(&args);
 
         // Resolve working directory
-        let cwd = args
-            .workdir
-            .map(|w| context.resolve_path(&w))
-            .unwrap_or_else(|| context.cwd.clone());
+        let cwd = match context.resolve_and_validate_path(args.workdir.as_deref().unwrap_or(".")) {
+            Ok(cwd) => cwd,
+            Err(message) => return Ok(ToolResult::error(message)),
+        };
 
         // Build execution options
         let timeout = args
@@ -175,7 +96,8 @@ impl ToolHandler for LocalShellHandler {
             timeout,
             env: context.env.clone(),
             capture_output: true,
-            ..Default::default()
+            sandbox_policy: context.sandbox_policy.clone(),
+            approval_granted: true,
         };
 
         // Create channel for streaming output

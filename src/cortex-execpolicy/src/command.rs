@@ -78,10 +78,7 @@ impl ParsedCommand {
         // Use shlex for proper shell parsing
         let parts = match shlex::split(trimmed) {
             Some(parts) if !parts.is_empty() => parts,
-            _ => {
-                // Fallback to whitespace splitting if shlex fails
-                trimmed.split_whitespace().map(String::from).collect()
-            }
+            _ => return Err(PolicyError::InvalidCommand("invalid shell quoting".into())),
         };
 
         if parts.is_empty() {

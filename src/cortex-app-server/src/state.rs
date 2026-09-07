@@ -24,9 +24,9 @@ pub struct AppState {
     /// Active sessions (legacy API state).
     sessions: RwLock<HashMap<String, SessionState>>,
     /// CLI session manager - manages real cortex-core Sessions (WebSocket).
-    pub cli_sessions: SessionManager,
+    pub cli_sessions: Arc<SessionManager>,
     /// CLI session manager for HTTP streaming.
-    pub cli_session_manager: CliSessionManager,
+    pub cli_session_manager: Arc<CliSessionManager>,
     /// Rate limiters by key (IP or API key).
     rate_limiters: RwLock<HashMap<String, RateLimiterState>>,
     /// Metrics collector.
@@ -63,11 +63,20 @@ impl AppState {
         // Start terminal output streaming
         let terminal_task = terminal_streaming::start_terminal_streaming(broadcast_tx.clone());
 
+        let storage = match config.sessions.storage_path.as_deref() {
+            Some(path) => crate::storage::SessionStorage::new(path),
+            None => crate::storage::SessionStorage::default_location(),
+        }
+        .map_err(|_| AppError::Internal("Session storage unavailable".into()))?;
+        let live_sessions = Arc::new(SessionManager::with_storage(
+            storage,
+            config.sessions.max_concurrent,
+        ));
         let state = Self {
             config,
             sessions: RwLock::new(HashMap::new()),
-            cli_sessions: SessionManager::new(),
-            cli_session_manager: CliSessionManager::new(),
+            cli_sessions: live_sessions.clone(),
+            cli_session_manager: live_sessions,
             rate_limiters: RwLock::new(HashMap::new()),
             metrics: RwLock::new(MetricsState::default()),
             start_time: Instant::now(),
@@ -194,6 +203,31 @@ impl AppState {
         let sessions = self.sessions.read().await;
         sessions
             .values()
+            .skip(offset)
+            .take(limit)
+            .map(|s| SessionSummary {
+                id: s.id.clone(),
+                model: s.model.clone(),
+                status: s.status.clone(),
+                message_count: s.messages.len(),
+                total_tokens: s.total_tokens,
+                created_at: s.created_at,
+            })
+            .collect()
+    }
+
+    /// Apply ownership before pagination so listings cannot expose other principals.
+    pub async fn list_owned_sessions(
+        &self,
+        owner: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> Vec<SessionSummary> {
+        self.sessions
+            .read()
+            .await
+            .values()
+            .filter(|s| s.user_id.as_deref() == owner)
             .skip(offset)
             .take(limit)
             .map(|s| SessionSummary {

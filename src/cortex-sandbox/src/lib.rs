@@ -35,6 +35,8 @@
 // Core modules available on all platforms
 pub mod boundary;
 pub mod modes;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub mod process_group;
 
 #[cfg(target_os = "macos")]
 pub mod seatbelt;

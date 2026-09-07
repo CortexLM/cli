@@ -15,6 +15,9 @@ use tracing::{debug, info, warn};
 /// Stored session metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredSession {
+    /// Principal owning this record. Legacy records are not exposed to authenticated users.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
     pub id: String,
     pub model: String,
     pub cwd: String,

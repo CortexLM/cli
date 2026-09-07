@@ -107,25 +107,14 @@ fn test_tool_context_resolve_path_parent() {
 }
 
 #[test]
-fn test_tool_context_inherits_environment() {
-    // Set a test env var
-    let test_key = "CORTEX_TEST_CONTEXT_VAR";
-    let test_value = "test_value_123";
-
-    // SAFETY: Test environment
-    unsafe {
-        std::env::set_var(test_key, test_value);
-    }
-
-    let ctx = ToolContext::new(PathBuf::from("/tmp"));
-
-    assert!(ctx.env.contains_key(test_key));
-    assert_eq!(ctx.env.get(test_key).map(|s| s.as_str()), Some(test_value));
-
-    // Cleanup
-    unsafe {
-        std::env::remove_var(test_key);
-    }
+fn test_tool_context_filters_inherited_environment() {
+    let ctx = ToolContext::new(std::env::temp_dir());
+    assert!(
+        ctx.env
+            .keys()
+            .all(|name| !crate::exec::is_sensitive_env_name(name))
+    );
+    assert_eq!(ctx.env.get("CI").map(String::as_str), Some("true"));
 }
 
 #[test]

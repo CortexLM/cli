@@ -172,7 +172,7 @@ pub async fn run_execute(args: DagRunArgs) -> Result<()> {
     }
 
     // Exit with error if any tasks failed
-    if stats.failed_tasks > 0 {
+    if stats.failed_tasks > 0 || stats.skipped_tasks > 0 {
         bail!(
             "{} task(s) failed, {} skipped",
             stats.failed_tasks,
@@ -447,6 +447,9 @@ pub async fn run_delete(args: DagDeleteArgs) -> Result<()> {
 
 /// Resume a partially executed DAG.
 pub async fn run_resume(args: DagResumeArgs) -> Result<()> {
+    if args.max_concurrent == 0 {
+        bail!("--jobs must be at least 1");
+    }
     let store_path = get_dag_store_path()?;
     let store = DagStore::new(&store_path);
 
@@ -458,7 +461,10 @@ pub async fn run_resume(args: DagResumeArgs) -> Result<()> {
     })?;
 
     if dag.is_complete() {
-        print_info("DAG has already completed");
+        if !dag.all_succeeded() {
+            bail!("DAG finished with unsuccessful tasks; it has not succeeded");
+        }
+        print_info("DAG has already completed successfully");
         return Ok(());
     }
 
@@ -491,7 +497,7 @@ pub async fn run_resume(args: DagResumeArgs) -> Result<()> {
     println!();
     print_execution_summary(&stats, args.format);
 
-    if stats.failed_tasks > 0 {
+    if stats.failed_tasks > 0 || stats.skipped_tasks > 0 {
         bail!(
             "{} task(s) failed, {} skipped",
             stats.failed_tasks,

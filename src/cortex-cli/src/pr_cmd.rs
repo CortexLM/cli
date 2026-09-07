@@ -8,7 +8,7 @@
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Validates a branch name to ensure it doesn't contain shell metacharacters.
@@ -106,7 +106,14 @@ impl PrCli {
 async fn run_pr_checkout(args: PrCli) -> Result<()> {
     use cortex_engine::github::GitHubClient;
 
-    let repo_path = args.path.unwrap_or_else(|| PathBuf::from("."));
+    if args.apply {
+        bail!("Automatic PR suggestion application is not supported. No suggestions were applied.");
+    }
+    let repo_path = args
+        .path
+        .unwrap_or_else(|| PathBuf::from("."))
+        .canonicalize()
+        .context("Could not resolve repository path")?;
     let pr_number = args.number;
 
     // Validate PR number is positive
@@ -114,19 +121,14 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
         bail!("Error: PR number must be a positive integer");
     }
 
-    // Change to repo directory
-    std::env::set_current_dir(&repo_path)
-        .with_context(|| format!("Failed to change to directory: {}", repo_path.display()))?;
-
     // Check if we're in a git repo
     if !repo_path.join(".git").exists() {
         bail!("Not a git repository. Run this command from a git repository root.");
     }
 
     // Get the remote URL to determine owner/repo
-    let remote_url = get_git_remote_url()?;
-    let (owner, repo) = parse_github_url(&remote_url)
-        .with_context(|| format!("Failed to parse GitHub URL: {}", remote_url))?;
+    let remote_url = get_git_remote_url(&repo_path)?;
+    let (owner, repo) = parse_github_url(&remote_url)?;
 
     let repository = format!("{}/{}", owner, repo);
 
@@ -192,6 +194,7 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
         let refspec = format!("pull/{}/head:{}", pr_number, branch_name);
 
         let fetch_output = Command::new("git")
+            .current_dir(&repo_path)
             .args(["fetch", "origin", &refspec])
             .output()
             .context("Failed to fetch PR")?;
@@ -202,6 +205,7 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
         }
 
         let diff_output = Command::new("git")
+            .current_dir(&repo_path)
             .args([
                 "diff",
                 &format!("{}...{}", pr_info.base_branch, branch_name),
@@ -232,6 +236,7 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
 
         // Use gh CLI to get comments if available, otherwise show message
         let gh_output = Command::new("gh")
+            .current_dir(&repo_path)
             .args([
                 "pr",
                 "view",
@@ -261,50 +266,17 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
         return Ok(());
     }
 
-    // If --apply flag, apply AI suggestions
-    if args.apply {
-        println!("Fetching AI suggestions for PR #{}...", pr_number);
-        println!();
-
-        // Check for changed files to look for suggestions
-        match client.list_pull_request_files(pr_number).await {
-            Ok(files) => {
-                if files.is_empty() {
-                    println!("No files changed in this PR.");
-                } else {
-                    println!("Files changed in PR:");
-                    for file in &files {
-                        println!(
-                            "  {} (+{} -{}) {}",
-                            file.status, file.additions, file.deletions, file.filename
-                        );
-                    }
-                    println!();
-                    println!("Note: Automatic suggestion application is not yet implemented.");
-                    println!("Please review suggestions manually at:");
-                    println!(
-                        "  https://github.com/{}/pull/{}/files",
-                        repository, pr_number
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("Warning: Could not fetch file list: {}", e);
-                println!();
-                println!("View suggestions at:");
-                println!("  https://github.com/{}/pull/{}", repository, pr_number);
-            }
-        }
-        return Ok(());
-    }
-
     // Check for uncommitted changes
     if !args.force {
         let status_output = Command::new("git")
+            .current_dir(&repo_path)
             .args(["status", "--porcelain"])
             .output()
             .context("Failed to run git status")?;
 
+        if !status_output.status.success() {
+            bail!("Could not determine repository worktree status");
+        }
         if !status_output.stdout.is_empty() {
             bail!(
                 "Uncommitted changes detected. Commit or stash changes first, or use --force to override."
@@ -333,6 +305,7 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
 
     // SECURITY: Arguments are passed as separate array elements, not interpolated into a string
     let fetch_output = Command::new("git")
+        .current_dir(&repo_path)
         .args(["fetch", "origin", &refspec])
         .output()
         .context("Failed to fetch PR")?;
@@ -355,6 +328,7 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
     };
 
     let checkout_output = Command::new("git")
+        .current_dir(&repo_path)
         .args(&checkout_args)
         .output()
         .context("Failed to checkout PR branch")?;
@@ -366,37 +340,7 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
     if !checkout_output.status.success() {
         let stderr = String::from_utf8_lossy(&checkout_output.stderr);
 
-        // If branch already exists, try to reset it
-        if stderr.contains("already exists") {
-            println!(" branch exists, updating...");
-
-            // Delete and re-fetch
-            let _ = Command::new("git")
-                .args(["branch", "-D", &branch_name])
-                .output();
-
-            let fetch_output = Command::new("git")
-                .args(["fetch", "origin", &refspec])
-                .output()
-                .context("Failed to re-fetch PR")?;
-
-            if !fetch_output.status.success() {
-                let stderr = String::from_utf8_lossy(&fetch_output.stderr);
-                bail!("Failed to fetch PR: {}", stderr);
-            }
-
-            let checkout_output = Command::new("git")
-                .args(["checkout", &branch_name])
-                .output()
-                .context("Failed to checkout PR branch")?;
-
-            if !checkout_output.status.success() {
-                let stderr = String::from_utf8_lossy(&checkout_output.stderr);
-                bail!("Failed to checkout PR branch: {}", stderr);
-            }
-        } else {
-            bail!("Failed to checkout PR branch: {}", stderr);
-        }
+        bail!("Could not checkout PR branch: {}", stderr);
     }
 
     println!();
@@ -427,8 +371,9 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
 }
 
 /// Get the git remote URL for 'origin'.
-fn get_git_remote_url() -> Result<String> {
+fn get_git_remote_url(repo_path: &Path) -> Result<String> {
     let output = Command::new("git")
+        .current_dir(repo_path)
         .args(["remote", "get-url", "origin"])
         .output()
         .context("Failed to get git remote URL")?;
@@ -452,28 +397,11 @@ fn get_git_remote_url() -> Result<String> {
 
 /// Parse a GitHub URL to extract owner and repo.
 fn parse_github_url(url: &str) -> Result<(String, String)> {
-    // Handle SSH URLs: git@github.com:owner/repo.git
-    if url.starts_with("git@github.com:") {
-        let path = url.trim_start_matches("git@github.com:");
-        let path = path.trim_end_matches(".git");
-        let parts: Vec<&str> = path.split('/').collect();
-        if parts.len() >= 2 {
-            return Ok((parts[0].to_string(), parts[1].to_string()));
-        }
-    }
-
-    // Handle HTTPS URLs: https://github.com/owner/repo.git
-    if url.contains("github.com") {
-        let url = url.trim_end_matches(".git");
-        let parts: Vec<&str> = url.split('/').collect();
-        if parts.len() >= 2 {
-            let repo = parts[parts.len() - 1];
-            let owner = parts[parts.len() - 2];
-            return Ok((owner.to_string(), repo.to_string()));
-        }
-    }
-
-    bail!("Could not parse GitHub repository from URL: {}", url)
+    let path = url
+        .strip_prefix("git@github.com:")
+        .or_else(|| url.strip_prefix("https://github.com/"))
+        .context("The origin remote must use a supported github.com SSH or HTTPS URL")?;
+    cortex_engine::github::client::parse_repository(path.strip_suffix(".git").unwrap_or(path))
 }
 
 /// Pull request information.
@@ -515,5 +443,162 @@ mod tests {
         let (owner, repo) = parse_github_url("https://github.com/cortex-ai/cortex").unwrap();
         assert_eq!(owner, "cortex-ai");
         assert_eq!(repo, "cortex");
+    }
+}
+
+#[cfg(test)]
+mod integration_contract_tests {
+    use super::*;
+    #[test]
+    fn remote_urls_require_exact_host_and_repository_components() {
+        for url in [
+            "https://github.com.evil.test/owner/repo",
+            "https://evil.test/github.com/owner/repo",
+            "https://github.com/owner/repo/more",
+            "https://github.com//repo",
+            "git@github.com:../repo",
+        ] {
+            assert!(parse_github_url(url).is_err());
+        }
+    }
+    /// Local repository with a controlled `origin` and no reachable network.
+    fn fixture_repository() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .current_dir(dir.path())
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_SYSTEM", "/dev/null")
+                .output()
+                .unwrap();
+            assert!(status.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/fixture/project.git",
+        ]);
+        dir
+    }
+
+    #[tokio::test]
+    async fn checkout_stops_before_the_network_on_unusable_repositories() {
+        // A path that cannot be resolved is refused before any git invocation.
+        let missing = PrCli::try_parse_from(["pr", "1", "--path", "/nonexistent/fixture"]).unwrap();
+        assert!(
+            missing
+                .run()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("Could not resolve")
+        );
+
+        // An existing directory that is not a repository is refused next.
+        let plain = tempfile::tempdir().unwrap();
+        let cli =
+            PrCli::try_parse_from(["pr", "1", "--path", plain.path().to_str().unwrap()]).unwrap();
+        assert!(
+            cli.run()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("Not a git repository")
+        );
+
+        // PR 0 does not identify a pull request.
+        let repository = fixture_repository();
+        let zero =
+            PrCli::try_parse_from(["pr", "0", "--path", repository.path().to_str().unwrap()])
+                .unwrap();
+        assert!(
+            zero.run()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("positive integer")
+        );
+    }
+
+    #[tokio::test]
+    async fn checkout_requires_a_supported_origin_remote() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .current_dir(dir.path())
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_SYSTEM", "/dev/null")
+                .output()
+                .unwrap()
+        };
+        assert!(git(&["init", "--quiet"]).status.success());
+        let path = dir.path().to_str().unwrap().to_string();
+
+        // No origin at all produces the actionable setup message.
+        let error = PrCli::try_parse_from(["pr", "1", "--path", &path])
+            .unwrap()
+            .run()
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("No 'origin' remote found"), "{error}");
+        assert!(get_git_remote_url(dir.path()).is_err());
+
+        // A non-GitHub origin is rejected rather than guessed at.
+        assert!(
+            git(&["remote", "add", "origin", "https://example.test/owner/repo"])
+                .status
+                .success()
+        );
+        let error = PrCli::try_parse_from(["pr", "1", "--path", &path])
+            .unwrap()
+            .run()
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("github.com"), "{error}");
+        assert_eq!(
+            get_git_remote_url(dir.path()).unwrap(),
+            "https://example.test/owner/repo"
+        );
+    }
+
+    #[test]
+    fn branch_names_and_refspecs_reject_injection_and_git_reserved_forms() {
+        for name in ["pr-1", "feature/nested-name", "release.2024", "PR_1"] {
+            validate_branch_name(name).unwrap();
+        }
+        for name in [
+            "",
+            "-flag",
+            ".hidden",
+            "a..b",
+            "trailing/",
+            "branch.lock",
+            "with space",
+            "semi;colon",
+            "back`tick`",
+            "dollar$sign",
+            "pipe|name",
+        ] {
+            assert!(validate_branch_name(name).is_err(), "{name}");
+        }
+        validate_refspec("pull/12/head:pr-12").unwrap();
+        for refspec in ["", "pull/1/head:pr 1", "pull/1/head:pr;1", "a|b"] {
+            assert!(validate_refspec(refspec).is_err(), "{refspec}");
+        }
+    }
+
+    #[tokio::test]
+    async fn apply_is_rejected_before_repository_or_account_access() {
+        let cli = PrCli::try_parse_from(["pr", "1", "--apply", "--path", "/nonexistent/fixture"])
+            .unwrap();
+        let error = cli.run().await.unwrap_err().to_string();
+        assert!(error.contains("not supported"));
+        assert!(error.contains("No suggestions were applied"));
     }
 }

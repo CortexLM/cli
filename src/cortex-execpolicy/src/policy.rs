@@ -92,6 +92,36 @@ impl ExecPolicy {
             return Decision::Deny;
         }
 
+        // Explicit shell payloads must be evaluated too, even without operators.
+        let shell = matches!(
+            parsed.program_basename.as_str(),
+            "sh" | "bash" | "dash" | "zsh" | "ksh"
+        );
+        let payload = if shell {
+            parsed
+                .args
+                .iter()
+                .position(|arg| arg == "-c" || arg == "-lc")
+                .and_then(|index| parsed.args.get(index + 1))
+        } else {
+            None
+        };
+        let payload_decision = payload.map(|script| {
+            ParsedCommand::from_shell_string(script)
+                .map(|command| self.evaluate_parsed(&command))
+                .unwrap_or(Decision::Deny)
+        });
+        // Deny wins over an earlier Ask or an allow rule on an outer command.
+        let decisions: Vec<_> = parsed
+            .subcommands
+            .iter()
+            .map(|command| self.evaluate_parsed(command))
+            .chain(payload_decision)
+            .collect();
+        if decisions.contains(&Decision::Deny) {
+            return Decision::Deny;
+        }
+
         // Check for dangerous commands
         let danger = self.detect_danger(parsed);
         if danger.is_dangerous {
@@ -105,6 +135,9 @@ impl ExecPolicy {
             return Decision::Deny;
         }
 
+        if decisions.contains(&Decision::Ask) {
+            return Decision::Ask;
+        }
         // Check if explicitly allowed
         if self
             .context
@@ -117,17 +150,6 @@ impl ExecPolicy {
         // Commands requiring confirmation
         if self.needs_confirmation(parsed) {
             return Decision::Ask;
-        }
-
-        // Also evaluate subcommands if present
-        for subcmd in &parsed.subcommands {
-            let sub_decision = self.evaluate_parsed(subcmd);
-            if sub_decision == Decision::Deny {
-                return Decision::Deny;
-            }
-            if sub_decision == Decision::Ask {
-                return Decision::Ask;
-            }
         }
 
         Decision::Allow

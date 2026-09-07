@@ -31,6 +31,7 @@ pub struct CortexSession {
     storage: SessionStorage,
     /// Whether the session has unsaved changes.
     modified: bool,
+    persistence_error: Option<String>,
 }
 
 impl CortexSession {
@@ -40,41 +41,73 @@ impl CortexSession {
         let meta = SessionMeta::new(provider, model);
 
         // Save initial metadata
-        storage.save_meta(&meta)?;
+        storage.create_session(&meta, &[])?;
 
         Ok(Self {
             meta,
             messages: Vec::new(),
             storage,
             modified: false,
+            persistence_error: None,
         })
     }
 
     /// Creates a session with a custom storage backend (for testing).
     pub fn with_storage(provider: &str, model: &str, storage: SessionStorage) -> Result<Self> {
         let meta = SessionMeta::new(provider, model);
-        storage.save_meta(&meta)?;
+        storage.create_session(&meta, &[])?;
 
         Ok(Self {
             meta,
             messages: Vec::new(),
             storage,
             modified: false,
+            persistence_error: None,
         })
     }
 
     /// Loads an existing session.
     pub fn load(session_id: &str) -> Result<Self> {
         let storage = SessionStorage::new()?;
-        let meta = storage.load_meta(session_id)?;
-        let messages = storage.load_messages(session_id)?;
+        Self::load_with_storage(session_id, storage)
+    }
 
+    pub fn load_with_storage(session_id: &str, storage: SessionStorage) -> Result<Self> {
+        let id = storage.resolve_id(session_id)?;
+        let meta = storage.load_meta(&id)?;
+        let messages = storage.load_messages(&id)?;
         Ok(Self {
             meta,
             messages,
             storage,
             modified: false,
+            persistence_error: None,
         })
+    }
+
+    pub fn storage(&self) -> &SessionStorage {
+        &self.storage
+    }
+
+    /// Retrieve an error from a compatibility append API. New callers should
+    /// use try_add_message_raw so failed persistence cannot look successful.
+    pub fn take_persistence_error(&mut self) -> Option<String> {
+        self.persistence_error.take()
+    }
+
+    pub fn try_add_message_raw(&mut self, message: StoredMessage) -> Result<()> {
+        self.storage.append_message(self.id(), &message)?;
+        self.messages.push(message);
+        self.meta.message_count = self.messages.len() as u32;
+        self.meta.touch();
+        self.modified = true;
+        self.save()
+    }
+
+    pub fn persist_metadata(&mut self, meta: SessionMeta) -> Result<()> {
+        self.storage.save_meta(&meta)?;
+        self.meta = meta;
+        Ok(())
     }
 
     /// Gets the session ID.
@@ -264,20 +297,15 @@ impl CortexSession {
 
     /// Internal method to add a message and persist it.
     fn add_message_internal(&mut self, message: StoredMessage) -> &StoredMessage {
-        // Append to storage first
-        if let Err(e) = self.storage.append_message(&self.meta.id, &message) {
-            tracing::error!("Failed to save message: {}", e);
+        if let Err(error) = self.try_add_message_raw(message.clone()) {
+            self.persistence_error = Some(format!("Session could not be saved: {error}"));
+            // Preserve the draft in memory for recovery, but mark it unsaved.
+            if !self.messages.iter().any(|stored| stored.id == message.id) {
+                self.messages.push(message);
+            }
+            self.modified = true;
         }
-
-        // Update metadata
-        self.meta.increment_messages();
-        if let Err(e) = self.storage.save_meta(&self.meta) {
-            tracing::error!("Failed to save metadata: {}", e);
-        }
-
-        // Add to in-memory list
-        self.messages.push(message);
-        self.messages.last().unwrap()
+        self.messages.last().expect("message was retained")
     }
 
     /// Converts messages to API format for completion requests.
@@ -362,7 +390,20 @@ impl CortexSession {
 
     /// Saves the session (metadata and any pending changes).
     pub fn save(&mut self) -> Result<()> {
+        if self.modified {
+            // Retry only missing records. Never rewrite a concurrently appended
+            // transcript from a stale in-memory session.
+            let persisted = self.storage.load_messages(self.id())?;
+            for message in &self.messages {
+                if !persisted.iter().any(|stored| stored.id == message.id) {
+                    self.storage.append_message(self.id(), message)?;
+                }
+            }
+            self.messages = self.storage.load_messages(self.id())?;
+            self.meta.message_count = self.messages.len() as u32;
+        }
         self.storage.save_meta(&self.meta)?;
+        self.persistence_error = None;
         self.modified = false;
         Ok(())
     }
@@ -386,22 +427,20 @@ impl CortexSession {
 
     /// Forks this session, creating a new session with the same messages.
     pub fn fork(&self, up_to_message_id: Option<&str>) -> Result<CortexSession> {
-        let mut new_meta = SessionMeta::new(&self.meta.provider, &self.meta.model);
-        new_meta.forked_from = Some(self.meta.id.clone());
-        new_meta.title = Some(format!("Fork of {}", self.meta.display_title()));
-
+        if self.modified {
+            anyhow::bail!("Save the current session before forking");
+        }
+        let mut new_meta = self.meta.clone();
+        new_meta.id = uuid::Uuid::new_v4().to_string();
+        new_meta.created_at = chrono::Utc::now();
+        new_meta.updated_at = new_meta.created_at;
+        new_meta.forked_from = Some(self.id().to_string());
+        new_meta.title = Some(format!("Fork of {}", self.title()));
+        new_meta.code_session_id = None;
+        new_meta.protected = false;
         self.storage
-            .fork_session(&self.meta.id, &new_meta, up_to_message_id)?;
-
-        let messages = self.storage.load_messages(&new_meta.id)?;
-        new_meta.message_count = messages.len() as u32;
-
-        Ok(CortexSession {
-            meta: new_meta,
-            messages,
-            storage: SessionStorage::new()?,
-            modified: false,
-        })
+            .fork_session(self.id(), &new_meta, up_to_message_id)?;
+        Self::load_with_storage(&new_meta.id, self.storage.clone())
     }
 
     // ========================================================================
@@ -418,10 +457,10 @@ impl CortexSession {
         if let Some(msg) = first_user_message {
             // Take first 50 characters, cut at word boundary
             let content = &msg.content;
-            let title = if content.len() <= 50 {
+            let title = if content.chars().count() <= 50 {
                 content.clone()
             } else {
-                let truncated = &content[..50];
+                let truncated: String = content.chars().take(50).collect();
                 if let Some(last_space) = truncated.rfind(' ') {
                     format!("{}...", &truncated[..last_space])
                 } else {
@@ -430,6 +469,9 @@ impl CortexSession {
             };
             self.meta.title = Some(title);
             self.modified = true;
+            if let Err(error) = self.save() {
+                self.persistence_error = Some(format!("Session title could not be saved: {error}"));
+            }
         }
     }
 

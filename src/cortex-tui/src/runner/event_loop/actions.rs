@@ -13,33 +13,15 @@ impl EventLoop {
     /// This method translates high-level actions into state changes and
     /// backend communication.
     pub(super) async fn handle_action(&mut self, action: KeyAction) -> Result<()> {
+        if self.handle_navigation_action(&action) || self.handle_composer_action(&action) {
+            return Ok(());
+        }
         match action {
             KeyAction::Quit => {
                 self.app_state.set_quit();
             }
 
-            KeyAction::Submit => {
-                let text = self.app_state.input.submit();
-                if !text.is_empty() {
-                    // Check for slash commands first
-                    if let Some(stripped) = text.strip_prefix('/') {
-                        // Check if command exists before executing
-                        let cmd_name = stripped.split_whitespace().next().unwrap_or("");
-                        if self.command_executor.registry().exists(cmd_name) {
-                            // Valid command - record and execute
-                            self.app_state.add_to_history(cmd_name);
-                            let result = self.command_executor.execute_str(&text);
-                            self.handle_command_result(result).await?;
-                        } else {
-                            // Unknown command - send as regular message
-                            self.send_text_message(text).await?;
-                        }
-                    } else {
-                        // Regular text message
-                        self.send_text_message(text).await?;
-                    }
-                }
-            }
+            KeyAction::Submit => self.submit_composer().await?,
 
             KeyAction::Cancel => {
                 // Priority order: queued messages > pending approval > streaming
@@ -78,6 +60,86 @@ impl EventLoop {
                 self.handle_approve_always().await?;
             }
 
+            // Transcript
+            KeyAction::ViewTranscript => {
+                self.handle_transcript();
+            }
+
+            // Permission and tool actions
+            KeyAction::CyclePermissionMode => {
+                self.app_state.cycle_agent_mode();
+                self.sync_agent_mode_harness();
+                self.app_state
+                    .toasts
+                    .info(format!("Mode: {}", self.app_state.agent_mode_label));
+            }
+            KeyAction::ToggleToolDetails => {
+                // Toggle all tool calls collapsed state
+                for call in &mut self.app_state.tool_calls {
+                    call.toggle_collapsed();
+                }
+            }
+
+            KeyAction::ExecuteSlashCommand(command) => {
+                let command = if command.starts_with('/') { command } else { format!("/{command}") };
+                let result = self.command_executor.execute_str(&command);
+                self.handle_command_result(result).await?;
+            }
+            KeyAction::LoadSession(id) => {
+                let result = self.resume_local_session(&id.to_string());
+                self.report_local_result(result, "Session resumed");
+            }
+            KeyAction::ForkSession => {
+                let result = self.fork_local_session(None);
+                self.report_local_result(result, "Fork created; original session unchanged");
+            }
+            KeyAction::ExportSession => self.handle_open_modal(crate::commands::ModalType::Export(None)).await,
+            KeyAction::ToggleSettings => self.app_state.open_settings_modal(),
+            KeyAction::ViewDiff => self.show_local_diff("diff").await,
+            KeyAction::OpenBacktrack => self.handle_transcript(),
+            KeyAction::OpenExternalEditor => self.add_system_message(
+                "External editor is unavailable while terminal input capture is active. Edit the prompt outside Cortex and paste it here; your draft is unchanged."),
+            // No action
+            KeyAction::NewSession => {
+                let result = self.new_local_session();
+                self.report_local_result(result, "New session started");
+            }
+            KeyAction::None => {}
+
+            // Handle other actions
+            _ => {
+                self.add_system_message("This action is unavailable in the current session. No operation was performed.");
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn submit_composer(&mut self) -> Result<()> {
+        let text = self.app_state.input.submit();
+        if !text.is_empty() {
+            // Check for slash commands first
+            if let Some(stripped) = text.strip_prefix('/') {
+                // Check if command exists before executing
+                let cmd_name = stripped.split_whitespace().next().unwrap_or("");
+                if self.command_executor.registry().exists(cmd_name) {
+                    // Valid command - record and execute
+                    self.app_state.add_to_history(cmd_name);
+                    let result = self.command_executor.execute_str(&text);
+                    self.handle_command_result(result).await?;
+                } else {
+                    self.add_system_message(&format!("Unknown command: /{cmd_name}"));
+                }
+            } else {
+                // Regular text message
+                self.send_text_message(text).await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_navigation_action(&mut self, action: &KeyAction) -> bool {
+        match action {
             // Focus actions
             KeyAction::FocusNext => self.app_state.focus_next(),
             KeyAction::FocusPrev => self.app_state.focus_prev(),
@@ -134,26 +196,6 @@ impl EventLoop {
                 self.app_state.enter_interactive_mode(interactive);
             }
 
-            // Transcript
-            KeyAction::ViewTranscript => {
-                self.handle_transcript();
-            }
-
-            // Permission and tool actions
-            KeyAction::CyclePermissionMode => {
-                self.app_state.cycle_agent_mode();
-                self.sync_agent_mode_harness();
-                self.app_state
-                    .toasts
-                    .info(format!("Mode: {}", self.app_state.agent_mode_label));
-            }
-            KeyAction::ToggleToolDetails => {
-                // Toggle all tool calls collapsed state
-                for call in &mut self.app_state.tool_calls {
-                    call.toggle_collapsed();
-                }
-            }
-
             // Input history navigation
             KeyAction::HistoryPrev => {
                 self.app_state.input.history_prev();
@@ -162,16 +204,25 @@ impl EventLoop {
                 self.app_state.input.history_next();
             }
 
-            // No action
-            KeyAction::None => {}
-
-            // Handle other actions
-            _ => {
-                tracing::debug!("Unhandled action: {:?}", action);
-            }
+            _ => return false,
         }
+        true
+    }
 
-        Ok(())
+    fn handle_composer_action(&mut self, action: &KeyAction) -> bool {
+        match action {
+            KeyAction::NewLine => self.app_state.input.insert_str("\n"),
+            KeyAction::Clear => self.app_state.input.clear(),
+            KeyAction::SelectAll => self.app_state.input.select_all(),
+            KeyAction::Paste => match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                Ok(text) => self.app_state.input.insert_str(&text),
+                Err(_) => self.add_system_message(
+                    "Clipboard unavailable. Use your terminal's paste command.",
+                ),
+            },
+            _ => return false,
+        }
+        true
     }
 
     /// Handle approve action
@@ -326,6 +377,7 @@ impl EventLoop {
     ///
     /// Handles busy state (queuing) and routes to the appropriate provider system.
     pub(super) async fn send_text_message(&mut self, text: String) -> Result<()> {
+        self.session_redo.clear();
         if self.app_state.is_busy() {
             // System is busy - queue the message
             self.app_state.queue_message(text);
@@ -342,6 +394,10 @@ impl EventLoop {
                 self.app_state.add_message(message);
                 bridge.send_message(text).await?;
                 self.app_state.set_view(AppView::Session);
+            } else {
+                self.app_state.input.set_text(&text);
+                self.add_system_message("The coding service is temporarily unavailable");
+                anyhow::bail!("The coding service is temporarily unavailable");
             }
         }
         Ok(())

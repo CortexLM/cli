@@ -11,7 +11,7 @@ pub enum OutputFormat {
     /// Human-readable formatted output with colors and styling.
     #[default]
     Default,
-    /// Raw JSON events for machine processing.
+    /// One final JSON result document (use jsonl for event streaming).
     Json,
     /// JSON Lines format (one JSON object per line).
     Jsonl,
@@ -44,7 +44,7 @@ pub struct RunCli {
     pub command: Option<String>,
 
     /// Continue the most recent session.
-    #[arg(short = 'c', long = "continue")]
+    #[arg(short = 'c', long = "continue", conflicts_with = "session_id")]
     pub continue_session: bool,
 
     /// Specify a session ID to continue.
@@ -164,8 +164,7 @@ pub struct RunCli {
     #[arg(long = "max-tokens")]
     pub max_tokens: Option<u32>,
 
-    /// Custom system prompt to use instead of the default.
-    /// Defines the AI's persona and behavior.
+    /// Client instructions sent as additional user context, not a service system override.
     #[arg(long = "system")]
     pub system_prompt: Option<String>,
 

@@ -11,6 +11,7 @@ mod execution;
 mod loader;
 mod project_config;
 mod providers;
+mod sandbox;
 mod types;
 
 pub use execution::ExecutionConfig;
@@ -202,25 +203,12 @@ impl Config {
             .or(toml.approval_policy)
             .unwrap_or_default();
 
-        let sandbox_policy = toml
-            .sandbox_mode
-            .map(|mode| match mode {
-                SandboxMode::DangerFullAccess => SandboxPolicy::DangerFullAccess,
-                SandboxMode::ReadOnly => SandboxPolicy::ReadOnly,
-                SandboxMode::WorkspaceWrite => {
-                    if let Some(cfg) = &toml.sandbox_workspace_write {
-                        SandboxPolicy::WorkspaceWrite {
-                            writable_roots: cfg.writable_roots.clone(),
-                            network_access: cfg.network_access,
-                            exclude_tmpdir_env_var: cfg.exclude_tmpdir_env_var,
-                            exclude_slash_tmp: cfg.exclude_slash_tmp,
-                        }
-                    } else {
-                        SandboxPolicy::default()
-                    }
-                }
-            })
-            .unwrap_or_default();
+        let sandbox_policy = sandbox::resolve(
+            overrides.sandbox_mode.or(toml.sandbox_mode),
+            toml.sandbox_workspace_write,
+            overrides.additional_writable_roots,
+            &cwd,
+        );
 
         let model_provider = resolve_model_provider(&model_provider_id, &toml.providers);
 

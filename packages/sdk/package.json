@@ -1,0 +1,17 @@
+{
+  "name": "@cortexlm/sdk",
+  "version": "0.1.8",
+  "description": "Typed, local Cortex CLI subprocess client",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "exports": {
+    ".": { "types": "./src/index.d.mts", "import": "./src/index.mjs" }
+  },
+  "files": ["src", "examples", "LICENSE"],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/index.mjs && node --check src/protocol.mjs && node --check src/process.mjs"
+  }
+}

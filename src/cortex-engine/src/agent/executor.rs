@@ -9,6 +9,7 @@ use tokio::time::timeout;
 use tracing::{debug, error};
 
 use crate::error::Result;
+use crate::tools::context::ToolContext;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::spec::{ToolCall, ToolResult};
 
@@ -27,6 +28,8 @@ pub struct ExecutorConfig {
     pub cache_enabled: bool,
     /// Cache TTL.
     pub cache_ttl: Duration,
+    /// Workspace root every tool call is confined to.
+    pub working_directory: std::path::PathBuf,
 }
 
 impl Default for ExecutorConfig {
@@ -37,6 +40,7 @@ impl Default for ExecutorConfig {
             sandbox_policy: SandboxPolicy::Prompt,
             cache_enabled: true,
             cache_ttl: Duration::from_secs(300),
+            working_directory: std::env::current_dir().unwrap_or_default(),
         }
     }
 }
@@ -65,6 +69,20 @@ impl ToolExecutor {
         }
     }
 
+    fn tool_context(&self, call: &ToolCall) -> ToolContext {
+        let sandbox = match self.config.sandbox_policy {
+            SandboxPolicy::None => cortex_protocol::SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::Prompt | SandboxPolicy::AutoApproveReads => {
+                cortex_protocol::SandboxPolicy::new_workspace_write_policy()
+            }
+            SandboxPolicy::Full => cortex_protocol::SandboxPolicy::ReadOnly,
+        };
+        ToolContext::new(self.config.working_directory.clone())
+            .with_sandbox_policy(sandbox)
+            .with_call_id(call.id.clone())
+            .with_approved_tool_call(&call.name, &call.arguments)
+    }
+
     /// Execute a tool call.
     pub async fn execute(&self, call: &ToolCall) -> Result<ToolResult> {
         let start = Instant::now();
@@ -83,10 +101,14 @@ impl ToolExecutor {
             }
         }
 
+        // The orchestrator's approval flow already accepted this exact call.
+        let context = self.tool_context(call);
+
         // Execute with timeout
         let result = match timeout(
             self.config.default_timeout,
-            self.registry.execute(tool_name, call.arguments.clone()),
+            self.registry
+                .execute_with_context(tool_name, call.arguments.clone(), context),
         )
         .await
         {

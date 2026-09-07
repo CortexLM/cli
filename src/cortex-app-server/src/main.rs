@@ -63,6 +63,15 @@ fn setup_logging(level: &str, json: bool) {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    #[cfg(target_os = "linux")]
+    {
+        let mut argv = std::env::args();
+        let program = argv.next().unwrap_or_default();
+        if argv.next().as_deref() == Some(cortex_engine::sandbox::SELF_WRAPPER_ARG) {
+            cortex_linux_sandbox::run_main_with(std::iter::once(program).chain(argv));
+        }
+        cortex_engine::sandbox::enable_self_wrapper();
+    }
     let args = Args::parse();
 
     setup_logging(&args.log_level, args.json_logs);

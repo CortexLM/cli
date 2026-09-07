@@ -7,7 +7,6 @@ use std::time::Duration;
 use crate::styled_output::{print_success, print_warning};
 use crate::utils::{TermColor, get_tool_display};
 use cortex_common::resolve_model_alias;
-use cortex_common::{resolve_model_with_info, warn_if_ambiguous_model};
 use cortex_engine::{Session, list_sessions};
 use cortex_protocol::{EventMsg, Op, Submission, UserInput};
 
@@ -20,57 +19,10 @@ use super::system::check_file_descriptor_limits;
 impl RunCli {
     /// Run the command.
     pub async fn run(self) -> Result<()> {
+        self.validate_runtime_options()?;
+
         // Check file descriptor limits early to provide helpful error message
         check_file_descriptor_limits()?;
-
-        // Validate temperature if provided using epsilon-based comparison
-        // to handle floating-point boundary issues (#2179)
-        const EPSILON: f32 = 1e-6;
-        if let Some(temp) = self.temperature {
-            if !(-EPSILON..=2.0 + EPSILON).contains(&temp) {
-                bail!("Temperature must be between 0.0 and 2.0, got {temp}");
-            }
-            // Warn about temperature=0 having inconsistent behavior across providers
-            if temp == 0.0 {
-                eprintln!(
-                    "\x1b[1;33mNote:\x1b[0m temperature=0 behavior varies by provider. Some interpret it as \
-                     'greedy/deterministic' while others treat it as 'use default'. \
-                     Consider using a small value like 0.001 for consistent deterministic output."
-                );
-            }
-        }
-
-        // Validate top_p if provided using epsilon-based comparison
-        if let Some(top_p) = self.top_p
-            && (!(-EPSILON..=1.0 + EPSILON).contains(&top_p))
-        {
-            bail!("top-p must be between 0.0 and 1.0, got {top_p}");
-        }
-
-        // Validate top_k if provided
-        if let Some(top_k) = self.top_k
-            && top_k == 0
-        {
-            bail!("top-k must be a positive integer, got {top_k}");
-        }
-
-        // Warn if both temperature and top-p are specified (#2175)
-        if self.temperature.is_some() && self.top_p.is_some() {
-            eprintln!(
-                "{}Warning:{} Using both --temperature and --top-p together may produce unpredictable results. \
-                Most LLM providers recommend using only one sampling parameter at a time.",
-                TermColor::Yellow.ansi_code(),
-                TermColor::Default.ansi_code()
-            );
-        }
-
-        // Warn about potential parameter compatibility issues
-        if self.temperature.is_some() && self.top_k.is_some() {
-            eprintln!(
-                "Warning: Combining --temperature with --top-k may not be supported by all model providers. \
-                If you encounter API errors, try using only one of these parameters."
-            );
-        }
 
         // Validate command is not empty if provided
         if let Some(ref cmd) = self.command
@@ -80,18 +32,7 @@ impl RunCli {
         }
 
         // Build the message from arguments
-        let mut message = self
-            .message
-            .iter()
-            .map(|arg| {
-                if arg.contains(' ') {
-                    format!("\"{}\"", arg.replace('"', "\\\""))
-                } else {
-                    arg.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
+        let mut message = self.message.join(" ");
 
         // Read from stdin if not a TTY (piped input)
         if !io::stdin().is_terminal() {
@@ -119,51 +60,10 @@ impl RunCli {
         } else if let Some(ref id) = self.session_id {
             SessionMode::Continue(id.clone())
         } else {
-            let title = self.title.as_ref().map(|t| {
-                if t.is_empty() {
-                    // Use truncated prompt as title
-                    if message.len() > 50 {
-                        format!("{}...", &message[..50])
-                    } else {
-                        message.clone()
-                    }
-                } else {
-                    t.clone()
-                }
-            });
-            SessionMode::New { title }
+            SessionMode::New
         };
 
-        // Execute based on whether we're attaching to a server or running locally
-        if let Some(ref server_url) = self.attach {
-            self.run_attached(server_url, &message, &attachments, session_mode)
-                .await
-        } else {
-            self.run_local(&message, &attachments, session_mode).await
-        }
-    }
-
-    /// Run attached to a remote server.
-    async fn run_attached(
-        &self,
-        _server_url: &str,
-        message: &str,
-        attachments: &[FileAttachment],
-        session_mode: SessionMode,
-    ) -> Result<()> {
-        // For now, we'll implement a basic HTTP client approach
-        // In a full implementation, this would use a proper SDK client
-
-        if self.verbose {
-            eprintln!("Attaching to server: {_server_url}");
-            eprintln!("Session mode: {session_mode:?}");
-            eprintln!("Message length: {} chars", message.len());
-            eprintln!("Attachments: {}", attachments.len());
-        }
-
-        // Server attachment not yet fully implemented - fall back to local execution
-        print_warning("Server attachment not yet fully implemented. Running locally instead.");
-        self.run_local(message, attachments, session_mode).await
+        self.run_local(&message, &attachments, session_mode).await
     }
 
     /// Run locally with a new session.
@@ -184,89 +84,20 @@ impl RunCli {
         let is_terminal = io::stdout().is_terminal();
         let streaming_enabled = self.is_streaming_enabled();
 
-        // Handle --dry-run flag: show what would happen without executing
-        if self.dry_run {
-            println!("Dry Run Mode - Preview Only");
-            println!("{}", "=".repeat(50));
-            println!();
-            println!(
-                "Message: {}",
-                if message.len() > 200 {
-                    format!("{}...", &message[..200])
-                } else {
-                    message.to_string()
-                }
-            );
-            println!();
-            println!("Configuration:");
-            println!("  Model: {}", self.model.as_deref().unwrap_or("default"));
-            println!("  Agent: {}", self.agent.as_deref().unwrap_or("default"));
-            println!("  Attachments: {}", attachments.len());
-            println!("  Session Mode: {:?}", session_mode);
-            println!("  Stream: {}", self.stream);
-            println!("  Timeout: {}s", self.timeout);
-            if let Some(temp) = self.temperature {
-                println!("  Temperature: {}", temp);
-            }
-            if self.no_cache {
-                println!("  Cache: disabled");
-            }
-            if self.retry > 0 {
-                println!("  Retry: {} attempts", self.retry);
-            }
-            println!();
-            println!("(No action taken in dry-run mode)");
-            return Ok(());
-        }
-
-        // Create or resume session
-        let mut config = cortex_engine::Config::default();
-
-        // Set agent if provided
-        if let Some(ref agent_name) = self.agent {
-            config.current_agent = Some(agent_name.clone());
-        }
-
-        // Resolve model alias if provided (e.g., "sonnet" -> "anthropic/claude-sonnet-4-20250514")
-        // Also warn if the model name was ambiguous and multiple models matched
-        if let Some(ref model) = self.model {
-            let resolution = resolve_model_with_info(model);
-            warn_if_ambiguous_model(&resolution, model);
-            config.model = resolution.model.clone();
-
-            // Issue #2326: Warn if --stream is used with a model that may not support streaming
-            // Known non-streaming or limited-streaming models
-            let non_streaming_patterns = [
-                "embedding",
-                "text-embedding",
-                "ada-002",
-                "text-search",
-                "text-similarity",
-            ];
-            let model_lower = resolution.model.to_lowercase();
-            if streaming_enabled {
-                let is_embedding_model = non_streaming_patterns
-                    .iter()
-                    .any(|p| model_lower.contains(p));
-                if is_embedding_model {
-                    eprintln!(
-                        "{}Warning:{} Model '{}' appears to be an embedding model which does not support streaming. \
-                        Response will be returned as a batch despite --stream flag.",
-                        TermColor::Yellow.ansi_code(),
-                        TermColor::Default.ansi_code(),
-                        model
-                    );
-                }
-            }
-        }
-
-        // Apply temperature override if provided
-        if let Some(temp) = self.temperature {
-            config.temperature = Some(temp);
+        let mut config = cortex_engine::session::control::load_runtime_config(
+            self.cwd.clone(),
+            self.model
+                .as_deref()
+                .map(|model| resolve_model_alias(model).to_string()),
+            self.system_prompt.clone(),
+        )
+        .await?;
+        if let Some(agent) = &self.agent {
+            config.current_agent = Some(agent.clone());
         }
 
         // Initialize custom command registry if not already initialized
-        let project_root = self.cwd.clone().or_else(|| std::env::current_dir().ok());
+        let project_root = Some(config.cwd.clone());
         let _custom_registry = cortex_engine::init_custom_command_registry(
             &config.cortex_home,
             project_root.as_deref(),
@@ -275,82 +106,25 @@ impl RunCli {
             tracing::warn!("Failed to scan custom commands: {}", e);
         }
 
-        // Create session, handling auth errors specially for JSON output
-        let (mut session, handle) = match Session::new(config.clone()) {
-            Ok(result) => result,
-            Err(e) => {
-                let error_message = e.to_string();
-                let is_auth_error = error_message.contains("Authentication required")
-                    || error_message.contains("authentication")
-                    || error_message.contains("auth")
-                    || error_message.contains("API key")
-                    || error_message.contains("login");
-
-                if is_json {
-                    let error_type = if is_auth_error {
-                        "authentication_error"
-                    } else {
-                        "session_error"
-                    };
-
-                    let mut error_json = serde_json::json!({
-                        "error": {
-                            "type": error_type,
-                            "message": error_message,
-                        }
-                    });
-
-                    // Add hint for auth errors
-                    if is_auth_error {
-                        error_json["error"]["hint"] = serde_json::Value::String(
-                            "Run 'cortex login' to authenticate".to_string(),
-                        );
-                    }
-
-                    println!("{}", serde_json::to_string_pretty(&error_json)?);
-                }
-
-                return Err(e.into());
-            }
-        };
-
-        // Handle session resumption if needed
-        let session_id = match session_mode {
+        let resume_id = match session_mode {
             SessionMode::ContinueLast => {
                 let sessions = list_sessions(&config.cortex_home)?;
-                if sessions.is_empty() {
-                    bail!("No sessions found to continue");
-                }
-                let last_session = &sessions[0];
-                if self.verbose {
-                    eprintln!("Continuing session: {}", last_session.id);
-                }
-                // For now, we create a new session but log the continuation
-                // Full implementation would load the session state
-                uuid::Uuid::new_v4().to_string()
+                let last = sessions
+                    .iter()
+                    .find(|s| s.cwd == config.cwd)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("No sessions found for this working directory")
+                    })?;
+                Some(resolve_session_id(&last.id, &config.cortex_home)?)
             }
-            SessionMode::Continue(id) => {
-                // Validate that the session exists before continuing
-                let conversation_id = resolve_session_id(&id, &config.cortex_home)?;
-                let validated_id = conversation_id.to_string();
-                if self.verbose {
-                    eprintln!("Continuing session: {validated_id}");
-                }
-                validated_id
-            }
-            SessionMode::New { title } => {
-                let id = uuid::Uuid::new_v4().to_string();
-                if let Some(ref t) = title
-                    && self.verbose
-                {
-                    eprintln!("New session: {id} (title: {t})");
-                }
-                id
-            }
+            SessionMode::Continue(id) => Some(resolve_session_id(&id, &config.cortex_home)?),
+            SessionMode::New => None,
         };
-
-        // Spawn session task
-        let session_task = tokio::spawn(async move { session.run().await });
+        let (mut session, handle) = match resume_id {
+            Some(id) => Session::resume(config.clone(), id)?,
+            None => Session::new(config.clone())?,
+        };
+        let session_id = handle.conversation_id.to_string();
 
         // Build user input parts
         let mut input_parts = Vec::new();
@@ -376,64 +150,13 @@ impl RunCli {
             });
         }
 
-        // Pre-validate token count if max_tokens is specified
-        // This prevents API errors by checking limits before making the request
-        if let Some(max_tokens) = self.max_tokens {
-            // Estimate prompt tokens (rough approximation: 4 chars per token)
-            let total_text: String = input_parts
-                .iter()
-                .filter_map(|p| match p {
-                    UserInput::Text { text } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            let estimated_prompt_tokens = (total_text.len() / 4) as u32;
-
-            // Default context limit for most models (can be made configurable)
-            let context_limit: u32 = 128000; // Conservative default
-
-            let total_tokens = estimated_prompt_tokens + max_tokens;
-            if total_tokens > context_limit {
-                let available_for_response = context_limit.saturating_sub(estimated_prompt_tokens);
-                eprintln!(
-                    "{}Warning:{} Token usage may exceed model context limit",
-                    TermColor::Yellow.ansi_code(),
-                    TermColor::Default.ansi_code()
-                );
-                eprintln!("  Estimated prompt tokens: ~{}", estimated_prompt_tokens);
-                eprintln!("  Requested max_tokens: {}", max_tokens);
-                eprintln!(
-                    "  Total: ~{} (context limit: {})",
-                    total_tokens, context_limit
-                );
-                eprintln!(
-                    "  Suggestion: Reduce prompt or set --max-tokens {}",
-                    available_for_response
-                );
-
-                // Don't bail, just warn - the actual API will give a definitive error
-                // This is a pre-validation hint to help users
-            } else if self.verbose {
-                eprintln!(
-                    "Token validation: ~{} prompt + {} max = ~{} (limit: {})",
-                    estimated_prompt_tokens, max_tokens, total_tokens, context_limit
-                );
-            }
-        }
-
         // If using a command, try to expand it from custom commands registry
         let final_input = if let Some(ref cmd) = self.command {
             // Try to get the custom command registry
             if let Some(registry) = cortex_engine::try_custom_command_registry() {
                 // Try to execute the custom command
-                let ctx = cortex_engine::TemplateContext::new(message.to_string()).with_cwd(
-                    std::env::current_dir()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string(),
-                );
+                let ctx = cortex_engine::TemplateContext::new(message.to_string())
+                    .with_cwd(config.cwd.to_string_lossy().to_string());
 
                 // Use blocking runtime to get the command
                 let prompt = tokio::task::block_in_place(|| {
@@ -461,12 +184,13 @@ impl RunCli {
             input_parts
         };
 
+        let session_task = tokio::spawn(async move { session.run().await });
+
         // Send the submission
         let submission = Submission {
             id: uuid::Uuid::new_v4().to_string(),
             op: Op::UserInput { items: final_input },
         };
-        handle.submission_tx.send(submission).await?;
 
         // Process events
         let mut final_message = String::new();
@@ -484,22 +208,27 @@ impl RunCli {
             None
         };
 
-        let start_time = std::time::Instant::now();
-
-        while let Ok(event) = handle.event_rx.recv().await {
-            // Check timeout
-            if let Some(timeout) = timeout_duration
-                && start_time.elapsed() > timeout
-            {
-                eprintln!("Timeout reached after {} seconds", self.timeout);
-                interrupted = true;
-                break;
-            }
+        let deadline = timeout_duration.map(|duration| tokio::time::Instant::now() + duration);
+        let runtime_result: Result<()> = async {
+        handle.submission_tx.send(submission).await?;
+        loop {
+            let event = tokio::select! {
+                event = cortex_engine::session::control::next_event(&handle, deadline) => event,
+                _ = tokio::signal::ctrl_c() => Err(cortex_engine::CortexError::Cancelled),
+            };
+            let event = match event {
+                Ok(event) => event,
+                Err(error) => {
+                    interrupted = true;
+                    eprintln!("{}", error.user_friendly_message());
+                    break;
+                }
+            };
 
             event_count += 1;
 
             // Output JSON event if in JSON mode (JSONL format with full event data)
-            if is_json {
+            if matches!(effective_format, OutputFormat::Jsonl) {
                 // Serialize the full event using serde, which properly includes all data
                 // and uses the correct type tags from the EventMsg enum's serde attributes
                 let event_json = serde_json::json!({
@@ -510,7 +239,7 @@ impl RunCli {
                 });
 
                 // Output as a single JSON line (JSONL format)
-                println!("{}", serde_json::to_string(&event_json)?);
+                writeln!(io::stdout(), "{}", serde_json::to_string(&event_json)?)?;
                 // Flush immediately for piped output to ensure streaming works
                 io::stdout().flush()?;
             }
@@ -539,7 +268,7 @@ impl RunCli {
                             println!();
                             streaming_started = true;
                         }
-                        print!("{}", delta.delta);
+                        write!(io::stdout(), "{}", delta.delta)?;
                         // Handle BrokenPipe (SIGPIPE) - stop processing if downstream closes
                         // This prevents wasting API tokens when output is piped to commands
                         // like `head` that close early
@@ -601,6 +330,17 @@ impl RunCli {
                 EventMsg::McpToolCallEnd(_) => {
                     // Tool call completed
                 }
+                EventMsg::ExecApprovalRequest(approval) => {
+                    handle.submission_tx.send(Submission {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        op: Op::ExecApproval { id: approval.call_id.clone(), decision: cortex_protocol::ReviewDecision::Denied },
+                    }).await?;
+                    error_occurred = true;
+                    eprintln!("Approval is required, but run is unattended. No command was approved.");
+                    break;
+                }
+                EventMsg::Warning(warning) => { eprintln!("{}", warning.message); }
+                EventMsg::TurnAborted(_) => { interrupted = true; break; }
                 EventMsg::TaskComplete(_) => {
                     task_completed = true;
                     break;
@@ -637,6 +377,17 @@ impl RunCli {
                 _ => {}
             }
         }
+
+        Ok(())
+        }.await;
+
+        let cleanup = cortex_engine::session::control::stop_session(&handle, session_task).await;
+        if let Err(error) = cleanup {
+            error_occurred = true;
+            eprintln!("{}", error.user_friendly_message());
+        }
+
+        runtime_result?;
 
         // Verify task completion and warn about partial responses
         if !task_completed && !error_occurred {
@@ -685,13 +436,13 @@ impl RunCli {
                 "session_id": session_id,
                 "message": final_message,
                 "events": event_count,
-                "success": !error_occurred && !interrupted,
+                "success": task_completed && !error_occurred && !interrupted && !response_truncated,
                 "interrupted": interrupted,
                 "complete": task_completed,
                 "truncated": response_truncated,
                 "finish_reason": if interrupted { "timeout" } else if response_truncated { "length" } else if error_occurred { "error" } else { "stop" },
             });
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            writeln!(io::stdout(), "{}", serde_json::to_string_pretty(&result)?)?;
         }
 
         // Copy to clipboard if requested
@@ -749,7 +500,10 @@ impl RunCli {
 
         // Send desktop notification if requested
         if self.notification {
-            send_notification(&session_id, !error_occurred)?;
+            send_notification(
+                &session_id,
+                task_completed && !error_occurred && !interrupted && !response_truncated,
+            )?;
         }
 
         // Share session if requested
@@ -766,17 +520,8 @@ impl RunCli {
             }
         }
 
-        // Cleanup
-        drop(handle);
-        let _ = session_task.await;
-
-        // Exit with appropriate code (#2174)
-        if error_occurred {
-            std::process::exit(1);
-        }
-        if response_truncated {
-            // Exit with code 2 to indicate truncation (distinct from error code 1)
-            std::process::exit(2);
+        if error_occurred || interrupted || response_truncated || !task_completed {
+            bail!("The task did not complete successfully.");
         }
 
         Ok(())
@@ -786,7 +531,12 @@ impl RunCli {
     async fn run_dry_run(&self, message: &str, attachments: &[FileAttachment]) -> Result<()> {
         use cortex_engine::tokenizer::TokenCounter;
 
-        let config = cortex_engine::Config::default();
+        let config = cortex_engine::session::control::load_runtime_config(
+            self.cwd.clone(),
+            None,
+            self.system_prompt.clone(),
+        )
+        .await?;
         let model = self
             .model
             .as_ref()
@@ -835,7 +585,7 @@ impl RunCli {
                     "total_input": total_input_tokens,
                 },
                 "message_preview": if message.len() > 100 {
-                    format!("{}...", &message[..100])
+                    format!("{}...", message.chars().take(100).collect::<String>())
                 } else {
                     message.to_string()
                 },
@@ -874,7 +624,7 @@ impl RunCli {
                 println!();
                 println!("Message preview:");
                 let preview = if message.len() > 200 {
-                    format!("  {}...", &message[..200])
+                    format!("  {}...", message.chars().take(200).collect::<String>())
                 } else {
                     format!("  {}", message)
                 };

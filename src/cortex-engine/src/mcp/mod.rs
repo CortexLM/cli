@@ -7,10 +7,12 @@
 //! - Tool execution and resource reading
 
 pub mod client;
+mod http;
 pub mod manager;
 pub mod oauth;
 pub mod oauth_callback;
 pub mod registry;
+mod stdio;
 
 // OAuth exports - these are actively used by cortex-cli
 pub use oauth::{

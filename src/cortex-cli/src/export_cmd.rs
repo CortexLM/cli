@@ -2,15 +2,10 @@
 //!
 //! Exports a session to a portable JSON format that can be shared or imported.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-
-use cortex_engine::list_sessions;
-use cortex_engine::rollout::get_rollout_path;
-use cortex_engine::rollout::reader::{RolloutItem, get_session_meta, read_rollout};
-use cortex_protocol::{ConversationId, EventMsg};
 
 /// Export format for sessions.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -111,93 +106,12 @@ pub struct ExportToolCall {
 impl ExportCommand {
     /// Run the export command.
     pub async fn run(self) -> Result<()> {
-        let cortex_home = dirs::home_dir()
-            .map(|h| h.join(".cortex"))
-            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
-
-        // Get session ID - either from arg or interactive picker
-        let session_id = match self.session_id {
-            Some(id) => id,
-            None => select_session(&cortex_home).await?,
-        };
-
-        // Validate session ID is not empty
-        if session_id.trim().is_empty() {
-            bail!("Session ID cannot be empty");
-        }
-
-        // Parse conversation ID - accept both full UUID and short 8-char prefix
-        let conversation_id: ConversationId = match session_id.parse() {
-            Ok(id) => id,
-            Err(_) => {
-                // If parsing failed, check if it's a short ID (8 chars)
-                if session_id.len() == 8 {
-                    // Try to find a session with matching prefix
-                    let sessions = list_sessions(&cortex_home)?;
-                    let matching: Vec<_> = sessions
-                        .iter()
-                        .filter(|s| s.id.starts_with(&session_id))
-                        .collect();
-
-                    match matching.len() {
-                        0 => bail!("No session found with ID prefix: {session_id}"),
-                        1 => matching[0].id.parse().map_err(|_| {
-                            anyhow::anyhow!("Internal error: invalid session ID format")
-                        })?,
-                        _ => bail!(
-                            "Ambiguous session ID prefix '{}' matches {} sessions. Please provide more characters.",
-                            session_id,
-                            matching.len()
-                        ),
-                    }
-                } else {
-                    bail!(
-                        "Invalid session ID format: {session_id}. Expected full UUID or 8-character prefix."
-                    );
-                }
-            }
-        };
-
-        // Read rollout file
-        let rollout_path = get_rollout_path(&cortex_home, &conversation_id);
-        if !rollout_path.exists() {
-            bail!("Session not found: {session_id}");
-        }
-
-        let entries = read_rollout(&rollout_path)
-            .with_context(|| format!("Failed to read session: {}", rollout_path.display()))?;
-
-        // Extract metadata
-        let meta = get_session_meta(&entries);
-
-        // Extract messages from events
-        let messages = extract_messages(&entries);
-
-        // Extract agent references from messages (@agent mentions)
-        let agent_refs = extract_agent_refs(&messages);
-
-        let session_meta = SessionMetadata {
-            id: conversation_id.to_string(),
-            title: derive_title(&entries),
-            created_at: meta
-                .map(|m| m.timestamp.clone())
-                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
-            cwd: meta.map(|m| m.cwd.clone()),
-            model: meta.and_then(|m| m.model.clone()),
-            agent: None, // Agent extraction from session config planned
-            agent_refs: if agent_refs.is_empty() {
-                None
-            } else {
-                Some(agent_refs)
-            },
-        };
-
-        // Build export
-        let export = SessionExport {
-            version: 1,
-            session: session_meta,
-            messages: messages.clone(),
-        };
+        let store = cortex_engine::rollout::local::SessionStorage::new()?;
+        let session_id = self
+            .session_id
+            .context("Specify the session ID to export (see cortex sessions)")?;
+        let export = store.document(&session_id)?;
+        let messages = &export.messages;
 
         // Serialize to the requested format
         let output_content = match self.format {
@@ -215,8 +129,8 @@ impl ExportCommand {
                 // CSV format: simplified, messages only
                 let mut csv_output = String::new();
                 csv_output.push_str("timestamp,role,content\n");
-                for msg in &messages {
-                    let timestamp = msg.timestamp.as_deref().unwrap_or("");
+                for msg in messages {
+                    let timestamp = msg.timestamp.to_rfc3339();
                     // Escape CSV content: double quotes, wrap in quotes if contains comma/newline
                     let content = escape_csv_field(&msg.content);
                     csv_output.push_str(&format!("{},{},{}\n", timestamp, msg.role, content));
@@ -228,8 +142,19 @@ impl ExportCommand {
         // Write to output
         match self.output {
             Some(path) => {
-                std::fs::write(&path, &output_content)
-                    .with_context(|| format!("Failed to write to: {}", path.display()))?;
+                use std::io::Write;
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                    .with_context(|| {
+                        format!(
+                            "Cannot create export (existing files are never overwritten): {}",
+                            path.display()
+                        )
+                    })?;
+                file.write_all(output_content.as_bytes())?;
+                file.sync_all()?;
                 eprintln!("Exported session to: {}", path.display());
             }
             None => {
@@ -251,110 +176,8 @@ fn escape_csv_field(field: &str) -> String {
     }
 }
 
-/// Select a session interactively.
-async fn select_session(cortex_home: &PathBuf) -> Result<String> {
-    let sessions = list_sessions(cortex_home)?;
-
-    if sessions.is_empty() {
-        bail!("No sessions found. Create a session first.");
-    }
-
-    // For non-interactive mode, just pick the most recent
-    // In a full TUI implementation, this would show an interactive picker
-    println!("Available sessions:");
-    println!("{:-<80}", "");
-
-    for (i, session) in sessions.iter().take(10).enumerate() {
-        let date = if session.timestamp.len() >= 19 {
-            session.timestamp[..19].replace('T', " ")
-        } else {
-            session.timestamp.clone()
-        };
-        let model = session.model.as_deref().unwrap_or("unknown");
-        println!(
-            "{:>2}. {} | {} | {} msgs | {}",
-            i + 1,
-            &session.id[..8.min(session.id.len())],
-            date,
-            session.message_count,
-            model,
-        );
-    }
-
-    if sessions.len() > 10 {
-        println!("\n... and {} more sessions", sessions.len() - 10);
-    }
-
-    println!("\nUsing most recent session: {}", sessions[0].id);
-    Ok(sessions[0].id.clone())
-}
-
-/// Derive a title from the session content.
-fn derive_title(entries: &[cortex_engine::rollout::reader::RolloutEntry]) -> Option<String> {
-    // Try to get the first user message as the title
-    for entry in entries {
-        if let RolloutItem::EventMsg(EventMsg::UserMessage(msg)) = &entry.item {
-            let title = msg.message.chars().take(60).collect::<String>();
-            return Some(if msg.message.len() > 60 {
-                format!("{}...", title)
-            } else {
-                title
-            });
-        }
-    }
-    None
-}
-
-/// Extract messages from rollout entries.
-fn extract_messages(
-    entries: &[cortex_engine::rollout::reader::RolloutEntry],
-) -> Vec<ExportMessage> {
-    let mut messages = Vec::new();
-
-    for entry in entries {
-        match &entry.item {
-            RolloutItem::EventMsg(EventMsg::UserMessage(msg)) => {
-                messages.push(ExportMessage {
-                    role: "user".to_string(),
-                    content: msg.message.clone(),
-                    tool_calls: None,
-                    tool_call_id: None,
-                    timestamp: Some(entry.timestamp.clone()),
-                });
-            }
-            RolloutItem::EventMsg(EventMsg::AgentMessage(msg)) => {
-                messages.push(ExportMessage {
-                    role: "assistant".to_string(),
-                    content: msg.message.clone(),
-                    tool_calls: None,
-                    tool_call_id: None,
-                    timestamp: Some(entry.timestamp.clone()),
-                });
-            }
-            RolloutItem::EventMsg(EventMsg::ExecCommandEnd(exec)) => {
-                // Include tool outputs as separate messages
-                let _tool_name = exec
-                    .command
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string());
-                messages.push(ExportMessage {
-                    role: "tool".to_string(),
-                    content: exec.formatted_output.clone(),
-                    tool_calls: None,
-                    tool_call_id: Some(exec.call_id.clone()),
-                    timestamp: Some(entry.timestamp.clone()),
-                });
-            }
-            _ => {}
-        }
-    }
-
-    messages
-}
-
-/// Extract agent references (@mentions) from messages.
 /// Returns a deduplicated list of agent names that are referenced.
+#[cfg(test)]
 fn extract_agent_refs(messages: &[ExportMessage]) -> Vec<String> {
     use std::collections::HashSet;
 

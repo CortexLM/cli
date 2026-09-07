@@ -20,12 +20,18 @@ use super::oauth::{
 use crate::error::{CortexError, Result};
 
 /// Callback result from OAuth flow.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CallbackResult {
     /// Authorization code.
     pub code: String,
     /// State parameter (for CSRF validation).
     pub state: String,
+}
+
+impl std::fmt::Debug for CallbackResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CallbackResult { [redacted] }")
+    }
 }
 
 /// OAuth callback server.
@@ -134,7 +140,7 @@ impl OAuthCallbackServer {
             .map_err(|e| CortexError::mcp_error(format!("Failed to read from stream: {e}")))?;
 
         let request = String::from_utf8_lossy(&buffer[..n]);
-        debug!(request = %request, "Received HTTP request");
+        debug!("Received OAuth callback request");
 
         // Parse the request
         let result = Self::parse_callback_request(&request, expected_state, mcp_name);
@@ -182,8 +188,8 @@ impl OAuthCallbackServer {
         }
 
         // Check if this is the callback path
-        if !path.starts_with(OAUTH_CALLBACK_PATH) {
-            return Err(CortexError::mcp_error(format!("Unexpected path: {path}")));
+        if path.split('?').next() != Some(OAUTH_CALLBACK_PATH) {
+            return Err(CortexError::mcp_error("Unexpected callback path"));
         }
 
         // Parse query parameters
@@ -195,14 +201,10 @@ impl OAuthCallbackServer {
         let params = Self::parse_query_string(query_string);
 
         // Check for error response
-        if let Some(error) = params.get("error") {
-            let description = params
-                .get("error_description")
-                .map(|s| s.as_str())
-                .unwrap_or("Unknown error");
-            return Err(CortexError::Auth(format!(
-                "OAuth error: {error} - {description}"
-            )));
+        if params.contains_key("error") {
+            return Err(CortexError::Auth(
+                "MCP authorization was denied; run cortex mcp auth to retry".into(),
+            ));
         }
 
         // Get authorization code
@@ -220,8 +222,6 @@ impl OAuthCallbackServer {
         if state != expected_state {
             error!(
                 mcp_name = %mcp_name,
-                expected = %expected_state,
-                received = %state,
                 "State mismatch - possible CSRF attack"
             );
             return Err(CortexError::Auth(

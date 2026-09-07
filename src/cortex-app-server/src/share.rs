@@ -279,9 +279,10 @@ async fn create_share(
     let expires_in = req.expires_in.min(30 * 24 * 60 * 60);
 
     // Extract user_id from authentication context if available
-    let user_id = auth
-        .as_ref()
-        .and_then(|Extension(auth_result)| auth_result.user_id().map(String::from));
+    let user_id =
+        crate::auth::session_principal(auth.as_ref().map(|a| &a.0), state.config.auth.enabled)?;
+
+    crate::api::stored_sessions::load_owned(&state, &req.session_id, user_id.as_deref())?;
 
     // Load the session messages
     let messages = state
@@ -412,9 +413,8 @@ async fn revoke_share(
         .ok_or_else(|| AppError::NotFound("Share not found".to_string()))?;
 
     // Extract user_id from authentication context
-    let user_id = auth
-        .as_ref()
-        .and_then(|Extension(auth_result)| auth_result.user_id().map(String::from));
+    let user_id =
+        crate::auth::session_principal(auth.as_ref().map(|a| &a.0), state.config.auth.enabled)?;
 
     // Verify ownership: if the share has an owner, the requester must be that owner
     if let Some(ref share_owner) = share.user_id {

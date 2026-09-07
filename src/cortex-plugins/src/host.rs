@@ -90,6 +90,8 @@ impl ToastLevel {
 /// locks could deadlock if the tokio runtime is already blocked on the WASM call.
 #[derive(Debug, Clone)]
 pub struct PluginHostState {
+    pub input: Vec<u8>,
+    pub result: Option<crate::contract::InvocationResult>,
     pub plugin_id: String,
     pub context: PluginContext,
     /// Registered widgets by UI region. Uses sync Mutex for safe access from WASM host functions.
@@ -105,6 +107,8 @@ pub struct PluginHostState {
 impl PluginHostState {
     pub fn new(plugin_id: impl Into<String>, context: PluginContext) -> Self {
         Self {
+            input: Vec::new(),
+            result: None,
             plugin_id: plugin_id.into(),
             context,
             widgets: Arc::new(Mutex::new(HashMap::new())),
@@ -153,7 +157,7 @@ fn read_string_from_memory<T>(
     ptr: i32,
     len: i32,
 ) -> (Caller<'_, T>, std::result::Result<String, HostError>) {
-    if ptr < 0 || len < 0 {
+    if ptr < 0 || len < 0 || len as usize > crate::contract::MAX_FRAME_BYTES {
         return (caller, Err(HostError::MemoryOutOfBounds));
     }
     let ptr_usize = ptr as usize;
@@ -282,6 +286,7 @@ where
 {
     let mut linker = Linker::new(engine);
     register_host_functions(&mut linker)?;
+    crate::abi::register(&mut linker)?;
     Ok(linker)
 }
 

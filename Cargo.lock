@@ -966,6 +966,7 @@ dependencies = [
  "clap",
  "cortex-common",
  "cortex-engine",
+ "cortex-linux-sandbox",
  "cortex-protocol",
  "dirs 5.0.1",
  "fs2",
@@ -976,7 +977,7 @@ dependencies = [
  "mdns-sd",
  "notify",
  "notify-debouncer-mini",
- "reqwest 0.13.4",
+ "reqwest",
  "schemars",
  "serde",
  "serde_json",
@@ -1034,6 +1035,7 @@ dependencies = [
  "cortex-common",
  "cortex-compact",
  "cortex-engine",
+ "cortex-linux-sandbox",
  "cortex-login",
  "cortex-process-hardening",
  "cortex-protocol",
@@ -1047,10 +1049,10 @@ dependencies = [
  "flate2",
  "futures",
  "libc",
- "notify",
  "regex",
- "reqwest 0.13.4",
+ "reqwest",
  "scraper",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1063,7 +1065,6 @@ dependencies = [
  "toml 0.8.23",
  "toml_edit 0.23.10+spec-1.0.0",
  "tracing",
- "tracing-appender",
  "tracing-subscriber",
  "uuid",
 ]
@@ -1104,7 +1105,7 @@ dependencies = [
  "libc",
  "once_cell",
  "regex",
- "reqwest 0.13.4",
+ "reqwest",
  "serde_json",
  "serial_test",
  "tempfile",
@@ -1166,6 +1167,7 @@ dependencies = [
  "cortex-batch",
  "cortex-common",
  "cortex-compact",
+ "cortex-execpolicy",
  "cortex-experimental",
  "cortex-ghost",
  "cortex-hooks",
@@ -1179,6 +1181,7 @@ dependencies = [
  "cortex-ratelimits",
  "cortex-resume",
  "cortex-review",
+ "cortex-sandbox",
  "cortex-share",
  "cortex-snapshot",
  "cortex-windows-sandbox",
@@ -1196,7 +1199,7 @@ dependencies = [
  "once_cell",
  "rand 0.8.8",
  "regex",
- "reqwest 0.13.4",
+ "reqwest",
  "secrecy",
  "serde",
  "serde_json",
@@ -1334,7 +1337,7 @@ dependencies = [
 name = "cortex-lmstudio"
 version = "0.1.8"
 dependencies = [
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -1358,7 +1361,7 @@ dependencies = [
  "keyring",
  "libc",
  "rand 0.9.5",
- "reqwest 0.13.4",
+ "reqwest",
  "secrecy",
  "serde",
  "serde_json",
@@ -1380,7 +1383,7 @@ dependencies = [
  "futures",
  "lazy_static",
  "lsp-types",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "tar",
@@ -1400,7 +1403,7 @@ dependencies = [
  "async-trait",
  "cortex-common",
  "cortex-mcp-types",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
@@ -1453,11 +1456,11 @@ name = "cortex-otel"
 version = "0.1.8"
 dependencies = [
  "cortex-common",
- "opentelemetry 0.31.0",
+ "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
- "opentelemetry_sdk 0.32.1",
- "reqwest 0.13.4",
+ "opentelemetry_sdk",
+ "reqwest",
  "serde",
  "tracing",
 ]
@@ -1472,7 +1475,7 @@ dependencies = [
  "dirs 6.0.0",
  "ed25519-dalek",
  "hex",
- "reqwest 0.13.4",
+ "reqwest",
  "semver",
  "serde",
  "serde_json",
@@ -1485,6 +1488,7 @@ dependencies = [
  "url",
  "uuid",
  "wasmtime",
+ "which",
 ]
 
 [[package]]
@@ -1569,7 +1573,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "cortex-common",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -1618,7 +1622,7 @@ dependencies = [
  "axum",
  "cortex-keyring-store",
  "futures",
- "reqwest 0.13.4",
+ "reqwest",
  "secrecy",
  "serde",
  "serde_json",
@@ -1685,7 +1689,7 @@ dependencies = [
  "hostname",
  "libc",
  "ratatui",
- "reqwest 0.13.4",
+ "reqwest",
  "rodio",
  "serde",
  "serde_json",
@@ -1839,7 +1843,7 @@ dependencies = [
  "futures",
  "getrandom 0.2.17",
  "hex",
- "reqwest 0.13.4",
+ "reqwest",
  "self-replace",
  "serde",
  "serde_json",
@@ -4664,20 +4668,6 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry"
-version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b84bcd6ae87133e903af7ef497404dda70c60d0ea14895fc8a5e6722754fc2a0"
-dependencies = [
- "futures-core",
- "futures-sink",
- "js-sys",
- "pin-project-lite",
- "thiserror 2.0.20",
- "tracing",
-]
-
-[[package]]
-name = "opentelemetry"
 version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0142c63252a9e054e68a4c61a5778f7b14f576274d593f8ce883d191a099682"
@@ -4692,46 +4682,42 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry-http"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7a6d09a73194e6b66df7c8f1b680f156d916a1a942abf2de06823dd02b7855d"
+checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
 dependencies = [
  "async-trait",
  "bytes",
  "http",
- "opentelemetry 0.31.0",
- "reqwest 0.12.28",
+ "opentelemetry",
+ "reqwest",
 ]
 
 [[package]]
 name = "opentelemetry-otlp"
-version = "0.31.1"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f69cd6acbb9af919df949cd1ec9e5e7fdc2ef15d234b6b795aaa525cc02f71f"
+checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
  "http",
- "opentelemetry 0.31.0",
+ "opentelemetry",
  "opentelemetry-http",
  "opentelemetry-proto",
- "opentelemetry_sdk 0.31.0",
+ "opentelemetry_sdk",
  "prost",
- "reqwest 0.12.28",
+ "reqwest",
  "thiserror 2.0.20",
- "tonic",
- "tracing",
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f"
+checksum = "56d658ba1faf63f7b9c492cfbe6e0ec365440a16132d3270c1065f7b33f1b638"
 dependencies = [
- "opentelemetry 0.31.0",
- "opentelemetry_sdk 0.31.0",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "prost",
- "tonic",
- "tonic-prost",
 ]
 
 [[package]]
@@ -4742,21 +4728,6 @@ checksum = "c913ac17a6c451661ee255f4625d143e51647ae78ebd969b75e41c4442f4fe47"
 
 [[package]]
 name = "opentelemetry_sdk"
-version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e14ae4f5991976fd48df6d843de219ca6d31b01daaab2dad5af2badeded372bd"
-dependencies = [
- "futures-channel",
- "futures-executor",
- "futures-util",
- "opentelemetry 0.31.0",
- "percent-encoding",
- "rand 0.9.5",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "opentelemetry_sdk"
 version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b59f80e1ac4d5ff7a2db8fb6c80badb7f0f3f858211fba08dd9aaec750894f9"
@@ -4764,7 +4735,7 @@ dependencies = [
  "futures-channel",
  "futures-executor",
  "futures-util",
- "opentelemetry 0.32.0",
+ "opentelemetry",
  "percent-encoding",
  "portable-atomic",
  "rand 0.9.5",
@@ -5073,26 +5044,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
  "siphasher",
-]
-
-[[package]]
-name = "pin-project"
-version = "1.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2466b2336ed02bcdca6b294417127b90ec92038d1d5c4fbeac971a922e0e0924"
-dependencies = [
- "pin-project-internal",
-]
-
-[[package]]
-name = "pin-project-internal"
-version = "1.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c96395f0a926bc13b1c17622aaddda1ecb55d49c8f1bf9777e4d877800a43f8b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -5723,40 +5674,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "reqwest"
-version = "0.12.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
-dependencies = [
- "base64",
- "bytes",
- "futures-channel",
- "futures-core",
- "futures-util",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-util",
- "js-sys",
- "log",
- "percent-encoding",
- "pin-project-lite",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper",
- "tokio",
- "tower",
- "tower-http",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
 
 [[package]]
 name = "reqwest"
@@ -6581,12 +6498,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
-name = "symlink"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7973cce6668464ea31f176d85b13c7ab3bba2cb3b77a2ed26abd7801688010a"
-
-[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7131,38 +7042,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
-name = "tonic"
-version = "0.14.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac2a5518c70fa84342385732db33fb3f44bc4cc748936eb5833d2df34d6445ef"
-dependencies = [
- "async-trait",
- "base64",
- "bytes",
- "http",
- "http-body",
- "http-body-util",
- "percent-encoding",
- "pin-project",
- "sync_wrapper",
- "tokio-stream",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tonic-prost"
-version = "0.14.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50849f68853be452acf590cde0b146665b8d507b3b8af17261df47e02c209ea0"
-dependencies = [
- "bytes",
- "prost",
- "tonic",
-]
-
-[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7229,19 +7108,6 @@ dependencies = [
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
-]
-
-[[package]]
-name = "tracing-appender"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "050686193eb999b4bb3bc2acfa891a13da00f79734704c4b8b4ef1a10b368a3c"
-dependencies = [
- "crossbeam-channel",
- "symlink",
- "thiserror 2.0.20",
- "time",
- "tracing-subscriber",
 ]
 
 [[package]]

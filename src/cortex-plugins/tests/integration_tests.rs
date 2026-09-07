@@ -848,6 +848,8 @@ mod registry_integration_tests {
                 hooks: vec![],
                 config: HashMap::new(),
                 wasm: Default::default(),
+                runtime: Default::default(),
+                tools: Vec::new(),
             };
 
             let info = PluginInfo::from_manifest(&manifest, PathBuf::from("/tmp"));

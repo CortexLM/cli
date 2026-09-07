@@ -31,7 +31,7 @@ jobs:
         with:
           formula-name: cortex
           homebrew-tap: CortexLM/homebrew-tap
-          download-url: https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/cortex-macos-arm64.tar.gz
+          download-url: https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/cortex-cli-macos-arm64.tar.gz
           commit-message: |
             {{formulaName}} {{version}}
 

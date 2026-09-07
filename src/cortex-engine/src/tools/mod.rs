@@ -27,8 +27,10 @@
 //! See [`artifacts`] module for configuration and usage.
 
 pub mod artifacts;
+pub mod boundary;
 pub mod context;
 pub mod handlers;
+pub(crate) mod redaction;
 pub mod registry;
 pub mod router;
 pub mod spec;

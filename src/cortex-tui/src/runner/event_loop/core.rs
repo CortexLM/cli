@@ -121,6 +121,9 @@ pub struct EventLoop {
     /// Tool registry for available tools.
     pub(super) tool_registry: Option<Arc<ToolRegistry>>,
 
+    /// Effective sandbox policy for locally executed tools.
+    pub(super) sandbox_policy: cortex_protocol::SandboxPolicy,
+
     /// Whether streaming was cancelled.
     pub(super) streaming_cancelled: Arc<AtomicBool>,
 
@@ -161,6 +164,8 @@ pub struct EventLoop {
 
     /// Undo stack for session message exchanges.
     /// Each entry is a pair of (user_message, assistant_message).
+    pub(super) session_redo: Vec<String>,
+
     pub(super) _undo_stack: Vec<Vec<cortex_core::widgets::Message>>,
 
     /// TUI capture manager for debugging (enabled via CORTEX_TUI_CAPTURE=1).
@@ -209,6 +214,7 @@ impl EventLoop {
             min_frame_time: Duration::from_micros(8333), // ~120 FPS
             cortex_session: None,
             tool_registry: None,
+            sandbox_policy: cortex_protocol::SandboxPolicy::default(),
             streaming_cancelled: Arc::new(AtomicBool::new(false)),
             stream_done_received: false,
             streaming_rx: None,
@@ -223,6 +229,7 @@ impl EventLoop {
             tool_event_rx: Some(tool_event_rx),
             is_continuation: false,
             _undo_stack: Vec::new(),
+            session_redo: Vec::new(),
             tui_capture,
             mcp_manager,
             mcp_event_rx: Some(mcp_event_rx),
@@ -250,14 +257,60 @@ impl EventLoop {
 
     /// Sets the cortex session.
     pub fn with_cortex_session(mut self, session: CortexSession) -> Self {
-        self.cortex_session = Some(session);
+        if let Err(error) = self.activate_local_session(session) {
+            self.add_system_message(&format!("Unable to activate session: {error}"));
+        }
         self
+    }
+
+    /// Fallible startup variant: never enter the loop with an unactivated ID.
+    pub fn try_with_cortex_session(mut self, session: CortexSession) -> Result<Self> {
+        self.activate_local_session(session)?;
+        Ok(self)
     }
 
     /// Sets the tool registry for executing tools.
     pub fn with_tool_registry(mut self, registry: Arc<ToolRegistry>) -> Self {
         self.tool_registry = Some(registry);
         self
+    }
+
+    /// Sets the sandbox policy applied to every locally executed tool.
+    pub fn with_sandbox_policy(mut self, policy: cortex_protocol::SandboxPolicy) -> Self {
+        self.sandbox_policy = policy;
+        self
+    }
+
+    /// Builds the authorization context for one local tool call.
+    ///
+    /// Mutating calls are authorized only when the caller has passed the TUI
+    /// approval flow (`approved`) or the session runs in auto-approve mode;
+    /// Plan and Spec sessions are always read-only.
+    pub(super) fn tool_context(
+        &self,
+        call_id: &str,
+        tool_name: &str,
+        arguments: &serde_json::Value,
+        approved: bool,
+    ) -> cortex_engine::tools::ToolContext {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let read_only = self.app_state.is_plan_mode() || self.app_state.is_spec_mode();
+        let auto_approve = matches!(
+            self.app_state.permission_mode,
+            crate::permissions::PermissionMode::Yolo
+        );
+        let mut context = cortex_engine::tools::ToolContext::new(cwd)
+            .with_sandbox_policy(self.sandbox_policy.clone())
+            .with_read_only(read_only)
+            .with_auto_approve(auto_approve)
+            .with_call_id(call_id);
+        if let Some(session) = self.app_state.session_id {
+            context = context.with_conversation_id(session.to_string());
+        }
+        if approved {
+            context = context.with_approved_tool_call(tool_name, arguments);
+        }
+        context
     }
 
     /// Runs the main event loop.
@@ -362,6 +415,7 @@ impl EventLoop {
                     }
                 } => {
                     self.handle_stream_event(stream_event).await;
+                    self.report_persistence_error();
                     // Re-render after streaming update to show new content
                     if let Err(e) = self.render(terminal) {
                         tracing::error!("Error rendering after stream event: {}", e);
@@ -376,6 +430,7 @@ impl EventLoop {
                     }
                 } => {
                     self.handle_tool_event(tool_event).await;
+                    self.report_persistence_error();
                     if let Err(e) = self.render(terminal) {
                         tracing::error!("Error rendering after tool event: {}", e);
                     }

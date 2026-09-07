@@ -5,6 +5,7 @@
 
 mod code_agent;
 mod cortex;
+pub mod runtime_contract;
 pub mod types;
 
 pub use code_agent::{
@@ -60,6 +61,39 @@ pub trait ModelClient: Send + Sync {
     /// Live Code session id, if one has been created.
     async fn code_session_id(&self) -> Option<String> {
         None
+    }
+
+    /// Whether this endpoint executes tools itself instead of asking the client.
+    fn owns_tool_execution(&self) -> bool {
+        false
+    }
+
+    /// Bind durable local identity to the remote session, without workspace-wide reuse.
+    fn configure_session_identity(
+        &self,
+        _home: &std::path::Path,
+        _id: &str,
+        _resume: bool,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    /// Resume an explicit remote Code session; never substitute a fresh session.
+    async fn resume_code_session(&self, _id: &str) -> Result<()> {
+        Err(CortexError::InvalidInput(
+            "Remote session resume is not supported by this client.".into(),
+        ))
+    }
+
+    /// Independent context for delegation. A shared-state clone is not isolation.
+    fn fresh_clone_box(&self) -> Option<Box<dyn ModelClient>> {
+        None
+    }
+
+    /// Cancellation with an acknowledgement; legacy implementations keep compatibility.
+    async fn cancel_turn_checked(&self) -> Result<()> {
+        self.cancel_turn().await;
+        Ok(())
     }
 
     /// Clone this client when the implementation shares session state via `Arc`.

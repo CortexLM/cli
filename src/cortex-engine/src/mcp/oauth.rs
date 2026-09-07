@@ -11,10 +11,9 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::fs;
-use tracing::{debug, info, warn};
+use tracing::info;
 
 use crate::error::{CortexError, Result};
-use cortex_common::create_default_client;
 
 /// OAuth callback port for local redirect URI.
 pub const OAUTH_CALLBACK_PORT: u16 = 19876;
@@ -23,7 +22,7 @@ pub const OAUTH_CALLBACK_PORT: u16 = 19876;
 pub const OAUTH_CALLBACK_PATH: &str = "/mcp/oauth/callback";
 
 /// OAuth tokens.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthTokens {
     /// Access token for API requests.
@@ -40,7 +39,7 @@ pub struct OAuthTokens {
 }
 
 /// OAuth client information (for dynamic registration).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthClientInfo {
     /// Client ID.
@@ -57,7 +56,7 @@ pub struct OAuthClientInfo {
 }
 
 /// OAuth entry for a single MCP server.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthEntry {
     /// OAuth tokens.
@@ -78,7 +77,7 @@ pub struct OAuthEntry {
 }
 
 /// OAuth storage - manages persistent storage of OAuth credentials.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct OAuthStorage {
     /// Entries keyed by MCP server name.
     #[serde(flatten)]
@@ -93,54 +92,53 @@ impl OAuthStorage {
         Ok(home.join(".cortex").join("mcp-auth.json"))
     }
 
-    /// Load OAuth storage from disk.
+    /// Load credentials from the OS credential store. Migrate a legacy owner-only file once.
     pub async fn load() -> Result<Self> {
-        let path = Self::file_path()?;
-
-        if !path.exists() {
-            return Ok(Self::default());
+        let entry = keyring::Entry::new("cortex-mcp", "oauth-storage")
+            .map_err(|_| CortexError::Auth("MCP credential store is unavailable".into()))?;
+        match entry.get_password() {
+            Ok(content) => serde_json::from_str(&content)
+                .map_err(|_| CortexError::Auth("MCP credential store is invalid".into())),
+            Err(keyring::Error::NoEntry) => {
+                let path = Self::file_path()?;
+                if !path.exists() {
+                    return Ok(Self::default());
+                }
+                let metadata = fs::symlink_metadata(&path).await?;
+                if !metadata.is_file() || metadata.len() > 1024 * 1024 {
+                    return Err(CortexError::Auth(
+                        "Legacy MCP credential storage is unsafe".into(),
+                    ));
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if metadata.permissions().mode() & 0o077 != 0 {
+                        return Err(CortexError::Auth(
+                            "Legacy MCP credential permissions must be owner-only".into(),
+                        ));
+                    }
+                }
+                let content = fs::read_to_string(&path).await?;
+                let storage: Self = serde_json::from_str(&content)
+                    .map_err(|_| CortexError::Auth("Legacy MCP credentials are invalid".into()))?;
+                storage.save().await?;
+                fs::remove_file(path).await?;
+                Ok(storage)
+            }
+            Err(_) => Err(CortexError::Auth(
+                "MCP credential store is unavailable".into(),
+            )),
         }
-
-        let content = fs::read_to_string(&path)
-            .await
-            .map_err(|e| CortexError::Io(e))?;
-
-        serde_json::from_str(&content).map_err(|e| {
-            warn!("Failed to parse mcp-auth.json, creating fresh storage: {e}");
-            CortexError::config(format!("Failed to parse mcp-auth.json: {e}"))
-        })
     }
 
-    /// Save OAuth storage to disk.
+    /// Tokens never return to plaintext configuration files.
     pub async fn save(&self) -> Result<()> {
-        let path = Self::file_path()?;
-
-        // Ensure parent directory exists
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| CortexError::Io(e))?;
-        }
-
-        let content = serde_json::to_string_pretty(&self)
-            .map_err(|e| CortexError::config(format!("Failed to serialize OAuth storage: {e}")))?;
-
-        fs::write(&path, &content)
-            .await
-            .map_err(|e| CortexError::Io(e))?;
-
-        // Set file permissions to 600 (user read/write only) on Unix
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let metadata = fs::metadata(&path).await?;
-            let mut perms = metadata.permissions();
-            perms.set_mode(0o600);
-            fs::set_permissions(&path, perms).await?;
-        }
-
-        debug!("Saved OAuth storage to {}", path.display());
-        Ok(())
+        let content = serde_json::to_string(self)
+            .map_err(|_| CortexError::Auth("MCP credentials could not be encoded".into()))?;
+        keyring::Entry::new("cortex-mcp", "oauth-storage")
+            .and_then(|entry| entry.set_password(&content))
+            .map_err(|_| CortexError::Auth("MCP credentials could not be saved securely".into()))
     }
 
     /// Get entry for an MCP server.
@@ -287,7 +285,7 @@ impl Pkce {
 }
 
 /// OAuth configuration for an MCP server.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OAuthConfig {
     /// Pre-registered client ID.
     pub client_id: Option<String>,
@@ -376,7 +374,7 @@ pub struct OAuthServerMetadata {
 }
 
 /// Token response from OAuth token endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TokenResponse {
     /// Access token.
     pub access_token: String,
@@ -424,8 +422,25 @@ impl OAuthFlow {
             mcp_name: mcp_name.into(),
             server_url: server_url.into(),
             config: OAuthConfig::default(),
-            client: create_default_client().expect("HTTP client"),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("OAuth HTTP client"),
         }
+    }
+
+    fn validate_metadata(&self, metadata: &OAuthServerMetadata) -> Result<()> {
+        let base = super::http::validate_endpoint(&self.server_url)
+            .map_err(|_| CortexError::Auth("Invalid MCP OAuth origin".into()))?;
+        for raw in [&metadata.authorization_endpoint, &metadata.token_endpoint] {
+            let endpoint = super::http::validate_endpoint(raw)
+                .map_err(|_| CortexError::Auth("Invalid MCP OAuth endpoint".into()))?;
+            if endpoint.origin() != base.origin() {
+                return Err(CortexError::Auth("An additional OAuth host requires explicit configuration; cross-origin discovery is unsupported".into()));
+            }
+        }
+        Ok(())
     }
 
     /// Set OAuth configuration.
@@ -453,9 +468,10 @@ impl OAuthFlow {
 
         match response {
             Ok(resp) if resp.status().is_success() => {
-                let metadata: OAuthServerMetadata = resp.json().await.map_err(|e| {
-                    CortexError::config(format!("Failed to parse OAuth metadata: {e}"))
-                })?;
+                let metadata: OAuthServerMetadata = resp
+                    .json()
+                    .await
+                    .map_err(|_| CortexError::config("MCP authentication metadata is invalid"))?;
                 Ok(metadata)
             }
             _ => {
@@ -471,13 +487,11 @@ impl OAuthFlow {
                     .get(oidc_url.as_str())
                     .send()
                     .await
-                    .map_err(|e| {
-                        CortexError::config(format!("Failed to discover OAuth metadata: {e}"))
-                    })?;
+                    .map_err(|_| CortexError::config("MCP authentication discovery failed"))?;
 
                 if response.status().is_success() {
-                    let metadata: OAuthServerMetadata = response.json().await.map_err(|e| {
-                        CortexError::config(format!("Failed to parse OIDC metadata: {e}"))
+                    let metadata: OAuthServerMetadata = response.json().await.map_err(|_| {
+                        CortexError::config("MCP authentication metadata is invalid")
                     })?;
                     Ok(metadata)
                 } else {
@@ -496,6 +510,7 @@ impl OAuthFlow {
         metadata: &OAuthServerMetadata,
         storage: &mut OAuthStorage,
     ) -> Result<String> {
+        self.validate_metadata(metadata)?;
         // Generate PKCE values
         let code_verifier = Pkce::generate_code_verifier();
         let code_challenge = Pkce::generate_code_challenge(&code_verifier);
@@ -555,6 +570,7 @@ impl OAuthFlow {
         code: &str,
         storage: &mut OAuthStorage,
     ) -> Result<OAuthTokens> {
+        self.validate_metadata(metadata)?;
         // Get stored code verifier
         let code_verifier = storage
             .get(&self.mcp_name)
@@ -602,23 +618,34 @@ impl OAuthFlow {
             .form(&params)
             .send()
             .await
-            .map_err(|e| CortexError::Auth(format!("Token request failed: {e}")))?;
+            .map_err(|_| CortexError::Auth("MCP authentication request failed".into()))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
             return Err(CortexError::Auth(format!(
-                "Token exchange failed: {status} - {body}"
+                "MCP authentication failed (status {status})"
             )));
         }
 
         let token_response: TokenResponse = response
             .json()
             .await
-            .map_err(|e| CortexError::Auth(format!("Failed to parse token response: {e}")))?;
+            .map_err(|_| CortexError::Auth("MCP authentication response is invalid".into()))?;
 
         let tokens = OAuthTokens::from(token_response);
 
+        if let Some(client_id) = &self.config.client_id {
+            storage.update_client_info(
+                &self.mcp_name,
+                OAuthClientInfo {
+                    client_id: client_id.clone(),
+                    client_secret: self.config.client_secret.clone(),
+                    client_id_issued_at: None,
+                    client_secret_expires_at: None,
+                },
+                Some(&self.server_url),
+            );
+        }
         // Store tokens
         storage.update_tokens(&self.mcp_name, tokens.clone(), Some(&self.server_url));
         storage.clear_code_verifier(&self.mcp_name);
@@ -635,6 +662,7 @@ impl OAuthFlow {
         metadata: &OAuthServerMetadata,
         storage: &mut OAuthStorage,
     ) -> Result<OAuthTokens> {
+        self.validate_metadata(metadata)?;
         // Get stored refresh token
         let refresh_token = storage
             .get(&self.mcp_name)
@@ -659,7 +687,7 @@ impl OAuthFlow {
         // Build refresh request
         let mut params = vec![
             ("grant_type", "refresh_token".to_string()),
-            ("refresh_token", refresh_token),
+            ("refresh_token", refresh_token.clone()),
             ("client_id", client_id),
         ];
 
@@ -681,22 +709,30 @@ impl OAuthFlow {
             .form(&params)
             .send()
             .await
-            .map_err(|e| CortexError::Auth(format!("Token refresh failed: {e}")))?;
+            .map_err(|_| CortexError::Auth("MCP authentication refresh failed".into()))?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
             return Err(CortexError::Auth(format!(
-                "Token refresh failed: {status} - {body}"
+                "MCP authentication refresh failed (status {status})"
             )));
         }
 
         let token_response: TokenResponse = response
             .json()
             .await
-            .map_err(|e| CortexError::Auth(format!("Failed to parse token response: {e}")))?;
+            .map_err(|_| CortexError::Auth("MCP authentication response is invalid".into()))?;
 
-        let tokens = OAuthTokens::from(token_response);
+        let mut tokens = OAuthTokens::from(token_response);
+        if tokens.refresh_token.is_none() {
+            tokens.refresh_token = Some(refresh_token);
+        }
+        if tokens.scope.is_none() {
+            tokens.scope = storage
+                .get_for_url(&self.mcp_name, &self.server_url)
+                .and_then(|e| e.tokens.as_ref())
+                .and_then(|t| t.scope.clone());
+        }
 
         // Store new tokens
         storage.update_tokens(&self.mcp_name, tokens.clone(), Some(&self.server_url));
@@ -752,8 +788,47 @@ pub async fn has_stored_tokens(mcp_name: &str) -> Result<bool> {
         .is_some())
 }
 
+/// Serialize runtime refresh and logout so an in-flight refresh cannot restore logged-out tokens.
+static CREDENTIAL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Runtime authorization never launches a browser or follows an unconfigured host.
+pub async fn stored_access_token(mcp_name: &str, server_url: &str) -> Result<Option<String>> {
+    let _guard = CREDENTIAL_LOCK.lock().await;
+    let mut storage = OAuthStorage::load().await?;
+    access_token_from_storage(mcp_name, server_url, &mut storage).await
+}
+
+async fn access_token_from_storage(
+    mcp_name: &str,
+    server_url: &str,
+    storage: &mut OAuthStorage,
+) -> Result<Option<String>> {
+    let Some(entry) = storage.get_for_url(mcp_name, server_url) else {
+        return Ok(None);
+    };
+    let Some(tokens) = &entry.tokens else {
+        return Ok(None);
+    };
+    if !tokens
+        .expires_at
+        .is_some_and(|expiry| expiry <= chrono::Utc::now().timestamp() + 30)
+    {
+        return Ok(Some(tokens.access_token.clone()));
+    }
+    if tokens.refresh_token.is_none() {
+        return Err(CortexError::Auth(
+            "MCP login expired; run cortex mcp auth".into(),
+        ));
+    }
+    let flow = OAuthFlow::new(mcp_name, server_url);
+    let metadata = flow.discover_metadata().await?;
+    let tokens = flow.refresh_tokens(&metadata, storage).await?;
+    Ok(Some(tokens.access_token))
+}
+
 /// Remove OAuth credentials for an MCP server.
 pub async fn remove_auth(mcp_name: &str) -> Result<()> {
+    let _guard = CREDENTIAL_LOCK.lock().await;
     let mut storage = OAuthStorage::load().await?;
     storage.remove(mcp_name);
     storage.save().await?;
@@ -764,6 +839,70 @@ pub async fn remove_auth(mcp_name: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn runtime_tokens_are_url_bound_expire_and_disappear_after_logout() {
+        let mut storage = OAuthStorage::default();
+        storage.update_tokens(
+            "fixture",
+            OAuthTokens {
+                access_token: "synthetic-access".into(),
+                refresh_token: None,
+                expires_at: None,
+                scope: None,
+            },
+            Some("https://configured.example/rpc"),
+        );
+        assert_eq!(
+            access_token_from_storage("fixture", "https://configured.example/rpc", &mut storage)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("synthetic-access")
+        );
+        assert!(
+            access_token_from_storage("fixture", "https://other.example/rpc", &mut storage)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(!format!("{storage:?}").contains("synthetic-access"));
+        storage
+            .entries
+            .get_mut("fixture")
+            .unwrap()
+            .tokens
+            .as_mut()
+            .unwrap()
+            .expires_at = Some(1);
+        assert!(
+            access_token_from_storage("fixture", "https://configured.example/rpc", &mut storage)
+                .await
+                .is_err()
+        );
+        storage.remove("fixture");
+        assert!(
+            access_token_from_storage("fixture", "https://configured.example/rpc", &mut storage)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn oauth_metadata_cannot_redirect_tokens_to_another_origin() {
+        let flow = OAuthFlow::new("fixture", "https://configured.example/rpc");
+        let metadata = OAuthServerMetadata {
+            authorization_endpoint: "https://configured.example/authorize".into(),
+            token_endpoint: "https://unconfigured.example/token".into(),
+            registration_endpoint: None,
+            scopes_supported: None,
+            response_types_supported: None,
+            grant_types_supported: None,
+            code_challenge_methods_supported: None,
+        };
+        assert!(flow.validate_metadata(&metadata).is_err());
+    }
 
     #[test]
     fn test_pkce_code_verifier() {
@@ -812,3 +951,21 @@ mod tests {
         assert!(tokens.expires_at.is_some());
     }
 }
+
+macro_rules! redacted_debug {
+    ($($name:ty),+ $(,)?) => {$ (
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(concat!(stringify!($name), " { [redacted] }"))
+            }
+        }
+    )+};
+}
+redacted_debug!(
+    OAuthTokens,
+    OAuthClientInfo,
+    OAuthEntry,
+    OAuthStorage,
+    OAuthConfig,
+    TokenResponse
+);

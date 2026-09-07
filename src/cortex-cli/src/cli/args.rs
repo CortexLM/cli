@@ -279,7 +279,7 @@ pub struct InteractiveArgs {
     )]
     pub log_level: LogLevel,
 
-    /// Enable debug mode: writes ALL trace-level logs to ./debug.txt
+    /// Record private, content-free local diagnostics (never prompts or tool output)
     #[arg(long = "debug", help_heading = "Debugging")]
     pub debug: bool,
 

@@ -513,3 +513,138 @@ async fn test_file_mutations_are_confined_to_the_open_workspace() {
         "outside fixture"
     );
 }
+
+#[tokio::test]
+async fn session_resources_are_isolated_between_api_keys() {
+    let mut config = ServerConfig::default();
+    config.auth.enabled = true;
+    config.auth.api_keys = vec!["deterministic-a".into(), "deterministic-b".into()];
+    let state = Arc::new(AppState::new(config).await.unwrap());
+    assert!(Arc::ptr_eq(&state.cli_sessions, &state.cli_session_manager));
+    let router = create_router_with_state(state);
+    let session = json_body(
+        router
+            .clone()
+            .oneshot(request(
+                "POST",
+                "/api/v1/sessions",
+                Some("deterministic-a"),
+                Some(json!({"model":"fixture"})),
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let path = format!("/api/v1/sessions/{}", session["id"].as_str().unwrap());
+    for (method, suffix, body) in [
+        ("GET", "", None),
+        ("GET", "/messages", None),
+        ("POST", "/messages", Some(json!({"content":"unauthorized"}))),
+        ("DELETE", "", None),
+    ] {
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request(
+                    method,
+                    &format!("{path}{suffix}"),
+                    Some("deterministic-b"),
+                    body
+                ))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+    assert_eq!(
+        json_body(
+            router
+                .clone()
+                .oneshot(request(
+                    "GET",
+                    "/api/v1/sessions",
+                    Some("deterministic-b"),
+                    None
+                ))
+                .await
+                .unwrap()
+        )
+        .await,
+        json!([])
+    );
+    assert_eq!(
+        router
+            .oneshot(request("GET", &path, Some("deterministic-a"), None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn live_session_routes_never_bypass_authentication() {
+    let (router, _, _) = configured(ServerConfig::default()).await;
+    for (method, path, body) in [
+        ("GET", "/api/v1/cli/sessions", None),
+        ("GET", "/api/v1/cli/sessions/missing/events", None),
+        (
+            "POST",
+            "/api/v1/cli/sessions/missing/chat",
+            Some(json!({"content":"fixture"})),
+        ),
+        ("POST", "/api/v1/cli/sessions/missing/interrupt", None),
+        (
+            "POST",
+            "/api/v1/cli/sessions/missing/approve",
+            Some(json!({"call_id":"a","approved":true})),
+        ),
+    ] {
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request(method, path, None, body))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+}
+
+#[tokio::test]
+async fn reordering_api_keys_does_not_transfer_session_ownership() {
+    let mut config = ServerConfig::default();
+    config.auth.enabled = true;
+    config.auth.api_keys = vec!["fixture-a".into(), "fixture-b".into()];
+    let mut state = AppState::new(config).await.unwrap();
+    let owner = format!("api:sha256:{}", AuthService::hash_api_key("fixture-a"));
+    let session = state
+        .create_session(cortex_app_server::state::CreateSessionOptions {
+            user_id: Some(owner),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    state.config.auth.api_keys.reverse();
+    let router = create_router_with_state(Arc::new(state));
+    let path = format!("/api/v1/sessions/{}", session.id);
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(request("GET", &path, Some("fixture-a"), None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        router
+            .oneshot(request("GET", &path, Some("fixture-b"), None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+}

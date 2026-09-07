@@ -31,12 +31,16 @@ mod auth;
 mod commands;
 mod core;
 mod input;
+mod local_workflows;
 mod modal;
 mod mouse;
 mod rendering;
+mod sessions;
 mod streaming;
 mod subagent;
 mod tools;
+#[cfg(test)]
+mod ux_contract_tests;
 
 #[cfg(test)]
 mod tests;

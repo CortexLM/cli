@@ -21,6 +21,7 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [Sessions](guides/sessions.md) | Resume, list, export, import, share, protect |
 | [Headless / exec mode](guides/exec.md) | Non-interactive runs for scripts and CI |
 | [Plan and Spec modes](guides/plan.md) | Get a plan approved before anything is written |
+| [Editor integration](guides/editor.md) | What running Cortex inside an editor terminal does and does not provide |
 | [Development and local QA](guides/development.md) | Reproducible setup, real local tests, coverage and test reports |
 | [Source quality](guides/quality.md) | Dependency, complexity, duplication, feature-flag and contract gates |
 
@@ -54,6 +55,7 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [Signing in](reference/login.md) | Browser, device-code, SSO and token sign-in; the keyring |
 | [Local app-server API](reference/app-server.md) | Authentication, supported OpenAPI contract and local readiness |
 | [Privacy](reference/privacy.md) | Local diagnostic allowlist, consent, retention and data boundaries |
+| [Local client SDK](reference/sdk.md) | Typed TypeScript client for an installed `cortex exec` subprocess |
 
 ### Operations
 

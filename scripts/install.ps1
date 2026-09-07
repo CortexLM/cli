@@ -64,135 +64,180 @@ function Resolve-CortexInstallPlatform {
     switch -Regex ([string]$arch) {
         '^(?i:X64|AMD64)$' { return "windows-x86_64" }
         '^(?i:ARM64)$' {
-            throw "install.ps1: Windows ARM64 builds are not published yet. Use an x64 machine or the GitHub Release."
+            throw "install.ps1: Windows ARM64 builds are not published yet. Use a supported x64 Windows machine."
         }
     }
 
-    if ($Is64BitOperatingSystem) {
-        return "windows-x86_64"
-    }
 
     $label = if ($arch) { $arch } else { "unknown" }
     throw "install.ps1: unsupported architecture: $label"
 }
 
-$SoftwareUrl = if ($env:CORTEX_SOFTWARE_URL) { $env:CORTEX_SOFTWARE_URL.TrimEnd("/") } else { "https://software.cortex.foundation" }
-$Channel = if ($env:CORTEX_CHANNEL) { $env:CORTEX_CHANNEL } else { "stable" }
-$Prefix = if ($env:CORTEX_INSTALL_DIR) { $env:CORTEX_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Cortex" }
-$BinDir = Join-Path $Prefix "bin"
-$PinnedVersion = if ($env:CORTEX_VERSION) { $env:CORTEX_VERSION.TrimStart("v") } else { $null }
-
-if ($Channel -notin @("stable", "beta", "nightly")) {
-    throw "install.ps1: invalid CORTEX_CHANNEL='$Channel' (use stable, beta, or nightly)"
-}
-
-$processorArchitecture = $env:PROCESSOR_ARCHITECTURE
-if ($env:PROCESSOR_ARCHITEW6432) {
-    $processorArchitecture = $env:PROCESSOR_ARCHITEW6432
-}
-
-$Platform = Resolve-CortexInstallPlatform `
-    -RuntimeOsArchitecture (Get-CortexRuntimeOsArchitecture) `
-    -ProcessorArchitecture $processorArchitecture `
-    -Is64BitOperatingSystem ([Environment]::Is64BitOperatingSystem)
-
-function Get-Json($Url) {
-    return Invoke-RestMethod -Uri $Url -Method Get
-}
-
-function Try-GetJson($Url) {
+# Bounded same-origin downloads, with no redirect or remote HTTP fallback.
+function Save-CortexDownload {
+    param([string]$Url, [string]$Destination, [long]$Limit)
+    $request = [System.Net.HttpWebRequest]::Create($Url)
+    $request.AllowAutoRedirect = $false
+    $request.Timeout = 10000
+    $request.ReadWriteTimeout = 10000
+    $response = $null
+    $source = $null
+    $output = $null
     try {
-        return Invoke-RestMethod -Uri $Url -Method Get
-    } catch {
-        return $null
+        $response = $request.GetResponse()
+        if ([int]$response.StatusCode -ne 200 -or $response.ContentLength -gt $Limit) {
+            throw "install.ps1: unexpected download status or size"
+        }
+        $source = $response.GetResponseStream()
+        $output = [System.IO.File]::Create($Destination)
+        $buffer = New-Object byte[] 65536
+        $total = 0L
+        $timer = [System.Diagnostics.Stopwatch]::StartNew()
+        while (($count = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $total += $count
+            if ($total -gt $Limit -or $timer.Elapsed.TotalSeconds -gt 120) {
+                throw "install.ps1: download exceeds size/time limit"
+            }
+            $output.Write($buffer, 0, $count)
+        }
+    } finally {
+        if ($null -ne $output) { $output.Dispose() }
+        if ($null -ne $source) { $source.Dispose() }
+        if ($null -ne $response) { $response.Dispose() }
     }
 }
 
-Write-Host "Cortex CLI installer"
-Write-Host "  host:     $SoftwareUrl"
-Write-Host "  platform: $Platform"
-Write-Host "  prefix:   $Prefix"
-
-$release = $null
-$version = $PinnedVersion
-
-if ($version) {
-    $release = Try-GetJson "$SoftwareUrl/releases/$version.json"
-    if (-not $release) {
-        $release = Try-GetJson "$SoftwareUrl/v1/releases/$version.json"
-    }
-    if (-not $release) {
-        throw "install.ps1: could not fetch release metadata for $version from $SoftwareUrl"
-    }
-} else {
-    $manifest = Try-GetJson "$SoftwareUrl/releases/manifest.json"
-    if (-not $manifest) {
-        $manifest = Try-GetJson "$SoftwareUrl/v1/releases/manifest.json"
-    }
-    if (-not $manifest) {
-        throw "install.ps1: could not fetch $SoftwareUrl/releases/manifest.json"
-    }
-    $release = $manifest.$Channel
-    if (-not $release) {
-        throw "install.ps1: no $Channel release in manifest"
-    }
-    $version = $release.version
+function Expand-CortexBinary {
+    param([string]$Archive, [string]$Destination)
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($Archive)
+    try {
+        if ($zip.Entries.Count -ne 1) { throw "install.ps1: archive must contain only Cortex.exe" }
+        $entry = $zip.Entries[0]
+        if ($entry.FullName -cne 'Cortex.exe' -or $entry.Length -le 0 -or $entry.Length -gt 536870912) {
+            throw "install.ps1: invalid archive entry"
+        }
+        # Reject Unix symlink/device entries as well as directory entries.
+        $kind = ($entry.ExternalAttributes -shr 16) -band 61440
+        if ($kind -ne 0 -and $kind -ne 32768) { throw "install.ps1: non-regular archive entry" }
+        $source = $entry.Open()
+        $output = $null
+        try {
+            $output = [IO.File]::Open($Destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+            $buffer = New-Object byte[] 65536
+            $total = 0L
+            while (($count = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $total += $count
+                if ($total -gt $entry.Length -or $total -gt 536870912) {
+                    throw "install.ps1: extracted size limit exceeded"
+                }
+                $output.Write($buffer, 0, $count)
+            }
+            if ($total -ne $entry.Length) { throw "install.ps1: extracted size mismatch" }
+        } finally {
+            if ($null -ne $output) { $output.Dispose() }
+            $source.Dispose()
+        }
+    } finally { $zip.Dispose() }
 }
 
-$asset = $release.assets.$Platform
-if (-not $asset) {
-    throw "install.ps1: no asset for platform $Platform in version $version"
+function Test-CortexVersion {
+    param([string]$Binary, [string]$Version, [string]$Scratch)
+    $out = Join-Path $Scratch 'version.stdout'
+    $err = Join-Path $Scratch 'version.stderr'
+    $process = Start-Process -FilePath $Binary -ArgumentList '--version' -PassThru -NoNewWindow `
+        -RedirectStandardOutput $out -RedirectStandardError $err
+    try {
+        if (-not $process.WaitForExit(15000)) {
+            $process.Kill()
+            throw "install.ps1: binary version check timed out"
+        }
+        $process.WaitForExit()
+        if ((Get-Item -LiteralPath $out).Length -gt 65536) { throw "install.ps1: invalid version output" }
+        $words = ((Get-Content -LiteralPath $out -Raw).Trim() -split '\s+')
+        if ($process.ExitCode -ne 0 -or $words[-1] -cne $Version) {
+            throw "install.ps1: binary version check failed"
+        }
+    } finally { $process.Dispose() }
 }
 
-$expectedSha = ([string]$asset.sha256).Trim().ToLowerInvariant()
-if (-not $expectedSha) {
-    throw "install.ps1: release JSON missing sha256 for $Platform"
+# Windows-only; do not guess a platform from the process bitness.
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    throw "install.ps1: unsupported OS (Windows required)"
 }
-
-Write-Host "  version:  $version"
-Write-Host "  download: $($asset.url)"
-
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("cortex-install-" + [guid]::NewGuid().ToString("N"))
+$SoftwareUrl = if ($env:CORTEX_SOFTWARE_URL) { $env:CORTEX_SOFTWARE_URL.TrimEnd('/') } else { 'https://software.cortex.foundation' }
+$origin = [Uri]$SoftwareUrl
+if (-not $origin.IsAbsoluteUri -or $origin.UserInfo -or $origin.Query -or $origin.Fragment -or $origin.AbsolutePath -ne '/' -or
+    ($origin.Scheme -ne 'https' -and -not ($origin.Scheme -eq 'http' -and $origin.Host -in @('127.0.0.1', 'localhost', '[::1]')))) {
+    throw "install.ps1: distribution URL must be an HTTPS origin (HTTP only for loopback tests)"
+}
+$Channel = if ($env:CORTEX_CHANNEL) { $env:CORTEX_CHANNEL } else { 'stable' }
+if ($Channel -notin @('stable', 'beta', 'nightly')) { throw "install.ps1: invalid release channel" }
+$Prefix = if ($env:CORTEX_INSTALL_DIR) { $env:CORTEX_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Cortex' }
+$BinDir = Join-Path $Prefix 'bin'
+$version = if ($env:CORTEX_VERSION) { $env:CORTEX_VERSION -replace '^v', '' } else { '' }
+$versionPattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$'
+if ($version -and $version -cnotmatch $versionPattern) { throw "install.ps1: invalid version" }
+$processorArchitecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+$Platform = Resolve-CortexInstallPlatform -RuntimeOsArchitecture (Get-CortexRuntimeOsArchitecture) `
+    -ProcessorArchitecture $processorArchitecture -Is64BitOperatingSystem ([Environment]::Is64BitOperatingSystem)
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('cortex-install-' + [guid]::NewGuid().ToString('N'))
+$stageDir = $null
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 try {
-    $zipPath = Join-Path $tempRoot "cortex.zip"
-    Invoke-WebRequest -Uri $asset.url -OutFile $zipPath -UseBasicParsing
-
-    $actualSha = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actualSha -ne $expectedSha) {
-        throw "install.ps1: SHA-256 mismatch for cortex.zip: expected $expectedSha, got $actualSha"
+    $metadata = Join-Path $tempRoot 'release.json'
+    $file = if ($version) { "$version.json" } else { 'manifest.json' }
+    try { Save-CortexDownload "$SoftwareUrl/releases/$file" $metadata 2097152 }
+    catch { Save-CortexDownload "$SoftwareUrl/v1/releases/$file" $metadata 2097152 }
+    $data = Get-Content -LiteralPath $metadata -Raw | ConvertFrom-Json
+    $release = if ($version) { $data } else { $data.$Channel }
+    if (-not $release -or $release.version -cnotmatch $versionPattern -or
+        ($version -and $release.version -cne $version) -or $release.channel -cne $Channel) {
+        throw "install.ps1: release version/channel mismatch"
     }
-    Write-Host "  checksum: ok"
-
-    $extractDir = Join-Path $tempRoot "extract"
-    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
-
-    $binary = Get-ChildItem -Path $extractDir -Recurse -File |
-        Where-Object { $_.Name -in @("Cortex.exe", "cortex.exe") } |
-        Select-Object -First 1
-    if (-not $binary) {
-        throw "install.ps1: archive did not contain Cortex.exe"
+    $version = $release.version
+    $asset = $release.assets.$Platform
+    $expectedUrl = "$SoftwareUrl/v1/assets/$Platform/$version/cortex.zip"
+    if (-not $asset -or $asset.url -cne $expectedUrl -or $asset.sha256 -cnotmatch '^[a-fA-F0-9]{64}$' -or
+        ($asset.size -isnot [int] -and $asset.size -isnot [long]) -or $asset.size -le 0 -or $asset.size -gt 536870912) {
+        throw "install.ps1: invalid asset metadata"
     }
-
+    $zipPath = Join-Path $tempRoot 'cortex.zip'
+    Save-CortexDownload $asset.url $zipPath $asset.size
+    if ((Get-Item -LiteralPath $zipPath).Length -ne $asset.size) { throw "install.ps1: archive size mismatch" }
+    if ((Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash -ine $asset.sha256) {
+        throw "install.ps1: SHA-256 mismatch"
+    }
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-    $dest = Join-Path $BinDir "Cortex.exe"
-    Copy-Item -Path $binary.FullName -Destination $dest -Force
-    Copy-Item -Path $dest -Destination (Join-Path $BinDir "agent.exe") -Force
-
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $pathParts = @()
-    if ($userPath) {
-        $pathParts = $userPath.Split(";", [System.StringSplitOptions]::RemoveEmptyEntries)
+    $dest = Join-Path $BinDir 'Cortex.exe'
+    $backup = Join-Path $BinDir 'Cortex.old.exe'
+    foreach ($path in @($dest, $backup)) {
+        if (Test-Path -LiteralPath $path) {
+            $item = Get-Item -LiteralPath $path -Force
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "install.ps1: refusing non-regular installation target"
+            }
+        }
     }
-    if ($pathParts -notcontains $BinDir) {
-        $newPath = if ($userPath) { "$userPath;$BinDir" } else { $BinDir }
-        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-        $env:Path = "$env:Path;$BinDir"
-        Write-Host "Added $BinDir to the user PATH."
+    $stageDir = Join-Path $BinDir ('.cortex-install-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $stageDir | Out-Null
+    $staged = Join-Path $stageDir 'Cortex.exe'
+    Expand-CortexBinary $zipPath $staged
+    Test-CortexVersion $staged $version $stageDir
+    $hadPrevious = Test-Path -LiteralPath $dest
+    if ($hadPrevious) { [IO.File]::Replace($staged, $dest, $backup) }
+    else { [IO.File]::Move($staged, $dest) }
+    try { Test-CortexVersion $dest $version $stageDir }
+    catch {
+        if ($hadPrevious) { [IO.File]::Replace($backup, $dest, $null) }
+        else { Remove-Item -LiteralPath $dest }
+        throw
     }
-
+    # Do not overwrite unrelated agent.exe commands or edit the user's PATH.
     Write-Host "Installed Cortex CLI v$version to $dest"
-    Write-Host "Restart the terminal, then run: cortex --version"
+    Write-Host "Add $BinDir to your user PATH, then run: cortex --version"
+    if ($hadPrevious) { Write-Host "Previous binary retained at $backup" }
 } finally {
-    Remove-Item -Recurse -Force $tempRoot -ErrorAction SilentlyContinue
+    if ($stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue }
+    Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

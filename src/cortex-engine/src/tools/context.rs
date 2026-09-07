@@ -3,12 +3,21 @@
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use cortex_common::normalize_path as normalize_path_util;
 use cortex_protocol::SandboxPolicy;
 use tokio::sync::mpsc;
 
 use crate::integrations::LspIntegration;
+
+#[derive(Clone)]
+struct ApprovedCall {
+    name: String,
+    arguments: serde_json::Value,
+    cwd: PathBuf,
+    used: Arc<AtomicBool>,
+}
 
 /// Output chunk from tool execution
 #[derive(Debug, Clone)]
@@ -38,6 +47,13 @@ pub struct ToolContext {
     pub output_sender: Option<mpsc::Sender<(String, ToolOutputChunk)>>,
     /// LSP integration.
     pub lsp: Option<Arc<LspIntegration>>,
+    /// Only roots explicitly opened by the trusted caller, never sandbox cache roots.
+    opened_roots: Vec<PathBuf>,
+    read_only: bool,
+    child: bool,
+    approved_calls: Vec<ApprovedCall>,
+    denied_tools: Vec<String>,
+    allowed_fetch_hosts: Vec<String>,
 }
 
 impl std::fmt::Debug for ToolContext {
@@ -45,7 +61,7 @@ impl std::fmt::Debug for ToolContext {
         f.debug_struct("ToolContext")
             .field("cwd", &self.cwd)
             .field("sandbox_policy", &self.sandbox_policy)
-            .field("env", &self.env)
+            .field("env_keys", &self.env.keys().collect::<Vec<_>>())
             .field("turn_id", &self.turn_id)
             .field("conversation_id", &self.conversation_id)
             .field("auto_approve", &self.auto_approve)
@@ -59,7 +75,7 @@ impl ToolContext {
     /// Create a new tool context.
     pub fn new(cwd: PathBuf) -> Self {
         // Build environment with non-interactive settings
-        let mut env: HashMap<String, String> = std::env::vars().collect();
+        let mut env = crate::exec::build_safe_environment(&HashMap::new());
 
         // Force non-interactive mode for common tools
         env.insert("CI".to_string(), "true".to_string());
@@ -75,6 +91,7 @@ impl ToolContext {
         // Force create-next-app to not ask questions
         env.insert("npm_config_yes".to_string(), "true".to_string());
 
+        let opened_roots = cwd.canonicalize().ok().into_iter().collect();
         Self {
             cwd,
             sandbox_policy: SandboxPolicy::default(),
@@ -85,7 +102,133 @@ impl ToolContext {
             call_id: String::new(),
             output_sender: None,
             lsp: None,
+            opened_roots,
+            read_only: false,
+            child: false,
+            approved_calls: Vec::new(),
+            denied_tools: Vec::new(),
+            allowed_fetch_hosts: vec![
+                "api.cortex.foundation".into(),
+                "auth.cortex.foundation".into(),
+                "software.cortex.foundation".into(),
+            ],
         }
+    }
+
+    /// Add a root that the operator explicitly opened. Sandbox temp/cache paths
+    /// do not grant file-tool authority.
+    pub fn with_opened_root(mut self, root: PathBuf) -> Result<Self, String> {
+        let root = root
+            .canonicalize()
+            .map_err(|_| "Opened root does not exist")?;
+        if !root.is_dir() {
+            return Err("Opened root must be a directory".into());
+        }
+        self.opened_roots.push(root);
+        Ok(self)
+    }
+
+    /// Set the trusted harness mode. Environment variables can only tighten it.
+    pub fn with_read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
+        self
+    }
+
+    /// Approve exactly this tool and argument value at the current cwd.
+    /// This does not approve a different call nested inside Task or Batch.
+    pub fn with_approved_tool_call(
+        mut self,
+        name: impl Into<String>,
+        arguments: &serde_json::Value,
+    ) -> Self {
+        self.approved_calls.push(ApprovedCall {
+            name: name.into(),
+            arguments: arguments.clone(),
+            cwd: self.cwd.clone(),
+            used: Arc::new(AtomicBool::new(false)),
+        });
+        self
+    }
+
+    /// Explicit deny rules take precedence even over unattended auto-approval.
+    pub fn with_denied_tools(mut self, names: Vec<String>) -> Self {
+        self.denied_tools.extend(names);
+        self
+    }
+
+    /// Derive a child with identical roots, mode, and sandbox but no one-call grants.
+    pub fn for_child(mut self) -> Self {
+        self.child = true;
+        self.approved_calls.clear();
+        self
+    }
+
+    /// Explicit operator allowlist extension; never populated from tool arguments.
+    pub fn with_allowed_fetch_host(mut self, host: impl Into<String>) -> Self {
+        self.allowed_fetch_hosts
+            .push(host.into().to_ascii_lowercase());
+        self
+    }
+
+    pub fn allowed_fetch_hosts(&self) -> &[String] {
+        &self.allowed_fetch_hosts
+    }
+
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+            || matches!(self.sandbox_policy, SandboxPolicy::ReadOnly)
+            || self.env.get("CORTEX_SPEC_MODE").is_some_and(|v| v == "1")
+            || self
+                .env
+                .get("CORTEX_OPERATION_MODE")
+                .is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "spec" | "plan" | "ask"))
+    }
+
+    pub fn is_child(&self) -> bool {
+        self.child
+            || self.env.get("CORTEX_CHILD_TASK").is_some_and(|v| v == "1")
+            || self.conversation_id.starts_with("sub_")
+            || self.conversation_id.starts_with("task_")
+    }
+
+    pub(crate) fn is_tool_denied(&self, name: &str) -> bool {
+        self.denied_tools
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case(name))
+    }
+
+    pub(crate) fn is_approved(&self, name: &str, arguments: &serde_json::Value) -> bool {
+        self.auto_approve
+            || self.approved_calls.iter().any(|call| {
+                call.name == name
+                    && call.arguments == *arguments
+                    && call.cwd == self.cwd
+                    && !call.used.load(Ordering::Acquire)
+            })
+    }
+
+    pub(crate) fn consume_approval(&self, name: &str, arguments: &serde_json::Value) -> bool {
+        self.auto_approve
+            || self.approved_calls.iter().any(|call| {
+                call.name == name
+                    && call.arguments == *arguments
+                    && call.cwd == self.cwd
+                    && call
+                        .used
+                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+            })
+    }
+
+    /// Redact known sensitive override values as well as recognizable secret syntax.
+    pub fn redact(&self, text: &str) -> String {
+        let mut redacted = text.to_owned();
+        for (name, value) in &self.env {
+            if crate::exec::is_sensitive_env_name(name) && !value.is_empty() {
+                redacted = redacted.replace(value, "[REDACTED]");
+            }
+        }
+        super::redaction::redact(&redacted)
     }
 
     /// Set LSP integration.
@@ -133,6 +276,10 @@ impl ToolContext {
     /// Send an output chunk if sender is available.
     pub async fn send_output(&self, chunk: ToolOutputChunk) {
         if let Some(sender) = &self.output_sender {
+            let chunk = match chunk {
+                ToolOutputChunk::Stdout(s) => ToolOutputChunk::Stdout(self.redact(&s)),
+                ToolOutputChunk::Stderr(s) => ToolOutputChunk::Stderr(self.redact(&s)),
+            };
             let _ = sender.send((self.call_id.clone(), chunk)).await;
         }
     }
@@ -173,71 +320,43 @@ impl ToolContext {
     /// * `Ok(PathBuf)` - The resolved and validated path
     /// * `Err(String)` - If the path would escape allowed directories
     pub fn resolve_and_validate_path(&self, path: &str) -> Result<PathBuf, String> {
-        let resolved = self.resolve_path(path);
-
-        // Get the canonical cwd if it exists
-        let canonical_cwd = if self.cwd.exists() {
-            self.cwd
-                .canonicalize()
-                .unwrap_or_else(|_| Self::normalize_path(&self.cwd))
-        } else {
-            Self::normalize_path(&self.cwd)
-        };
-
-        // For existing paths, canonicalize to resolve symlinks
-        let canonical_resolved = if resolved.exists() {
-            resolved
-                .canonicalize()
-                .map_err(|e| format!("Failed to canonicalize path: {}", e))?
-        } else {
-            // For non-existent paths, normalize and check parent
-            if let Some(parent) = resolved.parent() {
-                if parent.exists() {
-                    let canonical_parent = parent
-                        .canonicalize()
-                        .map_err(|e| format!("Failed to canonicalize parent: {}", e))?;
-                    let file_name = resolved
-                        .file_name()
-                        .ok_or_else(|| "Invalid file name".to_string())?;
-                    canonical_parent.join(file_name)
-                } else {
-                    Self::normalize_path(&resolved)
-                }
-            } else {
-                Self::normalize_path(&resolved)
-            }
-        };
-
-        // Check if the resolved path starts with cwd
-        if canonical_resolved.starts_with(&canonical_cwd) {
-            return Ok(canonical_resolved);
+        // Never normalize `symlink/..` before filesystem resolution.
+        if Path::new(path)
+            .components()
+            .any(|c| matches!(c, Component::ParentDir))
+        {
+            return Err("Parent traversal is not allowed; use a path inside an opened root".into());
         }
+        let resolved = if Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.cwd.join(path)
+        };
+        let canonical = canonicalize_create_path(&resolved)?;
+        if self
+            .opened_roots
+            .iter()
+            .any(|root| canonical.starts_with(root))
+        {
+            Ok(canonical)
+        } else {
+            Err("Path is outside explicitly opened workspace roots".into())
+        }
+    }
 
-        // Check against writable roots from sandbox policy
-        let writable_roots = self.sandbox_policy.get_writable_roots_with_cwd(&self.cwd);
-        for writable_root in &writable_roots {
-            let canonical_root = if writable_root.root.exists() {
-                writable_root
-                    .root
-                    .canonicalize()
-                    .unwrap_or_else(|_| Self::normalize_path(&writable_root.root))
-            } else {
-                Self::normalize_path(&writable_root.root)
-            };
-
-            if canonical_resolved.starts_with(&canonical_root) {
-                // Check it's not in a read-only subpath
-                if writable_root.is_path_writable(&canonical_resolved) {
-                    return Ok(canonical_resolved);
-                }
+    pub fn resolve_write_path(&self, path: &str) -> Result<PathBuf, String> {
+        if self.is_read_only() {
+            return Err("Read-only mode prohibits filesystem changes".into());
+        }
+        let resolved = self.resolve_and_validate_path(path)?;
+        for candidate in [Path::new(path), resolved.as_path()] {
+            if candidate.components().any(|part| {
+                matches!(part, Component::Normal(name) if name == ".git" || name == ".cortex")
+            }) {
+                return Err("Workspace control metadata is read-only".into());
             }
         }
-
-        Err(format!(
-            "Path '{}' is outside allowed directories (cwd: {})",
-            path,
-            self.cwd.display()
-        ))
+        Ok(resolved)
     }
 
     /// Normalize a path by resolving `.` and `..` components without filesystem access.
@@ -249,5 +368,37 @@ impl ToolContext {
     pub fn contains_traversal(path: &str) -> bool {
         let p = Path::new(path);
         p.components().any(|c| matches!(c, Component::ParentDir))
+    }
+}
+
+/// Canonicalize the nearest existing ancestor, including dangling symlink
+/// detection, before appending components of a new nested file.
+fn canonicalize_create_path(path: &Path) -> Result<PathBuf, String> {
+    let mut ancestor = path.to_path_buf();
+    let mut missing = Vec::new();
+    loop {
+        match std::fs::symlink_metadata(&ancestor) {
+            Ok(_) => {
+                let mut resolved = ancestor
+                    .canonicalize()
+                    .map_err(|_| "Cannot resolve file path")?;
+                for name in missing.iter().rev() {
+                    resolved.push(name);
+                }
+                return Ok(resolved);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(
+                    ancestor
+                        .file_name()
+                        .ok_or("Invalid file path")?
+                        .to_os_string(),
+                );
+                if !ancestor.pop() {
+                    return Err("Cannot resolve file path".into());
+                }
+            }
+            Err(_) => return Err("Cannot access file path".into()),
+        }
     }
 }

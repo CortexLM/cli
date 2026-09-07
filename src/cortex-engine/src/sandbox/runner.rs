@@ -96,8 +96,9 @@ impl SandboxRunner {
         if let Some(backend) = &self.backend {
             backend.prepare_command(command, policy, cwd, &writable_roots)
         } else {
-            // No sandbox available, pass through
-            Ok(SandboxedCommand::passthrough(command))
+            Err(crate::error::CortexError::Sandbox(
+                "Required sandbox is unavailable; command was not started".into(),
+            ))
         }
     }
 }

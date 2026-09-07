@@ -115,15 +115,13 @@ fn validate_session_id(session_id: &str) -> Result<()> {
 }
 
 /// Get the lock file path.
-fn get_lock_file_path() -> PathBuf {
-    dirs::home_dir()
-        .map(|h| h.join(".cortex").join("session_locks.json"))
-        .unwrap_or_else(|| PathBuf::from(".cortex/session_locks.json"))
+fn get_lock_file_path() -> Result<PathBuf> {
+    Ok(cortex_engine::rollout::local::default_home()?.join("session_locks.json"))
 }
 
 /// Load the lock file.
 fn load_lock_file() -> Result<LockFile> {
-    let path = get_lock_file_path();
+    let path = get_lock_file_path()?;
 
     if !path.exists() {
         return Ok(LockFile {
@@ -139,7 +137,7 @@ fn load_lock_file() -> Result<LockFile> {
 
 /// Save the lock file.
 fn save_lock_file(lock_file: &LockFile) -> Result<()> {
-    let path = get_lock_file_path();
+    let path = get_lock_file_path()?;
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = path.parent() {
@@ -147,19 +145,25 @@ fn save_lock_file(lock_file: &LockFile) -> Result<()> {
     }
 
     let content = serde_json::to_string_pretty(lock_file)?;
-    std::fs::write(&path, content)?;
+    use std::io::Write;
+    let mut temp = tempfile::NamedTempFile::new_in(
+        path.parent()
+            .ok_or_else(|| anyhow::anyhow!("Invalid lock path"))?,
+    )?;
+    temp.write_all(content.as_bytes())?;
+    temp.as_file().sync_all()?;
+    temp.persist(&path).map_err(|error| error.error)?;
     Ok(())
 }
 
 /// Check if a session is locked.
 pub fn is_session_locked(session_id: &str) -> bool {
-    match load_lock_file() {
-        Ok(lock_file) => lock_file.locked_sessions.iter().any(|entry| {
-            entry.session_id == session_id
-                || session_id.starts_with(&entry.session_id[..8.min(entry.session_id.len())])
-        }),
-        Err(_) => false,
-    }
+    cortex_engine::rollout::local::SessionStorage::new()
+        .and_then(|store| {
+            let id = store.resolve_id(session_id)?;
+            store.is_protected(&id)
+        })
+        .unwrap_or(true)
 }
 
 impl LockCli {
@@ -202,12 +206,18 @@ impl LockCli {
     }
 }
 
-async fn run_add(args: LockAddArgs) -> Result<()> {
+async fn run_add(mut args: LockAddArgs) -> Result<()> {
     // Validate all session IDs first (Issue #3696)
     for session_id in &args.session_ids {
         validate_session_id(session_id)?;
     }
 
+    let store = cortex_engine::rollout::local::SessionStorage::new()?;
+    args.session_ids = args
+        .session_ids
+        .iter()
+        .map(|id| store.resolve_id(id))
+        .collect::<Result<_>>()?;
     let mut lock_file = load_lock_file()?;
     let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -254,40 +264,39 @@ async fn run_add(args: LockAddArgs) -> Result<()> {
 }
 
 async fn run_remove(args: LockRemoveArgs) -> Result<()> {
-    let mut lock_file = load_lock_file()?;
-
-    // Find sessions to unlock
-    let session_ids: HashSet<String> = args.session_ids.iter().cloned().collect();
-    let to_remove: Vec<_> = lock_file
-        .locked_sessions
+    use std::io::IsTerminal;
+    let store = cortex_engine::rollout::local::SessionStorage::new()?;
+    let ids = args
+        .session_ids
         .iter()
-        .filter(|e| session_ids.contains(&e.session_id))
-        .map(|e| e.session_id.clone())
-        .collect();
-
-    if to_remove.is_empty() {
-        bail!("None of the specified sessions are locked.");
-    }
-
+        .map(|id| store.resolve_id(id))
+        .collect::<Result<Vec<_>>>()?;
+    let mut lock_file = load_lock_file()?;
     if !args.yes {
-        println!(
-            "Are you sure you want to unlock {} session(s)? (y/N)",
-            to_remove.len()
-        );
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
+        if !std::io::stdin().is_terminal() {
+            bail!("Unlock requires --yes without an interactive terminal");
+        }
+        println!("Unlock {} session(s)? [y/N]", ids.len());
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if !answer.trim().eq_ignore_ascii_case("y") {
             println!("Aborted.");
             return Ok(());
         }
     }
-
-    lock_file
-        .locked_sessions
-        .retain(|e| !session_ids.contains(&e.session_id));
+    for id in &ids {
+        let mut meta = store.load_meta(id)?;
+        meta.protected = false;
+        store.save_meta(&meta)?;
+    }
+    lock_file.locked_sessions.retain(|entry| {
+        !ids.iter().any(|id| {
+            id == &entry.session_id
+                || (entry.session_id.len() >= 8 && id.starts_with(&entry.session_id))
+        })
+    });
     save_lock_file(&lock_file)?;
-
-    println!("Unlocked {} session(s).", to_remove.len());
+    println!("Unlocked {} session(s).", ids.len());
     Ok(())
 }
 
@@ -308,7 +317,7 @@ async fn run_list(args: LockListArgs) -> Result<()> {
         println!("{}", "-".repeat(60));
 
         for entry in &lock_file.locked_sessions {
-            let short_id = &entry.session_id[..8.min(entry.session_id.len())];
+            let short_id: String = entry.session_id.chars().take(8).collect();
             println!("  {} - locked at {}", short_id, entry.locked_at);
             if let Some(ref reason) = entry.reason {
                 println!("    Reason: {}", reason);
@@ -326,31 +335,13 @@ async fn run_list(args: LockListArgs) -> Result<()> {
 }
 
 async fn run_check(args: LockCheckArgs) -> Result<()> {
-    let lock_file = load_lock_file()?;
-
-    let is_locked = lock_file.locked_sessions.iter().any(|e| {
-        e.session_id == args.session_id
-            || args
-                .session_id
-                .starts_with(&e.session_id[..8.min(e.session_id.len())])
-    });
-
-    if is_locked {
-        println!("Session '{}' is LOCKED.", args.session_id);
-        // Find and print the reason if any
-        if let Some(entry) = lock_file.locked_sessions.iter().find(|e| {
-            e.session_id == args.session_id
-                || args
-                    .session_id
-                    .starts_with(&e.session_id[..8.min(e.session_id.len())])
-        }) && let Some(ref reason) = entry.reason
-        {
-            println!("Reason: {}", reason);
-        }
-        std::process::exit(0);
+    let store = cortex_engine::rollout::local::SessionStorage::new()?;
+    let id = store.resolve_id(&args.session_id)?;
+    if store.is_protected(&id)? {
+        println!("Session '{id}' is LOCKED.");
+        Ok(())
     } else {
-        println!("Session '{}' is not locked.", args.session_id);
-        std::process::exit(1);
+        bail!("Session '{id}' is not locked")
     }
 }
 
@@ -499,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_get_lock_file_path_returns_valid_path() {
-        let path = get_lock_file_path();
+        let path = get_lock_file_path().unwrap();
 
         // Path should end with session_locks.json
         assert!(path.ends_with("session_locks.json"));

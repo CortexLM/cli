@@ -115,7 +115,7 @@ impl OtelProvider {
     }
 
     /// Get a tracer from this provider.
-    pub fn tracer(&self, name: &'static str) -> opentelemetry_sdk::trace::Tracer {
+    pub fn tracer(&self, name: &'static str) -> opentelemetry_sdk::trace::SdkTracer {
         self.tracer_provider.tracer(name)
     }
 }
@@ -124,5 +124,32 @@ impl OtelProvider {
 impl Drop for OtelProvider {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+#[cfg(all(test, feature = "otel"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_telemetry_does_not_initialize_an_exporter() {
+        assert!(OtelProvider::from(&OtelSettings::default()).is_none());
+        let settings = OtelSettings {
+            enabled: true,
+            ..Default::default()
+        };
+        assert!(OtelProvider::from(&settings).is_none());
+    }
+
+    #[test]
+    fn http_exporter_and_sdk_are_compatible_without_sending_spans() {
+        let settings = OtelSettings {
+            enabled: true,
+            endpoint: Some("http://127.0.0.1:1/v1/traces".into()),
+            ..Default::default()
+        };
+        let provider = OtelProvider::from(&settings).expect("HTTP exporter must initialize");
+        let _tracer = provider.tracer("migration-test");
+        // No spans are emitted and no collector or coding service is contacted.
     }
 }

@@ -11,6 +11,7 @@ use crate::{PluginError, Result};
 
 /// Plugin manifest - the main configuration file for a plugin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginManifest {
     /// Plugin metadata
     pub plugin: PluginMetadata,
@@ -42,6 +43,14 @@ pub struct PluginManifest {
     /// WASM module settings
     #[serde(default)]
     pub wasm: WasmSettings,
+
+    /// Executable artifact and versioned runtime protocol.
+    #[serde(default)]
+    pub runtime: crate::contract::RuntimeSettings,
+
+    /// Model-visible tools. Arguments are validated again after pre-hooks.
+    #[serde(default)]
+    pub tools: Vec<crate::contract::ToolDeclaration>,
 }
 
 impl PluginManifest {
@@ -60,6 +69,8 @@ impl PluginManifest {
 
     /// Validate the manifest.
     pub fn validate(&self) -> Result<()> {
+        crate::contract::validate_id(&self.plugin.id)
+            .map_err(|e| PluginError::invalid_manifest(&self.plugin.id, e.to_string()))?;
         // Validate plugin ID
         if self.plugin.id.is_empty() {
             return Err(PluginError::invalid_manifest(
@@ -99,6 +110,101 @@ impl PluginManifest {
             }
         }
 
+        self.validate_runtime()
+    }
+
+    fn validate_runtime(&self) -> Result<()> {
+        use crate::contract::{PROTOCOL_VERSION, RuntimeKind};
+        let invalid = |message| PluginError::invalid_manifest(&self.plugin.id, message);
+        if self.commands.len() > 128 || self.tools.len() > 128 || self.hooks.len() > 128 {
+            return Err(invalid(
+                "At most 128 declarations of each kind are supported",
+            ));
+        }
+        if self.runtime.protocol != PROTOCOL_VERSION {
+            return Err(invalid("Unsupported plugin protocol"));
+        }
+        if !(1..=30_000).contains(&self.runtime.timeout_ms)
+            || !(1..=30_000).contains(&self.wasm.timeout_ms)
+            || !(1..=256).contains(&self.wasm.memory_pages)
+        {
+            return Err(invalid("Runtime limits exceed supported bounds"));
+        }
+        if self.wasm.wasi_enabled || !self.wasm.wasi_caps.is_empty() {
+            return Err(invalid("WASI is not supported; use wasm32-unknown-unknown"));
+        }
+        let extension = std::path::Path::new(&self.runtime.entrypoint)
+            .extension()
+            .and_then(|s| s.to_str());
+        let expected = if self.runtime.kind == RuntimeKind::Node {
+            "mjs"
+        } else {
+            "wasm"
+        };
+        if extension != Some(expected) {
+            return Err(invalid("Entrypoint extension does not match runtime"));
+        }
+        if let Some(minimum) = &self.plugin.min_cortex_version {
+            let minimum = semver::Version::parse(minimum)
+                .map_err(|_| invalid("Invalid minimum CLI version"))?;
+            let host = semver::Version::parse(crate::VERSION)
+                .map_err(|_| invalid("Invalid CLI version"))?;
+            if host < minimum {
+                return Err(invalid("Plugin requires a newer Cortex CLI"));
+            }
+        }
+        self.validate_declarations()
+    }
+
+    fn validate_declarations(&self) -> Result<()> {
+        let invalid = |message| PluginError::invalid_manifest(&self.plugin.id, message);
+        let mut names = std::collections::HashSet::new();
+        for command in &self.commands {
+            for name in std::iter::once(&command.name).chain(&command.aliases) {
+                crate::contract::validate_id(name)?;
+                if !names.insert(name) {
+                    return Err(invalid("Duplicate command or alias"));
+                }
+            }
+        }
+        names.clear();
+        for tool in &self.tools {
+            crate::contract::validate_id(&tool.name)?;
+            if !names.insert(&tool.name) {
+                return Err(invalid("Duplicate tool"));
+            }
+            crate::contract::validate_schema(&tool.input_schema, 0)?;
+        }
+        for hook in &self.hooks {
+            if hook
+                .pattern
+                .as_ref()
+                .is_some_and(|pattern| pattern.matches('*').count() > 1)
+            {
+                return Err(invalid("Hook patterns support at most one wildcard"));
+            }
+            if !matches!(
+                hook.hook_type,
+                HookType::SessionStart
+                    | HookType::SessionEnd
+                    | HookType::ToolExecuteBefore
+                    | HookType::ToolExecuteAfter
+                    | HookType::ChatMessage
+                    | HookType::ErrorHandle
+            ) {
+                return Err(invalid(
+                    "This lifecycle hook has no supported runtime producer",
+                ));
+            }
+            if let Some(function) = &hook.function {
+                crate::contract::validate_id(function)?;
+            }
+        }
+        for dependency in &self.dependencies {
+            crate::contract::validate_id(&dependency.id)?;
+            semver::VersionReq::parse(&dependency.version)
+                .map_err(|_| invalid("Invalid dependency version range"))?;
+        }
         Ok(())
     }
 
@@ -115,6 +221,7 @@ impl PluginManifest {
 
 /// Plugin metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginMetadata {
     /// Unique plugin identifier (e.g., "my-awesome-plugin")
     pub id: String,
@@ -233,6 +340,7 @@ pub struct PluginDependency {
 
 /// Command definition in manifest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginCommandManifest {
     /// Command name (without leading /)
     pub name: String,
@@ -290,6 +398,7 @@ fn default_arg_type() -> String {
 
 /// Hook definition in manifest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginHookManifest {
     /// Hook type
     pub hook_type: HookType,
@@ -529,6 +638,7 @@ pub struct ConfigValidation {
 
 /// WASM module settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WasmSettings {
     /// Memory limit in pages (64KB per page)
     #[serde(default = "default_memory_pages")]
@@ -567,7 +677,7 @@ fn default_timeout_ms() -> u64 {
 }
 
 fn default_wasi_enabled() -> bool {
-    true
+    false
 }
 
 /// WASI capabilities that can be granted to plugins.

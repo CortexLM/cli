@@ -13,7 +13,7 @@ use crate::login::{
     read_api_key_from_stdin, run_login_status, run_login_with_api_key, run_login_with_device_code,
     run_logout,
 };
-use crate::styled_output::{print_info, print_success, print_warning};
+use crate::styled_output::{print_success, print_warning};
 
 /// Dispatch a CLI command to its handler.
 ///
@@ -76,6 +76,27 @@ async fn run_tui(args: InteractiveArgs) -> Result<()> {
     use cortex_common::resolve_model_alias;
     use std::io::IsTerminal;
 
+    if !args.images.is_empty() {
+        bail!("Image attachments are not supported by interactive sessions. No image was sent.");
+    }
+    if args.model.as_ref().is_some_and(|m| m.trim().is_empty()) {
+        bail!("Model name cannot be empty. Select a model with /model.");
+    }
+    let policy = crate::startup::interactive_policy(
+        args.sandbox_mode.as_deref(),
+        args.approval_policy.as_deref(),
+        args.full_auto,
+        args.dangerously_bypass_approvals_and_sandbox,
+    )?;
+    let mut additional_writable_roots = Vec::with_capacity(args.add_dir.len());
+    for dir in &args.add_dir {
+        let dir = std::fs::canonicalize(dir)
+            .map_err(|e| anyhow::anyhow!("--add-dir {}: {e}", dir.display()))?;
+        if !dir.is_dir() {
+            bail!("--add-dir {}: not a directory", dir.display());
+        }
+        additional_writable_roots.push(dir);
+    }
     // Check if stdin is a TTY
     if !io::stdin().is_terminal() {
         bail!(
@@ -96,19 +117,15 @@ async fn run_tui(args: InteractiveArgs) -> Result<()> {
         );
     }
 
-    if args.model.as_ref().is_some_and(|m| m.trim().is_empty()) {
-        bail!(
-            "Error: Model name cannot be empty. Please provide a valid model name \
-             (e.g., 'gpt-4', 'claude-sonnet-4-20250514')."
-        );
-    }
-
     let mut config = cortex_engine::Config::load_sync(cortex_engine::ConfigOverrides {
         model: args
             .model
             .as_ref()
             .map(|m| resolve_model_alias(m).to_string()),
         cwd: args.cwd.clone(),
+        approval_policy: policy.approval_policy,
+        sandbox_mode: policy.sandbox_mode,
+        additional_writable_roots,
         alternate_screen: if args.no_alternate_screen {
             Some(false)
         } else if args.alternate_screen {
@@ -117,8 +134,7 @@ async fn run_tui(args: InteractiveArgs) -> Result<()> {
             None
         },
         ..Default::default()
-    })
-    .unwrap_or_else(|_| cortex_engine::Config::default());
+    })?;
 
     if args.no_alternate_screen {
         config.alternate_screen = false;
@@ -606,237 +622,136 @@ pub async fn run_whoami() -> Result<()> {
     Ok(())
 }
 
-/// Resume a previous session.
+#[path = "ux_sessions.rs"]
+mod ux_sessions;
+
+/// Resume a previous local session with the same durable identity.
 pub async fn run_resume(resume_cli: ResumeCommand) -> Result<()> {
-    use crate::utils::resolve_session_id;
-    use cortex_protocol::ConversationId;
-
     if resume_cli.no_session {
-        anyhow::bail!(
-            "The --no-session flag is incompatible with the 'resume' command. \
-            Resuming a session inherently requires session persistence."
-        );
+        bail!("--no-session is incompatible with resume");
     }
-
-    let config = cortex_engine::Config::default();
-
-    let id_str = match (resume_cli.session_id, resume_cli.last, resume_cli.pick) {
-        // Support "last" as SESSION_ID as documented in help text (Issue #3646)
-        (Some(id), _, _) if id.to_lowercase() == "last" => {
-            let sessions = cortex_engine::list_sessions(&config.cortex_home)?;
-            if sessions.is_empty() {
-                print_info("No sessions found to resume.");
-                return Ok(());
-            }
-            print_info("Resuming most recent session...");
-            sessions[0].id.clone()
-        }
-        (Some(id), _, _) => id,
-        (None, true, _) => {
-            let sessions = cortex_engine::list_sessions(&config.cortex_home)?;
-            if sessions.is_empty() {
-                print_info("No sessions found to resume.");
-                return Ok(());
-            }
-            print_info("Resuming most recent session...");
-            sessions[0].id.clone()
-        }
-        (None, false, true) => {
-            let sessions = cortex_engine::list_sessions(&config.cortex_home)?;
-            if sessions.is_empty() {
-                print_info("No sessions found to resume.");
-                return Ok(());
-            }
-
-            // Filter by cwd unless --all
-            let current_dir = std::env::current_dir().ok();
-            let filtered_sessions: Vec<_> = if resume_cli.all {
-                sessions.clone()
-            } else {
-                sessions
-                    .iter()
-                    .filter(|s| current_dir.as_ref().is_none_or(|cwd| s.cwd == *cwd))
-                    .cloned()
-                    .collect()
-            };
-
-            let display_sessions = if filtered_sessions.is_empty() {
-                &sessions
-            } else {
-                &filtered_sessions
-            };
-
-            if display_sessions.is_empty() {
-                print_info("No sessions found to resume.");
-                return Ok(());
-            }
-
-            // For non-interactive mode, use the first session
-            print_info(&format!("Using session: {}", display_sessions[0].id));
-            display_sessions[0].id.clone()
-        }
-        (None, false, false) => {
-            let sessions = cortex_engine::list_sessions(&config.cortex_home)?;
-            if sessions.is_empty() {
-                print_info("No sessions found. Use 'cortex' to start a new session.");
-                return Ok(());
-            }
-            sessions[0].id.clone()
+    let store = ux_sessions::storage()?;
+    let id = if let Some(id) = resume_cli
+        .session_id
+        .as_deref()
+        .filter(|id| !id.eq_ignore_ascii_case("last"))
+    {
+        store.resolve_id(id)?
+    } else {
+        let sessions = ux_sessions::filter_sessions(
+            &store,
+            ux_sessions::Filters {
+                all: resume_cli.all,
+                ..Default::default()
+            },
+        )?;
+        if resume_cli.last
+            || resume_cli
+                .session_id
+                .as_deref()
+                .is_some_and(|id| id.eq_ignore_ascii_case("last"))
+        {
+            sessions
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("No sessions found"))?
+                .id
+                .clone()
+        } else {
+            ux_sessions::pick_session(&sessions)?
         }
     };
-
-    // Validate and resolve the session ID
-    let conversation_id: ConversationId =
-        resolve_session_id(&id_str, &config.cortex_home).map_err(|e| anyhow::anyhow!("{}", e))?;
-
-    print_success(&format!("Resuming session: {}", conversation_id));
-
-    // Start TUI with the session
+    // Validate history before entering the terminal or announcing a resume.
+    store.load_messages(&id)?;
     #[cfg(feature = "cortex-tui")]
     {
-        // The TUI would need to support session resumption
-        cortex_tui::run(config, None).await?;
+        let mut config = cortex_engine::Config::default();
+        config.cortex_home = cortex_engine::rollout::local::default_home()?;
+        cortex_tui::runner::AppRunner::new(config)
+            .with_cortex_session_id(id)
+            .run()
+            .await?;
     }
-
+    #[cfg(not(feature = "cortex-tui"))]
+    bail!("Interactive resume requires the TUI build");
     Ok(())
 }
 
-/// Delete a session.
+/// Delete a session, respecting both canonical and legacy protection.
 pub async fn run_delete(delete_cli: DeleteCommand) -> Result<()> {
-    use crate::utils::resolve_session_id;
-    use std::io::{BufRead, Write};
-
-    let config = cortex_engine::Config::default();
-
-    // Resolve session ID
-    let conversation_id = resolve_session_id(&delete_cli.session_id, &config.cortex_home)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-    // Confirm deletion
+    use std::io::IsTerminal;
+    let store = ux_sessions::storage()?;
+    let id = store.resolve_id(&delete_cli.session_id)?;
+    if !delete_cli.force && store.is_protected(&id)? {
+        bail!("Session is protected; unlock it or explicitly use --force");
+    }
     if !delete_cli.yes {
-        print!(
-            "Delete session {}? [y/N]: ",
-            &delete_cli.session_id[..8.min(delete_cli.session_id.len())]
-        );
+        if !io::stdin().is_terminal() {
+            bail!("Deletion requires --yes without an interactive terminal");
+        }
+        print!("Delete session {}? [y/N]: ", id);
         io::stdout().flush()?;
-
         let mut input = String::new();
         io::stdin().lock().read_line(&mut input)?;
-
         if !input.trim().eq_ignore_ascii_case("y") {
             println!("Cancelled.");
             return Ok(());
         }
     }
-
-    // Delete the session
-    let rollout_path =
-        cortex_engine::rollout::get_rollout_path(&config.cortex_home, &conversation_id);
-    if rollout_path.exists() {
-        std::fs::remove_file(&rollout_path)?;
-        print_success(&format!("Deleted session: {}", conversation_id));
-    } else {
-        print_warning("Session file not found (may have been already deleted).");
-    }
-
+    store.delete_session_with_force(&id, delete_cli.force)?;
+    print_success(&format!(
+        "Deleted session: {id} (data retained in sessions/.trash)"
+    ));
     Ok(())
 }
 
-/// List sessions.
+/// List the same sessions used by direct TUI startup and import/export.
 #[allow(clippy::too_many_arguments)]
 pub async fn list_sessions(
     all: bool,
-    _days: Option<u32>,
-    _since: Option<&str>,
-    _until: Option<&str>,
-    _favorites: bool,
+    days: Option<u32>,
+    since: Option<&str>,
+    until: Option<&str>,
+    favorites: bool,
     search: Option<&str>,
     limit: Option<usize>,
     json: bool,
 ) -> Result<()> {
-    let config = cortex_engine::Config::default();
-    let sessions = cortex_engine::list_sessions(&config.cortex_home)?;
-
-    // Filter sessions
-    let current_dir = std::env::current_dir().ok();
-    let mut filtered: Vec<_> = sessions
-        .into_iter()
-        .filter(|s| {
-            // Filter by cwd unless --all
-            if !all
-                && let Some(ref cwd) = current_dir
-                && s.cwd != *cwd
-            {
-                return false;
-            }
-            // Filter by search term
-            if let Some(term) = search {
-                let term_lower = term.to_lowercase();
-                if !s.id.to_lowercase().contains(&term_lower) {
-                    return false;
-                }
-            }
-            true
-        })
-        .collect();
-
-    // Apply limit
-    if let Some(limit) = limit {
-        filtered.truncate(limit);
-    }
-
+    let store = ux_sessions::storage()?;
+    let sessions = ux_sessions::filter_sessions(
+        &store,
+        ux_sessions::Filters {
+            all,
+            days,
+            since,
+            until,
+            favorites,
+            search,
+            limit,
+        },
+    )?;
     if json {
-        // Manually construct JSON since SessionInfo doesn't derive Serialize
-        let json_sessions: Vec<serde_json::Value> = filtered
+        let values = sessions
             .iter()
-            .map(|s| {
-                serde_json::json!({
-                    "id": s.id,
-                    "timestamp": s.timestamp,
-                    "model": s.model,
-                    "cwd": s.cwd.to_string_lossy(),
-                    "message_count": s.message_count,
-                    "git_branch": s.git_branch
-                })
+            .map(|meta| {
+                let mut value = serde_json::to_value(meta)?;
+                value["timestamp"] = serde_json::Value::String(meta.created_at.to_rfc3339());
+                Ok(value)
             })
-            .collect();
-        let json_output = serde_json::to_string_pretty(&json_sessions)?;
-        println!("{}", json_output);
-        return Ok(());
-    }
-
-    if filtered.is_empty() {
-        print_info("No sessions found.");
-        if !all {
-            println!("Use --all to show sessions from all directories.");
+            .collect::<Result<Vec<_>>>()?;
+        println!("{}", serde_json::to_string_pretty(&values)?);
+    } else {
+        println!("{:<12} {:<20} {:>8} Title", "ID", "Date", "Messages");
+        for meta in &sessions {
+            println!(
+                "{:<12} {:<20} {:>8} {}",
+                meta.short_id(),
+                meta.updated_at.format("%Y-%m-%d %H:%M"),
+                meta.message_count,
+                meta.display_title().replace(['\n', '\r', '\x1b'], " ")
+            );
         }
-        return Ok(());
+        println!("\nTotal: {} session(s)", sessions.len());
     }
-
-    println!(
-        "{:<12} {:<20} {:>8} {:<20}",
-        "ID", "Date", "Messages", "Model"
-    );
-    println!("{}", "-".repeat(65));
-
-    for session in &filtered {
-        let date = if session.timestamp.len() >= 16 {
-            session.timestamp[..16].replace('T', " ")
-        } else {
-            session.timestamp.clone()
-        };
-        let model = session.model.as_deref().unwrap_or("default");
-        println!(
-            "{:<12} {:<20} {:>8} {:<20}",
-            &session.id[..8.min(session.id.len())],
-            date,
-            session.message_count,
-            model,
-        );
-    }
-
-    println!("\nTotal: {} session(s)", filtered.len());
-
     Ok(())
 }
 
@@ -983,29 +898,56 @@ pub async fn run_servers(servers_cli: ServersCommand) -> Result<()> {
 
 /// View history.
 pub async fn run_history(history_cli: HistoryCommand) -> Result<()> {
-    match history_cli.action {
-        Some(HistorySubcommand::Search(args)) => {
-            println!("Searching history for: {}", args.pattern);
-            println!("(History search not yet implemented)");
-        }
-        Some(HistorySubcommand::Clear(args)) => {
-            if !args.yes {
-                print!("Clear all history? This cannot be undone. [y/N]: ");
-                io::stdout().flush()?;
-
-                let mut input = String::new();
-                io::stdin().lock().read_line(&mut input)?;
-
-                if !input.trim().eq_ignore_ascii_case("y") {
-                    println!("Cancelled.");
-                    return Ok(());
-                }
+    let store = ux_sessions::storage()?;
+    let (query, limit, json) = match &history_cli.action {
+        Some(HistorySubcommand::Search(args)) => (
+            Some(args.pattern.as_str()),
+            args.limit,
+            args.json || history_cli.json,
+        ),
+        Some(HistorySubcommand::Clear(_)) => bail!(
+            "Prompt history is part of saved sessions. Use cortex delete SESSION_ID to remove a session; history clear will not erase conversation data."
+        ),
+        None => (None, history_cli.limit, history_cli.json),
+    };
+    let sessions = ux_sessions::filter_sessions(
+        &store,
+        ux_sessions::Filters {
+            all: history_cli.all,
+            search: query,
+            ..Default::default()
+        },
+    )?;
+    let mut prompts = Vec::new();
+    for summary in sessions {
+        for message in store.load_messages(&summary.id)? {
+            if message.is_user()
+                && query.is_none_or(|q| message.content.to_lowercase().contains(&q.to_lowercase()))
+            {
+                prompts.push((message.timestamp, summary.id.clone(), message.content));
             }
-            println!("(History clear not yet implemented)");
         }
-        None => {
-            println!("Recent prompts (limit: {}):", history_cli.limit);
-            println!("(History view not yet implemented)");
+    }
+    prompts.sort_by(|a, b| b.0.cmp(&a.0));
+    prompts.truncate(limit);
+    if json {
+        let values: Vec<_> = prompts
+            .iter()
+            .map(|(date, id, content)| {
+                serde_json::json!({
+                    "timestamp": date, "session_id": id, "prompt": content,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&values)?);
+    } else {
+        for (date, id, content) in prompts {
+            println!(
+                "{} {} {}",
+                date.format("%Y-%m-%d %H:%M"),
+                id,
+                content.replace('\x1b', "")
+            );
         }
     }
     Ok(())

@@ -129,6 +129,8 @@ jobs:
           EXPECTED_ARTIFACTS=(
             "cortex-cli-linux-x64"
             "cortex-cli-linux-arm64"
+            "cortex-cli-linux-x64-static"
+            "cortex-cli-linux-arm64-static"
             "cortex-cli-macos-x64"
             "cortex-cli-macos-arm64"
             "cortex-cli-windows-x64"
@@ -152,11 +154,11 @@ jobs:
         run: |
           mkdir -p dist
 
-          for mapping in linux-x86_64:cortex-cli-linux-x64 linux-aarch64:cortex-cli-linux-arm64 darwin-x86_64:cortex-cli-macos-x64 darwin-aarch64:cortex-cli-macos-arm64; do
+          for mapping in linux-x86_64:cortex-cli-linux-x64 linux-aarch64:cortex-cli-linux-arm64 linux-x86_64-musl:cortex-cli-linux-x64-static linux-aarch64-musl:cortex-cli-linux-arm64-static darwin-x86_64:cortex-cli-macos-x64 darwin-aarch64:cortex-cli-macos-arm64; do
             IFS=':' read -r platform artifact <<< "$mapping"
 
-            ARCHIVE=$(find "artifacts/$artifact" -name "*.tar.gz" | head -1)
-            if [ -z "$ARCHIVE" ]; then
+            ARCHIVE="artifacts/$artifact/$artifact.tar.gz"
+            if [ ! -f "$ARCHIVE" ]; then
               echo "ERROR: No .tar.gz found in artifacts/$artifact"
               ls -la "artifacts/$artifact/"
               exit 1
@@ -171,8 +173,8 @@ jobs:
           for mapping in windows-x86_64:cortex-cli-windows-x64; do
             IFS=':' read -r platform artifact <<< "$mapping"
 
-            ARCHIVE=$(find "artifacts/$artifact" -name "*.zip" | head -1)
-            if [ -z "$ARCHIVE" ]; then
+            ARCHIVE="artifacts/$artifact/$artifact.zip"
+            if [ ! -f "$ARCHIVE" ]; then
               echo "ERROR: No .zip found in artifacts/$artifact"
               ls -la "artifacts/$artifact/"
               exit 1
@@ -205,7 +207,8 @@ jobs:
             local sha
             sha=$(awk '{print $1}' "dist/$platform/${file}.sha256")
             local size
-            size=$(stat -c%s "dist/$platform/$file")
+            # wc -c is portable; GNU stat -c is unavailable on BSD/macOS.
+            size=$(wc -c < "dist/$platform/$file" | tr -d '[:space:]')
             jq -n --arg url "$url" --arg sha256 "$sha" --argjson size "$size" \
               '{url: $url, sha256: $sha256, size: $size}'
           }
@@ -218,6 +221,8 @@ jobs:
             --arg release_notes "$RELEASE_NOTES" \
             --argjson linux_x86_64 "$(asset_obj linux-x86_64 cortex.tar.gz)" \
             --argjson linux_aarch64 "$(asset_obj linux-aarch64 cortex.tar.gz)" \
+            --argjson linux_x86_64_musl "$(asset_obj linux-x86_64-musl cortex.tar.gz)" \
+            --argjson linux_aarch64_musl "$(asset_obj linux-aarch64-musl cortex.tar.gz)" \
             --argjson darwin_x86_64 "$(asset_obj darwin-x86_64 cortex.tar.gz)" \
             --argjson darwin_aarch64 "$(asset_obj darwin-aarch64 cortex.tar.gz)" \
             --argjson windows_x86_64 "$(asset_obj windows-x86_64 cortex.zip)" \
@@ -230,6 +235,8 @@ jobs:
               assets: {
                 "linux-x86_64": $linux_x86_64,
                 "linux-aarch64": $linux_aarch64,
+                "linux-x86_64-musl": $linux_x86_64_musl,
+                "linux-aarch64-musl": $linux_aarch64_musl,
                 "darwin-x86_64": $darwin_x86_64,
                 "darwin-aarch64": $darwin_aarch64,
                 "windows-x86_64": $windows_x86_64
@@ -271,7 +278,7 @@ jobs:
             rclone copyto "$src" "$REMOTE/$dest" --progress
           }
 
-          for platform in linux-x86_64 linux-aarch64 darwin-x86_64 darwin-aarch64; do
+          for platform in linux-x86_64 linux-aarch64 linux-x86_64-musl linux-aarch64-musl darwin-x86_64 darwin-aarch64; do
             echo "Uploading $platform..."
             r2_copy "dist/$platform/cortex.tar.gz" "v1/assets/$platform/$VERSION/cortex.tar.gz"
             r2_copy "dist/$platform/cortex.tar.gz.sha256" "v1/assets/$platform/$VERSION/cortex.tar.gz.sha256"

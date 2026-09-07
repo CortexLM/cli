@@ -6,12 +6,12 @@
 //! - Execute tools on the appropriate server
 //! - Handle server lifecycle (auto-start, restart)
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use serde_json::Value;
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc};
 use tracing::warn;
 
 use cortex_mcp_types::{CallToolResult, Resource, Tool};
@@ -50,8 +50,6 @@ pub struct McpConnectionManager {
     clients: RwLock<HashMap<String, Arc<McpClient>>>,
     /// Server configurations.
     configs: RwLock<HashMap<String, McpServerConfig>>,
-    /// Set of servers currently being started (prevents race conditions).
-    starting_servers: Mutex<HashSet<String>>,
     /// Event sender for lifecycle notifications
     event_tx: Option<mpsc::UnboundedSender<McpLifecycleEvent>>,
 }
@@ -68,7 +66,6 @@ impl McpConnectionManager {
         Self {
             clients: RwLock::new(HashMap::new()),
             configs: RwLock::new(HashMap::new()),
-            starting_servers: Mutex::new(HashSet::new()),
             event_tx: None,
         }
     }
@@ -78,7 +75,6 @@ impl McpConnectionManager {
         Self {
             clients: RwLock::new(HashMap::new()),
             configs: RwLock::new(HashMap::new()),
-            starting_servers: Mutex::new(HashSet::new()),
             event_tx: Some(tx),
         }
     }
@@ -137,68 +133,15 @@ impl McpConnectionManager {
     /// Connect to a specific server.
     /// Uses a lock to prevent concurrent startup of the same server (race condition fix).
     pub async fn connect(&self, name: &str) -> Result<()> {
-        // Check if this server is already being started by another request
-        {
-            let mut starting = self.starting_servers.lock().await;
-            if starting.contains(name) {
-                // Server is already being started, wait and check again
-                drop(starting);
-                // Wait a bit for the other request to complete
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-                // Check if connection succeeded
-                let client = self
-                    .clients
-                    .read()
-                    .await
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| anyhow!("Server not found: {}", name))?;
-
-                if client.is_connected().await {
-                    return Ok(());
-                }
-
-                // Still not connected, wait for the other startup to complete
-                for _ in 0..50 {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    if client.is_connected().await {
-                        return Ok(());
-                    }
-                    // Check if startup failed (no longer in starting set)
-                    let starting = self.starting_servers.lock().await;
-                    if !starting.contains(name) {
-                        break;
-                    }
-                }
-
-                // Other startup may have failed - fall through to try our own connection
-                // instead of recursing (which would require boxing the future)
-            } else {
-                // Mark this server as starting
-                starting.insert(name.to_string());
-            }
-        }
-
-        // Ensure we remove from starting set when done
-        let result = async {
-            let client = self
-                .clients
-                .read()
-                .await
-                .get(name)
-                .cloned()
-                .ok_or_else(|| anyhow!("Server not found: {}", name))?;
-
-            client.connect().await
-        }
-        .await;
-
-        // Remove from starting set
-        {
-            let mut starting = self.starting_servers.lock().await;
-            starting.remove(name);
-        }
+        // Each active client serializes its own full initialization lifecycle, including discovery.
+        let client = self
+            .clients
+            .read()
+            .await
+            .get(name)
+            .cloned()
+            .ok_or_else(|| anyhow!("Server not found: {}", name))?;
+        let result = client.connect().await;
 
         // Emit lifecycle event based on connection result
         match &result {
@@ -321,6 +264,24 @@ impl McpConnectionManager {
         all_tools
     }
 
+    /// Model/runtime-facing schemas, with one canonical, executable name per tool.
+    /// This does not change the remote Cortex turn payload or grant execution authority.
+    pub async fn tool_definitions(&self) -> Result<Vec<Tool>> {
+        let clients: Vec<_> = self.clients.read().await.values().cloned().collect();
+        let mut definitions = Vec::new();
+        for client in clients {
+            if !client.is_connected().await {
+                continue;
+            }
+            for mut tool in client.discovered_tools().await? {
+                tool.name = create_qualified_name(client.name(), &tool.name);
+                definitions.push(tool);
+            }
+        }
+        definitions.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(definitions)
+    }
+
     /// List all resources from all connected servers.
     pub async fn list_all_resources(&self) -> HashMap<String, Resource> {
         let clients = self.clients.read().await;
@@ -347,15 +308,29 @@ impl McpConnectionManager {
         arguments: Option<Value>,
     ) -> Result<CallToolResult> {
         let (server_name, tool_name) = parse_qualified_name(qualified_name)
-            .ok_or_else(|| anyhow!("Invalid qualified tool name: {}", qualified_name))?;
-
-        let client = self
-            .clients
-            .read()
-            .await
-            .get(&server_name)
-            .cloned()
-            .ok_or_else(|| anyhow!("MCP server not found: {}", server_name))?;
+            .ok_or_else(|| anyhow!("Invalid qualified MCP tool name"))?;
+        let clients = self.clients.read().await;
+        let client = if qualified_name.starts_with("plugin_") {
+            let mut matches = clients.iter().filter(|(name, _)| {
+                crate::harness::plugin_tool_name(name) == format!("plugin_{server_name}")
+            });
+            let client = matches
+                .next()
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("MCP server not found"))?;
+            if matches.next().is_some() {
+                return Err(anyhow!(
+                    "Ambiguous MCP plugin alias; use the canonical tool name"
+                ));
+            }
+            client
+        } else {
+            clients
+                .get(&server_name)
+                .cloned()
+                .ok_or_else(|| anyhow!("MCP server not found"))?
+        };
+        drop(clients);
 
         if client.state().await != ConnectionState::Connected {
             return Err(anyhow!("MCP server not connected: {}", server_name));
@@ -399,9 +374,7 @@ impl McpConnectionManager {
 
         for client in clients {
             if client.state().await == ConnectionState::Connected {
-                if let Err(e) = client.refresh_tools().await {
-                    warn!("Failed to refresh tools for {}: {}", client.name(), e);
-                }
+                client.refresh_tools().await?;
             }
         }
         Ok(())
@@ -434,7 +407,7 @@ pub fn parse_qualified_name(qualified_name: &str) -> Option<(String, String)> {
     let server_name = parts[1].to_string();
     let tool_name = parts[2..].join(TOOL_NAME_DELIMITER);
 
-    if tool_name.is_empty() {
+    if server_name.is_empty() || tool_name.is_empty() {
         return None;
     }
 

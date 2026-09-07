@@ -1,0 +1,9 @@
+{
+  "name": "@cortex/plugin-host",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Cortex embedded Node host, wire protocol version 1; version follows the CLI",
+  "engines": { "node": ">=22.13.0 <23" },
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}

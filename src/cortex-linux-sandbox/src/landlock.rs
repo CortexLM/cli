@@ -43,8 +43,8 @@ pub fn apply_filesystem_rules(writable_roots: &[PathBuf]) -> Result<()> {
     // Apply the ruleset
     let status = ruleset.restrict_self()?;
 
-    if status.ruleset == RulesetStatus::NotEnforced {
-        return Err(anyhow!("Landlock ruleset not enforced"));
+    if status.ruleset != RulesetStatus::FullyEnforced {
+        return Err(anyhow!("Required Landlock ruleset was not fully enforced"));
     }
 
     tracing::debug!("Landlock rules applied successfully");

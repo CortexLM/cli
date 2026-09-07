@@ -41,7 +41,7 @@ pub enum FailureMode {
     FailFast,
     /// Skip failed task's dependents but continue others.
     SkipDependents,
-    /// Ignore failures and continue all tasks.
+    /// Continue independent tasks; failed dependencies are still skipped.
     Continue,
 }
 

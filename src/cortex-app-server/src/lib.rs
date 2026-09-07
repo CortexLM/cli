@@ -36,10 +36,11 @@ pub mod websocket;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::Router;
+use axum::{
+    Router, extract::DefaultBodyLimit, middleware::from_fn, middleware::from_fn_with_state,
+};
 use tokio::net::TcpListener;
-use tower_http::cors::CorsLayer;
-use tower_http::trace::TraceLayer;
+use tower_http::limit::RequestBodyLimitLayer;
 use tracing::{info, warn};
 
 pub use config::ServerConfig;
@@ -57,14 +58,16 @@ pub async fn run_with_shutdown<F>(config: ServerConfig, shutdown: F) -> anyhow::
 where
     F: std::future::Future<Output = ()> + Send + 'static,
 {
+    config.validate()?;
     // Warn if authentication is disabled
     if !config.auth.enabled {
         warn!("Server running without authentication!");
-        warn!("Anyone on the network can access this server.");
-        warn!("Use --auth to enable authentication.");
+        warn!("Only loopback connections are allowed without authentication.");
+        warn!("Use --auth and CORTEX_SERVER_API_KEY to enable authentication.");
     }
 
     let state = Arc::new(AppState::new(config.clone()).await?);
+    state.start_cleanup_task();
     let state_for_cleanup = Arc::clone(&state);
     let app = create_router_with_state(state);
 
@@ -99,9 +102,23 @@ where
     };
 
     let listener = TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown)
-        .await?;
+    let trace = cortex_common::diagnostics::TraceContext::default();
+    if cortex_common::diagnostics::record(
+        cortex_common::diagnostics::Operation::ServerStarted,
+        &trace,
+        200,
+        std::time::Duration::ZERO,
+    )
+    .is_err()
+    {
+        warn!("Local diagnostics could not be written");
+    }
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await?;
 
     // Graceful shutdown: close all active sessions first
     // This ensures WebSocket clients receive proper close frames
@@ -139,7 +156,25 @@ pub fn create_router_with_state(state: Arc<AppState>) -> Router {
 
     Router::new()
         .nest("/api/v1", api_routes)
-        .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
+        .layer(DefaultBodyLimit::max(state.config.max_body_size))
+        .layer(RequestBodyLimitLayer::new(state.config.max_body_size))
+        .layer(from_fn_with_state(
+            Arc::clone(&state),
+            middleware::timeout_middleware,
+        ))
+        .layer(from_fn_with_state(
+            Arc::clone(&state),
+            middleware::rate_limit_middleware,
+        ))
+        .layer(from_fn_with_state(
+            Arc::clone(&state),
+            auth::auth_middleware,
+        ))
+        .layer(middleware::cors_layer(&state.config.cors_origins))
+        .layer(from_fn(middleware::security_headers_middleware))
+        .layer(from_fn_with_state(
+            Arc::clone(&state),
+            middleware::observability_middleware,
+        ))
         .with_state(state)
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::{
-    Router,
+    Extension, Router,
     extract::{
         Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -22,6 +22,7 @@ use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
+use crate::auth::{AuthResult, AuthService};
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -29,13 +30,13 @@ use crate::state::AppState;
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/ws", get(websocket_handler))
-        .route("/ws/sessions/:id", get(session_websocket_handler))
+        .route("/ws/sessions/{id}", get(session_websocket_handler))
 }
 
 /// WebSocket connection query parameters.
 #[derive(Debug, Deserialize)]
 pub struct WsConnectQuery {
-    /// Authentication token.
+    /// Legacy parameter, ignored for authentication. Use the Authorization header.
     pub token: Option<String>,
     /// Session ID to join.
     pub session_id: Option<String>,
@@ -46,8 +47,9 @@ async fn websocket_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     Query(query): Query<WsConnectQuery>,
+    auth: Option<Extension<AuthResult>>,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state, query))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, query, auth.map(|a| a.0)))
 }
 
 /// Handle session-specific WebSocket.
@@ -55,16 +57,22 @@ async fn session_websocket_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
+    auth: Option<Extension<AuthResult>>,
 ) -> Response {
     let query = WsConnectQuery {
         token: None,
         session_id: Some(session_id),
     };
-    ws.on_upgrade(move |socket| handle_socket(socket, state, query))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, query, auth.map(|a| a.0)))
 }
 
 /// Handle a WebSocket connection.
-async fn handle_socket(socket: WebSocket, state: Arc<AppState>, query: WsConnectQuery) {
+async fn handle_socket(
+    socket: WebSocket,
+    state: Arc<AppState>,
+    query: WsConnectQuery,
+    auth: Option<AuthResult>,
+) {
     let connection_id = Uuid::new_v4().to_string();
     info!(connection_id = %connection_id, "WebSocket connected");
 
@@ -73,9 +81,12 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, query: WsConnect
     // Create connection context
     let mut ctx = ConnectionContext {
         _id: connection_id.clone(),
-        user_id: None,
+        user_id: auth
+            .as_ref()
+            .and_then(AuthResult::user_id)
+            .map(str::to_string),
         session_id: query.session_id,
-        authenticated: query.token.is_some(),
+        authenticated: auth.as_ref().is_some_and(AuthResult::is_authenticated),
         created_at: Instant::now(),
         last_ping: Instant::now(),
     };
@@ -136,11 +147,11 @@ async fn handle_receiver(
         match msg {
             Message::Text(text) => {
                 if let Err(e) = handle_text_message(&text, &tx, ctx, state).await {
-                    error!("Error handling message: {}", e);
+                    error!(code = e.error_code(), "Error handling message");
                     let _ = tx
                         .send(WsMessage::Error {
-                            code: "error".to_string(),
-                            message: e.to_string(),
+                            code: e.error_code().to_string(),
+                            message: e.public_message().to_string(),
                         })
                         .await;
                 }
@@ -165,6 +176,23 @@ async fn handle_receiver(
     Ok(())
 }
 
+fn authorize_message(
+    msg: &WsClientMessage,
+    ctx: &mut ConnectionContext,
+    auth_enabled: bool,
+) -> Result<(), AppError> {
+    if auth_enabled
+        && !ctx.authenticated
+        && !matches!(
+            msg,
+            WsClientMessage::Auth { .. } | WsClientMessage::Ping { .. }
+        )
+    {
+        return Err(AppError::Authentication("Authentication required".into()));
+    }
+    Ok(())
+}
+
 /// Handle a text message.
 async fn handle_text_message(
     text: &str,
@@ -174,17 +202,18 @@ async fn handle_text_message(
 ) -> Result<(), AppError> {
     let msg: WsClientMessage = serde_json::from_str(text)
         .map_err(|e| AppError::Validation(format!("Invalid message format: {e}")))?;
+    authorize_message(&msg, ctx, state.config.auth.enabled)?;
 
     match msg {
         WsClientMessage::Ping { timestamp } => {
             tx.send(WsMessage::Pong { timestamp }).await.ok();
         }
-        WsClientMessage::Auth { token: _ } => {
-            // Validate token (placeholder - in production, validate JWT)
-            ctx.authenticated = true;
-            ctx.user_id = Some("user123".to_string());
+        WsClientMessage::Auth { token } => {
+            let claims = AuthService::new(state.config.auth.clone()).validate_token(&token);
+            ctx.authenticated = claims.is_ok();
+            ctx.user_id = claims.ok().map(|claims| claims.sub);
             tx.send(WsMessage::AuthResult {
-                success: true,
+                success: ctx.authenticated,
                 user_id: ctx.user_id.clone(),
             })
             .await
@@ -774,6 +803,59 @@ impl Default for HeartbeatConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_auth_frames_validate_identity_and_failed_auth_blocks_commands() {
+        let mut config = crate::ServerConfig::default();
+        config.auth.enabled = true;
+        config.auth.jwt_secret = Some(Uuid::new_v4().to_string());
+        let token = AuthService::new(config.auth.clone())
+            .generate_token("fixture-user")
+            .unwrap();
+        let state = AppState::new(config).await.unwrap();
+        let mut ctx = ConnectionContext {
+            _id: "fixture".into(),
+            user_id: None,
+            session_id: None,
+            authenticated: false,
+            created_at: Instant::now(),
+            last_ping: Instant::now(),
+        };
+        let (tx, mut rx) = mpsc::channel(4);
+        let command = r#"{"type":"create_session","model":null,"cwd":null}"#;
+        assert!(matches!(
+            handle_text_message(command, &tx, &mut ctx, &state).await,
+            Err(AppError::Authentication(_))
+        ));
+        let auth = serde_json::json!({"type":"auth","token":token}).to_string();
+        handle_text_message(&auth, &tx, &mut ctx, &state)
+            .await
+            .unwrap();
+        assert!(ctx.authenticated);
+        assert_eq!(ctx.user_id.as_deref(), Some("fixture-user"));
+        assert!(matches!(
+            rx.recv().await,
+            Some(WsMessage::AuthResult { success: true, .. })
+        ));
+        handle_text_message(
+            r#"{"type":"auth","token":"invalid-fixture"}"#,
+            &tx,
+            &mut ctx,
+            &state,
+        )
+        .await
+        .unwrap();
+        assert!(!ctx.authenticated);
+        assert!(ctx.user_id.is_none());
+        assert!(matches!(
+            rx.recv().await,
+            Some(WsMessage::AuthResult { success: false, .. })
+        ));
+        assert!(matches!(
+            handle_text_message(command, &tx, &mut ctx, &state).await,
+            Err(AppError::Authentication(_))
+        ));
+    }
 
     #[test]
     fn test_client_message_parsing() {

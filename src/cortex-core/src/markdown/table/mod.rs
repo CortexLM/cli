@@ -22,7 +22,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use cortex_engine::markdown::table::{TableBuilder, render_table, Alignment};
+//! use cortex_core::markdown::table::{TableBuilder, render_table, Alignment};
 //! use ratatui::style::{Style, Color};
 //!
 //! let mut builder = TableBuilder::new();

@@ -112,6 +112,24 @@ impl AppError {
             Self::Gone(_) => "gone",
         }
     }
+
+    /// Do not serialize internal errors, credentials, or supplied paths.
+    pub fn public_message(&self) -> &'static str {
+        match self {
+            Self::Provider(_) | Self::Unavailable(_) | Self::Internal(_) | Self::Timeout => {
+                "The coding service is temporarily unavailable"
+            }
+            Self::Authentication(_) => "Authentication required",
+            Self::Authorization(_) => "Not authorized",
+            Self::NotFound(_) => "Resource not found",
+            Self::Conflict(_) => "Resource already exists",
+            Self::RateLimitExceeded => "Too many requests",
+            Self::PayloadTooLarge => "Request body is too large",
+            Self::NotImplemented(_) => "This operation is not available",
+            Self::Gone(_) => "Resource expired",
+            Self::Validation(_) | Self::BadRequest(_) | Self::Session(_) => "Invalid request",
+        }
+    }
 }
 
 /// Error response body.
@@ -146,7 +164,7 @@ impl IntoResponse for AppError {
         let body = ErrorResponse {
             error: ErrorDetail {
                 code: self.error_code().to_string(),
-                message: self.to_string(),
+                message: self.public_message().to_string(),
                 details: None,
                 request_id: None,
             },

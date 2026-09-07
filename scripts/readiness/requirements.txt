@@ -1,0 +1,4 @@
+lizard==1.17.31
+pathspec==1.1.1
+Pygments==2.21.0
+PyYAML==6.0.2

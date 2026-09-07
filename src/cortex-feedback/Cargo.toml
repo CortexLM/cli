@@ -18,6 +18,3 @@ serde_json = { workspace = true }
 tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }

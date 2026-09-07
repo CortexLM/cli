@@ -12,7 +12,7 @@ use super::types::{SpinnerFrames, SpinnerType};
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::{Spinner, SpinnerType};
+/// use cortex_core::animation::{Spinner, SpinnerType};
 ///
 /// // Create a thinking spinner (slow, contemplative)
 /// let mut spinner = Spinner::thinking();

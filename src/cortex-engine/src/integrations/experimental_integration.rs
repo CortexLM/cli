@@ -2,7 +2,6 @@
 //!
 //! Connects cortex-experimental to manage feature flags.
 
-use cortex_experimental::registry::get_builtin_features;
 use cortex_experimental::{Feature, FeatureInfo, FeatureRegistry, FeatureStage, FeaturesConfig};
 use std::path::Path;
 use std::sync::Arc;
@@ -17,15 +16,8 @@ pub struct ExperimentalIntegration {
 impl ExperimentalIntegration {
     /// Create a new experimental integration.
     pub fn new() -> Self {
-        let mut registry = FeatureRegistry::new();
-
-        // Register builtin features
-        for feature in get_builtin_features() {
-            registry.register(feature);
-        }
-
         Self {
-            registry: Arc::new(RwLock::new(registry)),
+            registry: Arc::new(RwLock::new(FeatureRegistry::new())),
         }
     }
 
@@ -38,11 +30,6 @@ impl ExperimentalIntegration {
 
             let mut registry = self.registry.write().await;
             *registry = FeatureRegistry::new().with_config(config);
-
-            // Re-register builtin features
-            for feature in get_builtin_features() {
-                registry.register(feature);
-            }
 
             debug!("Loaded experimental features config from {:?}", config_path);
         }

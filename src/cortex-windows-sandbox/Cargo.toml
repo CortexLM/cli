@@ -19,9 +19,6 @@ windows = { version = "0.58", features = [
 workspace = true
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-tracing = "0.1"
+serde = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
 thiserror = "1"
-
-[dev-dependencies]
-tokio-test = "0.4"

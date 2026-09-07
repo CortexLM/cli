@@ -14,7 +14,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-cortex-common = { path = "../cortex-common" }
+cortex-common = { workspace = true }
 cortex-mcp-types = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "process", "time"] }

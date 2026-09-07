@@ -20,8 +20,12 @@ struct Args {
     config: Option<String>,
 
     /// Listen address
-    #[arg(short, long, default_value = "0.0.0.0:55554")]
-    listen: String,
+    #[arg(short, long)]
+    listen: Option<String>,
+
+    /// Require a configured server API key or JWT.
+    #[arg(long)]
+    auth: bool,
 
     /// Log level
     #[arg(long, default_value = "info")]
@@ -62,8 +66,12 @@ async fn main() -> ExitCode {
     let args = Args::parse();
 
     setup_logging(&args.log_level, args.json_logs);
+    if cortex_common::diagnostics::init_from_env().is_err() {
+        error!("Local diagnostics could not be initialized");
+        return ExitCode::FAILURE;
+    }
 
-    let config = if let Some(config_path) = args.config {
+    let mut config = if let Some(config_path) = args.config {
         match ServerConfig::load(&config_path) {
             Ok(c) => c,
             Err(e) => {
@@ -79,8 +87,6 @@ async fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        config.listen_addr = args.listen;
-
         // Apply mDNS settings from CLI args
         if args.mdns {
             config.mdns.enabled = true;
@@ -91,6 +97,13 @@ async fn main() -> ExitCode {
 
         config
     };
+    config.apply_auth_env();
+    if let Some(listen) = args.listen {
+        config.listen_addr = listen;
+    }
+    if args.auth {
+        config.auth.enabled = true;
+    }
 
     info!("Starting Cortex server on {}", config.listen_addr);
     info!("Graceful shutdown timeout: {}s", config.shutdown_timeout);

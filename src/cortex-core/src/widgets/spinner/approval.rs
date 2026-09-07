@@ -12,7 +12,7 @@ use ratatui::widgets::Widget;
 ///
 /// # Example
 /// ```
-/// use cortex_engine::widgets::ApprovalIndicator;
+/// use cortex_core::widgets::ApprovalIndicator;
 ///
 /// let mut indicator = ApprovalIndicator::new();
 /// // Later: indicator.tick();

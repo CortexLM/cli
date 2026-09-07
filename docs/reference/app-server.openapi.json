@@ -1,0 +1,640 @@
+{
+  "components": {
+    "schemas": {
+      "CreateSessionRequest": {
+        "description": "Create session request.",
+        "properties": {
+          "metadata": {
+            "default": null
+          },
+          "model": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "system_prompt": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "CreateSessionRequest",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "Health check response.",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "uptime_seconds": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "uptime_seconds",
+          "version"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "MessageResponse": {
+        "description": "Message response.",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "tokens": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "content",
+          "id",
+          "role",
+          "tokens"
+        ],
+        "title": "MessageResponse",
+        "type": "object"
+      },
+      "MetricsSnapshot": {
+        "description": "Metrics snapshot.",
+        "properties": {
+          "active_sessions": {
+            "description": "Active sessions.",
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "errors": {
+            "description": "Errors.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "rate_limit_hits": {
+            "description": "Rate limit hits.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sessions_created": {
+            "description": "Sessions created.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "total_requests": {
+            "description": "Total requests.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "uptime_seconds": {
+            "description": "Server uptime in seconds.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active_sessions",
+          "errors",
+          "rate_limit_hits",
+          "sessions_created",
+          "total_requests",
+          "uptime_seconds"
+        ],
+        "title": "MetricsSnapshot",
+        "type": "object"
+      },
+      "SendMessageRequest": {
+        "description": "Send message request.",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "role": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "SendMessageRequest",
+        "type": "object"
+      },
+      "SessionListItem": {
+        "description": "Session list item.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message_count": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "total_tokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "message_count",
+          "model",
+          "status",
+          "total_tokens"
+        ],
+        "title": "SessionListItem",
+        "type": "object"
+      },
+      "SessionResponse": {
+        "description": "Session response.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message_count": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "metadata": true,
+          "model": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "system_prompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_tokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "message_count",
+          "model",
+          "status",
+          "total_tokens"
+        ],
+        "title": "SessionResponse",
+        "type": "object"
+      },
+      "ToolCallResponse": {
+        "description": "Tool call response.",
+        "properties": {
+          "arguments": true,
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "arguments",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "serverApiKey": {
+        "description": "Value: ApiKey followed by the server key",
+        "in": "header",
+        "name": "Authorization",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Supported local session/health contract. Message POST stores a message; it does not generate a model response. Other development endpoints are not part of this stable contract.",
+    "title": "Cortex local session API",
+    "version": "0.1.7"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid JSON or request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Resource not found or endpoint disabled"
+          },
+          "413": {
+            "description": "Request body too large"
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header contains seconds"
+          },
+          "503": {
+            "description": "Local server is not ready"
+          }
+        },
+        "security": [],
+        "summary": "Local readiness, not coding-service availability"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSnapshot"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid JSON or request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Resource not found or endpoint disabled"
+          },
+          "413": {
+            "description": "Request body too large"
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header contains seconds"
+          },
+          "503": {
+            "description": "Local server is not ready"
+          }
+        },
+        "summary": "Local request counters"
+      }
+    },
+    "/sessions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionListItem"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid JSON or request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Resource not found or endpoint disabled"
+          },
+          "413": {
+            "description": "Request body too large"
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header contains seconds"
+          },
+          "503": {
+            "description": "Local server is not ready"
+          }
+        },
+        "summary": "List in-memory sessions"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid JSON or request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Resource not found or endpoint disabled"
+          },
+          "413": {
+            "description": "Request body too large"
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header contains seconds"
+          },
+          "503": {
+            "description": "Local server is not ready"
+          }
+        },
+        "summary": "Create an in-memory session"
+      }
+    },
+    "/sessions/{id}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "deleted": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid JSON or request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Resource not found or endpoint disabled"
+          },
+          "413": {
+            "description": "Request body too large"
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header contains seconds"
+          },
+          "503": {
+            "description": "Local server is not ready"
+          }
+        },
+        "summary": "Delete a session"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid JSON or request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Resource not found or endpoint disabled"
+          },
+          "413": {
+            "description": "Request body too large"
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header contains seconds"
+          },
+          "503": {
+            "description": "Local server is not ready"
+          }
+        },
+        "summary": "Get a session"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/sessions/{id}/messages": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MessageResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid JSON or request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Resource not found or endpoint disabled"
+          },
+          "413": {
+            "description": "Request body too large"
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header contains seconds"
+          },
+          "503": {
+            "description": "Local server is not ready"
+          }
+        },
+        "summary": "List stored messages"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Invalid JSON or request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Resource not found or endpoint disabled"
+          },
+          "413": {
+            "description": "Request body too large"
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header contains seconds"
+          },
+          "503": {
+            "description": "Local server is not ready"
+          }
+        },
+        "summary": "Store a message without invoking a model"
+      }
+    }
+  },
+  "security": [
+    {
+      "serverApiKey": []
+    },
+    {
+      "bearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ]
+}

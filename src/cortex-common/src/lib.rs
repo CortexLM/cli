@@ -5,6 +5,7 @@ pub mod ansi;
 pub mod approval_presets;
 pub mod config_substitution;
 pub mod cwd_guard;
+pub mod diagnostics;
 pub mod dirs;
 pub mod duration_utils;
 pub mod file_locking;

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::ElapsedTimer;
+/// use cortex_core::animation::ElapsedTimer;
 /// use std::thread;
 /// use std::time::Duration;
 ///

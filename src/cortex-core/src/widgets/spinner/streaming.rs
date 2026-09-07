@@ -12,7 +12,7 @@ use ratatui::widgets::Widget;
 ///
 /// # Example
 /// ```
-/// use cortex_engine::widgets::StreamingIndicator;
+/// use cortex_core::widgets::StreamingIndicator;
 ///
 /// let mut indicator = StreamingIndicator::new();
 /// indicator.add_tokens(100);

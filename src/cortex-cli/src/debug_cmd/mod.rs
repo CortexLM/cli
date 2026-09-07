@@ -17,8 +17,8 @@ mod types;
 pub mod utils;
 
 pub use commands::{
-    ConfigArgs, DebugCli, DebugSubcommand, FileArgs, LspArgs, PathsArgs, RipgrepArgs, SkillArgs,
-    SnapshotArgs, SystemArgs, WaitArgs,
+    ConfigArgs, DebugCli, DebugSubcommand, DoctorArgs, FileArgs, LspArgs, PathsArgs, RipgrepArgs,
+    SkillArgs, SnapshotArgs, SystemArgs, WaitArgs,
 };
 pub use types::*;
 
@@ -28,6 +28,7 @@ impl DebugCli {
     /// Run the debug command.
     pub async fn run(self) -> Result<()> {
         match self.subcommand {
+            DebugSubcommand::Doctor(args) => handlers::run_doctor(args).await,
             DebugSubcommand::Config(args) => handlers::run_config(args).await,
             DebugSubcommand::File(args) => handlers::run_file(args).await,
             DebugSubcommand::Lsp(args) => handlers::run_lsp(args).await,

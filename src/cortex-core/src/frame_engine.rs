@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use cortex_engine::frame_engine::{FrameEngine, EngineEvent};
+//! use cortex_core::frame_engine::{FrameEngine, EngineEvent};
 //! use tokio::sync::mpsc;
 //! use std::sync::Arc;
 //! use std::sync::atomic::AtomicBool;

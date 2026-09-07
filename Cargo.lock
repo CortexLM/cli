@@ -330,6 +330,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce2b2dcc879c3bae0d371e77c99f2238400ef24ec001394befa67b6e543add9e"
 dependencies = [
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -820,17 +821,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console"
-version = "0.16.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fe5f465a4f6fee88fad41b85d990f84c835335e85b5d9e6e63e0d06d28cba7c"
-dependencies = [
- "encode_unicode",
- "libc",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -972,13 +962,15 @@ dependencies = [
  "notify",
  "notify-debouncer-mini",
  "reqwest 0.13.4",
+ "schemars",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
- "tokio-test",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
@@ -1068,7 +1060,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
  "uuid",
 ]
 
@@ -1105,6 +1096,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "toml 0.8.23",
+ "uuid",
  "windows-sys 0.52.0",
 ]
 
@@ -1137,7 +1129,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tokio-test",
  "tracing",
  "tree-sitter-bash",
  "tui-textarea",
@@ -1183,18 +1174,14 @@ dependencies = [
  "futures",
  "glob",
  "hostname",
- "insta",
  "keyring",
- "landlock",
  "libc",
  "mdns-sd",
  "num_cpus",
  "once_cell",
- "pretty_assertions",
  "rand 0.8.8",
  "regex",
  "reqwest 0.13.4",
- "seccompiler 0.5.0",
  "secrecy",
  "serde",
  "serde_json",
@@ -1207,7 +1194,6 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
- "tokio-test",
  "tokio-util",
  "toml 0.8.23",
  "tracing",
@@ -1216,7 +1202,6 @@ dependencies = [
  "uuid",
  "walkdir",
  "which",
- "wiremock",
  "zeroize",
 ]
 
@@ -1260,7 +1245,6 @@ dependencies = [
  "cortex-engine",
  "cortex-protocol",
  "serde_json",
- "tempfile",
  "tracing-subscriber",
  "uuid",
 ]
@@ -1275,7 +1259,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
  "tracing",
 ]
 
@@ -1339,10 +1322,8 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
  "tracing",
  "which",
  "wiremock",
@@ -1367,7 +1348,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -1450,7 +1430,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
 ]
 
 [[package]]
@@ -1471,7 +1450,6 @@ dependencies = [
 name = "cortex-plugins"
 version = "0.1.7"
 dependencies = [
- "anyhow",
  "async-trait",
  "chrono",
  "cortex-common",
@@ -1486,7 +1464,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
  "toml 0.8.23",
  "tracing",
  "url",
@@ -1507,26 +1484,21 @@ version = "0.1.7"
 dependencies = [
  "chrono",
  "indexmap",
- "pretty_assertions",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
- "tokio",
 ]
 
 [[package]]
 name = "cortex-protocol"
 version = "0.1.7"
 dependencies = [
- "anyhow",
  "base64",
  "chrono",
- "pretty_assertions",
  "schemars",
  "serde",
  "serde_json",
  "strum_macros 0.27.2",
- "tempfile",
  "uuid",
 ]
 
@@ -1597,10 +1569,8 @@ dependencies = [
  "dirs 6.0.0",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
  "tracing",
  "uuid",
 ]
@@ -1636,14 +1606,11 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
  "tokio-tungstenite 0.24.0",
  "tracing",
  "urlencoding",
- "wiremock",
 ]
 
 [[package]]
@@ -1712,7 +1679,6 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
- "tokio-test",
  "toml 0.8.23",
  "tracing",
  "unicode-segmentation",
@@ -1737,7 +1703,6 @@ version = "0.1.7"
 dependencies = [
  "anyhow",
  "chrono",
- "cortex-core",
  "cortex-tui-buffer",
  "cortex-tui-components",
  "cortex-tui-core",
@@ -1748,7 +1713,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
  "tracing",
  "uuid",
 ]
@@ -1760,9 +1724,7 @@ dependencies = [
  "cortex-core",
  "crossterm",
  "ratatui",
- "tokio-test",
  "unicode-segmentation",
- "unicode-width",
 ]
 
 [[package]]
@@ -1813,7 +1775,6 @@ dependencies = [
  "cortex-tui-text",
  "once_cell",
  "parking_lot",
- "pretty_assertions",
  "streaming-iterator",
  "thiserror 2.0.20",
  "tree-sitter",
@@ -1861,7 +1822,6 @@ dependencies = [
  "futures",
  "getrandom 0.2.17",
  "hex",
- "libc",
  "reqwest 0.13.4",
  "self-replace",
  "serde",
@@ -1871,7 +1831,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tokio-test",
  "tracing",
  "windows-sys 0.59.0",
  "wiremock",
@@ -1923,7 +1882,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
- "tokio-test",
  "tracing",
  "windows 0.58.0",
 ]
@@ -2478,12 +2436,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "diff"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2684,12 +2636,6 @@ name = "embedded-io"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
-
-[[package]]
-name = "encode_unicode"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "encoding_rs"
@@ -3263,6 +3209,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hdrhistogram"
+version = "7.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f49d1053f4708f0af3cf9fc5bffc7e68a914a3c45becb231c80068c9c3f78bea"
+dependencies = [
+ "byteorder",
+ "num-traits",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3661,18 +3617,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "insta"
-version = "1.48.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f0f8fee8c926415c58d6ae43a08523a26faccb2323f5e6b644fe7dd4ef6b82"
-dependencies = [
- "console",
- "once_cell",
- "similar",
- "tempfile",
-]
-
-[[package]]
 name = "instability"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3842,6 +3786,7 @@ version = "10.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0529410abe238729a60b108898784df8984c87f6054c9c4fcacc47e4803c1ce1"
 dependencies = [
+ "aws-lc-rs",
  "base64",
  "getrandom 0.2.17",
  "js-sys",
@@ -5224,16 +5169,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
 
 [[package]]
-name = "pretty_assertions"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ae130e2f271fbc2ac3a40fb1d07180839cdbbe443c7a27e1e3c13c5cac0116d"
-dependencies = [
- "diff",
- "yansi",
-]
-
-[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5819,7 +5754,7 @@ dependencies = [
  "cfg-if",
  "getrandom 0.2.17",
  "libc",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
@@ -5953,7 +5888,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -6993,17 +6928,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-test"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f6d24790a10a7af737693a3e8f1d03faef7e6ca0cc99aae5066f533766de545"
-dependencies = [
- "futures-core",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
 name = "tokio-tungstenite"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7197,9 +7121,13 @@ checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
 dependencies = [
  "futures-core",
  "futures-util",
+ "hdrhistogram",
+ "indexmap",
  "pin-project-lite",
+ "slab",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -7218,6 +7146,7 @@ dependencies = [
  "futures-util",
  "http",
  "http-body",
+ "http-body-util",
  "pin-project-lite",
  "tokio",
  "tokio-util",
@@ -7484,6 +7413,12 @@ name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
+name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "untrusted"
@@ -8852,12 +8787,6 @@ checksum = "388c44dc09d76f1536602ead6d325eb532f5c122f17782bd57fb47baeeb767e2"
 dependencies = [
  "lzma-sys",
 ]
-
-[[package]]
-name = "yansi"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yoke"

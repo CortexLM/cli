@@ -18,7 +18,41 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  quality:
+    name: Source and dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      QUALITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt, clippy
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete@0.9.1
+      - run: python -m pip install -r scripts/readiness/requirements.txt
+      - run: python -B -m unittest discover -s scripts/readiness -p 'test_*.py'
+      - run: python scripts/readiness/quality.py --base "$QUALITY_BASE"
+      - run: cargo machete --with-metadata
+      - run: python scripts/readiness/release_age.py --base "$QUALITY_BASE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-quality
+          path: target/readiness/quality.json
+          retention-days: 14
+
   version-check:
     name: CLI Version Check
     runs-on: ubuntu-latest
@@ -67,13 +101,71 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config git ripgrep
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: rust-test
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.102
       - name: Run tests
-        run: cargo test --workspace
+        run: python3 scripts/readiness/tests.py
+      - name: Run documentation tests
+        run: cargo test --locked --workspace --doc
+      - name: Verify generated API contracts
+        run: python3 scripts/readiness/schema.py
+      - name: Build local QA applications
+        run: cargo build --locked -p cortex-cli -p cortex-app-server
+      - name: Local functional QA and dynamic security tests
+        run: python3 scripts/readiness/qa.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-performance
+          path: target/readiness/tests/
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-qa
+          # Diagnostic journals and aggregates remain local to the runner.
+          path: target/readiness/qa/report.json
+          retention-days: 14
+
+  coverage:
+    name: Changed-line coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      QUALITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config git ripgrep
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rust-coverage
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.6.21,cargo-nextest@0.9.102
+      - name: Collect application coverage
+        run: |
+          mkdir -p target/readiness
+          cargo llvm-cov nextest --locked -p cortex-cli -p cortex-app-server -p cortex-common --profile ci --lcov --output-path target/readiness/lcov.info
+      - run: python3 scripts/readiness/coverage.py --base "$QUALITY_BASE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: |
+            target/readiness/lcov.info
+            target/readiness/coverage.json
+          retention-days: 14
 
   tui:
     name: TUI checks
@@ -107,14 +199,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.0
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-audit
+          tool: cargo-audit@0.22.2
       - name: Audit Rust dependencies
         run: cargo audit
 
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [version-check, fmt, clippy, test, tui, audit]
+    needs: [version-check, fmt, clippy, test, tui, audit, quality, coverage]
     if: always()
     steps:
       - name: Check all jobs
@@ -124,7 +216,9 @@ jobs:
                 "${{ needs.clippy.result }}" != "success" || \
                 "${{ needs.test.result }}" != "success" || \
                 "${{ needs.tui.result }}" != "success" || \
-                "${{ needs.audit.result }}" != "success" ]]; then
+                "${{ needs.audit.result }}" != "success" || \
+                "${{ needs.quality.result }}" != "success" || \
+                "${{ needs.coverage.result }}" != "success" ]]; then
             echo "One or more required CI jobs failed"
             exit 1
           fi

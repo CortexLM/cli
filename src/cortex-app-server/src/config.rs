@@ -67,7 +67,7 @@ pub struct ServerConfig {
     #[serde(default = "default_true")]
     pub health_enabled: bool,
 
-    /// CORS origins (empty = allow all).
+    /// Allowed browser origins (empty = deny cross-origin browser access).
     #[serde(default)]
     pub cors_origins: Vec<String>,
 
@@ -81,7 +81,7 @@ fn default_shutdown_timeout() -> u64 {
 }
 
 fn default_listen_addr() -> String {
-    "0.0.0.0:55554".to_string()
+    "127.0.0.1:55554".to_string()
 }
 
 fn default_max_body_size() -> usize {
@@ -120,6 +120,50 @@ impl Default for ServerConfig {
 }
 
 impl ServerConfig {
+    /// Refuse unsafe or unusable listener configurations before binding a port.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let addr: std::net::SocketAddr = self.listen_addr.parse()?;
+        anyhow::ensure!(
+            addr.ip().is_loopback() || self.auth.enabled,
+            "Authentication is required for a non-loopback listener"
+        );
+        anyhow::ensure!(
+            !self.auth.enabled
+                || self.auth.api_keys.iter().any(|key| !key.is_empty())
+                || self
+                    .auth
+                    .jwt_secret
+                    .as_ref()
+                    .is_some_and(|key| !key.is_empty()),
+            "Authentication is enabled but no server credential is configured"
+        );
+        anyhow::ensure!(
+            self.auth.api_keys.iter().all(|key| !key.is_empty()),
+            "Server credentials must not be empty"
+        );
+        anyhow::ensure!(
+            self.max_body_size > 0 && self.request_timeout > 0,
+            "Request limits must be positive"
+        );
+        anyhow::ensure!(
+            self.tls.is_none(),
+            "Configure TLS at a trusted reverse proxy; direct TLS is not supported"
+        );
+        Ok(())
+    }
+
+    /// Load server credentials without writing their values into configuration files.
+    pub fn apply_auth_env(&mut self) {
+        if let Ok(key) = std::env::var("CORTEX_SERVER_API_KEY") {
+            self.auth.api_keys = vec![key];
+            self.auth.enabled = true;
+        }
+        if let Ok(secret) = std::env::var("CORTEX_JWT_SECRET") {
+            self.auth.jwt_secret = Some(secret);
+            self.auth.enabled = true;
+        }
+    }
+
     /// Load configuration from file.
     pub fn load(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
@@ -137,10 +181,12 @@ impl ServerConfig {
 
         if let Ok(key) = std::env::var("CORTEX_API_KEY") {
             config.auth.api_keys.push(key);
+            config.auth.enabled = true;
         }
 
         if let Ok(secret) = std::env::var("CORTEX_JWT_SECRET") {
             config.auth.jwt_secret = Some(secret);
+            config.auth.enabled = true;
         }
 
         if let Ok(openai_key) = std::env::var("OPENAI_API_KEY") {
@@ -160,6 +206,7 @@ impl ServerConfig {
             config.mdns.service_name = Some(mdns_name);
         }
 
+        config.apply_auth_env();
         Ok(config)
     }
 
@@ -191,7 +238,7 @@ fn default_tls_version() -> String {
 }
 
 /// Authentication configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AuthConfig {
     /// Enable authentication.
     #[serde(default)]
@@ -211,6 +258,16 @@ pub struct AuthConfig {
     pub anonymous_endpoints: Vec<String>,
 }
 
+impl std::fmt::Debug for AuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthConfig")
+            .field("enabled", &self.enabled)
+            .field("api_key_count", &self.api_keys.len())
+            .field("jwt_configured", &self.jwt_secret.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 fn default_jwt_expiry() -> u64 {
     86400 // 24 hours
 }
@@ -223,13 +280,13 @@ impl Default for AuthConfig {
             jwt_secret: None,
             jwt_expiry: default_jwt_expiry(),
             oauth2: None,
-            anonymous_endpoints: vec!["/health".to_string(), "/metrics".to_string()],
+            anonymous_endpoints: vec!["/api/v1/health".to_string()],
         }
     }
 }
 
 /// OAuth2 configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OAuth2Config {
     /// OAuth2 provider (e.g., "github", "google").
     pub provider: String,
@@ -246,6 +303,12 @@ pub struct OAuth2Config {
     /// Scopes.
     #[serde(default)]
     pub scopes: Vec<String>,
+}
+
+impl std::fmt::Debug for OAuth2Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuth2Config").finish_non_exhaustive()
+    }
 }
 
 /// Rate limiting configuration.
@@ -296,7 +359,7 @@ impl Default for RateLimitConfig {
             by_api_key: false,
             by_user: false,
             trust_proxy: false,
-            exempt_paths: vec!["/health".to_string()],
+            exempt_paths: vec!["/api/v1/health".to_string()],
         }
     }
 }
@@ -353,7 +416,7 @@ impl Default for SessionConfig {
 }
 
 /// Provider configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct ProviderConfig {
     /// OpenAI API key.
     pub openai_api_key: Option<String>,
@@ -377,6 +440,12 @@ pub struct ProviderConfig {
     /// Default model.
     #[serde(default = "default_model")]
     pub default_model: String,
+}
+
+impl std::fmt::Debug for ProviderConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderConfig").finish_non_exhaustive()
+    }
 }
 
 fn default_provider() -> String {
@@ -521,7 +590,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = ServerConfig::default();
-        assert_eq!(config.listen_addr, "0.0.0.0:55554");
+        assert_eq!(config.listen_addr, "127.0.0.1:55554");
         assert!(!config.auth.enabled);
         assert!(config.rate_limit.enabled);
     }
@@ -532,5 +601,31 @@ mod tests {
         let json = serde_json::to_string_pretty(&config).unwrap();
         let parsed: ServerConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(config.listen_addr, parsed.listen_addr);
+    }
+
+    #[test]
+    fn test_debug_does_not_expose_server_credentials() {
+        let config: ServerConfig = serde_json::from_value(serde_json::json!({
+            "auth": {
+                "api_keys": ["fixture-api-key"],
+                "jwt_secret": "fixture-jwt-secret",
+                "oauth2": {
+                    "provider": "fixture", "client_id": "fixture-client",
+                    "client_secret": "fixture-oauth-secret",
+                    "auth_url": "", "token_url": "", "redirect_url": ""
+                }
+            },
+            "providers": {"azure_api_key": "fixture-upstream-key"}
+        }))
+        .unwrap();
+        let debug = format!("{config:?} {:?}", config.auth.oauth2);
+        for secret in [
+            "fixture-api-key",
+            "fixture-jwt-secret",
+            "fixture-oauth-secret",
+            "fixture-upstream-key",
+        ] {
+            assert!(!debug.contains(secret));
+        }
     }
 }

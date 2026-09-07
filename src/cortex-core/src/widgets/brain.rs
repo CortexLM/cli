@@ -11,9 +11,10 @@
 //!
 //! # Example
 //! ```
-//! use cortex_engine::widgets::Brain;
+//! use cortex_core::widgets::Brain;
 //!
 //! // Animated brain with frame counter
+//! let frame_counter = 0;
 //! let brain = Brain::new()
 //!     .with_frame(frame_counter)
 //!     .centered();
@@ -79,9 +80,10 @@ const DARK_GRAY: (u8, u8, u8) = (0x26, 0x26, 0x26);
 ///
 /// # Example
 /// ```
-/// use cortex_engine::widgets::Brain;
+/// use cortex_core::widgets::Brain;
 ///
 /// // Animated brain with frame counter for pulsation effect
+/// let frame_counter = 0;
 /// let brain = Brain::new()
 ///     .with_frame(frame_counter)
 ///     .centered();

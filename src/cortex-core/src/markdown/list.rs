@@ -14,7 +14,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use cortex_engine::markdown::list::{ListItem, ListContext, render_list_item};
+//! use cortex_core::markdown::list::{ListItem, ListContext, render_list_item};
 //! use ratatui::text::Span;
 //! use ratatui::style::Style;
 //!

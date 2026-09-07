@@ -15,16 +15,16 @@ audio = ["dep:rodio"]
 
 [dependencies]
 # Cortex TUI core (the TUI engine)
-cortex-core = { path = "../cortex-core" }
+cortex-core = { workspace = true }
 
 # Auto-update system
-cortex-update = { path = "../cortex-update" }
+cortex-update = { workspace = true }
 
 # Centralized TUI components
-cortex-tui-components = { path = "../cortex-tui-components" }
+cortex-tui-components = { workspace = true }
 
 # TUI capture and debugging (dev/debug feature)
-cortex-tui-capture = { path = "../cortex-tui-capture" }
+cortex-tui-capture = { workspace = true }
 
 # Cortex business logic
 cortex-engine = { workspace = true }
@@ -82,10 +82,9 @@ which = { workspace = true }
 rodio = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [dev-dependencies]
-tokio-test = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

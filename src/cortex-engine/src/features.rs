@@ -159,9 +159,15 @@ impl FeatureManager {
 
     /// Create with standard features.
     pub fn with_standard_features() -> Self {
-        // Register standard features synchronously isn't possible with async,
-        // so we return the manager and let the caller register features
-        Self::new()
+        Self {
+            features: RwLock::new(
+                standard::all()
+                    .into_iter()
+                    .map(|feature| (feature.name.clone(), feature))
+                    .collect(),
+            ),
+            ..Self::new()
+        }
     }
 
     /// Register a feature.
@@ -575,5 +581,13 @@ mod tests {
 
         let streaming = standard::streaming();
         assert!(streaming.default_enabled);
+    }
+
+    #[tokio::test]
+    async fn test_standard_manager_registers_all_defaults() {
+        let manager = FeatureManager::with_standard_features();
+        assert_eq!(manager.list().await.len(), standard::all().len());
+        assert!(manager.is_enabled("streaming").await);
+        assert!(!manager.is_enabled("vim_mode").await);
     }
 }

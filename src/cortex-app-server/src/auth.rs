@@ -108,7 +108,7 @@ pub struct AuthService {
 impl std::fmt::Debug for AuthService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuthService")
-            .field("config", &self.config)
+            .field("enabled", &self.config.enabled)
             .field("encoding_key", &self.encoding_key.is_some())
             .field("decoding_key", &self.decoding_key.is_some())
             .finish()
@@ -159,7 +159,9 @@ impl AuthService {
             .as_ref()
             .ok_or_else(|| AppError::Internal("JWT secret not configured".to_string()))?;
 
-        let validation = Validation::default();
+        let mut validation = Validation::default();
+        validation.set_issuer(&["Cortex"]);
+        validation.set_audience(&["cortex-api"]);
 
         let token_data = decode::<Claims>(token, decoding_key, &validation)
             .map_err(|e| AppError::Authentication(format!("Invalid token: {e}")))?;
@@ -277,7 +279,7 @@ pub async fn auth_middleware(
         .auth
         .anonymous_endpoints
         .iter()
-        .any(|p| path.starts_with(p))
+        .any(|p| path == p)
     {
         return Ok(next.run(request).await);
     }
@@ -296,10 +298,7 @@ pub async fn auth_middleware(
                 .jwt_secret
                 .as_ref()
                 .map(|secret| DecodingKey::from_secret(secret.as_bytes()))
-                .ok_or_else(|| {
-                    tracing::error!("JWT secret not configured but auth is enabled");
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+                .ok_or(StatusCode::UNAUTHORIZED)?;
 
             // Configure validation
             let mut validation = Validation::default();
@@ -318,7 +317,7 @@ pub async fn auth_middleware(
 
             // Check if token is expired (extra safety check)
             if claims.is_expired() {
-                tracing::warn!("JWT token expired for user: {}", claims.sub);
+                tracing::warn!("JWT token expired");
                 return Err(StatusCode::UNAUTHORIZED);
             }
 
@@ -329,12 +328,17 @@ pub async fn auth_middleware(
 
             // Validate API key against configured keys
             // Use constant-time comparison to prevent timing attacks
-            let is_valid = state.config.auth.api_keys.iter().any(|configured_key| {
-                constant_time_compare(api_key.as_bytes(), configured_key.as_bytes())
-            });
+            let key_index = state
+                .config
+                .auth
+                .api_keys
+                .iter()
+                .position(|configured_key| {
+                    constant_time_compare(api_key.as_bytes(), configured_key.as_bytes())
+                });
 
-            if is_valid {
-                AuthResult::ApiKey(api_key.to_string())
+            if let Some(index) = key_index {
+                AuthResult::ApiKey(format!("server-key-{index}"))
             } else {
                 tracing::warn!("Invalid API key attempted");
                 return Err(StatusCode::UNAUTHORIZED);
@@ -345,6 +349,15 @@ pub async fn auth_middleware(
             return Err(StatusCode::UNAUTHORIZED);
         }
     };
+
+    let is_admin = match &auth_result {
+        AuthResult::ApiKey(_) => true,
+        AuthResult::Jwt(claims) => claims.has_role("admin"),
+        AuthResult::Anonymous => false,
+    };
+    if path.starts_with("/api/v1/admin/") && !is_admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     // Add auth result to request extensions
     request.extensions_mut().insert(auth_result);

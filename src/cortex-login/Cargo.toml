@@ -23,14 +23,14 @@ sha2 = { workspace = true }
 url = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
-hostname = "0.4"
+hostname = { workspace = true }
 urlencoding = { workspace = true }
 rand = { workspace = true }
 
 # Security - credential encryption
-secrecy = { version = "0.10", features = ["serde"] }
+secrecy = { workspace = true, features = ["serde"] }
 aes-gcm = "0.10"
-zeroize = { version = "1.8", features = ["derive"] }
+zeroize = { workspace = true, features = ["derive"] }
 
 # Keyring with platform-specific backends
 [target.'cfg(all(target_os = "linux", not(target_env = "musl")))'.dependencies]
@@ -46,7 +46,4 @@ keyring = { workspace = true, features = ["apple-native"] }
 keyring = { workspace = true, features = ["windows-native"] }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[dev-dependencies]
-tempfile = { workspace = true }
+libc = { workspace = true }

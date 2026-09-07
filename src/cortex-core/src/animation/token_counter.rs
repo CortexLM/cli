@@ -7,7 +7,7 @@
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::TokenCounter;
+/// use cortex_core::animation::TokenCounter;
 ///
 /// let mut counter = TokenCounter::new().with_max(4096);
 /// counter.add_input(512);

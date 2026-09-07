@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use cortex_engine::markdown::inline::{InlineStyleStack, InlineModifier};
+//! use cortex_core::markdown::inline::{InlineStyleStack, InlineModifier};
 //! use ratatui::style::Style;
 //!
 //! let mut stack = InlineStyleStack::new(Style::default());
@@ -50,7 +50,7 @@ pub enum InlineModifier {
 /// # Example
 ///
 /// ```rust,ignore
-/// use cortex_engine::markdown::inline::{InlineStyleStack, InlineModifier};
+/// use cortex_core::markdown::inline::{InlineStyleStack, InlineModifier};
 /// use ratatui::style::Style;
 ///
 /// let mut stack = InlineStyleStack::new(Style::default());
@@ -152,7 +152,7 @@ impl InlineStyleStack {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use cortex_engine::markdown::inline::{InlineStyleStack, InlineModifier};
+    /// use cortex_core::markdown::inline::{InlineStyleStack, InlineModifier};
     ///
     /// let mut stack = InlineStyleStack::default();
     /// stack.push(InlineModifier::Bold);

@@ -13,134 +13,43 @@ pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
 /// Validates that a path is safe for file operations.
 /// Prevents path traversal attacks by canonicalizing and checking against allowed roots.
 pub fn validate_path_safe(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
-    let normalized = normalize_path(path);
-
-    // Get canonical path if it exists
-    let canonical = if path.exists() {
-        path.canonicalize()
-            .map_err(|e| format!("Failed to canonicalize path: {}", e))?
-    } else {
-        // For non-existent paths, check if parent exists
-        if let Some(parent) = normalized.parent() {
-            if parent.exists() {
-                let canonical_parent = parent
-                    .canonicalize()
-                    .map_err(|e| format!("Failed to canonicalize parent: {}", e))?;
-                let file_name = normalized
-                    .file_name()
-                    .ok_or_else(|| "Invalid file name".to_string())?;
-                canonical_parent.join(file_name)
-            } else {
-                normalized.clone()
-            }
-        } else {
-            normalized.clone()
-        }
-    };
-
-    // Validate against allowed roots
-    let allowed_roots = get_allowed_roots();
-    let is_within_allowed = allowed_roots.iter().any(|root| {
-        if let Ok(canonical_root) = root.canonicalize() {
-            canonical.starts_with(&canonical_root)
-        } else {
-            canonical.starts_with(root)
-        }
-    });
-
-    if !is_within_allowed {
-        return Err(format!(
-            "Path '{}' is outside allowed directories",
-            path.display()
-        ));
-    }
-
-    // Check symlinks for existing paths
-    if path.exists()
-        && let Ok(metadata) = std::fs::symlink_metadata(path)
-        && metadata.file_type().is_symlink()
-        && let Ok(target) = std::fs::read_link(path)
-    {
-        let absolute_target = if target.is_absolute() {
-            target
-        } else {
-            path.parent().map(|p| p.join(&target)).unwrap_or(target)
-        };
-
-        let target_canonical = if absolute_target.exists() {
-            absolute_target
-                .canonicalize()
-                .map_err(|e| format!("Failed to canonicalize symlink target: {}", e))?
-        } else {
-            normalize_path(&absolute_target)
-        };
-
-        let target_is_safe = allowed_roots.iter().any(|root| {
-            if let Ok(canonical_root) = root.canonicalize() {
-                target_canonical.starts_with(&canonical_root)
-            } else {
-                target_canonical.starts_with(root)
-            }
-        });
-
-        if !target_is_safe {
-            return Err(format!(
-                "Symlink '{}' points outside allowed directories",
-                path.display()
-            ));
-        }
-    }
-
-    Ok(canonical)
+    let root = std::env::current_dir().map_err(|_| "Workspace is unavailable")?;
+    validate_in_workspace(path, &root)
 }
 
-/// Get allowed root directories for file operations.
-pub fn get_allowed_roots() -> Vec<std::path::PathBuf> {
-    let mut roots = Vec::new();
-
-    // Home directory
-    if let Some(home) = dirs::home_dir() {
-        roots.push(home);
-    }
-
-    // Documents directory
-    if let Some(docs) = dirs::document_dir() {
-        roots.push(docs);
-    }
-
-    // Temp directory
-    roots.push(std::env::temp_dir());
-
-    // Current working directory
-    if let Ok(cwd) = std::env::current_dir() {
-        roots.push(cwd);
-    }
-
-    // On Windows, allow all drives
-    #[cfg(windows)]
-    {
-        for letter in b'A'..=b'Z' {
-            let drive = format!("{}:\\", letter as char);
-            let path = std::path::PathBuf::from(&drive);
-            if path.exists() {
-                roots.push(path);
-            }
+fn validate_in_workspace(
+    path: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    let root = root
+        .canonicalize()
+        .map_err(|_| "Workspace is unavailable")?;
+    let mut ancestor = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    };
+    let mut missing = Vec::new();
+    // Resolve the nearest existing ancestor, including symlinks, before creating
+    // any directories. A missing grandparent must not bypass the workspace check.
+    while !ancestor.try_exists().map_err(|_| "Cannot inspect path")? {
+        if std::fs::symlink_metadata(&ancestor).is_ok() {
+            return Err("Unresolved symlink".into());
+        }
+        let name = ancestor.file_name().ok_or("Invalid path")?.to_os_string();
+        missing.push(name);
+        if !ancestor.pop() {
+            return Err("Invalid path".into());
         }
     }
-
-    // On Unix, allow common dev paths
-    #[cfg(unix)]
-    {
-        let unix_paths = ["/home", "/Users", "/tmp", "/var/tmp", "/workspace"];
-        for p in unix_paths {
-            let path = std::path::PathBuf::from(p);
-            if path.exists() {
-                roots.push(path);
-            }
-        }
+    let mut canonical = ancestor.canonicalize().map_err(|_| "Cannot resolve path")?;
+    if !canonical.starts_with(&root) {
+        return Err("Path is outside the workspace".into());
     }
-
-    roots
+    for component in missing.into_iter().rev() {
+        canonical.push(component);
+    }
+    Ok(canonical)
 }
 
 /// Validate a path for write operations (more restrictive).
@@ -183,6 +92,12 @@ pub fn validate_path_for_write(path: &std::path::Path) -> Result<std::path::Path
 pub fn validate_path_for_delete(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let validated = validate_path_for_write(path)?;
     let normalized = normalize_path(path);
+    let workspace = std::env::current_dir()
+        .and_then(|p| p.canonicalize())
+        .map_err(|_| "Workspace is unavailable")?;
+    if validated == workspace {
+        return Err("Cannot delete the workspace root".into());
+    }
 
     // Prevent deletion of home directory
     if let Some(home) = dirs::home_dir()
@@ -197,4 +112,33 @@ pub fn validate_path_for_delete(path: &std::path::Path) -> Result<std::path::Pat
     }
 
     Ok(validated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_existing_and_new_paths_stay_inside_workspace() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(directory.path().join("private"), "outside").unwrap();
+        assert!(validate_in_workspace(std::path::Path::new("new/nested/file"), &root).is_ok());
+        assert!(validate_in_workspace(std::path::Path::new("../private"), &root).is_err());
+        assert!(validate_in_workspace(&directory.path().join("private"), &root).is_err());
+        assert!(validate_in_workspace(std::path::Path::new("../new/file"), &root).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlink_and_missing_descendant_escape_are_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        std::os::unix::fs::symlink(directory.path(), root.join("escape")).unwrap();
+        assert!(validate_in_workspace(std::path::Path::new("escape/new/nested"), &root).is_err());
+        std::os::unix::fs::symlink(directory.path().join("missing"), root.join("broken")).unwrap();
+        assert!(validate_in_workspace(std::path::Path::new("broken"), &root).is_err());
+    }
 }

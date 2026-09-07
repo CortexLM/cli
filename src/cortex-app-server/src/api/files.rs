@@ -10,7 +10,7 @@ use axum::{
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-use super::path_security::{validate_path_for_delete, validate_path_for_write};
+use super::path_security::{validate_path_for_delete, validate_path_for_write, validate_path_safe};
 use super::types::{
     CreateDirRequest, DeleteFileRequest, DeleteFileResponse, FileEntry, FileTreeNode,
     FileTreeQuery, ListFilesRequest, ListFilesResponse, ReadFileRequest, ReadFileResponse,
@@ -27,7 +27,9 @@ const MAX_ENTRIES_PER_DIR: usize = 1000;
 pub async fn list_files(Json(req): Json<ListFilesRequest>) -> AppResult<Json<ListFilesResponse>> {
     use std::fs;
 
-    let path = std::path::Path::new(&req.path);
+    let validated =
+        validate_path_safe(std::path::Path::new(&req.path)).map_err(AppError::Authorization)?;
+    let path = validated.as_path();
 
     if !path.exists() {
         return Err(AppError::NotFound(format!("Path not found: {}", req.path)));
@@ -116,7 +118,8 @@ pub async fn get_file_tree(Query(query): Query<FileTreeQuery>) -> AppResult<Json
                         .filter(|entry| {
                             let entry_name = entry.file_name().to_string_lossy().to_string();
                             // Skip hidden files and common ignored directories
-                            !entry_name.starts_with('.')
+                            !entry.file_type().map(|t| t.is_symlink()).unwrap_or(true)
+                                && !entry_name.starts_with('.')
                                 && !matches!(
                                     entry_name.as_str(),
                                     "node_modules"
@@ -174,7 +177,9 @@ pub async fn get_file_tree(Query(query): Query<FileTreeQuery>) -> AppResult<Json
         })
     }
 
-    let path = std::path::Path::new(&query.path);
+    let validated =
+        validate_path_safe(std::path::Path::new(&query.path)).map_err(AppError::Authorization)?;
+    let path = validated.as_path();
 
     if !path.exists() {
         return Err(AppError::NotFound(format!(
@@ -193,7 +198,9 @@ pub async fn get_file_tree(Query(query): Query<FileTreeQuery>) -> AppResult<Json
 pub async fn read_file(Json(req): Json<ReadFileRequest>) -> AppResult<Json<ReadFileResponse>> {
     use std::fs;
 
-    let path = std::path::Path::new(&req.path);
+    let validated =
+        validate_path_safe(std::path::Path::new(&req.path)).map_err(AppError::Authorization)?;
+    let path = validated.as_path();
 
     if !path.exists() {
         return Err(AppError::NotFound(format!("File not found: {}", req.path)));
@@ -203,6 +210,9 @@ pub async fn read_file(Json(req): Json<ReadFileRequest>) -> AppResult<Json<ReadF
         return Err(AppError::BadRequest("Path is not a file".to_string()));
     }
 
+    if path.metadata().map(|m| m.len()).unwrap_or(u64::MAX) > 10 * 1024 * 1024 {
+        return Err(AppError::PayloadTooLarge);
+    }
     let content = fs::read_to_string(path)
         .map_err(|e| AppError::Internal(format!("Failed to read file: {e}")))?;
 
@@ -277,7 +287,8 @@ pub async fn create_directory(
 ) -> AppResult<Json<DeleteFileResponse>> {
     use std::fs;
 
-    let path = std::path::Path::new(&req.path);
+    let path =
+        validate_path_for_write(std::path::Path::new(&req.path)).map_err(AppError::BadRequest)?;
 
     fs::create_dir_all(path)
         .map_err(|e| AppError::Internal(format!("Failed to create directory: {e}")))?;
@@ -292,7 +303,10 @@ pub async fn create_directory(
 pub async fn rename_file(Json(req): Json<RenameRequest>) -> AppResult<Json<DeleteFileResponse>> {
     use std::fs;
 
-    let old_path = std::path::Path::new(&req.old_path);
+    let old_path = validate_path_for_delete(std::path::Path::new(&req.old_path))
+        .map_err(AppError::BadRequest)?;
+    let new_path = validate_path_for_write(std::path::Path::new(&req.new_path))
+        .map_err(AppError::BadRequest)?;
 
     if !old_path.exists() {
         return Err(AppError::NotFound(format!(
@@ -301,7 +315,7 @@ pub async fn rename_file(Json(req): Json<RenameRequest>) -> AppResult<Json<Delet
         )));
     }
 
-    fs::rename(&req.old_path, &req.new_path)
+    fs::rename(old_path, new_path)
         .map_err(|e| AppError::Internal(format!("Failed to rename: {e}")))?;
 
     Ok(Json(DeleteFileResponse {

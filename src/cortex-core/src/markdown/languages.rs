@@ -53,7 +53,7 @@ pub fn register_common_languages(highlighter: &Highlighter) {
 /// # Examples
 ///
 /// ```
-/// use cortex_engine::markdown::languages::normalize_language_name;
+/// use cortex_core::markdown::languages::normalize_language_name;
 ///
 /// assert_eq!(normalize_language_name("rs"), Some("rust"));
 /// assert_eq!(normalize_language_name("python3"), Some("python"));
@@ -197,7 +197,7 @@ pub static DEFAULT_HIGHLIGHTER: Lazy<Arc<Highlighter>> = Lazy::new(|| {
 /// # Examples
 ///
 /// ```
-/// use cortex_engine::markdown::languages::get_default_highlighter;
+/// use cortex_core::markdown::languages::get_default_highlighter;
 ///
 /// let highlighter = get_default_highlighter();
 /// // Use highlighter for syntax highlighting...
@@ -218,7 +218,7 @@ pub fn get_default_highlighter() -> Arc<Highlighter> {
 /// # Examples
 ///
 /// ```
-/// use cortex_engine::markdown::languages::is_language_available;
+/// use cortex_core::markdown::languages::is_language_available;
 ///
 /// assert!(is_language_available("bash"));
 /// assert!(is_language_available("sh")); // Alias for bash
@@ -241,7 +241,7 @@ pub fn is_language_available(lang: &str) -> bool {
 /// # Examples
 ///
 /// ```
-/// use cortex_engine::markdown::languages::get_language_display_name;
+/// use cortex_core::markdown::languages::get_language_display_name;
 ///
 /// assert_eq!(get_language_display_name("rs"), "Rust");
 /// assert_eq!(get_language_display_name("cpp"), "C++");
@@ -288,7 +288,7 @@ pub fn get_language_display_name(lang: &str) -> &'static str {
 /// # Examples
 ///
 /// ```
-/// use cortex_engine::markdown::languages::supported_languages;
+/// use cortex_core::markdown::languages::supported_languages;
 ///
 /// let langs = supported_languages();
 /// assert!(langs.contains(&"bash"));
@@ -325,7 +325,7 @@ pub fn supported_languages() -> &'static [&'static str] {
 /// # Examples
 ///
 /// ```
-/// use cortex_engine::markdown::languages::get_language_aliases;
+/// use cortex_core::markdown::languages::get_language_aliases;
 ///
 /// let rust_aliases = get_language_aliases("rust");
 /// assert!(rust_aliases.contains(&"rs"));

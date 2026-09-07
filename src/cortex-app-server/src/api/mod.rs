@@ -13,6 +13,7 @@ mod health;
 mod models;
 mod path_security;
 mod proxy;
+pub mod schema;
 mod search;
 mod sessions;
 mod stored_sessions;
@@ -41,27 +42,31 @@ pub fn routes() -> Router<Arc<AppState>> {
         // Health and metrics
         .route("/health", get(health::health_check))
         .route("/metrics", get(health::get_metrics))
+        .route(
+            "/openapi.json",
+            get(|| async { axum::Json(schema::document()) }),
+        )
         // mDNS Discovery
         .route("/discover", get(discovery::discover_servers))
         // Port proxy (for dev servers)
         .route("/ports", get(proxy::list_open_ports))
-        .route("/proxy/:port", get(proxy::proxy_to_port))
-        .route("/proxy/:port/*path", get(proxy::proxy_to_port_path))
+        .route("/proxy/{port}", get(proxy::proxy_to_port))
+        .route("/proxy/{port}/{*path}", get(proxy::proxy_to_port_path))
         // Sessions
         .route("/sessions", post(sessions::create_session))
         .route("/sessions", get(sessions::list_sessions))
-        .route("/sessions/:id", get(sessions::get_session))
-        .route("/sessions/:id", delete(sessions::delete_session))
-        .route("/sessions/:id/messages", post(sessions::send_message))
-        .route("/sessions/:id/messages", get(sessions::list_messages))
+        .route("/sessions/{id}", get(sessions::get_session))
+        .route("/sessions/{id}", delete(sessions::delete_session))
+        .route("/sessions/{id}/messages", post(sessions::send_message))
+        .route("/sessions/{id}/messages", get(sessions::list_messages))
         // Models
         .route("/models", get(models::list_models))
-        .route("/models/:id", get(models::get_model))
+        .route("/models/{id}", get(models::get_model))
         // Completions (OpenAI-compatible)
         .route("/chat/completions", post(chat::chat_completions))
         // Tools
         .route("/tools", get(tools::list_tools))
-        .route("/tools/:name/execute", post(tools::execute_tool))
+        .route("/tools/{name}/execute", post(tools::execute_tool))
         // File Explorer
         .route("/files", post(files::list_files))
         .route("/files/tree", get(files::get_file_tree))
@@ -80,29 +85,29 @@ pub fn routes() -> Router<Arc<AppState>> {
             "/agents/generate-prompt",
             post(agents::generate_agent_prompt),
         )
-        .route("/agents/:name", get(agents::get_agent))
-        .route("/agents/:name", axum::routing::put(agents::update_agent))
-        .route("/agents/:name", delete(agents::delete_agent))
+        .route("/agents/{name}", get(agents::get_agent))
+        .route("/agents/{name}", axum::routing::put(agents::update_agent))
+        .route("/agents/{name}", delete(agents::delete_agent))
         // Stored sessions (persistent)
         .route(
             "/stored-sessions",
             get(stored_sessions::list_stored_sessions),
         )
         .route(
-            "/stored-sessions/:id",
+            "/stored-sessions/{id}",
             get(stored_sessions::get_stored_session),
         )
         .route(
-            "/stored-sessions/:id",
+            "/stored-sessions/{id}",
             delete(stored_sessions::delete_stored_session),
         )
         .route(
-            "/stored-sessions/:id/history",
+            "/stored-sessions/{id}/history",
             get(stored_sessions::get_session_history),
         )
         // Terminals (background processes)
         .route("/terminals", get(terminals::list_terminals))
-        .route("/terminals/:id/logs", get(terminals::get_terminal_logs))
+        .route("/terminals/{id}/logs", get(terminals::get_terminal_logs))
         // Search
         .route("/search", get(search::search_project))
         // Git

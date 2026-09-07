@@ -2,6 +2,7 @@
 
 use crate::{Feature, FeatureInfo, FeatureStage, FeaturesConfig};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// Registry of available features.
 pub struct FeatureRegistry {
@@ -36,16 +37,16 @@ impl FeatureRegistry {
 
     /// Check if a feature is enabled.
     pub fn is_enabled(&self, feature_id: &str) -> bool {
+        let Some(feature) = self.features.get(feature_id) else {
+            return false;
+        };
         // Check config override first
         if let Some(&enabled) = self.config.overrides.get(feature_id) {
             return enabled;
         }
 
         // Check default
-        self.features
-            .get(feature_id)
-            .map(|f| f.default_enabled)
-            .unwrap_or(false)
+        feature.default_enabled
     }
 
     /// Get feature info.
@@ -109,6 +110,9 @@ impl FeatureRegistry {
 
     /// Disable a feature.
     pub fn disable(&mut self, feature_id: &str) -> Result<(), String> {
+        if !self.features.contains_key(feature_id) {
+            return Err(format!("Feature '{}' not found", feature_id));
+        }
         // Check if any enabled feature depends on this
         for id in self.features.keys() {
             if let Some(info) = self.get_info(id) {
@@ -145,17 +149,8 @@ impl Default for FeatureRegistry {
     }
 }
 
-/// Builtin features.
-pub static BUILTIN_FEATURES: &[Feature] = &[Feature {
-    id: String::new(), // Will be set properly below
-    name: String::new(),
-    description: String::new(),
-    stage: FeatureStage::Experimental,
-    default_enabled: false,
-    requires_restart: false,
-    dependencies: Vec::new(),
-    conflicts: Vec::new(),
-}];
+/// Builtin features, initialized once from the actual definitions.
+pub static BUILTIN_FEATURES: LazyLock<Vec<Feature>> = LazyLock::new(get_builtin_features);
 
 // Actual builtin features function
 pub fn get_builtin_features() -> Vec<Feature> {
@@ -305,6 +300,26 @@ pub fn get_builtin_features() -> Vec<Feature> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_builtin_registry_has_real_unique_features_and_defaults() {
+        let registry = FeatureRegistry::new();
+        let features = registry.list_all();
+        assert_eq!(features.len(), get_builtin_features().len());
+        assert!(features.iter().all(|info| !info.feature.id.is_empty()));
+        assert!(registry.is_enabled("view_image"));
+        assert!(!registry.is_enabled("web_search"));
+    }
+
+    #[test]
+    fn test_unknown_overrides_cannot_enable_or_disable_missing_flags() {
+        let mut config = FeaturesConfig::default();
+        config.overrides.insert("retired".into(), true);
+        let mut registry = FeatureRegistry::new().with_config(config);
+        assert!(!registry.is_enabled("retired"));
+        assert!(registry.enable("retired").is_err());
+        assert!(registry.disable("retired").is_err());
+    }
 
     #[test]
     fn test_registry() {

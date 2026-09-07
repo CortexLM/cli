@@ -10,7 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use tokio::time::timeout;
-use tracing::{error, info, warn};
+use tracing::{Instrument, error, info, warn};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -49,6 +49,80 @@ pub async fn request_id_middleware(mut request: Request, next: Next) -> Response
 /// Request ID type.
 #[derive(Debug, Clone)]
 pub struct RequestId(pub String);
+
+/// Correlate requests without logging URLs, bodies, headers, or user identifiers.
+pub async fn observability_middleware(
+    State(state): State<Arc<AppState>>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    use cortex_common::diagnostics::{Operation, TraceContext};
+
+    let request_id = request
+        .headers()
+        .get(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .unwrap_or_else(Uuid::new_v4)
+        .to_string();
+    let trace = TraceContext::from_parent(
+        request
+            .headers()
+            .get("traceparent")
+            .and_then(|v| v.to_str().ok()),
+    );
+    let route = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|path| path.as_str().to_string())
+        .unwrap_or_else(|| "unmatched".to_string());
+    request
+        .extensions_mut()
+        .insert(RequestId(request_id.clone()));
+    let span = tracing::info_span!("server.request", request_id = %request_id, trace_id = %trace.trace_id(), route);
+    let start = Instant::now();
+    state.increment_counter("total_requests").await;
+    let mut response = trace
+        .clone()
+        .scope(next.run(request).instrument(span.clone()))
+        .await;
+    let elapsed = start.elapsed();
+    let status = response.status();
+    if status.is_server_error() {
+        state.increment_counter("errors").await;
+    }
+    {
+        let _entered = span.enter();
+        info!(
+            status = status.as_u16(),
+            duration_ms = elapsed.as_millis() as u64,
+            "Request completed"
+        );
+        if cortex_common::diagnostics::record(
+            Operation::ServerRequest,
+            &trace,
+            status.as_u16(),
+            elapsed,
+        )
+        .is_err()
+        {
+            warn!("Local diagnostics could not be written");
+        }
+    }
+    response.headers_mut().insert(
+        REQUEST_ID_HEADER,
+        HeaderValue::from_str(&request_id).expect("UUID header"),
+    );
+    response.headers_mut().insert(
+        "traceparent",
+        HeaderValue::from_str(&trace.traceparent()).expect("Validated trace context"),
+    );
+    response.headers_mut().insert(
+        REQUEST_TIMING_HEADER,
+        HeaderValue::from_str(&format!("{}ms", elapsed.as_millis())).expect("Numeric duration"),
+    );
+    response
+}
 
 /// Timing middleware - tracks request duration.
 pub async fn timing_middleware(request: Request, next: Next) -> Response {
@@ -126,7 +200,7 @@ pub async fn rate_limit_middleware(
         .rate_limit
         .exempt_paths
         .iter()
-        .any(|p| path.starts_with(p))
+        .any(|p| path == p)
     {
         return Ok(next.run(request).await);
     }
@@ -148,15 +222,11 @@ pub async fn rate_limit_middleware(
 
 /// Get rate limit key from request.
 fn get_rate_limit_key(request: &Request, state: &AppState) -> String {
-    // Try API key first
     if state.config.rate_limit.by_api_key
-        && let Some(api_key) = request
-            .headers()
-            .get(header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("ApiKey "))
+        && let Some(crate::auth::AuthResult::ApiKey(identity)) =
+            request.extensions().get::<crate::auth::AuthResult>()
     {
-        return format!("apikey:{api_key}");
+        return identity.clone();
     }
 
     // Fall back to IP address
@@ -178,7 +248,14 @@ fn get_rate_limit_key(request: &Request, state: &AppState) -> String {
         }
     }
 
-    // Default to unknown when not behind proxy or headers not present
+    if let Some(axum::extract::ConnectInfo(addr)) = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+    {
+        return format!("ip:{}", addr.ip());
+    }
+
+    // In-process router tests have no socket peer.
     "ip:unknown".to_string()
 }
 
@@ -285,6 +362,9 @@ pub fn cors_layer(origins: &[String]) -> tower_http::cors::CorsLayer {
     let max_age = std::time::Duration::from_secs(86400);
 
     if origins.is_empty() {
+        CorsLayer::new().max_age(max_age)
+    } else if origins.iter().any(|origin| origin == "*") {
+        // Explicit --cors remains an opt-in, unlike the secure empty default.
         CorsLayer::permissive().max_age(max_age)
     } else {
         let origins: Vec<HeaderValue> = origins

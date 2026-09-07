@@ -23,9 +23,9 @@ use crate::storage::StoredMessage;
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/share", post(create_share))
-        .route("/share/:token", get(get_shared_session))
-        .route("/share/:token", delete(revoke_share))
-        .route("/share/:token/stats", get(get_share_stats))
+        .route("/share/{token}", get(get_shared_session))
+        .route("/share/{token}", delete(revoke_share))
+        .route("/share/{token}/stats", get(get_share_stats))
 }
 
 /// Shared session manager.

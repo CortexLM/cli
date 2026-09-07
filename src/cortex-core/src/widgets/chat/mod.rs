@@ -7,8 +7,8 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use cortex_engine::widgets::{ChatWidget, Message, MessageRole};
-//! use cortex_engine::animation::Typewriter;
+//! use cortex_core::widgets::{ChatWidget, Message, MessageRole};
+//! use cortex_core::animation::Typewriter;
 //!
 //! let messages = vec![
 //!     Message::user("Hello!"),

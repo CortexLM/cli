@@ -9,6 +9,6 @@ description = "Experimental features management for Cortex CLI"
 workspace = true
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["fs"] }
-toml = "0.8"
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["fs"] }
+toml = { workspace = true }

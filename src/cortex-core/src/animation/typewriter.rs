@@ -12,7 +12,7 @@
 ///
 /// # Example
 /// ```
-/// use cortex_engine::animation::Typewriter;
+/// use cortex_core::animation::Typewriter;
 ///
 /// // Static typewriter (fixed speed)
 /// let mut tw = Typewriter::new("Hello, World!".to_string(), 30.0);

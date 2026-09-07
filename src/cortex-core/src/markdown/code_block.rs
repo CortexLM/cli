@@ -9,7 +9,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use cortex_engine::markdown::code_block::{CodeBlockRenderer, IncrementalCodeBlock};
+//! use cortex_core::markdown::code_block::{CodeBlockRenderer, IncrementalCodeBlock};
 //! use cortex_tui_syntax::Highlighter;
 //! use std::sync::Arc;
 //!

@@ -14,7 +14,7 @@ use super::helpers::hash_string;
 /// # Example
 ///
 /// ```rust,ignore
-/// use cortex_engine::markdown::{MarkdownRenderer, IncrementalMarkdownRenderer};
+/// use cortex_core::markdown::{MarkdownRenderer, IncrementalMarkdownRenderer};
 ///
 /// let renderer = MarkdownRenderer::new();
 /// let mut incremental = IncrementalMarkdownRenderer::new(renderer);

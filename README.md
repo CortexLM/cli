@@ -144,8 +144,12 @@ The index is at [docs/README.md](./docs/README.md).
 
 ## Building and testing
 
+For native prerequisites, pinned tools, a development container, real local QA,
+test reports, and coverage, follow
+[Development and local QA](./docs/guides/development.md).
+
 ```bash
-cargo build -p cortex-cli
+cargo build --locked -p cortex-cli
 ./target/debug/Cortex --help
 ```
 

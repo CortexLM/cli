@@ -71,7 +71,7 @@ pub fn detect_terminal_bg() -> Option<(u8, u8, u8)> {
 /// Adaptive color palette that adjusts to terminal background
 #[derive(Debug, Clone)]
 pub struct AdaptiveColors {
-    /// Selection accent — the Cortex violet, for the focused `>` caret and label only
+    /// Selection accent — the Cortex banner green, for the focused `>` caret and label only
     pub accent: Color,
     /// Primary text color
     pub text: Color,
@@ -103,6 +103,28 @@ pub struct AdaptiveColors {
     pub hairline_hover: Color,
     /// Inky canvas
     pub background: Color,
+}
+
+/// Back focused RGB accent glyphs with a contrasting neutral surface.
+pub fn focus_background(accent: Color) -> Color {
+    // ponytail: built-in accents are RGB; resolve terminal palettes if indexed themes ship.
+    let Color::Rgb(r, g, b) = accent else {
+        return cortex_core::style::TEXT;
+    };
+    let linear = |channel: u8| {
+        let value = f64::from(channel) / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    if luminance > 0.169 {
+        Color::Black
+    } else {
+        cortex_core::style::TEXT
+    }
 }
 
 impl AdaptiveColors {
@@ -148,8 +170,8 @@ impl AdaptiveColors {
 
     /// Create light theme colors adapted to the given background
     pub fn light_theme(bg: (u8, u8, u8)) -> Self {
-        // Darker violet for contrast on light backgrounds
-        let accent_rgb = (0x7C, 0x3A, 0xED);
+        // Darker banner green for contrast on light backgrounds
+        let accent_rgb = (0x1F, 0x49, 0x45);
 
         // Blend colors with background for better integration
         let text_dim_rgb = blend((0x60, 0x60, 0x60), bg, 0.9);
@@ -183,18 +205,18 @@ impl AdaptiveColors {
     /// palette from `cortex_core::style`.
     pub fn default_dark() -> Self {
         Self {
-            accent: cortex_core::style::ACCENT,          // #A78BFA violet
-            text: cortex_core::style::TEXT,              // #F5F5F5
-            text_dim: cortex_core::style::TEXT_DIM,      // #6B7280
-            text_muted: cortex_core::style::TEXT_MUTED,  // #4B5563
-            user_bg: cortex_core::style::USER_TURN_BG,   // #1C1C1C
-            panel_bg: cortex_core::style::PANEL_BG,      // #141414
-            border: cortex_core::style::HAIRLINE,        // #3A3A3A
-            success: cortex_core::style::SUCCESS,        // #4ADE80
-            diff_add: cortex_core::style::DIFF_ADD,      // #4ADE80
-            error: cortex_core::style::ERROR,            // #F87171
-            warning: cortex_core::style::WARNING,        // #FFC857
-            thinking: cortex_core::style::THINKING,      // dim
+            accent: cortex_core::style::ACCENT,         // #1F4945 banner green
+            text: cortex_core::style::TEXT,             // #F5F5F5
+            text_dim: cortex_core::style::TEXT_DIM,     // #6B7280
+            text_muted: cortex_core::style::TEXT_MUTED, // #4B5563
+            user_bg: cortex_core::style::USER_TURN_BG,  // #1C1C1C
+            panel_bg: cortex_core::style::PANEL_BG,     // #141414
+            border: cortex_core::style::HAIRLINE,       // #3A3A3A
+            success: cortex_core::style::SUCCESS,       // #4ADE80
+            diff_add: cortex_core::style::DIFF_ADD,     // #4ADE80
+            error: cortex_core::style::ERROR,           // #F87171
+            warning: cortex_core::style::WARNING,       // #FFC857
+            thinking: cortex_core::style::THINKING,     // dim
             selection: cortex_core::style::SELECTION_BG, // #262626
             hover: cortex_core::style::BAR_HOVER,
             hairline_hover: cortex_core::style::BORDER_FOCUS,
@@ -281,8 +303,8 @@ mod tests {
     #[test]
     fn test_default_dark_colors() {
         let colors = AdaptiveColors::default_dark();
-        // The accent is the selection violet.
-        assert!(matches!(colors.accent, Color::Rgb(0xA7, 0x8B, 0xFA)));
+        // The accent is the selection banner green.
+        assert!(matches!(colors.accent, Color::Rgb(0x1F, 0x49, 0x45)));
         // Green covers `✓` and diff additions alike.
         assert!(matches!(colors.diff_add, Color::Rgb(0x4A, 0xDE, 0x80)));
         assert_eq!(colors.success, colors.diff_add);
@@ -300,7 +322,7 @@ mod tests {
     #[test]
     fn test_dark_theme() {
         let colors = AdaptiveColors::dark_theme((0x1A, 0x1A, 0x1A));
-        assert!(matches!(colors.accent, Color::Rgb(0xA7, 0x8B, 0xFA)));
+        assert!(matches!(colors.accent, Color::Rgb(0x1F, 0x49, 0x45)));
         // Structural grays stay neutral after blending with the background.
         for color in [colors.user_bg, colors.border] {
             let Color::Rgb(r, g, b) = color else {
@@ -314,14 +336,14 @@ mod tests {
     fn test_light_theme() {
         let colors = AdaptiveColors::light_theme((255, 255, 255));
         // Light theme should have darker accent for contrast
-        assert!(matches!(colors.accent, Color::Rgb(0x7C, 0x3A, 0xED)));
+        assert!(matches!(colors.accent, Color::Rgb(0x1F, 0x49, 0x45)));
     }
 
     #[test]
     fn test_from_theme_name() {
         let dark_colors = AdaptiveColors::from_theme_name("dark");
-        // The session accent is the theme's primary — the selection violet.
-        assert!(matches!(dark_colors.accent, Color::Rgb(0xA7, 0x8B, 0xFA)));
+        // The session accent is the theme's primary — the selection banner green.
+        assert!(matches!(dark_colors.accent, Color::Rgb(0x1F, 0x49, 0x45)));
         // Dark themes carry the locked selection bar.
         assert!(matches!(
             dark_colors.selection,
@@ -330,7 +352,7 @@ mod tests {
 
         let light_colors = AdaptiveColors::from_theme_name("light");
         // Light theme should have different accent
-        assert!(matches!(light_colors.accent, Color::Rgb(0x7C, 0x3A, 0xED)));
+        assert!(matches!(light_colors.accent, Color::Rgb(0x1F, 0x49, 0x45)));
 
         let monokai_colors = AdaptiveColors::from_theme_name("monokai");
         // Monokai has green accent
@@ -364,5 +386,20 @@ mod tests {
         assert!(themes.contains(&"light"));
         assert!(themes.contains(&"ocean_dark"));
         assert!(themes.contains(&"monokai"));
+    }
+    #[test]
+    fn focus_backing_matches_builtin_accent_luminance() {
+        for name in AdaptiveColors::available_themes() {
+            let colors = AdaptiveColors::from_theme_name(name);
+            let expected = match *name {
+                "ocean_dark" | "monokai" => Color::Black,
+                _ => cortex_core::style::TEXT,
+            };
+            assert_eq!(
+                crate::ui::colors::focus_background(colors.accent),
+                expected,
+                "{name}"
+            );
+        }
     }
 }

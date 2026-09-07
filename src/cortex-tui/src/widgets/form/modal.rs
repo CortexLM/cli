@@ -91,7 +91,10 @@ impl<'a> Widget for FormModal<'a> {
 
             let is_focused = idx == self.state.focus_index;
             let label_style = if is_focused {
-                Style::default().fg(self.colors.accent).bold()
+                Style::default()
+                    .fg(self.colors.accent)
+                    .bg(crate::ui::colors::focus_background(self.colors.accent))
+                    .bold()
             } else {
                 Style::default().fg(self.colors.text)
             };
@@ -230,12 +233,12 @@ impl<'a> Widget for FormModal<'a> {
         let submit_x =
             inner_area.x + (inner_area.width.saturating_sub(submit_text.len() as u16)) / 2;
 
-        // The focused submit button is the violet accent on the gray bar —
+        // The focused submit button is the banner green accent on the gray bar —
         // never inverted onto the accent.
         let submit_style = if self.state.is_submit_focused() {
             Style::default()
                 .fg(self.colors.accent)
-                .bg(self.colors.surface)
+                .bg(crate::ui::colors::focus_background(self.colors.accent))
                 .bold()
         } else {
             Style::default().fg(self.colors.text_dim)

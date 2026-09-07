@@ -16,7 +16,7 @@
 
 use crate::providers::models::{ModelInfo, get_models_for_provider, get_popular_models};
 use cortex_core::style::{
-    ACCENT, BORDER_FOCUS, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
+    BORDER_FOCUS, CortexStyle, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use ratatui::prelude::*;
 use ratatui::widgets::{
@@ -380,10 +380,9 @@ impl ModelPicker<'_> {
 
             let is_selected = start + i == self.state.selected;
 
-            // Selection highlight: the violet label on the dark gray bar —
-            // never inverted onto the accent.
+            // Keep the row dark gray; back the focused label separately.
             let (bg, fg) = if is_selected {
-                (SELECTION_BG, ACCENT)
+                (SELECTION_BG, TEXT)
             } else {
                 (SURFACE_0, TEXT)
             };
@@ -419,7 +418,16 @@ impl ModelPicker<'_> {
             } else {
                 display
             };
-            buf.set_string(x + 2, y, &name, Style::default().fg(fg).bg(bg));
+            buf.set_string(
+                x + 2,
+                y,
+                &name,
+                if is_selected {
+                    CortexStyle::selected()
+                } else {
+                    Style::default().fg(fg).bg(bg)
+                },
+            );
 
             // Provider
             let provider_x = x + name_width as u16 + 3;
@@ -586,5 +594,28 @@ mod tests {
         assert_eq!(state.selected, 1);
         state.select_prev();
         assert_eq!(state.selected, 0);
+    }
+    #[test]
+    fn focus_label_cells_have_contrasting_backing() {
+        let mut state = ModelPickerState::new();
+        state.filtered_models.push(ModelItem {
+            id: "test".into(),
+            name: "Test".into(),
+            provider: "cortex".into(),
+            context_window: None,
+            is_current: false,
+            is_popular: false,
+        });
+        for width in [40, 120] {
+            let area = Rect::new(0, 0, width, 12);
+            let mut buf = Buffer::empty(area);
+            ModelPicker::new(&state).render_model_list(area, &mut buf);
+            assert_eq!(buf[(3, 0)].symbol(), "T");
+            for x in 3..7 {
+                assert_eq!(buf[(x, 0)].fg, cortex_core::style::ACCENT);
+                assert_eq!(buf[(x, 0)].bg, TEXT);
+            }
+            assert_eq!(buf[(0, 0)].bg, SELECTION_BG);
+        }
     }
 }

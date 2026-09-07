@@ -105,7 +105,10 @@ impl<'a> BacktrackOverlay<'a> {
 
         // Selection indicator
         if is_selected {
-            let indicator_style = Style::default().fg(ACCENT).bg(bg).bold();
+            let indicator_style = Style::default()
+                .fg(ACCENT)
+                .bold()
+                .bg(cortex_core::style::TEXT);
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_char('>').set_style(indicator_style);
             }
@@ -149,9 +152,12 @@ impl<'a> BacktrackOverlay<'a> {
         // Content preview
         let max_content_width = (area.width as usize).saturating_sub((x - area.x) as usize + 12);
         let content_preview = Self::truncate_content(&snapshot.content, max_content_width);
-        // The selected snapshot is the violet accent on the gray bar.
+        // The selected snapshot is the banner green accent on the gray bar.
         let content_style = if is_selected {
-            Style::default().fg(ACCENT).bg(bg).bold()
+            Style::default()
+                .fg(ACCENT)
+                .bold()
+                .bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT).bg(bg)
         };

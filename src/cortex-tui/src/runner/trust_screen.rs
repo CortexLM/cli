@@ -134,7 +134,7 @@ impl TrustScreen {
     }
 
     /// The trust prompt: title and workspace path, the why in dim copy, then
-    /// two numbered options — the focused one a violet `>` and label on the
+    /// two numbered options — the focused one a banner green `>` and label on the
     /// dark gray bar, the other a dim `·` — each with its description under
     /// the title, and the key hints at the bottom.
     fn render(&self, f: &mut ratatui::Frame) {
@@ -211,13 +211,15 @@ pub fn render_trust_prompt(
                 }
             }
             let bar = Style::default().bg(SELECTION_BG);
-            buf.set_string(area.x, y, "> ", bar.fg(ACCENT));
+            buf.set_string(area.x, y, "> ", bar.fg(ACCENT).bg(cortex_core::style::TEXT));
             buf.set_string(area.x + 2, y, format!("{number} "), bar.fg(TEXT));
             buf.set_string(
                 area.x + 4,
                 y,
                 &label,
-                bar.fg(ACCENT).add_modifier(Modifier::BOLD),
+                bar.fg(ACCENT)
+                    .add_modifier(Modifier::BOLD)
+                    .bg(cortex_core::style::TEXT),
             );
             buf.set_string(area.x + 4, y + 1, &description, bar.fg(TEXT_DIM));
         } else {
@@ -312,7 +314,7 @@ mod tests {
                 .expect("selected");
             assert_eq!(buf[(0, row)].style().fg, Some(ACCENT));
             assert_eq!(buf[(4, row)].style().fg, Some(ACCENT));
-            assert_eq!(buf[(4, row)].style().bg, Some(SELECTION_BG));
+            assert_eq!(buf[(4, row)].style().bg, Some(TEXT));
             assert_eq!(buf[(4, row + 1)].style().fg, Some(TEXT_DIM));
             let other = (0..h)
                 .find(|y| buf[(0, *y)].symbol() == "·")

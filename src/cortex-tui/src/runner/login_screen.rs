@@ -304,7 +304,7 @@ impl LoginScreen {
     }
 
     /// The sign-in picker: title, question, numbered options — the focused
-    /// one is a violet `>` and label on the dark gray bar, the others a dim `·`
+    /// one is a banner green `>` and label on the dark gray bar, the others a dim `·`
     /// with white copy — each with its dim description under the title, then
     /// the key hints. The version sits alone in the footer.
     fn render_select_method(&self, f: &mut ratatui::Frame, area: Rect) {
@@ -352,7 +352,7 @@ impl LoginScreen {
                     area.x,
                     y,
                     "> ",
-                    Style::default().fg(ACCENT).bg(SELECTION_BG),
+                    Style::default().fg(ACCENT).bg(cortex_core::style::TEXT),
                 );
                 buf.set_string(
                     area.x + 2,
@@ -366,8 +366,8 @@ impl LoginScreen {
                     &label,
                     Style::default()
                         .fg(ACCENT)
-                        .bg(SELECTION_BG)
-                        .add_modifier(Modifier::BOLD),
+                        .add_modifier(Modifier::BOLD)
+                        .bg(cortex_core::style::TEXT),
                 );
                 buf.set_string(
                     area.x + 4,
@@ -986,14 +986,14 @@ mod tests {
         assert!(!text.contains("▄█▀▀▀▀█▄"), "{text}");
         assert!(!text.to_lowercase().contains("grok"));
 
-        // Violet is the focused `>` and label only; the number stays white, the
+        // Banner green is the focused `>` and label only; the number stays white, the
         // description dim, and the whole two-row option sits on the gray bar.
         let buf = terminal.backend().buffer();
         let row = (0..24u16)
             .find(|y| buf[(0, *y)].symbol() == ">")
             .expect("selected row");
         assert_eq!(buf[(0, row)].style().fg, Some(ACCENT));
-        assert_eq!(buf[(0, row)].style().bg, Some(SELECTION_BG));
+        assert_eq!(buf[(0, row)].style().bg, Some(TEXT));
         assert_eq!(buf[(2, row)].style().fg, Some(TEXT));
         assert_eq!(buf[(4, row)].style().fg, Some(ACCENT));
         assert_eq!(buf[(4, row + 1)].style().fg, Some(TEXT_DIM));
@@ -1007,7 +1007,7 @@ mod tests {
         assert_eq!(buf[(4, other)].style().fg, Some(TEXT));
         assert_ne!(buf[(4, other)].style().bg, Some(SELECTION_BG));
         // The selected row uses the locked selection wash `#221A38`.
-        // Violet is never a background — no inverted bar.
+        // Banner green is never a background — no inverted bar.
         for y in 0..24u16 {
             for x in 0..80u16 {
                 let cell = &buf[(x, y)];
@@ -1040,7 +1040,7 @@ mod tests {
                 .find(|y| buf[(0, *y)].symbol() == ">")
                 .expect("focused row");
             assert_eq!(buf[(0, row)].style().fg, Some(ACCENT));
-            assert_eq!(buf[(4, row)].style().bg, Some(SELECTION_BG));
+            assert_eq!(buf[(4, row)].style().bg, Some(TEXT));
         }
         // `lock_select` is option 1.
         let screen = LoginScreen::lock_select("1.0.0", None);

@@ -4,7 +4,7 @@
 //! Models are grouped by provider with section headers for easy navigation.
 
 use cortex_core::style::{
-    ACCENT, BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
+    BORDER, CYAN_PRIMARY, CortexStyle, SELECTION_BG, SURFACE_0, TEXT, TEXT_DIM, TEXT_MUTED,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
@@ -327,9 +327,9 @@ impl ModelsModal {
         is_selected: bool,
     ) {
         // Determine styles
-        // Selected rows: the violet accent on the dark gray bar — never inverted.
+        // Selected glyphs get a light backing; the rest of the row stays dark gray.
         let (bg, fg, prefix_fg) = if is_selected {
-            (SELECTION_BG, ACCENT, ACCENT)
+            (SELECTION_BG, TEXT, TEXT)
         } else {
             (SURFACE_0, TEXT, TEXT_DIM)
         };
@@ -343,11 +343,24 @@ impl ModelsModal {
 
         // Selection prefix: ">" for selected, " " for others
         let prefix = if is_selected { ">" } else { " " };
-        buf.set_string(col, y, prefix, Style::default().fg(prefix_fg).bg(bg));
+        buf.set_string(
+            col,
+            y,
+            prefix,
+            if is_selected {
+                CortexStyle::selected()
+            } else {
+                Style::default().fg(prefix_fg).bg(bg)
+            },
+        );
         col += 2;
 
         // Model name — English product name, never the served slug.
-        let name_style = Style::default().fg(fg).bg(bg);
+        let name_style = if is_selected {
+            CortexStyle::selected()
+        } else {
+            Style::default().fg(fg).bg(bg)
+        };
         let display = crate::ui::text_utils::model_display_name(&model.name);
         let max_name_len = 35.min(width.saturating_sub(30) as usize);
         let truncated_name = if display.len() > max_name_len && max_name_len > 3 {
@@ -721,5 +734,21 @@ mod tests {
         // Should build action bar with standard hints
         let _action_bar = modal.build_action_bar();
         // ActionBar is created successfully (basic smoke test)
+    }
+    #[test]
+    fn focus_label_and_caret_cells_have_contrasting_backing() {
+        let model = ModelInfo::new("test", "Test", "Cortex");
+        let modal = ModelsModal::new(vec![model.clone()], None);
+        for width in [40, 120] {
+            let mut buf = Buffer::empty(Rect::new(0, 0, width, 12));
+            modal.render_model_row(0, 0, width, &mut buf, &model, true);
+            assert_eq!(buf[(0, 0)].symbol(), ">");
+            assert_eq!(buf[(2, 0)].symbol(), "T");
+            for x in [0, 2, 3, 4, 5] {
+                assert_eq!(buf[(x, 0)].fg, cortex_core::style::ACCENT);
+                assert_eq!(buf[(x, 0)].bg, TEXT);
+            }
+            assert_eq!(buf[(1, 0)].bg, SELECTION_BG);
+        }
     }
 }

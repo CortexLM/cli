@@ -548,23 +548,23 @@ impl ApprovalOverlay {
 
             let mut col = area.x;
 
-            // Selection indicator: violet `>` on the focused row, a dim middot
+            // Selection indicator: banner green `>` on the focused row, a dim middot
             // on the others.
             let prefix = if is_selected { ">" } else { "·" };
             let prefix_style = if is_selected {
-                Style::default().fg(ACCENT).bg(SELECTION_BG)
+                Style::default().fg(ACCENT).bg(cortex_core::style::TEXT)
             } else {
                 Style::default().fg(TEXT_DIM).bg(SURFACE_0)
             };
             buf.set_string(col, y, prefix, prefix_style);
             col += 2;
 
-            // Option label: the violet accent when focused, white otherwise.
+            // Option label: the banner green accent when focused, white otherwise.
             let label_style = if is_selected {
                 Style::default()
                     .fg(ACCENT)
-                    .bg(SELECTION_BG)
                     .add_modifier(Modifier::BOLD)
+                    .bg(cortex_core::style::TEXT)
             } else {
                 Style::default().fg(TEXT).bg(SURFACE_0)
             };

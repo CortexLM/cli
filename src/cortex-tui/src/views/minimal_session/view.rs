@@ -98,7 +98,12 @@ pub fn paint_composer_contents(
                 Style::default().fg(TEXT_BRIGHT),
             );
         } else {
-            buf.set_string(col, y, ch.to_string(), Style::default().fg(fg));
+            let style = if fg == ACCENT {
+                Style::default().fg(fg).bg(TEXT)
+            } else {
+                Style::default().fg(fg)
+            };
+            buf.set_string(col, y, ch.to_string(), style);
         }
         col = col.saturating_add(1);
         if col >= x + width {
@@ -371,9 +376,9 @@ impl<'a> MinimalSessionView<'a> {
 
     /// Renders autocomplete suggestions inline above the composer.
     ///
-    /// Focused row: dark gray bar, violet `>` , label in text with matched
-    /// characters in violet. Hovered (not focused) row: `#1A1A1A` bar, no
-    /// violet. Trailer is muted.
+    /// Focused row: dark gray bar, banner green `>` , label in text with matched
+    /// characters in banner green. Hovered (not focused) row: `#1A1A1A` bar, no
+    /// banner green. Trailer is muted.
     fn render_autocomplete_inline(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;

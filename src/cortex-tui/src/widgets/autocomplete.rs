@@ -16,8 +16,9 @@
 //! frame.render_widget(popup, area);
 //! ```
 
+use super::scrollable_dropdown::ScrollableDropdown;
 use crate::app::{AutocompleteItem, AutocompleteState, AutocompleteTrigger};
-use cortex_core::style::{ACCENT, HAIRLINE, SELECTION_BG, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{HAIRLINE, SURFACE_1, TEXT, TEXT_MUTED};
 use ratatui::prelude::*;
 use ratatui::widgets::{
     Block, Borders, Clear, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget,
@@ -101,90 +102,6 @@ impl<'a> AutocompletePopup<'a> {
         (width, height)
     }
 
-    /// Renders a single item.
-    fn render_item(
-        &self,
-        item: &AutocompleteItem,
-        is_selected: bool,
-        area: Rect,
-        buf: &mut Buffer,
-    ) {
-        // Background
-        let bg = if is_selected { SELECTION_BG } else { SURFACE_1 };
-        for x in area.x..area.x + area.width {
-            if let Some(cell) = buf.cell_mut((x, area.y)) {
-                cell.set_bg(bg);
-            }
-        }
-
-        let mut x = area.x + 1;
-
-        // Icon
-        if item.icon != '\0' {
-            let icon_style = Style::default().fg(TEXT_DIM).bg(bg);
-            if let Some(cell) = buf.cell_mut((x, area.y)) {
-                cell.set_char(item.icon).set_style(icon_style);
-            }
-            x += 2;
-        }
-
-        // Label
-        // The selected label is the violet accent on the gray bar.
-        let label_style = if is_selected {
-            Style::default()
-                .fg(ACCENT)
-                .bg(bg)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(TEXT).bg(bg)
-        };
-
-        for ch in item.label.chars() {
-            if x >= area.x + area.width - 1 {
-                break;
-            }
-            if let Some(cell) = buf.cell_mut((x, area.y)) {
-                cell.set_char(ch).set_style(label_style);
-            }
-            x += 1;
-        }
-
-        // Description (if there's room)
-        if !item.description.is_empty() && x < area.x + area.width - 5 {
-            // Add separator
-            let sep_style = Style::default().fg(TEXT_MUTED).bg(bg);
-            for ch in " - ".chars() {
-                if x >= area.x + area.width - 1 {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut((x, area.y)) {
-                    cell.set_char(ch).set_style(sep_style);
-                }
-                x += 1;
-            }
-
-            // Description text
-            let desc_style = Style::default().fg(TEXT_DIM).bg(bg);
-            for ch in item.description.chars() {
-                if x >= area.x + area.width - 1 {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut((x, area.y)) {
-                    cell.set_char(ch).set_style(desc_style);
-                }
-                x += 1;
-            }
-        }
-
-        // Selection indicator
-        if is_selected {
-            let indicator_style = Style::default().fg(ACCENT).bg(bg);
-            if let Some(cell) = buf.cell_mut((area.x, area.y)) {
-                cell.set_char('>').set_style(indicator_style);
-            }
-        }
-    }
-
     /// Gets the title based on trigger type.
     fn get_title(&self) -> &'static str {
         match self.state.trigger {
@@ -253,7 +170,14 @@ impl Widget for AutocompletePopup<'_> {
             };
 
             let is_selected = self.state.scroll_offset + i == self.state.selected;
-            self.render_item(item, is_selected, item_area, buf);
+            ScrollableDropdown::render_item(
+                &item.label,
+                &item.description,
+                item.icon,
+                is_selected,
+                item_area,
+                buf,
+            );
         }
 
         // Render scrollbar if needed

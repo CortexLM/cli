@@ -115,7 +115,7 @@ impl Widget for QuestionPromptView<'_> {
         // Clear the modal area
         Clear.render(layout.modal_area, buf);
 
-        // Draw border — gray hairline, white title; violet never outlines a box.
+        // Draw border — gray hairline, white title; banner green never outlines a box.
         let border_style = Style::default().fg(colors.border);
         let block = Block::default()
             .borders(Borders::ALL)
@@ -155,10 +155,13 @@ impl QuestionPromptView<'_> {
             let is_hovered = self.hovered_tab == Some(i);
             let is_answered = !self.state.answers[i].is_empty();
 
-            // The active tab is the focused selection: violet on the gray bar,
+            // The active tab is the focused selection: banner green on the gray bar,
             // never inverted onto the accent. Answered tabs read white.
             let (fg, bg) = if is_active {
-                (colors.accent, colors.selection)
+                (
+                    colors.accent,
+                    crate::ui::colors::focus_background(colors.accent),
+                )
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -193,7 +196,10 @@ impl QuestionPromptView<'_> {
             let is_hovered = self.hovered_tab == Some(self.state.request.questions.len());
 
             let (fg, bg) = if is_active {
-                (colors.accent, colors.selection)
+                (
+                    colors.accent,
+                    crate::ui::colors::focus_background(colors.accent),
+                )
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -264,10 +270,13 @@ impl QuestionPromptView<'_> {
             let prefix = format!("{}. {}", i + 1, checkbox);
             let label = &opt.label;
 
-            // Focused option: violet on the gray selection bar; a picked option
+            // Focused option: banner green on the gray selection bar; a picked option
             // stays white — its `✓` carries the green.
             let (fg, bg) = if is_selected {
-                (colors.accent, colors.selection)
+                (
+                    colors.accent,
+                    crate::ui::colors::focus_background(colors.accent),
+                )
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -330,7 +339,10 @@ impl QuestionPromptView<'_> {
                 let label = "Type your own answer";
 
                 let (fg, bg) = if is_selected {
-                    (colors.accent, colors.selection)
+                    (
+                        colors.accent,
+                        crate::ui::colors::focus_background(colors.accent),
+                    )
                 } else if is_hovered {
                     (colors.text, colors.user_bg)
                 } else {
@@ -607,7 +619,7 @@ pub enum QuestionHit {
 mod tests {
     use super::*;
     use crate::question::{Question, QuestionRequest, QuestionState, QuestionType};
-    use cortex_core::style::{ACCENT, HAIRLINE, SELECTION_BG, TEXT};
+    use cortex_core::style::{ACCENT, HAIRLINE, TEXT};
 
     fn request() -> QuestionRequest {
         QuestionRequest {
@@ -640,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn focused_option_is_violet_on_the_gray_bar_and_the_frame_is_gray() {
+    fn focused_option_is_banner_green_on_the_gray_bar_and_the_frame_is_gray() {
         let state = QuestionState::new(request());
         let view = QuestionPromptView::new(&state);
         let area = Rect::new(0, 0, 100, 24);
@@ -653,8 +665,8 @@ mod tests {
             for x in 0..100u16 {
                 let cell = &buf[(x, y)];
                 if cell.style().fg == Some(ACCENT) && cell.symbol() != " " {
-                    // Violet only ever sits on the selection bar.
-                    assert_eq!(cell.style().bg, Some(SELECTION_BG), "({x},{y})");
+                    // Banner green has a contrasting near-white backing.
+                    assert_eq!(cell.style().bg, Some(cortex_core::style::TEXT), "({x},{y})");
                     focused = Some(y);
                 }
                 if matches!(cell.symbol(), "─" | "│" | "┌" | "┐" | "└" | "┘") {
@@ -668,9 +680,9 @@ mod tests {
             .map(|x| buf[(x, y)].symbol().to_string())
             .collect();
         assert!(row.contains("1.  Middleware on POST"), "{row}");
-        // The whole row is the gray bar.
+        // The focused option has a contrasting backing.
         let x0 = row.find('1').expect("prefix") as u16;
-        assert_eq!(buf[(x0, y)].style().bg, Some(SELECTION_BG));
+        assert_eq!(buf[(x0, y)].style().bg, Some(cortex_core::style::TEXT));
         assert_eq!(buf[(x0, y)].style().fg, Some(ACCENT));
         assert!(frame_cells > 0, "the prompt keeps its square frame");
         // The title is white, not the accent.
@@ -686,5 +698,61 @@ mod tests {
             .find(|x| buf[(*x, title_y)].symbol() == "W")
             .expect("title");
         assert_eq!(buf[(title_x, title_y)].style().fg, Some(TEXT));
+    }
+    #[test]
+    fn focus_tabs_and_options_are_accessible_in_every_builtin_theme() {
+        for name in AdaptiveColors::available_themes() {
+            let colors = AdaptiveColors::from_theme_name(name);
+            let expected_bg = match *name {
+                "ocean_dark" | "monokai" => Color::Black,
+                _ => TEXT,
+            };
+            for width in [40, 120] {
+                let mut req = request();
+                req.questions[0].allow_custom = true;
+                req.questions[0].question = "Home".into();
+                req.questions.push(req.questions[0].clone());
+                let mut state = QuestionState::new(req);
+                for confirm in [false, true] {
+                    state.on_confirm_tab = confirm;
+                    let view = QuestionPromptView::new(&state).with_colors(colors.clone());
+                    let area = Rect::new(0, 0, width, 12);
+                    let mut buf = Buffer::empty(area);
+                    view.render_tabs(&Rect::new(0, 0, width, 1), &mut buf, &colors);
+                    let label = if confirm {
+                        "Confirm".to_string()
+                    } else {
+                        state.get_header(0)
+                    };
+                    let row: String = (0..width).map(|x| buf[(x, 0)].symbol()).collect();
+                    let start = row.find(&label).expect("active tab label") as u16;
+                    for x in start..start + label.chars().count() as u16 {
+                        assert_eq!(buf[(x, 0)].fg, colors.accent, "{name}: {label}");
+                        assert_eq!(buf[(x, 0)].bg, expected_bg, "{name}: {label}");
+                    }
+                }
+                state.on_confirm_tab = false;
+                for selected in [0, 2] {
+                    state.selected_index[0] = selected;
+                    let view = QuestionPromptView::new(&state).with_colors(colors.clone());
+                    let mut buf = Buffer::empty(Rect::new(0, 0, width, 12));
+                    view.render_question(
+                        &Rect::new(0, 0, width, 1),
+                        &Rect::new(0, 2, width, 10),
+                        &mut buf,
+                        &colors,
+                    );
+                    let focused: Vec<_> = buf
+                        .content
+                        .iter()
+                        .filter(|cell| cell.fg == colors.accent && cell.symbol() != " ")
+                        .collect();
+                    assert!(!focused.is_empty(), "{name}: option {selected}");
+                    for cell in focused {
+                        assert_eq!(cell.bg, expected_bg, "{name}: option {selected}");
+                    }
+                }
+            }
+        }
     }
 }

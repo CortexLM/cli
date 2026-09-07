@@ -375,4 +375,40 @@ mod tests {
         assert_eq!(state.fields[0].value, "AX🎉B");
         assert_eq!(state.fields[0].cursor_pos, 2);
     }
+    #[test]
+    fn focus_field_and_submit_backing_tracks_the_accent() {
+        use crate::ui::colors::AdaptiveColors;
+        use crate::widgets::form::colors::FormModalColors;
+        use ratatui::{buffer::Buffer, style::Color, widgets::Widget};
+        for name in AdaptiveColors::available_themes() {
+            let accent = AdaptiveColors::from_theme_name(name).accent;
+            let expected = match *name {
+                "ocean_dark" | "monokai" => Color::Black,
+                _ => cortex_core::style::TEXT,
+            };
+            let mut state = FormState::new("Test", "test", vec![FormField::text("name", "Name")]);
+            for focus in [0, 1] {
+                state.focus_index = focus;
+                for (width, height) in [(60, 20), (120, 40)] {
+                    let area = Rect::new(0, 0, width, height);
+                    let mut buf = Buffer::empty(area);
+                    FormModal::new(&state)
+                        .colors(FormModalColors {
+                            accent,
+                            ..Default::default()
+                        })
+                        .render(area, &mut buf);
+                    let focused: Vec<_> = buf
+                        .content
+                        .iter()
+                        .filter(|cell| cell.fg == accent && cell.symbol() != " ")
+                        .collect();
+                    assert!(!focused.is_empty(), "{name}: focus {focus}");
+                    for cell in focused {
+                        assert_eq!(cell.bg, expected, "{name}: focus {focus}");
+                    }
+                }
+            }
+        }
+    }
 }

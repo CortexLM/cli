@@ -43,7 +43,7 @@ TOKENS = {
     "bar_user": "#1C1C1C",
     "bar_hover": "#1A1A1A",
     "bar_selected": "#262626",
-    "accent": "#A78BFA",
+    "accent": "#1F4945",
     "success": "#4ADE80",
     "warning": "#FFC857",
     "error": "#F87171",
@@ -59,7 +59,7 @@ PANEL = TOKENS["panel"]
 BAR_USER = TOKENS["bar_user"]
 BAR_HOV = TOKENS["bar_hover"]
 BAR_SEL = TOKENS["bar_selected"]
-VIOLET = TOKENS["accent"]
+ACCENT = TOKENS["accent"]
 GREEN = TOKENS["success"]
 AMBER = TOKENS["warning"]
 RED = TOKENS["error"]
@@ -91,7 +91,7 @@ S = St()
 S_DIM = St(fg=DIM)
 S_MUTED = St(fg=MUTED)
 S_HAIR = St(fg=HAIR)
-S_ACC = St(fg=VIOLET)
+S_ACC = St(fg=ACCENT)
 S_BOLD = St(b=True)
 S_OK = St(fg=GREEN)
 S_WARN = St(fg=AMBER)
@@ -136,6 +136,8 @@ class Screen:
                 c.fg = st.fg
                 if st.bg is not None:
                     c.bg = st.bg
+                if st.fg == ACCENT:
+                    c.bg = TEXT
                 c.b, c.i, c.u = st.b, st.i, st.u
             x += 1
         return x

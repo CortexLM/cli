@@ -5,8 +5,8 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use cortex_core::style::{
-    ACCENT, BORDER, CYAN_PRIMARY, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
-    YELLOW,
+    BORDER, CYAN_PRIMARY, CortexStyle, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM,
+    TEXT_MUTED, YELLOW,
 };
 
 use super::session_action::SessionAction;
@@ -82,9 +82,9 @@ pub fn render_search_bar(search_query: &str, area: Rect, buf: &mut Buffer) {
 
 /// Render a single session row.
 pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, buf: &mut Buffer) {
-    // Selected rows: the violet accent on the dark gray bar — never inverted.
+    // Selected glyphs get a light backing; the rest of the row stays dark gray.
     let (bg, fg, prefix_fg) = if is_selected {
-        (SELECTION_BG, ACCENT, ACCENT)
+        (SELECTION_BG, TEXT, TEXT)
     } else {
         (SURFACE_0, TEXT, TEXT_DIM)
     };
@@ -98,11 +98,24 @@ pub fn render_session_row(session: &SessionInfo, is_selected: bool, area: Rect, 
 
     // Selection indicator
     let prefix = if is_selected { ">" } else { " " };
-    buf.set_string(col, area.y, prefix, Style::default().fg(prefix_fg).bg(bg));
+    buf.set_string(
+        col,
+        area.y,
+        prefix,
+        if is_selected {
+            CortexStyle::selected()
+        } else {
+            Style::default().fg(prefix_fg).bg(bg)
+        },
+    );
     col += 2;
 
     // Session name (left-aligned)
-    let name_style = Style::default().fg(fg).bg(bg);
+    let name_style = if is_selected {
+        CortexStyle::selected()
+    } else {
+        Style::default().fg(fg).bg(bg)
+    };
 
     // Build metadata: "2h ago   15 msgs   Cortex Mini 1"
     let time_ago = session.relative_time();
@@ -216,5 +229,33 @@ pub fn render_confirmation(
         let warn_style = Style::default().fg(YELLOW).add_modifier(Modifier::ITALIC);
         let warn_x = area.x + (area.width.saturating_sub(warn.len() as u16)) / 2;
         buf.set_string(warn_x, area.y + 4, warn, warn_style);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focus_label_and_caret_cells_have_contrasting_backing() {
+        let session = SessionInfo::new(
+            std::path::PathBuf::from("/test"),
+            "Test",
+            "test",
+            chrono::Utc::now(),
+            0,
+        );
+        for width in [40, 120] {
+            let area = Rect::new(0, 0, width, 12);
+            let mut buf = Buffer::empty(area);
+            render_session_row(&session, true, Rect::new(0, 0, width, 1), &mut buf);
+            assert_eq!(buf[(0, 0)].symbol(), ">");
+            assert_eq!(buf[(2, 0)].symbol(), "T");
+            for x in [0, 2, 3, 4, 5] {
+                assert_eq!(buf[(x, 0)].fg, cortex_core::style::ACCENT);
+                assert_eq!(buf[(x, 0)].bg, TEXT);
+            }
+            assert_eq!(buf[(1, 0)].bg, SELECTION_BG);
+        }
     }
 }

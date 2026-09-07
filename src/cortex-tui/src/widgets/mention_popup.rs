@@ -144,7 +144,10 @@ impl<'a> MentionPopup<'a> {
 
         // Selection indicator
         if is_selected {
-            let style = Style::default().fg(ACCENT).bg(bg).bold();
+            let style = Style::default()
+                .fg(ACCENT)
+                .bold()
+                .bg(cortex_core::style::TEXT);
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_char('>').set_style(style);
             }
@@ -167,9 +170,12 @@ impl<'a> MentionPopup<'a> {
 
         // File path
         let path_str = path.to_string_lossy();
-        // The selected path is the violet accent on the gray bar.
+        // The selected path is the banner green accent on the gray bar.
         let style = if is_selected {
-            Style::default().fg(ACCENT).bg(bg).bold()
+            Style::default()
+                .fg(ACCENT)
+                .bold()
+                .bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT).bg(bg)
         };

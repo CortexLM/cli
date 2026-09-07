@@ -1,7 +1,7 @@
 //! Frame I/O for the README hero recording.
 //!
 //! Scene painting lives in `cortex-tui::readme_hero` so the GIF is the signed
-//! lock TUI (dual hairline, violet `>`, splash → typing → working). This
+//! lock TUI (dual hairline, banner green `>`, splash → typing → working). This
 //! module owns the manifest format `scripts/ansi-frames-to-gif.py` consumes.
 
 use std::path::{Path, PathBuf};

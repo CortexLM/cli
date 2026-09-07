@@ -34,7 +34,7 @@ Brand rule: the only product name on any pixel or in this document is **Cortex**
     "bar_user":       "#1C1C1C",
     "bar_hover":      "#1A1A1A",
     "bar_selected":   "#262626",
-    "accent":         "#A78BFA",
+    "accent":         "#1F4945",
     "success":        "#4ADE80",
     "warning":        "#FFC857",
     "error":          "#F87171"
@@ -44,9 +44,9 @@ Brand rule: the only product name on any pixel or in this document is **Cortex**
     "success": "ONLY `✓` and diff `+N` / `+` lines",
     "warning": "ONLY warnings: diagnostics `warn`, context counter ≥ 90 %",
     "error":   "ONLY errors: `×` titles, diagnostics `error`, diff `−N` / `-` lines, failed exit codes, exhausted quota bar",
-    "hairline": "always gray — never violet, never coloured",
+    "hairline": "always gray — never banner green, never coloured",
     "bg": "inky #000 — the TUI paints the whole alternate screen; no wash, no frame",
-    "retired": ["thinking gold #C9A95C", "mint #00F5D4", "cyan #7DD3FC", "violet wash #221A38 as a default bar"]
+    "retired": ["thinking gold #C9A95C", "mint #00F5D4", "cyan #7DD3FC", "retired violet wash #221A38 as a default bar"]
   },
   "font": {
     "family": "IBM Plex Mono",
@@ -102,7 +102,7 @@ Header-left is intentionally empty on launch. It never paints a shell echo
 ## 3. Component recipes
 
 Legend for recipes: `T` text `#F5F5F5` · `D` dim `#6B7280` · `M` muted `#4B5563` ·
-`H` hairline `#3A3A3A` · `V` accent `#A78BFA` · `G` success · `A` warning · `R` error.
+`H` hairline `#3A3A3A` · `V` accent `#1F4945` · `G` success · `A` warning · `R` error.
 
 ### 3.1 Header
 
@@ -118,7 +118,7 @@ Legend for recipes: `T` text `#F5F5F5` · `D` dim `#6B7280` · `M` muted `#4B556
 ```
  > hey                                                                 12:49 AM    ← bar #1C1C1C, cols 1..118
 ```
-- `>` and text `T` (never violet — history is not focus). Timestamp `D`, right-aligned inside the bar.
+- `>` and text `T` (never banner green — history is not focus). Timestamp `D`, right-aligned inside the bar.
 - 12-hour clock `hh:mm AM`. Hidden when `Show timestamps = off`, in compact mode, and at < 80 cols.
 - One blank row after the bar. `&` and `!` and `/btw` prefixes stay as typed.
 
@@ -219,7 +219,7 @@ Stacked directly above the composer's top hairline, newest/first row on top, ful
  > /model            Choose the model for this session            ← focused: bar #262626, `>` V, name T, desc D
    /mode             Switch between Agent, Plan and Ask           ← plain
    /permissions      Set the approval policy for edits and commands
-   /plan             Draft a plan before writing any code         ← hover: bar #1A1A1A, no violet
+   /plan             Draft a plan before writing any code         ← hover: bar #1A1A1A, no banner green
    … 87 more — keep typing to filter                              ← trailer M
 ```
 - Marker col 3, name col 5, description at `5 + name_w` where `name_w ≥ longest name + 2`.
@@ -280,7 +280,7 @@ Composer loses focus (`>` `D`, placeholder `Choose an option above`). Hover row 
   "Git":        [["Co-author","on"],["Auto commit","off"],["Sign commits","off"]],
   "Cloud":      [["Cloud sync","off"],["Auto save","on"],["Session history","on"]],
   "Privacy":    [["Telemetry","off"],["Analytics","off"]],
-  "Theme submenu": [["Cortex Night","Default inky chrome · violet on focus only","current"],["Cortex Day","Light chrome for bright rooms"],["Ocean Dark","Deep blue and cyan accents"],["Monokai","Classic code-editor colors"]]
+  "Theme submenu": [["Cortex Night","Default inky chrome · banner green on focus only","current"],["Cortex Day","Light chrome for bright rooms"],["Ocean Dark","Deep blue and cyan accents"],["Monokai","Classic code-editor colors"]]
 }
 ```
 
@@ -326,17 +326,17 @@ Narrow: no bars, `used / total  pct%`.
   "row (settings, slash, model, effort, radios, pickers)": {
     "idle":  { "bar": "none",    "marker": "none / ▸ dim", "label": "text" },
     "hover": { "bar": "#1A1A1A", "marker": "unchanged",    "label": "text", "accent": false },
-    "focus": { "bar": "#262626", "marker": "> or ▸ in #A78BFA", "label": "text (Bold in settings)", "accent": true },
+    "focus": { "bar": "#262626", "marker": "> or ▸ in #1F4945", "label": "text (Bold in settings)", "accent": true },
     "focus+hover": "focus wins"
   },
   "composer": {
     "idle":  { "hairline": "#3A3A3A", "caret_sigil": "#6B7280" },
     "hover": { "hairline": "#525252", "caret_sigil": "unchanged" },
-    "focus": { "hairline": "#3A3A3A", "caret_sigil": "#A78BFA", "caret": "2 px bar, blinking" }
+    "focus": { "hairline": "#3A3A3A", "caret_sigil": "#1F4945", "caret": "2 px bar, blinking" }
   },
   "footer chunk / banner button / chip": {
     "hover": { "underline": true, "text": "#F5F5F5", "bar": "#1A1A1A" },
-    "focus": { "text": "#A78BFA", "bar": "#262626" }
+    "focus": { "text": "#1F4945", "bar": "#262626" }
   },
   "typed slash match": { "accent": true, "note": "matched characters in the palette and the command token in the composer" }
 }
@@ -474,3 +474,5 @@ Narrow (40×12) set: `welcome-cortex`, `welcome-agent`, `first-run-tips`, `sessi
   approval / plan / clear / question prompts render inline (§3.10) using the same recipe.
 - Settings hub (7 rows) is replaced by the categorised modal (§3.11); `/settings` and F2 open it.
 - Every changed surface needs a unit test plus a headless snapshot; the `txt/` grids in this pack are the expected buffers.
+
+Banner accent update: focused `#1F4945` glyphs use `#F5F5F5` backing for readable contrast. The surrounding selection row remains `#262626`; semantic success and diff green stay `#4ADE80`. Existing image exports predate this palette update; the renderer uses the updated palette.

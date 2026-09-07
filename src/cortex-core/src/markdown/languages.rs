@@ -110,7 +110,7 @@ pub fn normalize_language_name(lang: &str) -> Option<&'static str> {
 
 /// The gray-chrome syntax theme: keywords bold white, strings and comments
 /// dim, everything else the plain white — a fence never introduces a colour
-/// of its own, the violet stays on the focused selection.
+/// of its own, the banner green stays on the focused selection.
 pub fn monochrome_theme() -> Theme {
     let white = Color::from_rgb_u8(0xFF, 0xFF, 0xFF);
     let dim = Color::from_rgb_u8(0x6B, 0x72, 0x80);

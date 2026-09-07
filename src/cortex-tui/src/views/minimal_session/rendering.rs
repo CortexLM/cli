@@ -266,7 +266,7 @@ pub fn render_tool_call(
             (Some(frame.to_string()), colors.text_dim)
         }
         // Completed tiles carry a white status dot; the label stays white.
-        // Violet is the selection accent only, green is `✓` and `+diff` only.
+        // Banner green is the selection accent only, green is `✓` and `+diff` only.
         ToolStatus::Completed => (Some("●".to_string()), colors.text),
         ToolStatus::Failed => (Some("●".to_string()), colors.error),
     };

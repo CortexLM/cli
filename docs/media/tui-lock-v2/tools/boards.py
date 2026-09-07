@@ -13,8 +13,8 @@ Layout language (from the reference boards, re-skinned to the Cortex chrome):
                    (left), model chip in the bottom border (right)
 * row H-1          footer — shortcut strip ``Key:label | Key:label``
 
-Focus vs hover: keyboard focus = ``#262626`` bar + violet marker/caret;
-mouse hover = ``#161616`` bar (or ``#525252`` hairline) and *no* violet.
+Focus vs hover: keyboard focus = ``#262626`` bar + banner green marker/caret;
+mouse hover = ``#161616`` bar (or ``#525252`` hairline) and *no* banner green.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from render_lock_v2 import (
     S_OK,
     S_WARN,
     TEXT,
-    VIOLET,
+    ACCENT,
     Cell,
     Screen,
     St,
@@ -239,9 +239,9 @@ def optin_banner(s: Screen, c: Ctx, y: int, hover: str | None = None, focus: str
     if hover == "out":
         out_st = St(fg=TEXT, u=True, bg=BAR_HOV)
     if focus == "in":
-        in_st = St(fg=VIOLET, b=True, bg=BAR_SEL)
+        in_st = St(fg=ACCENT, b=True, bg=BAR_SEL)
     if focus == "out":
-        out_st = St(fg=VIOLET, b=True, bg=BAR_SEL)
+        out_st = St(fg=ACCENT, b=True, bg=BAR_SEL)
     s.right_spans(0 + y, [("[Opt out]", out_st), ("  ", S), ("[Opt in]", in_st)], c.x1)
     if c.narrow:
         s.put(c.x0, y + 1, "Off by default · anytime in /settings", S_DIM)
@@ -369,7 +369,7 @@ class Flow:
         self.y += 1
 
     def options(self, opts, focused: int = 0, hover: int | None = None, numbered: bool = True):
-        """Inline numbered radios: focused = `#262626` bar + violet `>`; hover = `#1A1A1A` bar."""
+        """Inline numbered radios: focused = `#262626` bar + banner green `>`; hover = `#1A1A1A` bar."""
         for i, label in enumerate(opts):
             if not self.ok():
                 return
@@ -378,7 +378,7 @@ class Flow:
             bg = BAR_SEL if is_focus else (BAR_HOV if is_hover else None)
             if bg:
                 self.s.fill(self.x0, self.y, self.x1, bg)
-            self.s.put(self.tx, self.y, ">" if is_focus else " ", St(fg=VIOLET, bg=bg) if is_focus else S)
+            self.s.put(self.tx, self.y, ">" if is_focus else " ", St(fg=ACCENT, bg=bg) if is_focus else S)
             x = self.tx + 2
             if numbered:
                 x = self.s.put(x, self.y, f"{i + 1} ", St(fg=DIM, bg=bg) if bg else S_DIM)
@@ -401,7 +401,7 @@ def menu(s: Screen, c: Ctx, y_bottom: int, rows, focused: int = 0, hover: int | 
         bg = BAR_SEL if is_focus else (BAR_HOV if is_hover else None)
         if bg:
             s.fill(c.x0, y, c.x1, bg)
-        s.put(c.x0 + 2, y, ">" if is_focus else " ", St(fg=VIOLET, bg=bg) if is_focus else S)
+        s.put(c.x0 + 2, y, ">" if is_focus else " ", St(fg=ACCENT, bg=bg) if is_focus else S)
         x = c.x0 + 4
         for text, st in name_parts:
             x = s.put(x, y, text, st(bg=bg) if bg else st, max_x=c.x1 - 1)
@@ -545,7 +545,7 @@ SETTINGS = [
 ]
 
 THEMES = [
-    ("Cortex Night", "Default inky chrome · violet on focus only", True),
+    ("Cortex Night", "Default inky chrome · banner green on focus only", True),
     ("Cortex Day", "Light chrome for bright rooms", False),
     ("Ocean Dark", "Deep blue and cyan accents", False),
     ("Monokai", "Classic code-editor colors", False),
@@ -984,7 +984,7 @@ def paint_settings(s: Screen, c: Ctx, focus_label: str, hover_label: str | None 
         bg = BAR_SEL if is_focus else (BAR_HOV if is_hover else None)
         if bg:
             s.fill(x + 1, row_y, x + w - 1, bg)
-        marker_st = St(fg=VIOLET, bg=bg) if is_focus else St(fg=DIM, bg=bg) if bg else S_DIM
+        marker_st = St(fg=ACCENT, bg=bg) if is_focus else St(fg=DIM, bg=bg) if bg else S_DIM
         s.put(ix0 + 1, row_y, "▸", marker_st)
         lab_st = St(fg=TEXT, b=is_focus, bg=bg) if bg else S
         val_st = St(fg=TEXT if value != "off" else DIM, bg=bg) if bg else (S if value != "off" else S_DIM)
@@ -995,7 +995,7 @@ def paint_settings(s: Screen, c: Ctx, focus_label: str, hover_label: str | None 
         if search and search.lower() in label.lower():
             k = label.lower().find(search.lower())
             pre, mid, post = label[:k], label[k : k + len(search)], label[k + len(search) :]
-            s.spans(ix0 + 3, row_y, [(pre, lab_st), (mid, St(fg=VIOLET, b=is_focus, bg=bg)), (post, lab_st)])
+            s.spans(ix0 + 3, row_y, [(pre, lab_st), (mid, St(fg=ACCENT, b=is_focus, bg=bg)), (post, lab_st)])
         else:
             s.put(ix0 + 3, row_y, label, lab_st)
         if sub:
@@ -1066,7 +1066,7 @@ def board_settings_theme_submenu(s, c):
         if bg:
             s.fill(x + 1, row_y, x + w - 1, bg)
         s.put(ix0 + 1, row_y, "●" if current else "○", St(fg=TEXT if current else DIM, bg=bg) if bg else (S if current else S_DIM))
-        s.put(ix0 + 3, row_y, name, St(fg=VIOLET if is_focus else TEXT, b=is_focus, bg=bg) if bg else S)
+        s.put(ix0 + 3, row_y, name, St(fg=ACCENT if is_focus else TEXT, b=is_focus, bg=bg) if bg else S)
         if not c.narrow:
             s.put(ix0 + 18, row_y, desc, St(fg=DIM, bg=bg) if bg else S_DIM)
         if current:
@@ -1076,7 +1076,7 @@ def board_settings_theme_submenu(s, c):
         legend(s, y + h - 3, x + 1, x + w - 1, [("Enter", "select"), ("←", "back")])
         legend(s, y + h - 2, x + 1, x + w - 1, [("F2/Esc", "close")])
     else:
-        s.center_spans(y + h - 4, [("Themes never change the accent rule: violet on focus only.", S_MUTED)], x + 1, x + w - 1)
+        s.center_spans(y + h - 4, [("Themes never change the accent rule: banner green on focus only.", S_MUTED)], x + 1, x + w - 1)
         legend(s, y + h - 3, x + 1, x + w - 1, [("↑/↓/j/k", "nav"), ("Enter", "select"), ("←", "back"), ("d", "reset")])
         legend(s, y + h - 2, x + 1, x + w - 1, [("F2/Esc", "close")])
 
@@ -1480,7 +1480,7 @@ def board_login(s, c):
         yy = y + 4 + k
         if k == 0:
             s.fill(c.x0, yy, c.x1, BAR_SEL)
-            s.put(c.x0 + 1, yy, ">", St(fg=VIOLET, bg=BAR_SEL))
+            s.put(c.x0 + 1, yy, ">", St(fg=ACCENT, bg=BAR_SEL))
             x = s.put(c.x0 + 3, yy, label, St(fg=TEXT, bg=BAR_SEL))
             if not c.narrow:
                 s.put(c.x0 + 30, yy, desc, St(fg=DIM, bg=BAR_SEL))
@@ -1765,7 +1765,7 @@ BOARDS_META = [
     ("session-worked", board_session_worked, False, "B", "`Worked for Xs` after a reply"),
     ("session-optin", board_session_optin, True, "B", "`Help improve Cortex` banner — Opt out | Opt in"),
     ("session-optin-hover", board_session_optin_hover, False, "B", "Banner with the mouse over `[Opt in]`"),
-    ("composer-empty", board_composer_empty, True, "B", "Empty composer — caret before the placeholder, violet `>`"),
+    ("composer-empty", board_composer_empty, True, "B", "Empty composer — caret before the placeholder, banner green `>`"),
     ("composer-typing", board_composer_typing, True, "B", "Mid-type, caret on"),
     ("composer-typing-blink", board_composer_typing_blink, False, "B", "Mid-type, caret off (blink phase)"),
     ("composer-hover", board_composer_hover, True, "B", "Mouse over the composer — hairline lifts to #525252"),
@@ -1777,7 +1777,7 @@ BOARDS_META = [
     ("compact-chat", board_compact_chat, True, "B", "Compact mode — edge-to-edge bars, no timestamps"),
     # C. Slash + model
     ("slash-palette", board_slash_palette, True, "C", "`/` palette — focused row + hover row + `… more` trailer"),
-    ("slash-model-typed", board_slash_model_typed, True, "C", "`/mod` typed — violet matched chars, ghost completion"),
+    ("slash-model-typed", board_slash_model_typed, True, "C", "`/mod` typed — banner green matched chars, ghost completion"),
     ("model-list", board_model_list, True, "C", "`/model` — Cortex Mini 1 · Cortex 1 · Cortex Max 1"),
     ("model-list-hover", board_model_list_hover, False, "C", "Model list with mouse over row 3"),
     ("model-effort-high", board_model_effort_high, True, "C", "Effort radios — High focused"),
@@ -1788,7 +1788,7 @@ BOARDS_META = [
     ("settings-appearance", board_settings_appearance, True, "D", "Settings modal — Appearance, Compact mode focused"),
     ("settings-mouse", board_settings_mouse, True, "D", "Settings scrolled to Mouse / Behavior"),
     ("settings-row-hover", board_settings_row_hover, True, "D", "Keyboard focus on Compact mode, mouse over Show timestamps"),
-    ("settings-search", board_settings_search, False, "D", "`/ scro` search — filtered rows, violet match"),
+    ("settings-search", board_settings_search, False, "D", "`/ scro` search — filtered rows, banner green match"),
     ("settings-theme-submenu", board_settings_theme_submenu, True, "D", "Theme submenu — Cortex Night / Cortex Day / Ocean Dark / Monokai"),
     # E. Modes / tools / errors
     ("mode-agent", board_mode_agent, False, "E", "Agent mode — dim chip in the composer border"),
@@ -1825,7 +1825,7 @@ BOARDS_META = [
     ("clear-confirm", board_clear_confirm, False, "E", "`/clear` confirm radios"),
     ("plan-confirm", board_plan_confirm, False, "E", "`Implement this plan?` radios"),
     ("queue", board_queue, False, "E", "Follow-up queue while a step runs"),
-    ("files-picker", board_files_picker, False, "E", "`@` file picker — violet matched chars, hover row"),
+    ("files-picker", board_files_picker, False, "E", "`@` file picker — banner green matched chars, hover row"),
     ("jobs", board_jobs, False, "E", "`/jobs` — cloud agent, subagent, queued"),
     ("skills", board_skills, False, "E", "`/skills` — search field + skill rows"),
     ("todos", board_todos, False, "E", "Working 2/5 checklist — ✓ done · › current · ○ pending"),

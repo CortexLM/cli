@@ -21,7 +21,7 @@ Each scene is captured at **40×12** (narrow) and **120×40** (wide), twice:
 Chrome rules: structure is gray — `#3A3A3A` hairlines above and below the
 `> ` composer and around search fields, `#141414` charcoal panels for tips,
 `#1C1C1C` bars behind past user turns, `#6B7280` secondary copy, white
-primary copy. The one accent is the Cortex violet `#A78BFA`, on the focused
+primary copy. The one accent is the Cortex banner green `#1F4945`, on the focused
 selection only (the `>` caret and the selected label on the `#262626` gray bar,
 never inverted, never a `#221A38` wash); unselected rows lead with a dim
 middot. Green `#4ADE80` appears only on `✓`

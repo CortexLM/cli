@@ -259,7 +259,14 @@ impl<'a> ScrollableDropdown<'a> {
     }
 
     /// Renders a single item.
-    fn render_item(&self, item: &DropdownItem, is_selected: bool, area: Rect, buf: &mut Buffer) {
+    pub(super) fn render_item(
+        label: &str,
+        description: &str,
+        icon: char,
+        is_selected: bool,
+        area: Rect,
+        buf: &mut Buffer,
+    ) {
         // Background
         let bg = if is_selected { SELECTION_BG } else { SURFACE_1 };
         for x in area.x..area.x + area.width {
@@ -271,26 +278,26 @@ impl<'a> ScrollableDropdown<'a> {
         let mut x = area.x + 1;
 
         // Icon
-        if item.icon != '\0' {
+        if icon != '\0' {
             let icon_style = Style::default().fg(TEXT_DIM).bg(bg);
             if let Some(cell) = buf.cell_mut((x, area.y)) {
-                cell.set_char(item.icon).set_style(icon_style);
+                cell.set_char(icon).set_style(icon_style);
             }
             x += 2;
         }
 
         // Label
-        // The selected label is the violet accent on the gray bar.
+        // The selected label is the banner green accent on the gray bar.
         let label_style = if is_selected {
             Style::default()
                 .fg(ACCENT)
-                .bg(bg)
                 .add_modifier(Modifier::BOLD)
+                .bg(cortex_core::style::TEXT)
         } else {
             Style::default().fg(TEXT).bg(bg)
         };
 
-        for ch in item.label.chars() {
+        for ch in label.chars() {
             if x >= area.x + area.width - 1 {
                 break;
             }
@@ -301,7 +308,7 @@ impl<'a> ScrollableDropdown<'a> {
         }
 
         // Description (if there's room)
-        if !item.description.is_empty() && x < area.x + area.width - 5 {
+        if !description.is_empty() && x < area.x + area.width - 5 {
             // Add separator
             let sep_style = Style::default().fg(TEXT_MUTED).bg(bg);
             for ch in " - ".chars() {
@@ -316,7 +323,7 @@ impl<'a> ScrollableDropdown<'a> {
 
             // Description text
             let desc_style = Style::default().fg(TEXT_DIM).bg(bg);
-            for ch in item.description.chars() {
+            for ch in description.chars() {
                 if x >= area.x + area.width - 1 {
                     break;
                 }
@@ -329,7 +336,7 @@ impl<'a> ScrollableDropdown<'a> {
 
         // Selection indicator
         if is_selected {
-            let indicator_style = Style::default().fg(ACCENT).bg(bg);
+            let indicator_style = Style::default().fg(ACCENT).bg(cortex_core::style::TEXT);
             if let Some(cell) = buf.cell_mut((area.x, area.y)) {
                 cell.set_char('>').set_style(indicator_style);
             }
@@ -437,7 +444,14 @@ impl Widget for ScrollableDropdown<'_> {
             };
 
             let is_selected = self.scroll_offset + i == self.selected;
-            self.render_item(item, is_selected, item_area, buf);
+            Self::render_item(
+                &item.label,
+                &item.description,
+                item.icon,
+                is_selected,
+                item_area,
+                buf,
+            );
         }
 
         // Render scrollbar

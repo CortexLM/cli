@@ -18,7 +18,7 @@ jobs:
     name: Publish to Winget
     runs-on: blacksmith-4vcpu-windows-2025
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Get version
         id: version

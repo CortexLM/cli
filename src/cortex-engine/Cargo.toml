@@ -92,7 +92,7 @@ walkdir = { workspace = true }
 # Note: keyring with linux-native is platform-specific, moved to target dependencies
 secrecy = { workspace = true, features = ["serde"] }
 aes-gcm = "0.10"
-argon2 = "0.5"
+argon2 = "0.6"
 zeroize = { workspace = true, features = ["derive"] }
 
 # mDNS / Service Discovery

@@ -104,6 +104,7 @@ pub mod lock_boards;
 pub mod lock_proof;
 pub mod lock_v2;
 pub mod readme_hero;
+pub mod readme_hero_boards;
 
 // Backtracking system for conversation history navigation
 pub mod backtrack;

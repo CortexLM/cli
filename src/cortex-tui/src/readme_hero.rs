@@ -12,7 +12,8 @@ use cortex_tui_capture::{
 };
 use ratatui::widgets::Clear;
 
-use crate::lock_boards::{self, HeroScene, USER_PROMPT};
+use crate::lock_boards::USER_PROMPT;
+use crate::readme_hero_boards::{self, HeroScene};
 
 /// The prompt the hero types — same copy as the typing lock board.
 pub const HERO_PROMPT: &str = USER_PROMPT;
@@ -32,7 +33,7 @@ fn paint_beat(scene: HeroScene<'_>) -> impl FnOnce(&mut ratatui::Frame<'_>) + '_
     move |frame| {
         let area = frame.area();
         frame.render_widget(Clear, area);
-        lock_boards::paint_hero(area, frame.buffer_mut(), scene);
+        readme_hero_boards::paint_hero(area, frame.buffer_mut(), scene);
     }
 }
 

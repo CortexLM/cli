@@ -340,7 +340,10 @@ impl AppRunner {
         if !is_workspace_trusted(&workspace) {
             use crate::runner::trust_screen::{TrustResult, TrustScreen};
             let mut trust_screen = TrustScreen::new(workspace.clone());
-            match trust_screen.run().await? {
+            match trust_screen
+                .run_with_options(self.terminal_options.clone())
+                .await?
+            {
                 TrustResult::Trusted => {
                     mark_workspace_trusted(&workspace)?;
                 }
@@ -423,7 +426,10 @@ impl AppRunner {
 
             let mut login_screen = LoginScreen::new(cortex_home.clone(), message);
 
-            match login_screen.run().await? {
+            match login_screen
+                .run_with_options(self.terminal_options.clone())
+                .await?
+            {
                 LoginResult::LoggedIn => {
                     tracing::info!("User logged in successfully");
                     // Reload auth token after login - this is critical!

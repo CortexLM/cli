@@ -9,19 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 0.1.9
+
 ### Changed
+- Focus accents use green `#1F4945` with contrast backing for legible focused controls; primary copy remains white and success/error diagnostics keep their semantic colors.
+- README `docs/media/intro.gif` is an offline-rendered macOS desktop animation of the current TUI, with no live coding-service requests.
 - `/model` shows Effort radios **Low | Medium | High**; **Tab** cycles them. `/effort` opens that same picker (no A★ / standalone effort list).
 - The TUI enters the **alternate screen** by default (`alternate_screen` always). Interactive launch takes the full viewport. Opt out with `cortex --no-alternate-screen` or `[tui] alternate_screen = false` to stay inline.
 - Empty-session splash is `Welcome to Cortex, the coding agent CLI` plus `v{package version} · / commands · @ files · ! shell · & cloud`. After the first user turn the splash is dropped (composer + footer only). No mascot, no painted `> cortex` shell lines.
 - Composer lock: empty is `> ` + white block at input col 0 + dim `Plan, search, build anything` after that cell (never a white rect after the placeholder). Blink-off (~530ms) hides the block so the placeholder starts at col 0. Typed copy is `#F5F5F5` with the block at the caret.
 
-### Changed
-- README `docs/media/intro.gif` is the signed lock TUI at 120×40 (1232×912): splash (`Welcome to Cortex, the coding agent CLI`, dual hairline, violet `>`, “Plan, search, build anything”) → typing the rate-limit prompt → working (`Cortex Mini 1 · Agent`). The retired mint-mascot welcome card is gone from the banner.
-- Focused composer `>` is violet `#A78BFA`; past user `>` stays white. Interrupt `× Stopped`, quota title, failed MCP `x`, and sandbox deny paint error red `#F87171`. Primary copy is `#F5F5F5`. MCP connect/drop and sandbox deny are live, not painted-only.
-- Gray chrome with one accent, replacing the violet wash: the background is still never painted (`Color::Reset`), structure comes from gray — hairlines `#3A3A3A`, filled charcoal panels `#141414`, dim `#6B7280` secondary copy, white primary copy — and the Cortex violet `#A78BFA` appears only on the focused selection (the `>` caret and the selected label on the dark gray `#262626` bar; the bar is never a violet wash). Green `#4ADE80` covers `✓` success and `+N` diff additions; red and amber stay on diagnostics; the Thinking status is a muted gold. The `#221A38` wash and the interim cyan `#7DD3FC` highlight are banned everywhere
+- Focused composer `>` uses the green focus palette with contrast backing; past user `>` stays white. Interrupt `× Stopped`, quota title, failed MCP `x`, and sandbox deny paint error red `#F87171`. Primary copy is `#F5F5F5`. MCP connect/drop and sandbox deny are live, not painted-only.
 - The composer is the Devin-style bar in every session, working and queue state: a full-width thin gray hairline above the `> ` prompt and another below it, dim placeholder, white block cursor; it follows the transcript until the transcript fills the screen
 - Past user turns sit on a full-width, slightly lighter gray bar behind `> prompt text`
-- Login, trust, `/mode`, `/permissions`, permission prompts, plan / clear / delete confirms and questions are numbered pickers: `> 1 …` violet on the selected row, `· 2 …` white on the others, dim descriptions under the titles, `↑↓ select · ↵ confirm · esc …` hints; the sign-in screen reads `Welcome to Cortex CLI!` / `How would you like to log in?`
+- Login, trust, `/mode`, `/permissions`, permission prompts, plan / clear / delete confirms and questions are numbered pickers: `> 1 …` with green focus styling on the selected row, `· 2 …` white on the others, dim descriptions under the titles, `↑↓ select · ↵ confirm · esc …` hints; the sign-in screen reads `Welcome to Cortex CLI!` / `How would you like to log in?`
 - `/model`, `/resume`, `/skills` and the settings hub frame their `/ Type to search` field with two hairlines; no pricing bar
 - The footer is model left, shortcut hint right, all gray: `Cortex Mini 1 · Agent · 92% context` … `shift+tab to cycle modes` (the palette shows its own keys there); the first-run tips sit on a filled charcoal panel
 - All 50 lock states recaptured at 40×12 and 120×40 on the gray chrome (raw, plus window-only macOS Terminal composites)
@@ -30,9 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Models show as English product names everywhere in the TUI — `Cortex Mini 1`, `Cortex 1`, `Cortex Max 1` — in the footer, `/model`, `/settings`, `/config`, session lists and the splash; served ids stay hyphenated internally
 - Every 40×12 and 120×40 lock fixture carries whole copy: bodies wrap at word boundaries instead of stopping at a fragment, code spans keep a trailing space (`estimateTokens(prompt) counts`, `rateLimit() checks`), code excerpts keep their indentation, list rows keep their column gaps and end in an ellipsis when shortened
 - Live session chrome stays complete in the empty, loading, error and no-match states (version, keystroke hints, composer, cwd + model footer); a live run says `Working · 0s · esc to interrupt` and the composer invites `Add a follow-up ↵ to queue`; the settings panel shows a real empty state; *The coding service is temporarily unavailable* is followed by what to do next
-- New violet chrome lock, replacing the mint/`#1A3330` chrome: the background is never painted (`Color::Reset` — the host terminal shows through, black by default), the accent is `#A78BFA` violet on the `>` prompt, selection carets, `●` tile dots and `✓` checks, selection bars are light text on `#221A38` (never inverted), and green (`#4ADE80`) appears only on `+` diff additions — `#00F5D4` and `#00FFA3` are banned everywhere
 - Zero rounded frames: the wide slash popup, inline forms and overlay widgets drop their `╭╮` / rounded borders; the TUI bleeds to the terminal edges
-- All 50 lock states recaptured at 40×12 and 120×40 on the violet chrome (layout, copy and wrap rules unchanged), plus a second committed set compositing each capture into a photorealistic macOS Terminal.app window under `docs/media/tui-lock/macos/`
+- Sign-in docs point at `api.cortex.foundation` device login
+- Stream timeouts use the product-facing coding-service error
 
 ### Added
 - Lock boards for typing, `/model` (compact + full), `/mode`, `/permissions`, working, and Read (states 02, 04–09) with captures at 40×12 and 120×40
@@ -43,16 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guest session as an explicit TUI login choice
 
 ### Fixed
+- Terminal lifecycle cleanup restores terminal modes and screen state when interactive screens exit or fail.
 - Windows `install.ps1` detects CPU architecture without reading `RuntimeInformation.OSArchitecture` under StrictMode, which threw `PropertyNotFoundStrict` on Windows PowerShell 5.1
 - Cancel aborts the local SSE stream and best-effort POSTs cancel (API route is still 404)
 - Task without a live ModelClient reports failure instead of a fake success
 - Remote tool rows keep their label instead of dropping arguments
-
-### Changed
-- Remaining TUI lock states recaptured on the locked gray/white chrome: mint stays on the `>` prompt, `●` success dots, `✓` checks and `+` diff additions; selection bars keep light text on `#1A3330`
-- Session view accent aligned to the locked mint; user text, cursors, spinners and hint rows are gray/white
-- Sign-in docs point at `api.cortex.foundation` device login
-- Stream timeouts use the product-facing coding-service error
 
 ---
 

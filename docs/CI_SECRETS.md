@@ -8,6 +8,25 @@ None of these values belong in git. Do not add AWS access keys or an IAM user fo
 
 No secrets. `fmt`, `clippy`, `test`, `audit`, and TUI jobs use the public crates.io index and `GITHUB_TOKEN`.
 
+## Optional Linux acceleration (`.github/workflows/codebuild.yml`)
+
+OIDC only. **Variables**, not secrets. Do not add `AWS_ACCESS_KEY_ID` or
+`AWS_SECRET_ACCESS_KEY`. One-time IAM is in
+[`deploy/aws/codebuild/README.md`](../deploy/aws/codebuild/README.md).
+Marker: `CLI_CODEBUILD_CI_READY`.
+
+| Variable | Used for |
+|----------|----------|
+| `AWS_CODEBUILD_ROLE_ARN` | IAM role assumed by GitHub Actions (`repo:CortexLM/cli:*`) |
+| `AWS_REGION` | CodeBuild region (workflow default `us-east-1`) |
+| `AWS_CODEBUILD_PROJECT_X64` | Optional; default project `cortex-cli-gha-x64` |
+| `AWS_CODEBUILD_PROJECT_ARM64` | Optional; default project `cortex-cli-gha-arm64` |
+
+Until `AWS_CODEBUILD_ROLE_ARN` is set, the workflow validates in-repo
+buildspecs and skips StartBuild. It does not post a green
+`cortex-cli-gha-*` status for that skip. Staging/prod app secrets stay
+out of this repository and off these projects.
+
 ## Version bump / tag (`.github/workflows/version-bump.yml`)
 
 | Secret | Used for |

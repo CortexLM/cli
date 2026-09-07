@@ -199,6 +199,8 @@ via [`publish-r2.yml`](.github/workflows/publish-r2.yml).
 
 This repository does not invent cloud accounts. The secret *names* CI expects are
 listed in [docs/CI_SECRETS.md](./docs/CI_SECRETS.md). Values never go in git.
+Linux CI can additionally run on AWS CodeBuild via GitHub OIDC; the one-time
+IAM steps are in [deploy/aws/codebuild/README.md](./deploy/aws/codebuild/README.md).
 
 ## Contributing
 

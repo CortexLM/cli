@@ -23,6 +23,7 @@ Working branch: **`main`**. Version bumps land on `main` via PR; `.github/workfl
 | `docs/` | User and plugin docs |
 | `.rules/` | Engineering rules (security, errors, TUI, tests, …) |
 | `scripts/` | Version bump / consistency / release helpers |
+| `deploy/aws/codebuild/` | Public-safe CodeBuild buildspecs and OIDC IAM ([README](deploy/aws/codebuild/README.md)) |
 
 ## Non-negotiables
 

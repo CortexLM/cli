@@ -1,0 +1,59 @@
+# Linux CI for CortexLM/cli on AWS CodeBuild (x64 and arm64).
+# Marker: CLI_CODEBUILD_CI_READY
+#
+# This file is the source of truth. GitHub Actions passes it as an inline
+# buildspec override so the project can use NO_SOURCE (no GitHub token).
+# The install phase clones the public repo over HTTPS when the workspace
+# is empty, then runs scripts from that commit.
+version: 0.2
+
+env:
+  variables:
+    CARGO_TERM_COLOR: always
+    CARGO_INCREMENTAL: "0"
+    CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+    RUST_BACKTRACE: "1"
+    GIT_TERMINAL_PROMPT: "0"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+      nodejs: 22
+    commands:
+      - |
+        set -euo pipefail
+        REPO="${CORTEX_GITHUB_REPOSITORY:-${GITHUB_REPOSITORY:-CortexLM/cli}}"
+        SHA="${CORTEX_SOURCE_SHA:-${GITHUB_SHA:-}}"
+        if [ -z "$SHA" ]; then
+          echo "Missing CORTEX_SOURCE_SHA / GITHUB_SHA" >&2
+          exit 1
+        fi
+        if [ -f "${CODEBUILD_SRC_DIR:-}/Cargo.toml" ]; then
+          SRC="$CODEBUILD_SRC_DIR"
+        else
+          SRC=/tmp/cortex-cli-src
+          rm -rf "$SRC"
+          git clone --no-tags "https://github.com/${REPO}.git" "$SRC"
+          git -C "$SRC" checkout --detach "$SHA"
+        fi
+        printf 'export CORTEX_CLI_SRC=%q\n' "$SRC" > /tmp/cortex-cli-env.sh
+        # shellcheck disable=SC1091
+        . /tmp/cortex-cli-env.sh
+        bash "$CORTEX_CLI_SRC/deploy/aws/codebuild/install-deps.sh"
+
+  build:
+    commands:
+      - |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        . /tmp/cortex-cli-env.sh
+        bash "$CORTEX_CLI_SRC/deploy/aws/codebuild/run-ci.sh"
+
+cache:
+  paths:
+    - /root/.cargo/registry/**/*
+    - /root/.cargo/git/**/*
+    - /root/.rustup/toolchains/**/*
+    - /tmp/cortex-cli-src/target/**/*
+    - target/**/*

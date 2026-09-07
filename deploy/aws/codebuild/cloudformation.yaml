@@ -1,0 +1,247 @@
+# One-time AWS resources for CortexLM/cli CodeBuild CI.
+# Public-safe: no secrets, no hardcoded account IDs, no long-lived keys.
+# Substitute ACCOUNT_ID / REGION only at deploy time (never commit values).
+#
+# Marker: CLI_CODEBUILD_CI_READY
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Cortex CLI CodeBuild projects (cortex-cli-gha-x64 / cortex-cli-gha-arm64)
+  plus a GitHub Actions OIDC role. Reuse an existing GitHub OIDC provider
+  when the account already runs CortexLM/backend CodeBuild.
+
+Parameters:
+  GitHubOrgRepo:
+    Type: String
+    Default: CortexLM/cli
+    Description: GitHub repository allowed to assume the GHA role (org/name).
+  ProjectNameX64:
+    Type: String
+    Default: cortex-cli-gha-x64
+    Description: CodeBuild project name and GitHub status-check context (x64).
+  ProjectNameArm64:
+    Type: String
+    Default: cortex-cli-gha-arm64
+    Description: CodeBuild project name and GitHub status-check context (arm64).
+  GhaRoleName:
+    Type: String
+    Default: cortex-cli-codebuild-gha
+    Description: IAM role assumed by GitHub Actions via OIDC.
+  CreateGithubOidcProvider:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Set true only if this account has no token.actions.githubusercontent.com
+      OIDC provider yet. Backend accounts should leave this false and reuse
+      the existing provider.
+  ComputeType:
+    Type: String
+    Default: BUILD_GENERAL1_LARGE
+    AllowedValues:
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+      - BUILD_GENERAL1_XLARGE
+    Description: CodeBuild compute size (LARGE = 8 vCPU / 15 GiB).
+
+Conditions:
+  ShouldCreateOidcProvider: !Equals [!Ref CreateGithubOidcProvider, "true"]
+
+Resources:
+  GithubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  CacheBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cortex-cli-codebuild-cache-${AWS::AccountId}-${AWS::Region}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-cache
+            Status: Enabled
+            ExpirationInDays: 30
+
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cortex-cli-codebuild-service
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: cortex-cli-codebuild-service
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameX64}"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameX64}:*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameArm64}"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameArm64}:*"
+              - Sid: CargoCacheBucket
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${CacheBucket.Arn}/*"
+              - Sid: CargoCacheList
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource: !GetAtt CacheBucket.Arn
+
+  GithubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref GhaRoleName
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GitHubActionsOidc
+            Effect: Allow
+            Principal:
+              Federated: !If
+                - ShouldCreateOidcProvider
+                - !GetAtt GithubOidcProvider.Arn
+                - !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrgRepo}:*"
+      Policies:
+        - PolicyName: start-cli-codebuild
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: StartAndObserve
+                Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource:
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectNameX64}"
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectNameArm64}"
+              - Sid: StreamLogs
+                Effect: Allow
+                Action:
+                  - logs:GetLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameX64}:*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameArm64}:*"
+
+  ProjectX64:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Ref ProjectNameX64
+      Description: Cortex CLI Linux x64 CI (GitHub Actions OIDC trigger)
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      TimeoutInMinutes: 90
+      QueuedTimeoutInMinutes: 30
+      BadgeEnabled: false
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Cache:
+        Type: S3
+        Location: !Sub "${CacheBucket}/x64"
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: !Ref ComputeType
+        Image: aws/codebuild/standard:7.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: false
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub "/aws/codebuild/${ProjectNameX64}"
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            build:
+              commands:
+                - echo "Start builds from .github/workflows/codebuild.yml (inline buildspec override)."
+                - exit 1
+
+  ProjectArm64:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Ref ProjectNameArm64
+      Description: Cortex CLI Linux arm64 CI (GitHub Actions OIDC trigger)
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      TimeoutInMinutes: 90
+      QueuedTimeoutInMinutes: 30
+      BadgeEnabled: false
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Cache:
+        Type: S3
+        Location: !Sub "${CacheBucket}/arm64"
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: !Ref ComputeType
+        Image: aws/codebuild/amazonlinux-aarch64-standard:3.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: false
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub "/aws/codebuild/${ProjectNameArm64}"
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            build:
+              commands:
+                - echo "Start builds from .github/workflows/codebuild.yml (inline buildspec override)."
+                - exit 1
+
+Outputs:
+  GithubActionsRoleArn:
+    Description: Set GitHub Actions variable AWS_CODEBUILD_ROLE_ARN to this value
+    Value: !GetAtt GithubActionsRole.Arn
+  ProjectX64Name:
+    Description: Required GitHub status-check context (x64)
+    Value: !Ref ProjectNameX64
+  ProjectArm64Name:
+    Description: Required GitHub status-check context (arm64)
+    Value: !Ref ProjectNameArm64
+  CacheBucketName:
+    Description: Private cargo cache bucket
+    Value: !Ref CacheBucket
+  Region:
+    Description: Set GitHub Actions variable AWS_REGION if not us-east-1
+    Value: !Ref AWS::Region

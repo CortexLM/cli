@@ -64,6 +64,7 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [Troubleshooting](troubleshooting.md) | Common failures and how to diagnose them |
 | [Contributing](CONTRIBUTING.md) | Filing issues, PR conventions, required checks |
 | [CI secrets](CI_SECRETS.md) | Secret *names* the release workflows expect |
+| [CodeBuild CI](../deploy/aws/codebuild/README.md) | OIDC + AWS CodeBuild Linux x64/arm64 status checks |
 | [Local operations](guides/operations.md) | Alerts, error investigation, deployment comparison and profiling |
 | [Maintenance](guides/maintenance.md) | Ownership, labels, backlog triage and release review |
 | [Readiness remediation](guides/readiness-remediation.md) | Local validation snapshot and explicit remaining limits |

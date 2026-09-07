@@ -41,12 +41,23 @@ The supported contract covers:
 | GET, DELETE | `/sessions/{id}` | Read/delete an in-memory session |
 | POST, GET | `/sessions/{id}/messages` | Store/list messages, no model inference |
 
-Other development endpoints, including files, terminals, admin, SSE, and
+Other development endpoints, including files, terminals, SSE, and
 WebSockets, are not yet part of this stable schema. Authentication applies to
 them too. A configured server API key is an operator credential, not a
-multi-tenant sandbox. JWT admin routes require the `admin` role; ordinary
-authenticated routes operate on the server's workspace. Do not host mutually
-untrusted tenants in one process.
+multi-tenant sandbox. Authenticated routes operate on the server's workspace.
+Do not host mutually untrusted tenants in one process.
+
+The legacy `/api/v1/admin/*` API has been removed, including global statistics,
+bulk session operations, CSV exports, and share administration. These paths
+return 404 after authentication; unauthenticated requests still fail authentication.
+Legacy JWT role/profile claims are ignored and grant no additional capabilities.
+Use the existing CLI session, export, and stats commands for your own local data.
+Session sharing and automatic expired-share cleanup remain available.
+
+The unused network-proxy `admin_url` and
+`dangerously_allow_non_loopback_admin` settings have also been removed. Older
+configuration files may still contain these unknown fields, but they have no
+effect. Proxy domain/IP filtering, network modes, and sandbox protections remain.
 
 Send `Authorization: ApiKey <server key>` or `Authorization: Bearer <JWT>`.
 JWTs require issuer `Cortex` and audience `cortex-api`.

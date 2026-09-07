@@ -93,17 +93,9 @@ pub struct NetworkProxyConfig {
     #[serde(default)]
     pub proxy_url: Option<String>,
 
-    /// Admin interface URL.
-    #[serde(default)]
-    pub admin_url: Option<String>,
-
     /// Allow non-loopback proxy address.
     #[serde(default)]
     pub dangerously_allow_non_loopback_proxy: bool,
-
-    /// Allow non-loopback admin address.
-    #[serde(default)]
-    pub dangerously_allow_non_loopback_admin: bool,
 }
 
 fn default_enabled() -> bool {
@@ -214,12 +206,6 @@ impl NetworkProxyConfigBuilder {
         self
     }
 
-    /// Set admin URL.
-    pub fn admin_url(mut self, url: impl Into<String>) -> Self {
-        self.config.admin_url = Some(url.into());
-        self
-    }
-
     /// Build the config.
     pub fn build(self) -> NetworkProxyConfig {
         self.config
@@ -254,5 +240,35 @@ mod tests {
         assert_eq!(config.mode, NetworkMode::Limited);
         assert_eq!(config.allowed_domains.len(), 2);
         assert_eq!(config.denied_domains.len(), 1);
+    }
+
+    #[test]
+    fn test_legacy_admin_settings_are_ignored_without_weakening_network_policy() {
+        let config: NetworkProxyConfig = serde_json::from_value(serde_json::json!({
+            "enabled": true,
+            "mode": "limited",
+            "allowed_domains": ["api.cortex.foundation"],
+            "denied_domains": ["blocked.example"],
+            "proxy_url": "http://127.0.0.1:8080",
+            "admin_url": "http://0.0.0.0:9090",
+            "dangerously_allow_non_loopback_admin": true
+        }))
+        .unwrap();
+        assert!(config.enabled);
+        assert_eq!(config.mode, NetworkMode::Limited);
+        assert!(config.mode.allows_method("GET"));
+        assert!(!config.mode.allows_method("POST"));
+        assert!(!config.allow_local_binding);
+        assert!(!config.dangerously_allow_non_loopback_proxy);
+        assert_eq!(config.allowed_domains, ["api.cortex.foundation"]);
+        assert_eq!(config.denied_domains, ["blocked.example"]);
+        assert_eq!(config.proxy_url.as_deref(), Some("http://127.0.0.1:8080"));
+        let serialized = serde_json::to_value(config).unwrap();
+        assert!(serialized.get("admin_url").is_none());
+        assert!(
+            serialized
+                .get("dangerously_allow_non_loopback_admin")
+                .is_none()
+        );
     }
 }

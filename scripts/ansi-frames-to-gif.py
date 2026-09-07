@@ -474,8 +474,8 @@ def main() -> int:
                         safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in label)
                         preview = frame
                         if preview.width > 1000:
-                            height = round(preview.height * 1000 / preview.width)
-                            preview = preview.resize((1000, height), Image.LANCZOS)
+                            preview_height = round(preview.height * 1000 / preview.width)
+                            preview = preview.resize((1000, preview_height), Image.LANCZOS)
                         preview.save(preview_dir / f"{safe}.png", optimize=True)
                         previewed.add(label)
                     output_index += 1

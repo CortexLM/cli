@@ -12,7 +12,7 @@ workspace = true
 cortex-common = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
-thiserror = "2"
+thiserror = { workspace = true }
 
 # For disk space detection on Unix
 [target.'cfg(unix)'.dependencies]

@@ -376,6 +376,12 @@ def main() -> int:
         default=None,
         help="Write named PNGs from manifest labels to this directory and skip the GIF",
     )
+    parser.add_argument(
+        "--preview-dir",
+        type=Path,
+        default=None,
+        help="Also write one composed still per storyboard label",
+    )
     args = parser.parse_args()
 
     manifest_path = args.frames / "manifest.json"
@@ -420,6 +426,23 @@ def main() -> int:
         )
         macos = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(macos)
+        storyboard = tuple(
+            label
+            for entry in manifest["frames"]
+            for label in [entry.get("label") or Path(entry["file"]).stem] * entry["hold"]
+        )
+        preview_dir = args.preview_dir
+        previewed: set[str] = set()
+        preview_labels = {
+            "splash",
+            "working",
+            "palette",
+            "model",
+            "shell",
+            "composer",
+        }
+        if preview_dir is not None:
+            preview_dir.mkdir(parents=True, exist_ok=True)
         for entry in manifest["frames"]:
             ansi = (args.frames / entry["file"]).read_text()
             grid = parse_ansi(ansi, width, height)
@@ -432,10 +455,29 @@ def main() -> int:
                 output_index += 1
             else:
                 desktop = macos.build_desktop(image, f"Cortex CLI — cortex — {width}×{height}")
+                label = entry.get("label") or Path(entry["file"]).stem
                 for _ in range(entry["hold"]):
-                    macos.animate_mouse(desktop, output_index, total_frames).save(
-                        png_root / f"{output_index:05d}.png"
+                    frame = macos.animate_mouse(
+                        desktop,
+                        output_index,
+                        total_frames,
+                        label=label,
+                        labels=storyboard,
+                        content_size=image.size,
                     )
+                    frame.save(png_root / f"{output_index:05d}.png")
+                    if (
+                        preview_dir is not None
+                        and label in preview_labels
+                        and label not in previewed
+                    ):
+                        safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in label)
+                        preview = frame
+                        if preview.width > 1000:
+                            preview_height = round(preview.height * 1000 / preview.width)
+                            preview = preview.resize((1000, preview_height), Image.LANCZOS)
+                        preview.save(preview_dir / f"{safe}.png", optimize=True)
+                        previewed.add(label)
                     output_index += 1
 
         if named_dir is not None:

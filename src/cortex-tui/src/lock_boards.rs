@@ -822,40 +822,34 @@ fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
 // Boards 01–10
 // ---------------------------------------------------------------------------
 
+fn paint_splash_chrome(area: Rect, buf: &mut Buffer, composer: Composer<'_>) {
+    let y = paint_launch_header(area, buf, true);
+    paint_composer(area, buf, y, composer);
+    paint_footer(area, buf, &format!("{MODEL} · Agent · 100% context"));
+}
+
 fn board_splash(area: Rect, buf: &mut Buffer) {
-    paint_hero(area, buf, HeroScene::Splash);
+    paint_splash_chrome(area, buf, Composer::Ghost(GHOST_IDLE));
 }
 
 fn board_typing(area: Rect, buf: &mut Buffer) {
-    paint_hero(area, buf, HeroScene::Typing(USER_PROMPT));
+    paint_splash_chrome(area, buf, Composer::Typed(USER_PROMPT));
 }
 
-/// README hero beat: signed splash, in-progress typing, or the working lock.
-#[derive(Debug, Clone, Copy)]
-pub enum HeroScene<'a> {
-    /// Dual-hairline splash with the idle placeholder.
-    Splash,
-    /// Splash chrome with `text` in the composer (partial or full prompt).
-    Typing(&'a str),
-    /// Submitted prompt plus the working indicator.
-    Working,
+/// README hero typing frames use a partial prompt; lock board 02 uses the full one.
+pub(crate) fn paint_typed_splash(area: Rect, buf: &mut Buffer, text: &str) {
+    paint_splash_chrome(area, buf, Composer::Typed(text));
 }
 
-/// Paint one README-hero / lock frame from the signed chrome.
-pub fn paint_hero(area: Rect, buf: &mut Buffer, scene: HeroScene<'_>) {
-    match scene {
-        HeroScene::Splash => {
-            let y = paint_launch_header(area, buf, true);
-            paint_composer(area, buf, y, Composer::Ghost(GHOST_IDLE));
-            paint_footer(area, buf, &format!("{MODEL} · Agent · 100% context"));
-        }
-        HeroScene::Typing(text) => {
-            let y = paint_launch_header(area, buf, true);
-            paint_composer(area, buf, y, Composer::Typed(text));
-            paint_footer(area, buf, &format!("{MODEL} · Agent · 100% context"));
-        }
-        HeroScene::Working => board_working(area, buf),
-    }
+/// README hero return-to-composer beat: past user turn + idle ghost, no splash.
+pub(crate) fn paint_hero_composer(area: Rect, buf: &mut Buffer) {
+    paint_session(
+        area,
+        buf,
+        user_prompt_lines(area),
+        &format!("{MODEL} · Agent · 92% context"),
+        GHOST_IDLE,
+    );
 }
 
 const PALETTE_ROWS: &[(&str, &str)] = &[

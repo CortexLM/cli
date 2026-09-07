@@ -2,7 +2,8 @@
 """Composite raw TUI captures into generated macOS-styled chrome.
 
 The CLI below retains window-only lock captures. The README rasteriser uses
-build_desktop and animate_mouse for wallpaper, menu bar, Dock and pointer.
+build_desktop and animate_mouse for a photographed desktop, menu bar, Dock
+and a pointer that walks the TUI storyboard.
 
 Each REAL capture from `docs/media/tui-lock/{40x12,120x40}/` is pasted 1:1
 under a Terminal.app title bar (traffic lights, `cortex-api — cortex — W×H`
@@ -183,66 +184,288 @@ def compose(raw_png: Path, out_png: Path, title: str) -> tuple[int, int]:
     window.save(out_png)
     return window.size
 
-# ponytail: procedural macOS-styled chrome, not an OS recording; use a real
-# desktop capture only when demonstrating native OS interactions.
+# Photographed desktop for the README GIF. Lock captures stay window-only
+# (see `compose`); this chrome is only composited onto `intro.gif`.
 DESKTOP_MARGIN = 80
 WINDOW_TOP = 76
 CONTENT_INSET = 12
+MENUBAR_H = 27
+# Green forest photo, free license (Unsplash sunlight-through-trees still).
+WALLPAPER_PATH = Path(__file__).resolve().parents[1] / "docs/media/macos-wallpaper-green.jpg"
+CLICK_LABELS = frozenset({"prompt-ready", "palette", "model", "composer"})
+
+
+def desktop_metrics(content_size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Return (desktop_w, desktop_h, window_w, window_h) for a 1:1 capture."""
+    cw, ch = content_size
+    ww, wh = cw + 2 * CONTENT_INSET, ch + 2 * CONTENT_INSET + TITLEBAR_H
+    return ww + 2 * DESKTOP_MARGIN, wh + WINDOW_TOP + 100, ww, wh
+
+
+def cover_crop(image: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """Scale-to-cover and center-crop `image` to `size`."""
+    target_w, target_h = size
+    src_w, src_h = image.size
+    scale = max(target_w / src_w, target_h / src_h)
+    new_w = max(target_w, round(src_w * scale))
+    new_h = max(target_h, round(src_h * scale))
+    resized = image.resize((new_w, new_h), Image.LANCZOS)
+    left = (new_w - target_w) // 2
+    top = (new_h - target_h) // 2
+    return resized.crop((left, top, left + target_w, top + target_h))
+
+
+def _frosted(photo: Image.Image, box: tuple[int, int, int, int], darken: float) -> Image.Image:
+    x0, y0, x1, y1 = box
+    strip = photo.crop((x0, y0, x1, y1))
+    width, height = strip.size
+    small = strip.resize((max(1, width // 12), max(1, height // 8)), Image.BILINEAR)
+    blur = small.resize((width, height), Image.BILINEAR)
+    overlay = Image.new("RGB", (width, height), (20, 22, 24))
+    return Image.blend(blur, overlay, darken)
+
+
+def _paint_menubar(desktop: Image.Image, photo: Image.Image) -> None:
+    width, _ = desktop.size
+    frost = _frosted(photo, (0, 0, width, MENUBAR_H), 0.48)
+    desktop.paste(frost, (0, 0))
+    draw = ImageDraw.Draw(desktop)
+    draw.line((0, MENUBAR_H - 1, width, MENUBAR_H - 1), fill=(255, 255, 255, 28))
+    ui_font = font(SANS_REGULAR, 13)
+    # Simple apple mark —  is missing from the Linux sans faces we ship.
+    draw.ellipse((16, 7, 28, 20), fill=(244, 246, 244))
+    draw.polygon([(22, 5), (26, 9), (18, 9)], fill=(244, 246, 244))
+    draw.text(
+        (36, 6),
+        "Terminal    Shell    Edit    View    Window    Help",
+        font=ui_font,
+        fill=(244, 246, 244),
+    )
+    draw.text((width - 188, 6), "Wi-Fi    100%    Mon 9:41", font=ui_font, fill=(244, 246, 244))
+
+
+def _paint_dock(desktop: Image.Image, photo: Image.Image) -> None:
+    width, height = desktop.size
+    dock_w, dock_h = 292, 64
+    dock_x = (width - dock_w) // 2
+    dock_y = height - dock_h - 10
+    frost = _frosted(photo, (dock_x, dock_y, dock_x + dock_w, dock_y + dock_h), 0.36)
+    plate = Image.new("RGBA", (dock_w, dock_h), (0, 0, 0, 0))
+    ImageDraw.Draw(plate).rounded_rectangle(
+        (0, 0, dock_w - 1, dock_h - 1),
+        radius=18,
+        fill=(32, 34, 36, 210),
+        outline=(255, 255, 255, 48),
+    )
+    desktop.paste(frost, (dock_x, dock_y), plate.split()[-1])
+    desktop.alpha_composite(plate, (dock_x, dock_y))
+    draw = ImageDraw.Draw(desktop)
+    icons = (
+        (69, 154, 226),
+        (232, 88, 80),
+        (27, 29, 32),
+        (88, 168, 92),
+        (90, 96, 108),
+    )
+    for i, colour in enumerate(icons):
+        x = dock_x + 14 + i * 56
+        y = dock_y + 8
+        draw.rounded_rectangle((x, y, x + 46, y + 40), radius=10, fill=colour)
+        if i == 2:
+            draw.text((x + 23, y + 20), ">_", font=font(SANS_REGULAR, 16), fill="white", anchor="mm")
+            draw.ellipse((x + 20, dock_y + dock_h - 9, x + 26, dock_y + dock_h - 4), fill=(236, 240, 236))
+
+
+def _paint_shadow(desktop: Image.Image, window_w: int, window_h: int) -> Image.Image:
+    shadow = Image.new("RGBA", desktop.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle(
+        (DESKTOP_MARGIN, WINDOW_TOP + 14, DESKTOP_MARGIN + window_w, WINDOW_TOP + window_h + 14),
+        radius=CORNER_RADIUS,
+        fill=(0, 0, 0, 155),
+    )
+    return Image.alpha_composite(desktop, shadow.filter(ImageFilter.GaussianBlur(18)))
+
 
 @lru_cache(maxsize=2)
 def desktop_backdrop(content_size: tuple[int, int]) -> Image.Image:
-    """Static desktop and shadow; never paint over the terminal capture."""
-    cw, ch = content_size
-    ww, wh = cw + 2 * CONTENT_INSET, ch + 2 * CONTENT_INSET + TITLEBAR_H
-    width, height = ww + 2 * DESKTOP_MARGIN, wh + WINDOW_TOP + 100
-    desktop = Image.new("RGB", (width, height))
-    draw = ImageDraw.Draw(desktop)
-    for y in range(height):
-        t = y / height
-        draw.line((0, y, width, y), fill=(round(18 + 22*t), round(43 + 40*t), round(58 + 27*t)))
-    draw.ellipse((-width//2, height//3, width, height*2), fill=(38, 103, 103))
-    draw.ellipse((width//3, height//2, width*2, height*2), fill=(62, 133, 119))
-    draw.ellipse((width//2, height*3//4, width*2, height*2), fill=(96, 158, 130))
-    draw.rectangle((0, 0, width, 27), fill=(22, 37, 43))
-    ui_font = font(SANS_REGULAR, 13)
-    draw.text((20, 6), "●    Terminal    Shell    Edit    View    Window    Help", font=ui_font, fill=(238, 243, 241))
-    draw.text((width-207, 6), "Wi-Fi    100%    Mon 9:41", font=ui_font, fill=(238, 243, 241))
+    """Photographed desktop, menu bar, Dock and window shadow — never the TUI."""
+    if not WALLPAPER_PATH.is_file():
+        raise SystemExit(f"Missing wallpaper photo: {WALLPAPER_PATH}")
+    width, height, window_w, window_h = desktop_metrics(content_size)
+    photo = cover_crop(Image.open(WALLPAPER_PATH).convert("RGB"), (width, height))
+    desktop = photo.convert("RGBA")
+    _paint_menubar(desktop, photo)
+    _paint_dock(desktop, photo)
+    return _paint_shadow(desktop, window_w, window_h)
 
-    dock_x, dock_y = width//2 - 133, height-76
-    draw.rounded_rectangle((dock_x, dock_y, dock_x+266, height-12), radius=18,
-                           fill=(88, 125, 123), outline=(147, 174, 166))
-    for i, (label, colour) in enumerate((("Finder", (69, 154, 226)), ("Web", (62, 153, 177)),
-                                       (">_", (27, 29, 32)), ("Files", (72, 151, 216)))):
-        x = dock_x + 13 + i*61
-        draw.rounded_rectangle((x, dock_y+8, x+48, dock_y+51), radius=10, fill=colour)
-        draw.text((x+24, dock_y+29), label, font=font(SANS_REGULAR, 11 if i != 2 else 22),
-                  fill="white", anchor="mm")
-    draw.ellipse((dock_x+157, height-20, dock_x+161, height-16), fill=(229, 242, 236))
-    shadow = Image.new("RGBA", desktop.size)
-    ImageDraw.Draw(shadow).rounded_rectangle(
-        (DESKTOP_MARGIN, WINDOW_TOP+14, DESKTOP_MARGIN+ww, WINDOW_TOP+wh+14),
-        radius=CORNER_RADIUS, fill=(0, 0, 0, 155))
-    return Image.alpha_composite(desktop.convert("RGBA"), shadow.filter(ImageFilter.GaussianBlur(18)))
 
 def build_desktop(content: Image.Image, title: str) -> Image.Image:
     """Inset preserves every capture pixel, including the rounded corners."""
-    padded = Image.new("RGB", (content.width+2*CONTENT_INSET, content.height+2*CONTENT_INSET))
+    padded = Image.new("RGB", (content.width + 2 * CONTENT_INSET, content.height + 2 * CONTENT_INSET))
     padded.paste(content, (CONTENT_INSET, CONTENT_INSET))
     desktop = desktop_backdrop(content.size).copy()
     desktop.alpha_composite(build_window(padded, title), (DESKTOP_MARGIN, WINDOW_TOP))
     return desktop.convert("RGB")
 
-def animate_mouse(desktop: Image.Image, frame: int, total: int) -> Image.Image:
-    """Smooth looping pointer in the desktop gutter; no obscured CLI pixels."""
-    phase = 2 * math.pi * frame / max(1, total)
-    x = round(desktop.width - 51 + 15 * math.sin(phase))
-    y = round(118 + (desktop.height - 264) * (1 - math.cos(phase)) / 2)
-    image = desktop.copy()
-    draw = ImageDraw.Draw(image)
-    points = [(x, y), (x, y+23), (x+6, y+17), (x+11, y+27),
-              (x+15, y+25), (x+10, y+15), (x+19, y+15)]
+
+def _lerp(a: tuple[int, int], b: tuple[int, int], t: float) -> tuple[int, int]:
+    t = max(0.0, min(1.0, t))
+    return round(a[0] + (b[0] - a[0]) * t), round(a[1] + (b[1] - a[1]) * t)
+
+
+def pointer_anchors(
+    content_size: tuple[int, int], desktop_size: tuple[int, int]
+) -> dict[str, tuple[int, int]]:
+    """Named hits for the README pointer: titlebar, composer, slash, tools."""
+    cw, ch = content_size
+    dw, _dh = desktop_size
+    content_x = DESKTOP_MARGIN + CONTENT_INSET
+    content_y = WINDOW_TOP + TITLEBAR_H + CONTENT_INSET
+    window_w = cw + 2 * CONTENT_INSET
+    return {
+        "rest": (dw - 51, 118),
+        "titlebar": (DESKTOP_MARGIN + window_w // 2, WINDOW_TOP + TITLEBAR_H // 2),
+        "composer": (content_x + 88, content_y + max(48, int(ch * 0.12))),
+        "palette": (content_x + 76, content_y + int(ch * 0.30)),
+        "model": (content_x + 104, content_y + int(ch * 0.22)),
+        "working": (content_x + 148, content_y + int(ch * 0.16)),
+        "shell": (content_x + 128, content_y + int(ch * 0.24)),
+    }
+
+
+def _label_anchor(label: str) -> str:
+    if label in {"typing", "prompt-ready", "composer"}:
+        return "composer"
+    if label in {"working", "palette", "model", "shell", "titlebar", "rest"}:
+        return label
+    if label == "splash":
+        return "titlebar"
+    return "rest"
+
+
+def _ease_label_hold(
+    label: str, index_in_label: int, label_count: int, anchors: dict[str, tuple[int, int]]
+) -> tuple[int, int]:
+    t = index_in_label / max(1, label_count - 1)
+    if label == "splash":
+        if t < 0.4:
+            return _lerp(anchors["rest"], anchors["titlebar"], t / 0.4)
+        return _lerp(anchors["titlebar"], anchors["composer"], (t - 0.4) / 0.6)
+    if label == "composer":
+        return _lerp(anchors["composer"], anchors["rest"], t)
+    if label == "palette":
+        return _lerp(anchors["composer"], anchors["palette"], min(1.0, t * 1.4))
+    return anchors[_label_anchor(label)]
+
+
+@lru_cache(maxsize=8)
+def pointer_track(
+    labels: tuple[str, ...],
+    desktop_size: tuple[int, int],
+    content_size: tuple[int, int],
+) -> tuple[tuple[int, int, bool], ...]:
+    """One (x, y, pressed) per playback frame; last pose matches the first."""
+    anchors = pointer_anchors(content_size, desktop_size)
+    n = len(labels)
+    if n == 0:
+        return ()
+    first_of: dict[str, int] = {}
+    counts: dict[str, int] = {}
+    for i, label in enumerate(labels):
+        first_of.setdefault(label, i)
+        counts[label] = counts.get(label, 0) + 1
+    seen: dict[str, int] = {}
+    poses: list[tuple[int, int, bool]] = []
+    for i, label in enumerate(labels):
+        seen[label] = seen.get(label, 0)
+        x, y = _ease_label_hold(label, seen[label], counts[label], anchors)
+        seen[label] += 1
+        pressed = label in CLICK_LABELS and first_of[label] <= i < first_of[label] + 2
+        poses.append((x, y, pressed))
+
+    wrap = min(8, max(3, n // 10))
+    start = poses[0][:2]
+    for k in range(wrap):
+        t = (k + 1) / wrap
+        i = n - wrap + k
+        x, y = _lerp(poses[i][:2], start, t)
+        poses[i] = (x, y, False)
+    return tuple(poses)
+
+
+def pointer_pose(
+    frame: int,
+    total: int,
+    *,
+    desktop_size: tuple[int, int],
+    content_size: tuple[int, int] = (1232, 912),
+    label: str = "",
+    labels: tuple[str, ...] | None = None,
+) -> tuple[int, int, bool]:
+    """Looping pointer pose. Optional storyboard labels drive the proud path."""
+    if labels:
+        track = pointer_track(labels, desktop_size, content_size)
+        x, y, pressed = track[frame % len(track)]
+    else:
+        anchors = pointer_anchors(content_size, desktop_size)
+        tour = (
+            anchors["rest"],
+            anchors["titlebar"],
+            anchors["composer"],
+            anchors["palette"],
+            anchors["working"],
+            anchors["shell"],
+            anchors["rest"],
+        )
+        phase = (frame % max(1, total)) / max(1, total)
+        scaled = phase * (len(tour) - 1)
+        i = min(len(tour) - 2, int(scaled))
+        x, y = _lerp(tour[i], tour[i + 1], scaled - i)
+        pressed = i in {2, 3} and (scaled - i) < 0.18
+    # 10-step hover circle (14px). 110 GIF frames divide by 10, so frame 0
+    # and frame `total` match; neighbours are 8–9px apart after rounding.
+    angle = 2 * math.pi * (frame % 10) / 10
+    x += round(14 * math.cos(angle))
+    y += round(14 * math.sin(angle))
+    _ = label
+    return x, y, pressed
+
+
+def _draw_pointer(draw: ImageDraw.ImageDraw, x: int, y: int, pressed: bool) -> None:
+    if pressed:
+        draw.ellipse((x - 10, y - 10, x + 18, y + 18), outline=(255, 255, 255, 180), width=2)
+    points = [
+        (x, y),
+        (x, y + 23),
+        (x + 6, y + 17),
+        (x + 11, y + 27),
+        (x + 15, y + 25),
+        (x + 10, y + 15),
+        (x + 19, y + 15),
+    ]
     draw.polygon(points, fill=(18, 20, 22))
     draw.line(points + [points[0]], fill="white", width=2)
+
+
+def animate_mouse(
+    desktop: Image.Image,
+    frame: int,
+    total: int,
+    label: str = "",
+    labels: tuple[str, ...] | None = None,
+    content_size: tuple[int, int] = (1232, 912),
+) -> Image.Image:
+    """Pointer tours titlebar → composer / slash → tools, then arcs back."""
+    x, y, pressed = pointer_pose(
+        frame,
+        total,
+        desktop_size=desktop.size,
+        content_size=content_size,
+        label=label,
+        labels=labels,
+    )
+    image = desktop.copy()
+    _draw_pointer(ImageDraw.Draw(image), x, y, pressed)
     return image
 
 

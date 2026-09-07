@@ -18,11 +18,11 @@
   <a href="https://cortex.foundation">cortex.foundation</a>
 </p>
 
-![Animated green Cortex CLI in a complete Terminal window on a macOS-styled desktop, with a moving pointer](./docs/media/intro.gif)
+![Cortex CLI in macOS Terminal on a green forest desktop: splash, prompt, slash commands, a Shell tool row, and a moving pointer](./docs/media/intro.gif)
 
-*Generated macOS-styled demo, not a desktop recording. The green CLI frames
-come from the offline `readme_hero` renderer; the desktop and pointer are
-composited. No live coding request is performed.*
+*Generated macOS desktop demo, not a screen recording. The TUI frames come
+from the offline `readme_hero` lock boards; the forest wallpaper, Terminal
+chrome and pointer are composited. No live coding request is performed.*
 Regenerate with `./scripts/render-demo-gif.sh` (Cargo, Python with Pillow, and
 FFmpeg required); terminal pixels are preserved 1:1 before GIF quantization.
 
@@ -184,8 +184,9 @@ The banner above is generated from this repository, not captured by hand:
 ./scripts/render-demo-gif.sh
 ```
 
-That records the signed lock TUI (splash → typing → working) headlessly
-through `generate_tui_demo` and rasterises the frames into `docs/media/intro.gif`.
+That records the signed lock TUI (splash → type a prompt → working → slash
+palette → `/model` → Shell → composer) headlessly through `generate_tui_demo`
+and composites it onto the forest desktop in `docs/media/intro.gif`.
 
 ## Release and CI secrets
 

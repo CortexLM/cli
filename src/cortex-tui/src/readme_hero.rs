@@ -1,7 +1,9 @@
-//! README hero GIF: signed lock chrome, splash → typing → working.
+//! README hero GIF: signed lock chrome, local TUI command tour.
 //!
 //! [`record`] paints the visual-lock boards through [`MockTerminal`] so the
-//! banner cannot drift onto the retired welcome-card splash. `scripts/render-demo-gif.sh`
+//! banner cannot drift onto the retired welcome-card splash. Sequence is
+//! splash → type a prompt → working → slash palette → `/model` → Shell tool
+//! row → idle composer. No Cortex Cloud handoff. `scripts/render-demo-gif.sh`
 //! rasterises the frames into `docs/media/intro.gif`.
 
 use cortex_tui_capture::{
@@ -10,7 +12,8 @@ use cortex_tui_capture::{
 };
 use ratatui::widgets::Clear;
 
-use crate::lock_boards::{self, HeroScene, USER_PROMPT};
+use crate::lock_boards::USER_PROMPT;
+use crate::readme_hero_boards::{self, HeroScene};
 
 /// The prompt the hero types — same copy as the typing lock board.
 pub const HERO_PROMPT: &str = USER_PROMPT;
@@ -30,14 +33,14 @@ fn paint_beat(scene: HeroScene<'_>) -> impl FnOnce(&mut ratatui::Frame<'_>) + '_
     move |frame| {
         let area = frame.area();
         frame.render_widget(Clear, area);
-        lock_boards::paint_hero(area, frame.buffer_mut(), scene);
+        readme_hero_boards::paint_hero(area, frame.buffer_mut(), scene);
     }
 }
 
-/// Storyboard: idle splash, type the rate-limit prompt, hold the working lock.
+/// Storyboard: splash, type, working, slash / model, a tool row, composer.
 pub fn storyboard_beats() -> Vec<(String, u32, String)> {
     let mut beats = Vec::new();
-    beats.push(("splash".into(), 18, String::new()));
+    beats.push(("splash".into(), 12, String::new()));
 
     let chars: Vec<char> = HERO_PROMPT.chars().collect();
     let mut typed = String::new();
@@ -45,8 +48,12 @@ pub fn storyboard_beats() -> Vec<(String, u32, String)> {
         typed.extend(chunk);
         beats.push(("typing".into(), 1, typed.clone()));
     }
-    beats.push(("prompt-ready".into(), 8, HERO_PROMPT.to_string()));
-    beats.push(("working".into(), 36, String::new()));
+    beats.push(("prompt-ready".into(), 6, HERO_PROMPT.to_string()));
+    beats.push(("working".into(), 12, String::new()));
+    beats.push(("palette".into(), 12, String::new()));
+    beats.push(("model".into(), 10, String::new()));
+    beats.push(("shell".into(), 12, String::new()));
+    beats.push(("composer".into(), 10, String::new()));
     beats
 }
 
@@ -63,6 +70,10 @@ pub fn record(config: &DemoConfig) -> CaptureResult<DemoRecording> {
         let scene = match label.as_str() {
             "splash" => HeroScene::Splash,
             "working" => HeroScene::Working,
+            "palette" => HeroScene::Palette,
+            "model" => HeroScene::Model,
+            "shell" => HeroScene::Shell,
+            "composer" => HeroScene::Composer,
             _ => HeroScene::Typing(&typed),
         };
         terminal
@@ -124,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn sequence_is_splash_then_typing_then_working() {
+    fn sequence_tours_local_commands() {
         let recording = recording();
         let labels: Vec<&str> = recording
             .frames
@@ -133,14 +144,24 @@ mod tests {
             .collect();
         assert_eq!(labels.first().copied(), Some("splash"));
         assert!(labels.contains(&"typing"));
-        assert_eq!(labels.last().copied(), Some("working"));
+        for beat in ["working", "palette", "model", "shell"] {
+            assert!(labels.contains(&beat), "missing {beat} beat: {labels:?}");
+        }
+        assert_eq!(labels.last().copied(), Some("composer"));
         let first_typing = labels.iter().position(|l| *l == "typing").expect("typing");
         let working = labels
             .iter()
-            .rposition(|l| *l == "working")
+            .position(|l| *l == "working")
             .expect("working");
+        let palette = labels
+            .iter()
+            .position(|l| *l == "palette")
+            .expect("palette");
+        let shell = labels.iter().position(|l| *l == "shell").expect("shell");
         assert!(first_typing > 0);
         assert!(working > first_typing);
+        assert!(palette > working);
+        assert!(shell > palette);
     }
 
     #[test]
@@ -228,11 +249,18 @@ mod tests {
         );
     }
 
+    fn frame_named<'a>(recording: &'a DemoRecording, label: &str) -> &'a DemoFrame {
+        recording
+            .frames
+            .iter()
+            .find(|frame| frame.label == label)
+            .unwrap_or_else(|| panic!("missing {label} beat"))
+    }
+
     #[test]
     fn working_matches_the_signed_lock() {
         let recording = recording();
-        let last = recording.frames.last().expect("frames");
-        assert_eq!(last.label, "working");
+        let working = frame_named(&recording, "working");
         for needle in [
             "Add rate limiting to POST /v1/completions",
             "Working",
@@ -241,17 +269,68 @@ mod tests {
             "Cortex Mini 1 · Agent",
         ] {
             assert!(
-                last.plain.contains(needle),
+                working.plain.contains(needle),
                 "working missing {needle:?}:\n{}",
-                last.plain
+                working.plain
             );
         }
         assert!(
-            last.ansi.contains("\x1b[38;2;31;73;69m"),
+            working.ansi.contains("\x1b[38;2;31;73;69m"),
             "working missing the banner green caret"
         );
-        assert!(!last.plain.contains("▄█▀▀▀▀█▄"));
-        assert!(!last.plain.contains("BUILD"));
+        assert!(!working.plain.contains("▄█▀▀▀▀█▄"));
+        assert!(!working.plain.contains("BUILD"));
+    }
+
+    #[test]
+    fn slash_and_model_are_local_lock_boards() {
+        let recording = recording();
+        let palette = frame_named(&recording, "palette");
+        assert!(palette.plain.contains("/model"), "{}", palette.plain);
+        assert!(
+            palette.plain.contains("Choose the model for this session"),
+            "{}",
+            palette.plain
+        );
+        let model = frame_named(&recording, "model");
+        assert!(
+            model.plain.contains("Type to search models"),
+            "{}",
+            model.plain
+        );
+        assert!(model.plain.contains("● Medium"), "{}", model.plain);
+        let shell = frame_named(&recording, "shell");
+        assert!(shell.plain.contains("Shell"), "{}", shell.plain);
+        assert!(shell.plain.contains("rateLimit"), "{}", shell.plain);
+        let composer = frame_named(&recording, "composer");
+        assert!(
+            composer.plain.contains("Plan, search, build anything"),
+            "{}",
+            composer.plain
+        );
+        assert!(
+            !composer.plain.contains("Welcome to"),
+            "composer return must drop the splash:\n{}",
+            composer.plain
+        );
+    }
+
+    #[test]
+    fn hero_stays_on_the_local_tui() {
+        let recording = recording();
+        for frame in &recording.frames {
+            for banned in [
+                "Handed off to Cortex Cloud",
+                "Your terminal is free",
+                "cortex.foundation/agents",
+            ] {
+                assert!(
+                    !frame.plain.contains(banned),
+                    "frame {} pitches cloud linking: {banned}",
+                    frame.index
+                );
+            }
+        }
     }
 
     #[test]

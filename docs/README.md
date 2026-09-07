@@ -8,7 +8,7 @@ servers, skills, agents, plugins, hooks, sessions and permissions.
 New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 **[CLI reference](reference/cli.md)** open in another tab.
 
-![Cortex Code running a change end to end](media/intro.gif)
+![Cortex CLI in macOS Terminal on a green forest desktop, touring slash commands and a live tool row](media/intro.gif)
 
 ## Contents
 

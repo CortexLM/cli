@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+- README `docs/media/intro.gif` sits on a photographed green forest desktop (not teal blobs): Terminal chrome, a pointer that walks titlebar → composer → slash / model → Shell, and the signed lock TUI. Local CLI only — no Cortex Cloud handoff in the banner story.
+
 ## 0.1.9
 
 ### Changed

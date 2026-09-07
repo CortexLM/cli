@@ -12,6 +12,7 @@ description = "Complete WASM-based plugin system for Cortex CLI"
 workspace = true
 
 [dependencies]
+which = { workspace = true }
 # Internal
 cortex-common = { workspace = true }
 

@@ -18,6 +18,8 @@ pub const HOST_SOURCE: &str = include_str!("../../../packages/plugin-host/host.m
 pub const BUILD_SOURCE: &str = include_str!("../../../packages/plugin-host/build.mjs");
 
 struct Worker {
+    #[cfg(unix)]
+    executable: PathBuf,
     child: Child,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
@@ -31,7 +33,7 @@ impl Drop for Worker {
         // Trusted plugins can deliberately escape a process group; this is not isolation.
         #[cfg(unix)]
         if let Some(pid) = self.pid {
-            let _ = std::process::Command::new("node")
+            let _ = std::process::Command::new(&self.executable)
                 .env_clear()
                 .arg("--input-type=module")
                 .arg("--eval")
@@ -46,9 +48,20 @@ impl Drop for Worker {
     }
 }
 
+/// Resolve Node before clearing the child environment, including its PATH.
+pub fn executable() -> Result<PathBuf> {
+    which::which("node").map_err(|_| {
+        PluginError::load_error(
+            "node",
+            "Cannot launch Node 22.13+; install the supported Node 22 LTS runtime",
+        )
+    })
+}
+
 impl Worker {
     fn spawn(root: &Path) -> Result<Self> {
-        let mut command = Command::new("node");
+        let executable = executable()?;
+        let mut command = Command::new(&executable);
         command
             .env_clear()
             .current_dir(root)
@@ -80,6 +93,8 @@ impl Worker {
             .ok_or_else(|| PluginError::load_error("node", "Missing host output"))?;
         let pid = child.id();
         Ok(Self {
+            #[cfg(unix)]
+            executable,
             child,
             input,
             output: BufReader::new(output),

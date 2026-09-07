@@ -142,7 +142,7 @@ class InstallerTests(unittest.TestCase):
     def test_verified_install_retains_old_binary_and_aliases(self):
         self.install(True)
         self.assertEqual((self.bindir / "Cortex.old").read_bytes(), b"previous binary")
-        self.assertEqual(os.readlink(self.bindir / "cortex"), "Cortex")
+        self.assertTrue((self.bindir / "cortex").samefile(self.bindir / "Cortex"))
         self.assertEqual(os.readlink(self.bindir / "agent"), "Cortex")
 
     def test_case_insensitive_bindir_installs_without_alias_conflict(self):

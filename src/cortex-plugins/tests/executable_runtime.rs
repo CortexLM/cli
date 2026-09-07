@@ -24,7 +24,7 @@ fn node_package(root: &Path) {
         "{}\nbuild(process.argv[1],process.argv[2]);",
         cortex_plugins::node::BUILD_SOURCE
     );
-    let output = std::process::Command::new("node")
+    let output = std::process::Command::new(cortex_plugins::node::executable().unwrap())
         .env_clear()
         .args(["--input-type=module", "--eval", &script, "--"])
         .arg(source)
@@ -149,6 +149,70 @@ async fn node_with_command(
     let mut plugin = cortex_plugins::node::NodePlugin::new(manifest, root.into(), &hash).unwrap();
     plugin.init().await.unwrap();
     plugin
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_node_on_custom_path_keeps_worker_environment_empty() {
+    use std::os::unix::fs::PermissionsExt;
+
+    const CHILD: &str = "CORTEX_NODE_PATH_FIXTURE";
+    if std::env::var_os(CHILD).is_some() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut plugin = node_with_command(
+            temp.path(),
+            "()=>({data:process.env.PATH===undefined && process.env.CORTEX_NODE_PATH_FIXTURE===undefined})",
+            2000,
+        )
+        .await;
+        assert_eq!(
+            plugin
+                .execute_command("test", vec![], &PluginContext::new(temp.path()))
+                .await
+                .unwrap(),
+            "true"
+        );
+        plugin.shutdown().await.unwrap();
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let node = cortex_plugins::node::executable().unwrap();
+    let launcher = temp.path().join("node");
+    let invocations = temp.path().join("invocations");
+    let quote = |path: &Path| format!("'{}'", path.display().to_string().replace('\'', "'\\''"));
+    // A real Node behind a recording launcher proves both startup and cleanup
+    // use this PATH entry, even when a system Node is also installed.
+    std::fs::write(
+        &launcher,
+        format!(
+            "#!/bin/sh\nprintf 'node\\n' >> {}\nexec {} \"$@\"\n",
+            quote(&invocations),
+            quote(&node),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "test_node_on_custom_path_keeps_worker_environment_empty",
+            "--nocapture",
+        ])
+        .env("PATH", temp.path())
+        .env(CHILD, "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(invocations).unwrap(),
+        "node\nnode\n"
+    );
 }
 
 #[tokio::test]

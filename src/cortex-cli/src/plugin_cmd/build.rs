@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 pub(super) fn check_node() -> Result<()> {
-    let output = Command::new("node")
+    let output = Command::new(runtime::node::executable()?)
         .env_clear()
         .arg("--version")
         .output()
@@ -26,7 +26,7 @@ pub(super) fn check_node() -> Result<()> {
 
 pub(super) fn syntax_check(path: &Path) -> Result<()> {
     check_node()?;
-    let status = Command::new("node")
+    let status = Command::new(runtime::node::executable()?)
         .env_clear()
         .arg("--check")
         .arg(path)
@@ -61,7 +61,7 @@ pub(super) fn build(path: &Path, debug: bool, trust_code: bool) -> Result<PathBu
                 "{}\nbuild(process.argv[1], process.argv[2]);",
                 runtime::node::BUILD_SOURCE
             );
-            let status = Command::new("node")
+            let status = Command::new(runtime::node::executable()?)
                 .env_clear()
                 .args(["--input-type=module", "--eval", &code, "--"])
                 .arg(source)
@@ -308,7 +308,7 @@ mod tests {
         // real, and neither is stubbed into a green path.
         match check_node() {
             Ok(()) => {
-                let version = Command::new("node")
+                let version = Command::new(runtime::node::executable().unwrap())
                     .env_clear()
                     .arg("--version")
                     .output()

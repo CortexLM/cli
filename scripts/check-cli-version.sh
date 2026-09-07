@@ -94,6 +94,18 @@ elif [ -n "$CLI_FILE_VERSION" ]; then
     echo -e "${GREEN}✓ VERSION_CLI matches src/cortex-cli/VERSION${NC}"
 fi
 
+SDK_PKG="$REPO_ROOT/packages/sdk/package.json"
+if [ -f "$SDK_PKG" ]; then
+    SDK_VERSION=$(grep -m1 '"version"' "$SDK_PKG" | sed 's/.*"\([^"]*\)".*/\1/')
+    echo "packages/sdk/package.json: $SDK_VERSION"
+    if [ "$VERSION_CLI" != "$SDK_VERSION" ]; then
+        echo -e "${RED}ERROR: VERSION_CLI ($VERSION_CLI) does not match packages/sdk/package.json ($SDK_VERSION)${NC}"
+        ERRORS=$((ERRORS + 1))
+    else
+        echo -e "${GREEN}✓ VERSION_CLI matches packages/sdk/package.json${NC}"
+    fi
+fi
+
 # Check against release version if provided (used in CI)
 if [ -n "$CLI_RELEASE_VERSION" ]; then
     echo ""

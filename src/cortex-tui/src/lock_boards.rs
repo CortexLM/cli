@@ -785,10 +785,27 @@ fn bar(filled: u16, total: u16) -> String {
     s
 }
 
+/// Splash hint row: full, 40-col, or short — picked by character budget.
+/// Uses the full area width (not [`inner_width`]) so `v0.1.10` still fits
+/// the 40-column mid form `v{version} · / commands · @ files · ! shell`.
+pub(crate) fn splash_legend(version: &str, width: usize) -> String {
+    let full_h = format!("v{version} · {LAUNCH_HINTS}");
+    let mid_h = format!("v{version} · {LAUNCH_HINTS_NARROW}");
+    if full_h.chars().count() <= width {
+        full_h
+    } else if mid_h.chars().count() <= width {
+        mid_h
+    } else {
+        format!("v{version} · / commands")
+    }
+}
+
 /// Launch header: `Welcome to Cortex, the coding agent CLI` then
 /// `v{version} · / commands · …`. No fake `> cortex` or painted cwd.
 fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
-    let w = inner_width(area);
+    // Full terminal width: the 40-col lock is exactly the mid hint budget
+    // once the package version is seven characters (`v0.1.10`).
+    let w = area.width.max(1) as usize;
     let mut y = area.y;
     let dim = Style::default().fg(TEXT_DIM);
     let bold = Style::default().fg(TEXT).add_modifier(Modifier::BOLD);
@@ -797,16 +814,7 @@ fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
     buf.set_string(area.x + 17, y, ", the coding agent CLI", dim);
     y += 1;
     if full {
-        let version = env!("CARGO_PKG_VERSION");
-        let full_h = format!("v{version} · {LAUNCH_HINTS}");
-        let mid_h = format!("v{version} · {LAUNCH_HINTS_NARROW}");
-        let hints = if full_h.chars().count() <= w {
-            full_h
-        } else if mid_h.chars().count() <= w {
-            mid_h
-        } else {
-            format!("v{version} · / commands")
-        };
+        let hints = splash_legend(env!("CARGO_PKG_VERSION"), w);
         buf.set_string(
             area.x,
             y,

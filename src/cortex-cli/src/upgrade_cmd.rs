@@ -669,10 +669,8 @@ mod tests {
         ] {
             std::fs::write(&binary, format!("#!/bin/sh\n{body}\n")).unwrap();
             std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
-            assert_eq!(
-                verify_installed_version(&binary, "9.8.7").await.is_ok(),
-                valid
-            );
+            let result = verify_installed_version(&binary, "9.8.7").await;
+            assert_eq!(result.is_ok(), valid, "{body}: {result:?}");
         }
     }
 }

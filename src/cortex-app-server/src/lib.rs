@@ -14,7 +14,6 @@
 
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
-pub mod admin;
 pub mod api;
 pub mod auth;
 pub mod config;
@@ -151,8 +150,7 @@ pub fn create_router_with_state(state: Arc<AppState>) -> Router {
     let api_routes = api::routes()
         .merge(websocket::routes())
         .merge(streaming::routes())
-        .merge(share::routes())
-        .merge(admin::routes());
+        .merge(share::routes());
 
     Router::new()
         .nest("/api/v1", api_routes)

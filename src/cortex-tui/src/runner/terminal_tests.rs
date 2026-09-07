@@ -8,12 +8,20 @@ fn startup_clears_visible_screen_in_both_modes() {
     assert!(startup.find("\x1b[?1049h").unwrap() < startup.find("\x1b[2J").unwrap());
     assert!(startup.contains("\x1b[0m\x1b[2J\x1b[1;1H"));
     assert!(!startup.contains("\x1b[3J"), "never erase scrollback");
+    assert!(
+        !startup.contains("\x1b[6n"),
+        "startup must not query the cursor"
+    );
 
     let mut output = Vec::new();
     init_screen(&mut output, &TerminalOptions::inline()).unwrap();
     let startup = String::from_utf8(output).unwrap();
     assert!(startup.contains("\x1b[0m\x1b[2J\x1b[1;1H"));
     assert!(!startup.contains("\x1b[3J"));
+    assert!(
+        !startup.contains("\x1b[6n"),
+        "startup must not query the cursor"
+    );
 }
 
 #[test]
@@ -53,7 +61,6 @@ fn inline_preflight_options_preserve_scrollback_without_switching_screens() {
         )
         .unwrap();
         let output = String::from_utf8(output).unwrap();
-        // CortexTerminal also clears the visible viewport after construction.
         // 2J is allowed; switching screens and purging history are not.
         for forbidden in ["\x1b[?1049h", "\x1b[?1049l", "\x1b[3J"] {
             assert!(!output.contains(forbidden), "unexpected {forbidden:?}");

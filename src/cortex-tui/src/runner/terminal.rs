@@ -279,12 +279,8 @@ impl CortexTerminal {
         // Own cleanup before the first fallible setup operation.
         init_terminal(&options)?;
         let backend = CrosstermBackend::new(stdout());
-        let mut terminal = Terminal::new(backend)?;
-        // Ratatui's initial diff assumes blank cells, even on the primary screen.
-        // Clear the visible viewport, not scrollback, before the first frame.
-        if options.clear_on_start {
-            terminal.clear()?;
-        }
+        // init_screen already clears when requested; Terminal::clear would query the cursor.
+        let terminal = Terminal::new(backend)?;
 
         Ok(Self {
             terminal,

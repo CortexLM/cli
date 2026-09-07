@@ -1,7 +1,7 @@
 //! Login Screen
 //!
-//! Inline TUI (no alternate screen) so the host shell prompt stays in
-//! scrollback above the picker.
+//! Uses the alternate screen by default. `run_with_options` follows the
+//! caller's terminal preferences; inline mode preserves scrollback.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

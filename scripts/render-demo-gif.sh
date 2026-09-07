@@ -4,10 +4,13 @@
 # Two stages:
 #   1. generate_tui_demo paints the signed lock TUI (splash → typing → working)
 #      at 120×40 through cortex-tui.
-#   2. scripts/ansi-frames-to-gif.py rasterises those frames and calls ffmpeg.
+#   2. scripts/ansi-frames-to-gif.py rasterises those frames, composites a
+#      macOS-styled desktop and moving pointer, and calls ffmpeg.
 #
-# Requires: cargo, ffmpeg, python3 with Pillow.
-# Output size is 1232×912 with the default 16px font and 16px padding.
+# Requires: cargo, ffmpeg, python3 with Pillow, and a supported sans font
+# (Liberation Sans, DejaVu Sans, Noto Sans, or macOS Helvetica/Arial).
+# Raw raster: 1232×912 at the default 16px font and padding.
+# Composed GIF: 1416×1140. Validate with python3 scripts/check-macos-demo.py.
 
 set -euo pipefail
 

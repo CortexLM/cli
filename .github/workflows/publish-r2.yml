@@ -112,7 +112,7 @@ jobs:
 
       - name: Download artifacts from a release workflow run
         if: inputs.release_run_id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           run-id: ${{ inputs.release_run_id }}
@@ -120,7 +120,7 @@ jobs:
 
       - name: Download artifacts from this workflow
         if: inputs.release_run_id == ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 

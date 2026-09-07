@@ -38,7 +38,7 @@ tracing = { workspace = true }
 landlock = { workspace = true }
 
 # Seccomp
-seccompiler = "0.5"
+seccompiler = { workspace = true }
 
 # Linux libc bindings
 libc = { workspace = true }

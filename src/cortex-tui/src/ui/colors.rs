@@ -105,6 +105,28 @@ pub struct AdaptiveColors {
     pub background: Color,
 }
 
+/// Back focused RGB accent glyphs with a contrasting neutral surface.
+pub fn focus_background(accent: Color) -> Color {
+    // ponytail: built-in accents are RGB; resolve terminal palettes if indexed themes ship.
+    let Color::Rgb(r, g, b) = accent else {
+        return cortex_core::style::TEXT;
+    };
+    let linear = |channel: u8| {
+        let value = f64::from(channel) / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    if luminance > 0.169 {
+        Color::Black
+    } else {
+        cortex_core::style::TEXT
+    }
+}
+
 impl AdaptiveColors {
     /// Create colors by auto-detecting terminal background
     pub fn from_terminal() -> Self {
@@ -364,5 +386,20 @@ mod tests {
         assert!(themes.contains(&"light"));
         assert!(themes.contains(&"ocean_dark"));
         assert!(themes.contains(&"monokai"));
+    }
+    #[test]
+    fn focus_backing_matches_builtin_accent_luminance() {
+        for name in AdaptiveColors::available_themes() {
+            let colors = AdaptiveColors::from_theme_name(name);
+            let expected = match *name {
+                "ocean_dark" | "monokai" => Color::Black,
+                _ => cortex_core::style::TEXT,
+            };
+            assert_eq!(
+                crate::ui::colors::focus_background(colors.accent),
+                expected,
+                "{name}"
+            );
+        }
     }
 }

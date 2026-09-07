@@ -93,7 +93,7 @@ impl<'a> Widget for FormModal<'a> {
             let label_style = if is_focused {
                 Style::default()
                     .fg(self.colors.accent)
-                    .bg(cortex_core::style::TEXT)
+                    .bg(crate::ui::colors::focus_background(self.colors.accent))
                     .bold()
             } else {
                 Style::default().fg(self.colors.text)
@@ -238,7 +238,7 @@ impl<'a> Widget for FormModal<'a> {
         let submit_style = if self.state.is_submit_focused() {
             Style::default()
                 .fg(self.colors.accent)
-                .bg(cortex_core::style::TEXT)
+                .bg(crate::ui::colors::focus_background(self.colors.accent))
                 .bold()
         } else {
             Style::default().fg(self.colors.text_dim)

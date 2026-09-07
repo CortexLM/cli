@@ -31,7 +31,9 @@
 //! frame.render_widget(&list, area);
 //! ```
 
-use cortex_core::style::{ACCENT, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED};
+use cortex_core::style::{
+    CortexStyle, SELECTION_BG, SURFACE_0, SURFACE_1, TEXT, TEXT_DIM, TEXT_MUTED,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -522,10 +524,9 @@ impl SelectionList {
         buf: &mut Buffer,
     ) {
         // Determine styles based on selection and disabled state. The
-        // selected row is the one banner green accent — caret and label — on the dark
-        // gray bar, never inverted; other rows stay white.
+        // selected caret and label have a light backing on the dark gray row.
         let (bg, fg, prefix_fg) = if is_selected {
-            (SELECTION_BG, ACCENT, ACCENT)
+            (SELECTION_BG, TEXT, TEXT)
         } else if item.disabled {
             (SURFACE_0, TEXT_MUTED, TEXT_MUTED)
         } else {
@@ -541,7 +542,16 @@ impl SelectionList {
 
         // Selection prefix: ">" for selected, " " for others
         let prefix = if is_selected { ">" } else { " " };
-        buf.set_string(col, y, prefix, Style::default().fg(prefix_fg).bg(bg));
+        buf.set_string(
+            col,
+            y,
+            prefix,
+            if is_selected {
+                CortexStyle::selected()
+            } else {
+                Style::default().fg(prefix_fg).bg(bg)
+            },
+        );
         col += 2;
 
         // Shortcut in brackets if present
@@ -557,7 +567,9 @@ impl SelectionList {
         }
 
         // Item name
-        let name_style = if item.disabled {
+        let name_style = if is_selected {
+            CortexStyle::selected()
+        } else if item.disabled {
             Style::default().fg(fg).bg(bg).add_modifier(Modifier::DIM)
         } else {
             Style::default().fg(fg).bg(bg)
@@ -893,5 +905,21 @@ mod tests {
 
         list.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
         assert_eq!(list.selected_idx, 0);
+    }
+    #[test]
+    fn focus_label_and_caret_cells_have_contrasting_backing() {
+        let item = SelectionItem::new("Test");
+        let list = SelectionList::new(vec![item.clone()]);
+        for width in [40, 120] {
+            let mut buf = Buffer::empty(Rect::new(0, 0, width, 12));
+            list.render_item(&item, true, 0, 0, width, &mut buf);
+            assert_eq!(buf[(0, 0)].symbol(), ">");
+            assert_eq!(buf[(2, 0)].symbol(), "T");
+            for x in [0, 2, 3, 4, 5] {
+                assert_eq!(buf[(x, 0)].fg, cortex_core::style::ACCENT);
+                assert_eq!(buf[(x, 0)].bg, TEXT);
+            }
+            assert_eq!(buf[(1, 0)].bg, SELECTION_BG);
+        }
     }
 }

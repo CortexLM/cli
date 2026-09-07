@@ -158,7 +158,10 @@ impl QuestionPromptView<'_> {
             // The active tab is the focused selection: banner green on the gray bar,
             // never inverted onto the accent. Answered tabs read white.
             let (fg, bg) = if is_active {
-                (colors.accent, cortex_core::style::TEXT)
+                (
+                    colors.accent,
+                    crate::ui::colors::focus_background(colors.accent),
+                )
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -193,7 +196,10 @@ impl QuestionPromptView<'_> {
             let is_hovered = self.hovered_tab == Some(self.state.request.questions.len());
 
             let (fg, bg) = if is_active {
-                (colors.accent, cortex_core::style::TEXT)
+                (
+                    colors.accent,
+                    crate::ui::colors::focus_background(colors.accent),
+                )
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -267,7 +273,10 @@ impl QuestionPromptView<'_> {
             // Focused option: banner green on the gray selection bar; a picked option
             // stays white — its `✓` carries the green.
             let (fg, bg) = if is_selected {
-                (colors.accent, cortex_core::style::TEXT)
+                (
+                    colors.accent,
+                    crate::ui::colors::focus_background(colors.accent),
+                )
             } else if is_hovered {
                 (colors.text, colors.user_bg)
             } else {
@@ -330,7 +339,10 @@ impl QuestionPromptView<'_> {
                 let label = "Type your own answer";
 
                 let (fg, bg) = if is_selected {
-                    (colors.accent, cortex_core::style::TEXT)
+                    (
+                        colors.accent,
+                        crate::ui::colors::focus_background(colors.accent),
+                    )
                 } else if is_hovered {
                     (colors.text, colors.user_bg)
                 } else {
@@ -686,5 +698,61 @@ mod tests {
             .find(|x| buf[(*x, title_y)].symbol() == "W")
             .expect("title");
         assert_eq!(buf[(title_x, title_y)].style().fg, Some(TEXT));
+    }
+    #[test]
+    fn focus_tabs_and_options_are_accessible_in_every_builtin_theme() {
+        for name in AdaptiveColors::available_themes() {
+            let colors = AdaptiveColors::from_theme_name(name);
+            let expected_bg = match *name {
+                "ocean_dark" | "monokai" => Color::Black,
+                _ => TEXT,
+            };
+            for width in [40, 120] {
+                let mut req = request();
+                req.questions[0].allow_custom = true;
+                req.questions[0].question = "Home".into();
+                req.questions.push(req.questions[0].clone());
+                let mut state = QuestionState::new(req);
+                for confirm in [false, true] {
+                    state.on_confirm_tab = confirm;
+                    let view = QuestionPromptView::new(&state).with_colors(colors.clone());
+                    let area = Rect::new(0, 0, width, 12);
+                    let mut buf = Buffer::empty(area);
+                    view.render_tabs(&Rect::new(0, 0, width, 1), &mut buf, &colors);
+                    let label = if confirm {
+                        "Confirm".to_string()
+                    } else {
+                        state.get_header(0)
+                    };
+                    let row: String = (0..width).map(|x| buf[(x, 0)].symbol()).collect();
+                    let start = row.find(&label).expect("active tab label") as u16;
+                    for x in start..start + label.chars().count() as u16 {
+                        assert_eq!(buf[(x, 0)].fg, colors.accent, "{name}: {label}");
+                        assert_eq!(buf[(x, 0)].bg, expected_bg, "{name}: {label}");
+                    }
+                }
+                state.on_confirm_tab = false;
+                for selected in [0, 2] {
+                    state.selected_index[0] = selected;
+                    let view = QuestionPromptView::new(&state).with_colors(colors.clone());
+                    let mut buf = Buffer::empty(Rect::new(0, 0, width, 12));
+                    view.render_question(
+                        &Rect::new(0, 0, width, 1),
+                        &Rect::new(0, 2, width, 10),
+                        &mut buf,
+                        &colors,
+                    );
+                    let focused: Vec<_> = buf
+                        .content
+                        .iter()
+                        .filter(|cell| cell.fg == colors.accent && cell.symbol() != " ")
+                        .collect();
+                    assert!(!focused.is_empty(), "{name}: option {selected}");
+                    for cell in focused {
+                        assert_eq!(cell.bg, expected_bg, "{name}: option {selected}");
+                    }
+                }
+            }
+        }
     }
 }

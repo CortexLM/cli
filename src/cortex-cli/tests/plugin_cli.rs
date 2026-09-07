@@ -24,7 +24,10 @@ fn stderr(output: &Output) -> String {
 
 /// Mirrors the runtime contract: only the Node 22 LTS line from 22.13 is supported.
 fn node_supported() -> bool {
-    let Ok(output) = Command::new("node").env_clear().arg("--version").output() else {
+    let Ok(node) = cortex_engine::plugin::runtime::node::executable() else {
+        return false;
+    };
+    let Ok(output) = Command::new(node).env_clear().arg("--version").output() else {
         return false;
     };
     let text = String::from_utf8_lossy(&output.stdout).into_owned();

@@ -1309,7 +1309,7 @@ dependencies = [
  "cortex-common",
  "landlock",
  "libc",
- "seccompiler 0.4.0",
+ "seccompiler",
  "serde",
  "serde_json",
  "tracing",
@@ -1541,7 +1541,7 @@ dependencies = [
  "dirs 6.0.0",
  "landlock",
  "libc",
- "seccompiler 0.5.0",
+ "seccompiler",
  "serde",
  "thiserror 2.0.20",
  "windows 0.58.0",
@@ -5964,15 +5964,6 @@ dependencies = [
  "precomputed-hash",
  "selectors",
  "tendril",
-]
-
-[[package]]
-name = "seccompiler"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "345a3e4dddf721a478089d4697b83c6c0a8f5bf16086f6c13397e4534eb6e2e5"
-dependencies = [
- "libc",
 ]
 
 [[package]]

@@ -12,3 +12,6 @@ workspace = true
 [dependencies]
 taffy = { workspace = true }
 slotmap = { workspace = true }
+
+[dev-dependencies]
+cortex-tui-buffer = { workspace = true }

@@ -66,6 +66,14 @@
 //! - **Align Items**: Alignment along the cross axis
 //! - **Flex Grow/Shrink**: How items grow or shrink to fill space
 //!
+//! # Taffy integration
+//!
+//! With Taffy 0.14, importing dimensions uses `TryFrom`: CSS sizing keywords and
+//! opaque `calc()` handles return [`UnsupportedDimension`] rather than silently
+//! changing the layout. Existing auto, point, and percentage values round-trip.
+//! Imported alignment modifiers and balanced wrapping normalize to the supported
+//! Cortex alignment and wrapping modes.
+//!
 //! # Performance
 //!
 //! The layout system uses dirty tracking to avoid unnecessary recomputation.
@@ -100,6 +108,7 @@ pub use node::{LayoutNode, LayoutNodeBuilder, LayoutStyle};
 pub use style::{
     AlignContent, AlignItems, AlignSelf, Dimension, Display, Edges, FlexDirection, FlexWrap,
     JustifyContent, LengthPercentage, LengthPercentageAuto, Overflow, Position, Size as StyleSize,
+    UnsupportedDimension,
 };
 pub use tree::{LayoutError, LayoutNodeKey, LayoutResult, LayoutTree};
 

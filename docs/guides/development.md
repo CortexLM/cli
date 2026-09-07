@@ -11,6 +11,9 @@ bash scripts/dev-setup.sh
 export PATH="$PWD/target/readiness-tools/bin:$PATH"
 ```
 
+Node plugin tests launch a real `node` worker and fail without it. Install
+Node 22.13 or newer in the Node 22 LTS line; CI provisions the same version.
+
 Setup fetches the **locked** graph, including the Git-sourced terminal dependency,
 and installs pinned analysis/test tools under ignored `target/`. It does not
 change Git configuration, install hooks, run a remote installer, or log in.

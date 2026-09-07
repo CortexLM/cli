@@ -1,6 +1,9 @@
 {
   "name": "Cortex Rust workspace",
   "build": {"dockerfile": "Dockerfile", "context": ".."},
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {"version": "22"}
+  },
   "remoteUser": "cortex",
   "updateRemoteUserUID": true,
   "postCreateCommand": "bash scripts/dev-setup.sh",

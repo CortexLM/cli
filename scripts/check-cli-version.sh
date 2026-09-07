@@ -44,7 +44,7 @@ fi
 
 # Parse the workspace.package.version from Cargo.toml
 # We need to find the line after [workspace.package] that starts with version
-WORKSPACE_VERSION=$(grep -A20 '^\[workspace\.package\]' "$CARGO_TOML" | grep '^version' | head -1 | sed 's/.*=\s*"\([^"]*\)".*/\1/')
+WORKSPACE_VERSION=$(grep -A20 '^\[workspace\.package\]' "$CARGO_TOML" | grep '^version' | head -1 | sed 's/.*=[[:space:]]*"\([^"]*\)".*/\1/')
 echo "Workspace Cargo.toml:  $WORKSPACE_VERSION"
 
 # Also check src/cortex-cli/Cargo.toml uses workspace version
@@ -56,7 +56,7 @@ if [ -f "$CORTEX_CLI_CARGO" ]; then
         echo "src/cortex-cli/Cargo.toml: uses workspace version ✓"
         CLI_USES_WORKSPACE=true
     else
-        CLI_VERSION=$(echo "$CLI_VERSION_LINE" | sed 's/.*=\s*"\([^"]*\)".*/\1/')
+        CLI_VERSION=$(echo "$CLI_VERSION_LINE" | sed 's/.*=[[:space:]]*"\([^"]*\)".*/\1/')
         echo "src/cortex-cli/Cargo.toml: $CLI_VERSION (WARNING: should use workspace)"
         CLI_USES_WORKSPACE=false
     fi

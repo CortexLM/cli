@@ -27,7 +27,7 @@ jobs:
           fi
 
       - name: Update Homebrew formula
-        uses: mislav/bump-homebrew-formula-action@v3
+        uses: mislav/bump-homebrew-formula-action@v4
         with:
           formula-name: cortex
           homebrew-tap: CortexLM/homebrew-tap

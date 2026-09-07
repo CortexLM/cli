@@ -357,7 +357,7 @@ ts-rs = { version = "11", features = ["uuid-impl", "serde-json-impl", "no-serde-
 
 # CLI - Additional utilities
 ahash = "0.8"
-taffy = "0.6"
+taffy = "0.14"
 bitflags = "2.6"
 slotmap = "1.0"
 parking_lot = "0.12"

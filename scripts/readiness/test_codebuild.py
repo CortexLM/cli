@@ -87,6 +87,14 @@ class CodeBuildPublicSafetyTests(unittest.TestCase):
         self.assertIn("state=success", text)
         self.assertIn("state=failure", text)
 
+    def test_pull_requests_use_trusted_buildspec_and_uncached_projects(self):
+        text = read(WORKFLOWS / "codebuild.yml")
+        self.assertIn("github.event.pull_request.base.sha", text)
+        self.assertIn("cortex-cli-gha-x64-pr", text)
+        self.assertIn("cortex-cli-gha-arm64-pr", text)
+        self.assertIn("pull_request", text)
+        self.assertIn("logs-only", text)
+
     def test_start_build_is_skipped_without_role_variable(self):
         gate = read(WORKFLOWS / "codebuild.yml")
         self.assertIn("AWS_CODEBUILD_ROLE_ARN is unset", gate)
@@ -96,8 +104,14 @@ class CodeBuildPublicSafetyTests(unittest.TestCase):
 
     def test_buildspec_caches_cargo_and_runs_real_gates(self):
         cache = "\n".join(self.buildspec["cache"]["paths"])
+        spec = read(DEPLOY / "buildspec-ci.yml")
         self.assertIn(".cargo/registry", cache)
-        self.assertIn("target/", cache)
+        self.assertIn("/tmp/cortex-cli-target", cache)
+        self.assertNotIn("/tmp/cortex-cli-src/target", cache)
+        self.assertIn("CARGO_TARGET_DIR", spec)
+        self.assertIn('SRC=/tmp/cortex-cli-src', spec)
+        self.assertIn('rm -rf "$SRC"', spec)
+        self.assertIn("mkdir -p \"$TARGET\"", spec)
         runner = read(DEPLOY / "run-ci.sh")
         for token in (
             "./scripts/clippy.sh",
@@ -116,11 +130,15 @@ class CodeBuildPublicSafetyTests(unittest.TestCase):
     def test_iam_templates_use_placeholders_and_cli_trust_only(self):
         trust_text = read(DEPLOY / "iam-trust-policy.json")
         perm_text = read(DEPLOY / "iam-gha-permissions.json")
-        self.assertIn("repo:CortexLM/cli:*", trust_text)
+        self.assertIn("repo:CortexLM/cli:ref:refs/heads/main", trust_text)
+        self.assertIn("repo:CortexLM/cli:pull_request", trust_text)
+        self.assertNotIn("repo:CortexLM/cli:*", trust_text)
         self.assertIn("ACCOUNT_ID", trust_text)
         self.assertIn("sts:AssumeRoleWithWebIdentity", trust_text)
         self.assertIn("cortex-cli-gha-x64", perm_text)
         self.assertIn("cortex-cli-gha-arm64", perm_text)
+        self.assertIn("cortex-cli-gha-x64-pr", perm_text)
+        self.assertIn("cortex-cli-gha-arm64-pr", perm_text)
         self.assertEqual(
             {"codebuild:StartBuild", "codebuild:BatchGetBuilds"},
             set(self.gha_policy["Statement"][0]["Action"]),
@@ -146,7 +164,11 @@ class CodeBuildPublicSafetyTests(unittest.TestCase):
         self.assertIn("Type: NO_SOURCE", self.template)
         self.assertIn("Type: S3", self.template)
         self.assertIn("BUILD_GENERAL1_LARGE", self.template)
-        self.assertIn("repo:${GitHubOrgRepo}:*", self.template)
+        self.assertIn("repo:${GitHubOrgRepo}:ref:refs/heads/main", self.template)
+        self.assertIn("repo:${GitHubOrgRepo}:pull_request", self.template)
+        self.assertNotIn("repo:${GitHubOrgRepo}:*", self.template)
+        self.assertIn("cortex-cli-codebuild-service-pr", self.template)
+        self.assertIn("Type: NO_CACHE", self.template)
         self.assertIn("token.actions.githubusercontent.com", self.template)
         self.assertIn("cortex-cli-codebuild-gha", self.template)
         self.assertNotIn("R2_", self.template)
@@ -156,7 +178,7 @@ class CodeBuildPublicSafetyTests(unittest.TestCase):
         docs = read(DEPLOY / "README.md") + read(ROOT / "docs/CI_SECRETS.md")
         self.assertIn("AWS_CODEBUILD_ROLE_ARN", docs)
         self.assertIn("cortex-cli-gha-x64", docs)
-        self.assertIn("repo:CortexLM/cli:*", docs)
+        self.assertIn("repo:CortexLM/cli:pull_request", docs)
         self.assertIn("CLI_CODEBUILD_CI_READY", docs)
         self.assertIn("Windows", docs)
         self.assertNotIn("AKIA", docs)

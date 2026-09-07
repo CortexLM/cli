@@ -12,8 +12,11 @@
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
-        "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:CortexLM/cli:*"
+        "ForAnyValue:StringEquals": {
+          "token.actions.githubusercontent.com:sub": [
+            "repo:CortexLM/cli:ref:refs/heads/main",
+            "repo:CortexLM/cli:pull_request"
+          ]
         }
       }
     }

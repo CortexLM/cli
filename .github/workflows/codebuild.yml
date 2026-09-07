@@ -80,15 +80,24 @@ jobs:
           - context: cortex-cli-gha-x64
             project_var: AWS_CODEBUILD_PROJECT_X64
             project_default: cortex-cli-gha-x64
+            pr_project_var: AWS_CODEBUILD_PROJECT_X64_PR
+            pr_project_default: cortex-cli-gha-x64-pr
           - context: cortex-cli-gha-arm64
             project_var: AWS_CODEBUILD_PROJECT_ARM64
             project_default: cortex-cli-gha-arm64
+            pr_project_var: AWS_CODEBUILD_PROJECT_ARM64_PR
+            pr_project_default: cortex-cli-gha-arm64-pr
     env:
       STATUS_CONTEXT: ${{ matrix.context }}
       QUALITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       CORTEX_GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout trusted buildspec revision
+        uses: actions/checkout@v7
+        with:
+          # Same-repo PRs are not trusted. Load buildspec from the PR base
+          # (or the pushed main SHA). The commit under test is CORTEX_SOURCE_SHA.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
       - name: Resolve head SHA
         id: rev
         run: echo "sha=${{ github.event.pull_request.head.sha || github.sha }}" >> "$GITHUB_OUTPUT"
@@ -108,9 +117,10 @@ jobs:
           role-to-assume: ${{ vars.AWS_CODEBUILD_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
           role-session-name: ${{ matrix.context }}
-      - name: Read buildspec
+      - name: Read trusted buildspec
         id: spec
         run: |
+          test -f deploy/aws/codebuild/buildspec-ci.yml
           {
             echo "yaml<<ENDOFFILE"
             cat deploy/aws/codebuild/buildspec-ci.yml
@@ -119,7 +129,9 @@ jobs:
       - name: Run CodeBuild
         uses: aws-actions/aws-codebuild-run-build@v1
         with:
-          project-name: ${{ vars[matrix.project_var] || matrix.project_default }}
+          # Pull requests use *-pr projects: no S3 cache and a logs-only
+          # service role, so unapproved PR code cannot read or poison cache.
+          project-name: ${{ github.event_name == 'pull_request' && (vars[matrix.pr_project_var] || matrix.pr_project_default) || (vars[matrix.project_var] || matrix.project_default) }}
           disable-source-override: true
           buildspec-override: ${{ steps.spec.outputs.yaml }}
           env-vars-for-codebuild: |

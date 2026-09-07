@@ -19,8 +19,10 @@ Marker: `CLI_CODEBUILD_CI_READY`.
 |----------|----------|
 | `AWS_CODEBUILD_ROLE_ARN` | IAM role assumed by GitHub Actions (`repo:CortexLM/cli:*`) |
 | `AWS_REGION` | CodeBuild region (workflow default `us-east-1`) |
-| `AWS_CODEBUILD_PROJECT_X64` | Optional; default project `cortex-cli-gha-x64` |
-| `AWS_CODEBUILD_PROJECT_ARM64` | Optional; default project `cortex-cli-gha-arm64` |
+| `AWS_CODEBUILD_PROJECT_X64` | Optional; default project `cortex-cli-gha-x64` (push to `main`, S3 cache) |
+| `AWS_CODEBUILD_PROJECT_ARM64` | Optional; default project `cortex-cli-gha-arm64` (push to `main`, S3 cache) |
+| `AWS_CODEBUILD_PROJECT_X64_PR` | Optional; default `cortex-cli-gha-x64-pr` (PRs, no cache) |
+| `AWS_CODEBUILD_PROJECT_ARM64_PR` | Optional; default `cortex-cli-gha-arm64-pr` (PRs, no cache) |
 
 Until `AWS_CODEBUILD_ROLE_ARN` is set, the workflow validates in-repo
 buildspecs and skips StartBuild. It does not post a green

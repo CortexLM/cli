@@ -23,10 +23,16 @@ Do not commit AWS account IDs, access keys, PATs, or internal hostnames.
 
 After the one-time AWS setup below, add these **required** checks on `main`:
 
-| Context | Project | Arch |
-|---------|---------|------|
-| `cortex-cli-gha-x64` | `cortex-cli-gha-x64` | Linux x86_64 |
-| `cortex-cli-gha-arm64` | `cortex-cli-gha-arm64` | Linux aarch64 |
+| Context | Push/`main` project (S3 cache) | Pull-request project (no cache) | Arch |
+|---------|--------------------------------|----------------------------------|------|
+| `cortex-cli-gha-x64` | `cortex-cli-gha-x64` | `cortex-cli-gha-x64-pr` | Linux x86_64 |
+| `cortex-cli-gha-arm64` | `cortex-cli-gha-arm64` | `cortex-cli-gha-arm64-pr` | Linux aarch64 |
+
+Unapproved same-repository pull requests start the `*-pr` projects only.
+Those projects use a **logs-only** service role and `NO_CACHE`. They cannot
+read, write, or delete the shared cargo cache. The workflow also loads
+`buildspec-ci.yml` from the PR **base** (or the pushed `main` SHA), not
+from the unapproved head.
 
 Keep the existing `ci.yml` checks (`Format`, `Clippy`, `Test`, `TUI checks`,
 `Security Audit`, `Source and dependency policy`, `Changed-line coverage`,
@@ -34,8 +40,9 @@ Keep the existing `ci.yml` checks (`Format`, `Clippy`, `Test`, `TUI checks`,
 change. After CodeBuild is required and stable, a later PR can slim the
 duplicate GitHub-hosted Linux cargo jobs.
 
-Same-repo PRs and pushes to `main` start CodeBuild. Fork PRs keep using
-GitHub-hosted `ci.yml` only (OIDC is not granted to forks).
+Same-repo PRs start the `*-pr` projects. Pushes to `main` start the
+cached projects. Fork PRs keep using GitHub-hosted `ci.yml` only (OIDC
+is not granted to forks).
 
 ## Prefer existing org projects?
 
@@ -85,19 +92,19 @@ it as a GitHub **variable**, not in git.
 
 1. Create role `cortex-cli-codebuild-gha`.
 2. Trust policy: `iam-trust-policy.json` with `ACCOUNT_ID` replaced at
-   deploy time. Subject must be `repo:CortexLM/cli:*` only.
+   deploy time. Subjects must be only
+   `repo:CortexLM/cli:ref:refs/heads/main` and
+   `repo:CortexLM/cli:pull_request`.
 3. Permissions: `iam-gha-permissions.json` with `ACCOUNT_ID` and `REGION`
    replaced. Actions are only `codebuild:StartBuild`,
    `codebuild:BatchGetBuilds`, and `logs:GetLogEvents` on the two CLI
    projects.
-4. Create CodeBuild projects `cortex-cli-gha-x64` (Linux x86,
-   `aws/codebuild/standard:7.0`, `BUILD_GENERAL1_LARGE`) and
-   `cortex-cli-gha-arm64` (Linux ARM,
-   `aws/codebuild/amazonlinux-aarch64-standard:3.0`,
-   `BUILD_GENERAL1_LARGE`). Source type **NO_SOURCE**. S3 cache on a
-   private bucket. Build timeout 90 minutes.
-5. CodeBuild service role: CloudWatch Logs for those projects plus
-   read/write on the cache bucket. No deploy, no R2, no production secrets.
+4. Create cached projects `cortex-cli-gha-x64` / `cortex-cli-gha-arm64`
+   (`BUILD_GENERAL1_LARGE`, source **NO_SOURCE**, S3 cache, 90 minute
+   timeout) and matching `*-pr` projects with **NO_CACHE**.
+5. Cached-project service role: CloudWatch Logs plus read/write on the
+   cache bucket. PR-project service role: CloudWatch Logs **only**. No
+   deploy, no R2, no production secrets.
 
 ### 4. GitHub repository variables (not secrets)
 

@@ -11,6 +11,8 @@ cd "$CORTEX_CLI_SRC"
 
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
 export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/cortex-cli-target}"
+mkdir -p "$CARGO_TARGET_DIR"
 # shellcheck disable=SC1091
 . "$CARGO_HOME/env"
 export PATH="$CARGO_HOME/bin:$PATH"

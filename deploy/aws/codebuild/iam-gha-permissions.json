@@ -10,7 +10,9 @@
       ],
       "Resource": [
         "arn:aws:codebuild:REGION:ACCOUNT_ID:project/cortex-cli-gha-x64",
-        "arn:aws:codebuild:REGION:ACCOUNT_ID:project/cortex-cli-gha-arm64"
+        "arn:aws:codebuild:REGION:ACCOUNT_ID:project/cortex-cli-gha-arm64",
+        "arn:aws:codebuild:REGION:ACCOUNT_ID:project/cortex-cli-gha-x64-pr",
+        "arn:aws:codebuild:REGION:ACCOUNT_ID:project/cortex-cli-gha-arm64-pr"
       ]
     },
     {
@@ -21,7 +23,9 @@
       ],
       "Resource": [
         "arn:aws:logs:REGION:ACCOUNT_ID:log-group:/aws/codebuild/cortex-cli-gha-x64:*",
-        "arn:aws:logs:REGION:ACCOUNT_ID:log-group:/aws/codebuild/cortex-cli-gha-arm64:*"
+        "arn:aws:logs:REGION:ACCOUNT_ID:log-group:/aws/codebuild/cortex-cli-gha-arm64:*",
+        "arn:aws:logs:REGION:ACCOUNT_ID:log-group:/aws/codebuild/cortex-cli-gha-x64-pr:*",
+        "arn:aws:logs:REGION:ACCOUNT_ID:log-group:/aws/codebuild/cortex-cli-gha-arm64-pr:*"
       ]
     }
   ]

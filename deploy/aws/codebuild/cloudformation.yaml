@@ -22,6 +22,14 @@ Parameters:
     Type: String
     Default: cortex-cli-gha-arm64
     Description: CodeBuild project name and GitHub status-check context (arm64).
+  ProjectNameX64Pr:
+    Type: String
+    Default: cortex-cli-gha-x64-pr
+    Description: Pull-request x64 project (no S3 cache; logs-only service role).
+  ProjectNameArm64Pr:
+    Type: String
+    Default: cortex-cli-gha-arm64-pr
+    Description: Pull-request arm64 project (no S3 cache; logs-only service role).
   GhaRoleName:
     Type: String
     Default: cortex-cli-codebuild-gha
@@ -120,6 +128,34 @@ Resources:
                   - s3:GetBucketLocation
                 Resource: !GetAtt CacheBucket.Arn
 
+  CodeBuildPrServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cortex-cli-codebuild-service-pr
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: cortex-cli-codebuild-service-pr
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameX64Pr}"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameX64Pr}:*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameArm64Pr}"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameArm64Pr}:*"
+
   GithubActionsRole:
     Type: AWS::IAM::Role
     Properties:
@@ -138,8 +174,10 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-              StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrgRepo}:*"
+              ForAnyValue:StringEquals:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GitHubOrgRepo}:ref:refs/heads/main"
+                  - !Sub "repo:${GitHubOrgRepo}:pull_request"
       Policies:
         - PolicyName: start-cli-codebuild
           PolicyDocument:
@@ -153,6 +191,8 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectNameX64}"
                   - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectNameArm64}"
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectNameX64Pr}"
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${ProjectNameArm64Pr}"
               - Sid: StreamLogs
                 Effect: Allow
                 Action:
@@ -160,6 +200,8 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameX64}:*"
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameArm64}:*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameX64Pr}:*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectNameArm64Pr}:*"
 
   ProjectX64:
     Type: AWS::CodeBuild::Project
@@ -229,6 +271,72 @@ Resources:
                 - echo "Start builds from .github/workflows/codebuild.yml (inline buildspec override)."
                 - exit 1
 
+  ProjectX64Pr:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Ref ProjectNameX64Pr
+      Description: Cortex CLI Linux x64 CI for unapproved PRs (no shared cache)
+      ServiceRole: !GetAtt CodeBuildPrServiceRole.Arn
+      TimeoutInMinutes: 90
+      QueuedTimeoutInMinutes: 30
+      BadgeEnabled: false
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Cache:
+        Type: NO_CACHE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: !Ref ComputeType
+        Image: aws/codebuild/standard:7.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: false
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub "/aws/codebuild/${ProjectNameX64Pr}"
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            build:
+              commands:
+                - echo "Start builds from .github/workflows/codebuild.yml (inline buildspec override)."
+                - exit 1
+
+  ProjectArm64Pr:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Ref ProjectNameArm64Pr
+      Description: Cortex CLI Linux arm64 CI for unapproved PRs (no shared cache)
+      ServiceRole: !GetAtt CodeBuildPrServiceRole.Arn
+      TimeoutInMinutes: 90
+      QueuedTimeoutInMinutes: 30
+      BadgeEnabled: false
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Cache:
+        Type: NO_CACHE
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: !Ref ComputeType
+        Image: aws/codebuild/amazonlinux-aarch64-standard:3.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: false
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub "/aws/codebuild/${ProjectNameArm64Pr}"
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            build:
+              commands:
+                - echo "Start builds from .github/workflows/codebuild.yml (inline buildspec override)."
+                - exit 1
+
 Outputs:
   GithubActionsRoleArn:
     Description: Set GitHub Actions variable AWS_CODEBUILD_ROLE_ARN to this value
@@ -239,6 +347,12 @@ Outputs:
   ProjectArm64Name:
     Description: Required GitHub status-check context (arm64)
     Value: !Ref ProjectNameArm64
+  ProjectX64PrName:
+    Description: Pull-request x64 project (logs-only role, no S3 cache)
+    Value: !Ref ProjectNameX64Pr
+  ProjectArm64PrName:
+    Description: Pull-request arm64 project (logs-only role, no S3 cache)
+    Value: !Ref ProjectNameArm64Pr
   CacheBucketName:
     Description: Private cargo cache bucket
     Value: !Ref CacheBucket

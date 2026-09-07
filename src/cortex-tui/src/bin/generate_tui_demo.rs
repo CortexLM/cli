@@ -1,7 +1,8 @@
 //! Renders the README hero from the signed lock chrome to ANSI frames.
 //!
 //! The frames are the input to `scripts/render-demo-gif.sh`, which produces
-//! `docs/media/intro.gif` (splash → typing the rate-limit prompt → working).
+//! `docs/media/intro.gif` (splash → type → working → slash / model → Shell →
+//! composer).
 //!
 //! ```bash
 //! cargo run -p cortex-tui --bin generate_tui_demo -- --output target/tui-demo

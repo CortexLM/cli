@@ -830,7 +830,7 @@ fn board_typing(area: Rect, buf: &mut Buffer) {
     paint_hero(area, buf, HeroScene::Typing(USER_PROMPT));
 }
 
-/// README hero beat: signed splash, in-progress typing, or the working lock.
+/// README hero beat: signed splash, typing, working, then local command boards.
 #[derive(Debug, Clone, Copy)]
 pub enum HeroScene<'a> {
     /// Dual-hairline splash with the idle placeholder.
@@ -839,6 +839,14 @@ pub enum HeroScene<'a> {
     Typing(&'a str),
     /// Submitted prompt plus the working indicator.
     Working,
+    /// Slash palette (`/` typed) — local commands, not a cloud handoff.
+    Palette,
+    /// `/model` picker with effort radios.
+    Model,
+    /// Live Shell tool row (`✓` mint on passing tests).
+    Shell,
+    /// Back to the idle composer after the first user turn (no welcome card).
+    Composer,
 }
 
 /// Paint one README-hero / lock frame from the signed chrome.
@@ -855,6 +863,16 @@ pub fn paint_hero(area: Rect, buf: &mut Buffer, scene: HeroScene<'_>) {
             paint_footer(area, buf, &format!("{MODEL} · Agent · 100% context"));
         }
         HeroScene::Working => board_working(area, buf),
+        HeroScene::Palette => board_palette(area, buf),
+        HeroScene::Model => board_model_full(area, buf),
+        HeroScene::Shell => board_shell(area, buf),
+        HeroScene::Composer => paint_session(
+            area,
+            buf,
+            user_prompt_lines(area),
+            &format!("{MODEL} · Agent · 92% context"),
+            GHOST_IDLE,
+        ),
     }
 }
 

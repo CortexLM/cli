@@ -99,12 +99,58 @@ pub fn apply_network_filter() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    // Note: seccomp tests are tricky because they affect the current process
-    // and are irreversible. Integration tests should be done in a subprocess.
+    use std::fs::File;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, UdpSocket};
+    use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixStream;
+    use std::process::Command;
 
     #[test]
-    fn test_filter_creation() {
-        // This test just verifies the filter can be created without panic
-        // Actual application would need to be tested in a subprocess
+    fn test_network_filter_in_subprocess() {
+        const CHILD: &str = "CORTEX_SECCOMP_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "seccomp::tests::test_network_filter_in_subprocess",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "seccomp child failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+                "the isolated seccomp test must actually run"
+            );
+            return;
+        }
+
+        // Prove the denied operations work before installing this filter.
+        drop(TcpListener::bind("127.0.0.1:0").unwrap());
+        drop(UdpSocket::bind("127.0.0.1:0").unwrap());
+        super::apply_network_filter().unwrap();
+
+        assert_eq!(
+            TcpListener::bind("127.0.0.1:0").unwrap_err().raw_os_error(),
+            Some(libc::EPERM)
+        );
+        assert_eq!(
+            UdpSocket::bind("127.0.0.1:0").unwrap_err().raw_os_error(),
+            Some(libc::EPERM)
+        );
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        // Use read/write: the filter intentionally denies send/recv syscalls.
+        let mut sender = File::from(OwnedFd::from(sender));
+        let mut receiver = File::from(OwnedFd::from(receiver));
+        sender.write_all(b"local").unwrap();
+        let mut received = [0; 5];
+        receiver.read_exact(&mut received).unwrap();
+        assert_eq!(&received, b"local");
     }
 }

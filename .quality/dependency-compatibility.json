@@ -31,10 +31,6 @@
     "declaration": "1",
     "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."
   },
-  "src/cortex-linux-sandbox/Cargo.toml:target.cfg(target_os = \"linux\").dependencies:seccompiler": {
-    "declaration": "0.4",
-    "reason": "Retains seccompiler 0.4 sandbox filter API; changing sandbox policy needs a dedicated compatibility review."
-  },
   "src/cortex-resume/Cargo.toml:dependencies:thiserror": {
     "declaration": "1",
     "reason": "Retains the existing thiserror 1 derive API until its consumers are migrated together."

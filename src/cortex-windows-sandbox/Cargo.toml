@@ -21,4 +21,4 @@ workspace = true
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
-thiserror = "1"
+thiserror = { workspace = true }

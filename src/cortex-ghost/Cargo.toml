@@ -13,6 +13,6 @@ cortex-common = { workspace = true }
 tokio = { workspace = true, features = ["process"] }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
-thiserror = "1"
+thiserror = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 tempfile = { workspace = true }

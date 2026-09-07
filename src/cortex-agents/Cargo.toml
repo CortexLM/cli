@@ -18,7 +18,7 @@ toml = { workspace = true }
 async-trait = { workspace = true }
 async-recursion = "1"
 tracing = { workspace = true }
-thiserror = "1"
+thiserror = "2"
 uuid = { workspace = true, features = ["v4"] }
 regex = { workspace = true }
 dirs = { workspace = true }

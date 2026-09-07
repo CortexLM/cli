@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -54,6 +55,7 @@ FONT_CANDIDATES = {
         "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ],
     "bold": [
         os.path.expanduser("~/.local/share/fonts/IBMPlexMono-Bold.ttf"),
@@ -67,6 +69,7 @@ FONT_CANDIDATES = {
         "/usr/share/fonts/truetype/noto/NotoSansMono-Bold.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansSymbols-Bold.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     ],
 }
 
@@ -291,7 +294,7 @@ def render_frame(
                 anchor="ls",
             )
             # FreeType anti-aliases onto the cell background, which turns a
-            # lone `#A78BFA` `>` on black into a gray fringe. Snap coverage
+            # lone green `>` on black into a gray fringe. Snap coverage
             # back to the exact lock colour so composer and picker carets match.
             cell_bg = style.bg if style.bg != DEFAULT_BG else CANVAS_BG
             snap_cell_to_fg(
@@ -411,6 +414,12 @@ def main() -> int:
 
     try:
         output_index = 0
+        total_frames = sum(entry["hold"] for entry in manifest["frames"])
+        spec = importlib.util.spec_from_file_location(
+            "macos_terminal", Path(__file__).with_name("compose-macos-terminal.py")
+        )
+        macos = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(macos)
         for entry in manifest["frames"]:
             ansi = (args.frames / entry["file"]).read_text()
             grid = parse_ansi(ansi, width, height)
@@ -422,8 +431,11 @@ def main() -> int:
                 image.save(named_dir / f"{safe}.png")
                 output_index += 1
             else:
+                desktop = macos.build_desktop(image, f"Cortex CLI — cortex — {width}×{height}")
                 for _ in range(entry["hold"]):
-                    image.save(png_root / f"{output_index:05d}.png")
+                    macos.animate_mouse(desktop, output_index, total_frames).save(
+                        png_root / f"{output_index:05d}.png"
+                    )
                     output_index += 1
 
         if named_dir is not None:

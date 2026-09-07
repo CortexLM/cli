@@ -2,7 +2,6 @@
 //!
 //! Security prompt shown before accessing a workspace for the first time.
 
-use std::io::stdout;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -64,23 +63,17 @@ impl TrustScreen {
 
     /// Run the trust screen and return the user's decision.
     pub async fn run(&mut self) -> Result<TrustResult> {
-        crossterm::terminal::enable_raw_mode()?;
-        let mut stdout = stdout();
-        crossterm::execute!(stdout, crossterm::event::EnableMouseCapture)?;
+        self.run_with_options(super::terminal::TerminalOptions::default())
+            .await
+    }
 
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-
-        let result = self.run_loop(&mut terminal).await;
-
-        crossterm::terminal::disable_raw_mode()?;
-        crossterm::execute!(
-            terminal.backend_mut(),
-            crossterm::event::DisableMouseCapture,
-        )?;
-        terminal.show_cursor()?;
-
-        result
+    /// Run with the same terminal preferences as the main application.
+    pub async fn run_with_options(
+        &mut self,
+        options: super::terminal::TerminalOptions,
+    ) -> Result<TrustResult> {
+        let mut terminal = super::terminal::CortexTerminal::with_options(options)?;
+        self.run_loop(terminal.inner_mut()).await
     }
 
     async fn run_loop(
@@ -291,6 +284,87 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    #[test]
+    fn preflight_first_frames_clear_unknown_primary_screen_cells() {
+        use ratatui::backend::{Backend, TestBackend};
+        use ratatui::buffer::Cell;
+
+        for (width, height) in [(40, 12), (120, 40)] {
+            for is_trust in [true, false] {
+                // Pre-existing output is unknown to a newly constructed Terminal.
+                let mut backend = TestBackend::new(width, height);
+                let mut stale = Cell::default();
+                stale.set_symbol("X");
+                let stale = &stale;
+                backend
+                    .draw((0..height).flat_map(|y| (0..width).map(move |x| (x, y, stale))))
+                    .unwrap();
+                let mut terminal = Terminal::new(backend).unwrap();
+                // Match CortexTerminal::with_options: clear physical cells before diffing.
+                terminal.clear().unwrap();
+                terminal
+                    .draw(|frame| {
+                        if is_trust {
+                            TrustScreen::new(PathBuf::from("/tmp/workspace")).render(frame);
+                        } else {
+                            super::super::login_screen::LoginScreen::new(
+                                PathBuf::from("/tmp"),
+                                None,
+                            )
+                            .render(frame);
+                        }
+                    })
+                    .unwrap();
+                let text = buffer_text(terminal.backend().buffer());
+                assert!(!text.contains('X'), "{width}x{height}: {text}");
+                assert!(text.contains(if is_trust {
+                    TRUST_TITLE
+                } else {
+                    super::super::login_screen::LOGIN_TITLE
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn preflight_frames_replace_existing_content_at_both_sizes() {
+        use ratatui::backend::TestBackend;
+        use ratatui::widgets::Paragraph;
+
+        for (width, height) in [(40, 12), (120, 40)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            let trust = TrustScreen::new(PathBuf::from("/tmp/workspace"));
+            let login = super::super::login_screen::LoginScreen::new(PathBuf::from("/tmp"), None);
+            for is_trust in [true, false] {
+                terminal
+                    .draw(|frame| {
+                        frame.render_widget(
+                            Paragraph::new("STALE TERMINAL CONTENT".repeat(1000)),
+                            frame.area(),
+                        );
+                    })
+                    .unwrap();
+                terminal
+                    .draw(|frame| {
+                        if is_trust {
+                            trust.render(frame);
+                        } else {
+                            login.render(frame);
+                        }
+                    })
+                    .unwrap();
+                let text = buffer_text(terminal.backend().buffer());
+                assert!(!text.contains("STALE"), "{width}x{height}: {text}");
+                let title = if is_trust {
+                    TRUST_TITLE
+                } else {
+                    super::super::login_screen::LOGIN_TITLE
+                };
+                assert!(text.contains(title), "{width}x{height}: {text}");
+            }
+        }
     }
 
     #[test]

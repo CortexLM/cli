@@ -3,30 +3,6 @@
 //! This module handles crossterm terminal initialization and cleanup for the TUI.
 //! It provides RAII-based cleanup to ensure the terminal is always restored to
 //! a sane state, even in panic situations.
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! use cortex_tui::runner::terminal::{CortexTerminal, TerminalOptions};
-//!
-//! // Create with default options (alternate screen, full viewport)
-//! let mut terminal = CortexTerminal::new()?;
-//!
-//! // Or with custom options
-//! let mut terminal = CortexTerminal::with_options(
-//!     TerminalOptions::new()
-//!         .alternate_screen(false)
-//!         .mouse_capture(false)
-//!         .title("My App")
-//! )?;
-//!
-//! // Draw frames
-//! terminal.draw(|frame| {
-//!     // ... render widgets
-//! })?;
-//!
-//! // Terminal is automatically restored on drop
-//! ```
 
 use std::io::{self, IsTerminal, Stdout, stdout};
 use std::panic;
@@ -209,7 +185,7 @@ impl TerminalOptions {
 
     /// Set whether to clear the screen on start.
     ///
-    /// When enabled, the screen is cleared before starting the TUI.
+    /// When enabled, the visible screen is cleared before starting the TUI, not scrollback.
     pub fn clear_on_start(mut self, enabled: bool) -> Self {
         self.clear_on_start = enabled;
         self
@@ -220,14 +196,14 @@ impl TerminalOptions {
     /// Inline mode runs the TUI without using the alternate screen,
     /// which preserves the terminal scrollback and allows output to
     /// remain visible after the TUI exits. This is useful for
-    /// non-fullscreen TUI applications.
+    /// non-fullscreen TUI applications. The visible viewport is cleared on start.
     pub fn inline() -> Self {
         Self {
             alternate_screen: false,
             mouse_capture: true,
             bracketed_paste: true,
             title: None,
-            clear_on_start: false,
+            clear_on_start: true,
         }
     }
 }
@@ -292,11 +268,6 @@ impl CortexTerminal {
     ///
     /// Returns an error if terminal initialization fails.
     pub fn with_options(options: TerminalOptions) -> Result<Self> {
-        init_terminal(&options)?;
-
-        let backend = CrosstermBackend::new(stdout());
-        let terminal = Terminal::new(backend)?;
-
         let restore_title = options.title.is_some();
         let guard = TerminalGuard::new(
             options.alternate_screen,
@@ -304,6 +275,12 @@ impl CortexTerminal {
             options.bracketed_paste,
             restore_title,
         );
+
+        // Own cleanup before the first fallible setup operation.
+        init_terminal(&options)?;
+        let backend = CrosstermBackend::new(stdout());
+        // init_screen already clears when requested; Terminal::clear would query the cursor.
+        let terminal = Terminal::new(backend)?;
 
         Ok(Self {
             terminal,
@@ -557,6 +534,12 @@ fn init_terminal(options: &TerminalOptions) -> Result<()> {
 
     let mut stdout = stdout();
 
+    init_screen(&mut stdout, options)?;
+
+    Ok(())
+}
+
+fn init_screen(stdout: &mut impl io::Write, options: &TerminalOptions) -> io::Result<()> {
     // Enter alternate screen if requested
     if options.alternate_screen {
         execute!(stdout, EnterAlternateScreen)?;
@@ -574,7 +557,13 @@ fn init_terminal(options: &TerminalOptions) -> Result<()> {
 
     // Clear screen if requested
     if options.clear_on_start {
-        execute!(stdout, Clear(ClearType::All))?;
+        execute!(
+            stdout,
+            crossterm::style::ResetColor,
+            crossterm::style::SetAttribute(crossterm::style::Attribute::Reset),
+            Clear(ClearType::All),
+            cursor::MoveTo(0, 0)
+        )?;
     }
 
     // Hide cursor
@@ -613,26 +602,13 @@ fn restore_terminal_impl(
     restore_title: bool,
 ) -> Result<()> {
     let mut stdout = stdout();
+    let screen_result = restore_screen(
+        &mut stdout,
+        alternate_screen,
+        mouse_capture,
+        bracketed_paste,
+    );
 
-    // Show cursor
-    execute!(stdout, cursor::Show)?;
-
-    // Disable bracketed paste
-    if bracketed_paste {
-        execute!(stdout, DisableBracketedPaste)?;
-    }
-
-    // Disable mouse capture
-    if mouse_capture {
-        execute!(stdout, DisableMouseCapture)?;
-    }
-
-    // Leave alternate screen
-    if alternate_screen {
-        execute!(stdout, LeaveAlternateScreen)?;
-    }
-
-    // Restore original terminal title if we saved one
     if restore_title
         && let Ok(guard) = ORIGINAL_TITLE.lock()
         && let Some(ref title) = *guard
@@ -640,10 +616,44 @@ fn restore_terminal_impl(
         let _ = execute!(stdout, SetTitle(title));
     }
 
-    // Disable raw mode
-    disable_raw_mode()?;
-
+    // Always restore termios, even when stdout is broken.
+    let raw_result = disable_raw_mode();
+    screen_result?;
+    raw_result?;
     Ok(())
+}
+
+fn restore_screen(
+    stdout: &mut impl io::Write,
+    alternate_screen: bool,
+    mouse_capture: bool,
+    bracketed_paste: bool,
+) -> io::Result<()> {
+    let mut result = execute!(
+        stdout,
+        crossterm::style::ResetColor,
+        crossterm::style::SetAttribute(crossterm::style::Attribute::Reset)
+    );
+
+    // Show cursor
+    result = result.and(execute!(stdout, cursor::Show));
+
+    // Disable bracketed paste
+    if bracketed_paste {
+        result = result.and(execute!(stdout, DisableBracketedPaste));
+    }
+
+    // Disable mouse capture
+    if mouse_capture {
+        result = result.and(execute!(stdout, DisableMouseCapture));
+    }
+
+    // Leave alternate screen
+    if alternate_screen {
+        result = result.and(execute!(stdout, LeaveAlternateScreen));
+    }
+
+    result
 }
 
 /// Restore terminal to normal state (public API).
@@ -980,58 +990,5 @@ pub fn safe_clipboard_paste() -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_terminal_options_default() {
-        let options = TerminalOptions::default();
-        assert!(
-            options.alternate_screen,
-            "default must enter the alternate screen (always)"
-        );
-        assert!(options.mouse_capture);
-        assert!(options.bracketed_paste);
-        assert_eq!(options.title, Some("Cortex".to_string()));
-        assert!(options.clear_on_start);
-    }
-
-    #[test]
-    fn test_terminal_options_builder() {
-        let options = TerminalOptions::new()
-            .alternate_screen(false)
-            .mouse_capture(false)
-            .bracketed_paste(false)
-            .title("Test")
-            .clear_on_start(false);
-
-        assert!(!options.alternate_screen);
-        assert!(!options.mouse_capture);
-        assert!(!options.bracketed_paste);
-        assert_eq!(options.title, Some("Test".to_string()));
-        assert!(!options.clear_on_start);
-    }
-
-    #[test]
-    fn test_terminal_options_inline() {
-        let options = TerminalOptions::inline();
-        assert!(!options.alternate_screen);
-        assert!(options.mouse_capture);
-        assert!(options.bracketed_paste);
-        assert!(options.title.is_none());
-        assert!(!options.clear_on_start);
-    }
-
-    #[test]
-    fn test_terminal_guard_creation() {
-        let guard = TerminalGuard::new(true, true, true, true);
-        assert!(guard.alternate_screen);
-        assert!(guard.mouse_capture);
-        assert!(guard.bracketed_paste);
-        assert!(guard.restore_title);
-    }
-
-    // Note: Tests that actually create terminals are difficult to run
-    // in CI environments as they require a real TTY. These would be
-    // integration tests run manually or in a special test environment.
-}
+#[path = "terminal_tests.rs"]
+mod tests;

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Composite raw TUI lock captures into a macOS Terminal.app *window*.
+"""Composite raw TUI captures into generated macOS-styled chrome.
+
+The CLI below retains window-only lock captures. The README rasteriser uses
+build_desktop and animate_mouse for wallpaper, menu bar, Dock and pointer.
 
 Each REAL capture from `docs/media/tui-lock/{40x12,120x40}/` is pasted 1:1
 under a Terminal.app title bar (traffic lights, `cortex-api — cortex — W×H`
@@ -11,7 +14,7 @@ shadow. The pixels outside the rounded corners are transparent, like a
 Because the content is never resampled, a 40×12 capture yields a genuinely
 small 40-column window and a 120×40 capture a wide 120-column one — the two
 packs differ in canvas size, and every locked colour (the `#4ADE80` of a
-`+58`, the `#A78BFA` of a selected `>`) survives exactly. No terminal text is
+`+58`, the green of a selected `>`) survives exactly. No terminal text is
 ever invented; the rounded corners belong to the macOS window only, the TUI
 itself stays frameless.
 
@@ -25,11 +28,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
 except ImportError:  # pragma: no cover - dependency guard
     sys.exit(
         "Pillow is required to composite the macOS screenshots.\n"
@@ -62,6 +67,8 @@ SANS_REGULAR = [
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
 ]
 
 
@@ -175,6 +182,68 @@ def compose(raw_png: Path, out_png: Path, title: str) -> tuple[int, int]:
     out_png.parent.mkdir(parents=True, exist_ok=True)
     window.save(out_png)
     return window.size
+
+# ponytail: procedural macOS-styled chrome, not an OS recording; use a real
+# desktop capture only when demonstrating native OS interactions.
+DESKTOP_MARGIN = 80
+WINDOW_TOP = 76
+CONTENT_INSET = 12
+
+@lru_cache(maxsize=2)
+def desktop_backdrop(content_size: tuple[int, int]) -> Image.Image:
+    """Static desktop and shadow; never paint over the terminal capture."""
+    cw, ch = content_size
+    ww, wh = cw + 2 * CONTENT_INSET, ch + 2 * CONTENT_INSET + TITLEBAR_H
+    width, height = ww + 2 * DESKTOP_MARGIN, wh + WINDOW_TOP + 100
+    desktop = Image.new("RGB", (width, height))
+    draw = ImageDraw.Draw(desktop)
+    for y in range(height):
+        t = y / height
+        draw.line((0, y, width, y), fill=(round(18 + 22*t), round(43 + 40*t), round(58 + 27*t)))
+    draw.ellipse((-width//2, height//3, width, height*2), fill=(38, 103, 103))
+    draw.ellipse((width//3, height//2, width*2, height*2), fill=(62, 133, 119))
+    draw.ellipse((width//2, height*3//4, width*2, height*2), fill=(96, 158, 130))
+    draw.rectangle((0, 0, width, 27), fill=(22, 37, 43))
+    ui_font = font(SANS_REGULAR, 13)
+    draw.text((20, 6), "●    Terminal    Shell    Edit    View    Window    Help", font=ui_font, fill=(238, 243, 241))
+    draw.text((width-207, 6), "Wi-Fi    100%    Mon 9:41", font=ui_font, fill=(238, 243, 241))
+
+    dock_x, dock_y = width//2 - 133, height-76
+    draw.rounded_rectangle((dock_x, dock_y, dock_x+266, height-12), radius=18,
+                           fill=(88, 125, 123), outline=(147, 174, 166))
+    for i, (label, colour) in enumerate((("Finder", (69, 154, 226)), ("Web", (62, 153, 177)),
+                                       (">_", (27, 29, 32)), ("Files", (72, 151, 216)))):
+        x = dock_x + 13 + i*61
+        draw.rounded_rectangle((x, dock_y+8, x+48, dock_y+51), radius=10, fill=colour)
+        draw.text((x+24, dock_y+29), label, font=font(SANS_REGULAR, 11 if i != 2 else 22),
+                  fill="white", anchor="mm")
+    draw.ellipse((dock_x+157, height-20, dock_x+161, height-16), fill=(229, 242, 236))
+    shadow = Image.new("RGBA", desktop.size)
+    ImageDraw.Draw(shadow).rounded_rectangle(
+        (DESKTOP_MARGIN, WINDOW_TOP+14, DESKTOP_MARGIN+ww, WINDOW_TOP+wh+14),
+        radius=CORNER_RADIUS, fill=(0, 0, 0, 155))
+    return Image.alpha_composite(desktop.convert("RGBA"), shadow.filter(ImageFilter.GaussianBlur(18)))
+
+def build_desktop(content: Image.Image, title: str) -> Image.Image:
+    """Inset preserves every capture pixel, including the rounded corners."""
+    padded = Image.new("RGB", (content.width+2*CONTENT_INSET, content.height+2*CONTENT_INSET))
+    padded.paste(content, (CONTENT_INSET, CONTENT_INSET))
+    desktop = desktop_backdrop(content.size).copy()
+    desktop.alpha_composite(build_window(padded, title), (DESKTOP_MARGIN, WINDOW_TOP))
+    return desktop.convert("RGB")
+
+def animate_mouse(desktop: Image.Image, frame: int, total: int) -> Image.Image:
+    """Smooth looping pointer in the desktop gutter; no obscured CLI pixels."""
+    phase = 2 * math.pi * frame / max(1, total)
+    x = round(desktop.width - 51 + 15 * math.sin(phase))
+    y = round(118 + (desktop.height - 264) * (1 - math.cos(phase)) / 2)
+    image = desktop.copy()
+    draw = ImageDraw.Draw(image)
+    points = [(x, y), (x, y+23), (x+6, y+17), (x+11, y+27),
+              (x+15, y+25), (x+10, y+15), (x+19, y+15)]
+    draw.polygon(points, fill=(18, 20, 22))
+    draw.line(points + [points[0]], fill="white", width=2)
+    return image
 
 
 def main() -> int:

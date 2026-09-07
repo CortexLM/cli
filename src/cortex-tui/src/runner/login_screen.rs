@@ -1,9 +1,8 @@
 //! Login Screen
 //!
-//! Inline TUI (no alternate screen) so the host shell prompt stays in
-//! scrollback above the picker.
+//! Uses the alternate screen by default. `run_with_options` follows the
+//! caller's terminal preferences; inline mode preserves scrollback.
 
-use std::io::stdout;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -189,23 +188,17 @@ impl LoginScreen {
     }
 
     pub async fn run(&mut self) -> Result<LoginResult> {
-        crossterm::terminal::enable_raw_mode()?;
-        let mut stdout = stdout();
-        crossterm::execute!(stdout, crossterm::event::EnableMouseCapture)?;
+        self.run_with_options(super::terminal::TerminalOptions::default())
+            .await
+    }
 
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-
-        let result = self.run_loop(&mut terminal).await;
-
-        crossterm::terminal::disable_raw_mode()?;
-        crossterm::execute!(
-            terminal.backend_mut(),
-            crossterm::event::DisableMouseCapture,
-        )?;
-        terminal.show_cursor()?;
-
-        result
+    /// Run with the same terminal preferences as the main application.
+    pub async fn run_with_options(
+        &mut self,
+        options: super::terminal::TerminalOptions,
+    ) -> Result<LoginResult> {
+        let mut terminal = super::terminal::CortexTerminal::with_options(options)?;
+        self.run_loop(terminal.inner_mut()).await
     }
 
     async fn run_loop(

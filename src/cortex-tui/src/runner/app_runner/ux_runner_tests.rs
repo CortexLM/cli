@@ -39,7 +39,7 @@ fn test_app_runner_terminal_options() {
     inline.alternate_screen = false;
     let runner = AppRunner::new(inline);
     assert!(!runner.terminal_options.alternate_screen);
-    assert!(!runner.terminal_options.clear_on_start);
+    assert!(runner.terminal_options.clear_on_start);
 
     // Custom options
     let custom_options = TerminalOptions::new()

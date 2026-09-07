@@ -18,7 +18,13 @@
   <a href="https://cortex.foundation">cortex.foundation</a>
 </p>
 
-![Demo of Cortex CLI](./docs/media/intro.gif)
+![Animated green Cortex CLI in a complete Terminal window on a macOS-styled desktop, with a moving pointer](./docs/media/intro.gif)
+
+*Generated macOS-styled demo, not a desktop recording. The green CLI frames
+come from the offline `readme_hero` renderer; the desktop and pointer are
+composited. No live coding request is performed.*
+Regenerate with `./scripts/render-demo-gif.sh` (Cargo, Python with Pillow, and
+FFmpeg required); terminal pixels are preserved 1:1 before GIF quantization.
 
 ## What is Cortex CLI
 

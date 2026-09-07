@@ -422,9 +422,11 @@ def pointer_pose(
         i = min(len(tour) - 2, int(scaled))
         x, y = _lerp(tour[i], tour[i + 1], scaled - i)
         pressed = i in {2, 3} and (scaled - i) < 0.18
-    wobble = 2 * math.pi * frame / max(1, total)
-    x += round(2 * math.sin(wobble * 3))
-    y += round(2 * math.cos(wobble * 2))
+    # 10-step hover circle (14px). 110 GIF frames divide by 10, so frame 0
+    # and frame `total` match; neighbours are 8–9px apart after rounding.
+    angle = 2 * math.pi * (frame % 10) / 10
+    x += round(14 * math.cos(angle))
+    y += round(14 * math.sin(angle))
     _ = label
     return x, y, pressed
 

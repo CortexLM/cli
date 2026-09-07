@@ -433,6 +433,14 @@ def main() -> int:
         )
         preview_dir = args.preview_dir
         previewed: set[str] = set()
+        preview_labels = {
+            "splash",
+            "working",
+            "palette",
+            "model",
+            "shell",
+            "composer",
+        }
         if preview_dir is not None:
             preview_dir.mkdir(parents=True, exist_ok=True)
         for entry in manifest["frames"]:
@@ -458,9 +466,17 @@ def main() -> int:
                         content_size=image.size,
                     )
                     frame.save(png_root / f"{output_index:05d}.png")
-                    if preview_dir is not None and label not in previewed:
+                    if (
+                        preview_dir is not None
+                        and label in preview_labels
+                        and label not in previewed
+                    ):
                         safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in label)
-                        frame.save(preview_dir / f"{safe}.png")
+                        preview = frame
+                        if preview.width > 1000:
+                            height = round(preview.height * 1000 / preview.width)
+                            preview = preview.resize((1000, height), Image.LANCZOS)
+                        preview.save(preview_dir / f"{safe}.png", optimize=True)
                         previewed.add(label)
                     output_index += 1
 

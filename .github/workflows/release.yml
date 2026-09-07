@@ -42,7 +42,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       cache_key: ${{ steps.cache.outputs.key }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       
       - name: Generate cache key
         id: cache
@@ -128,7 +128,7 @@ jobs:
             static: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
@@ -324,7 +324,7 @@ jobs:
     if: always() && needs.prepare.result == 'success' && needs.build-cli.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Create tag (workflow_dispatch only)
         if: github.event_name == 'workflow_dispatch'

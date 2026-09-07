@@ -32,12 +32,6 @@ pub struct Claims {
     /// Audience.
     #[serde(default)]
     pub aud: Vec<String>,
-    /// User roles.
-    #[serde(default)]
-    pub roles: Vec<String>,
-    /// Additional metadata.
-    #[serde(default)]
-    pub metadata: HashMap<String, serde_json::Value>,
 }
 
 impl Claims {
@@ -54,21 +48,7 @@ impl Claims {
             iat: now,
             iss: "Cortex".to_string(),
             aud: vec!["cortex-api".to_string()],
-            roles: vec![],
-            metadata: HashMap::new(),
         }
-    }
-
-    /// Add a role to the claims.
-    pub fn with_role(mut self, role: impl Into<String>) -> Self {
-        self.roles.push(role.into());
-        self
-    }
-
-    /// Add metadata to the claims.
-    pub fn with_metadata(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
-        self.metadata.insert(key.into(), value);
-        self
     }
 
     /// Check if the token is expired.
@@ -78,16 +58,6 @@ impl Claims {
             .unwrap()
             .as_secs();
         self.exp < now
-    }
-
-    /// Check if the user has a specific role.
-    pub fn has_role(&self, role: &str) -> bool {
-        self.roles.iter().any(|r| r == role)
-    }
-
-    /// Check if the user has any of the specified roles.
-    pub fn has_any_role(&self, roles: &[&str]) -> bool {
-        roles.iter().any(|r| self.has_role(r))
     }
 }
 
@@ -350,15 +320,6 @@ pub async fn auth_middleware(
         }
     };
 
-    let is_admin = match &auth_result {
-        AuthResult::ApiKey(_) => true,
-        AuthResult::Jwt(claims) => claims.has_role("admin"),
-        AuthResult::Anonymous => false,
-    };
-    if path.starts_with("/api/v1/admin/") && !is_admin {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     // Add auth result to request extensions
     request.extensions_mut().insert(auth_result);
 
@@ -378,89 +339,6 @@ fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
     result == 0
 }
 
-/// Role-based access control.
-pub struct RoleGuard {
-    required_roles: Vec<String>,
-    require_all: bool,
-}
-
-impl RoleGuard {
-    /// Create a new role guard requiring any of the specified roles.
-    pub fn any_of(roles: &[&str]) -> Self {
-        Self {
-            required_roles: roles.iter().map(std::string::ToString::to_string).collect(),
-            require_all: false,
-        }
-    }
-
-    /// Create a new role guard requiring all of the specified roles.
-    pub fn all_of(roles: &[&str]) -> Self {
-        Self {
-            required_roles: roles.iter().map(std::string::ToString::to_string).collect(),
-            require_all: true,
-        }
-    }
-
-    /// Check if the claims satisfy the role requirements.
-    pub fn check(&self, claims: &Claims) -> bool {
-        if self.require_all {
-            self.required_roles.iter().all(|r| claims.has_role(r))
-        } else {
-            self.required_roles.iter().any(|r| claims.has_role(r))
-        }
-    }
-}
-
-/// User information extracted from authentication.
-#[derive(Debug, Clone, Serialize)]
-pub struct User {
-    /// User ID.
-    pub id: String,
-    /// User email (if available).
-    pub email: Option<String>,
-    /// User name (if available).
-    pub name: Option<String>,
-    /// User roles.
-    pub roles: Vec<String>,
-    /// Authentication method.
-    pub auth_method: String,
-}
-
-impl From<Claims> for User {
-    fn from(claims: Claims) -> Self {
-        Self {
-            id: claims.sub,
-            email: claims
-                .metadata
-                .get("email")
-                .and_then(|v| v.as_str().map(String::from)),
-            name: claims
-                .metadata
-                .get("name")
-                .and_then(|v| v.as_str().map(String::from)),
-            roles: claims.roles,
-            auth_method: "jwt".to_string(),
-        }
-    }
-}
-
-/// API key information.
-#[derive(Debug, Clone, Serialize)]
-pub struct ApiKeyInfo {
-    /// Key ID (hash of the key).
-    pub id: String,
-    /// Key name/label.
-    pub name: Option<String>,
-    /// Creation time.
-    pub created_at: u64,
-    /// Last used time.
-    pub last_used: Option<u64>,
-    /// Scopes/permissions.
-    pub scopes: Vec<String>,
-    /// Rate limit tier.
-    pub rate_limit_tier: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,17 +348,6 @@ mod tests {
         let claims = Claims::new("user123", 3600);
         assert_eq!(claims.sub, "user123");
         assert!(!claims.is_expired());
-    }
-
-    #[test]
-    fn test_claims_roles() {
-        let claims = Claims::new("user123", 3600)
-            .with_role("admin")
-            .with_role("user");
-
-        assert!(claims.has_role("admin"));
-        assert!(claims.has_role("user"));
-        assert!(!claims.has_role("superadmin"));
     }
 
     #[test]
@@ -495,21 +362,5 @@ mod tests {
         assert_eq!(parse_api_key("ApiKey abc123"), Some("abc123"));
         assert_eq!(parse_api_key("apikey abc123"), Some("abc123"));
         assert_eq!(parse_api_key("Bearer abc123"), None);
-    }
-
-    #[test]
-    fn test_role_guard() {
-        let claims = Claims::new("user123", 3600)
-            .with_role("admin")
-            .with_role("user");
-
-        let any_guard = RoleGuard::any_of(&["admin", "superadmin"]);
-        assert!(any_guard.check(&claims));
-
-        let all_guard = RoleGuard::all_of(&["admin", "user"]);
-        assert!(all_guard.check(&claims));
-
-        let missing_guard = RoleGuard::all_of(&["admin", "superadmin"]);
-        assert!(!missing_guard.check(&claims));
     }
 }

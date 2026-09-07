@@ -349,7 +349,7 @@ tokio-test = "0.4"
 wiremock = "0.6"
 
 # CLI - OpenTelemetry
-opentelemetry-semantic-conventions = "0.31"
+opentelemetry-semantic-conventions = "0.32"
 opentelemetry-appender-tracing = "0.31"
 
 # CLI - TypeScript bindings

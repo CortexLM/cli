@@ -105,6 +105,7 @@ pub mod lock_proof;
 pub mod lock_v2;
 pub mod readme_hero;
 pub mod readme_hero_boards;
+pub mod splash_chrome;
 
 // Backtracking system for conversation history navigation
 pub mod backtrack;

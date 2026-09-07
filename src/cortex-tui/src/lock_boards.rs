@@ -17,6 +17,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::splash_chrome::splash_legend;
 use crate::ui::text_utils::{
     first_fitting_line, fit_line, trim_dangling_separator, wrap_keep_indent, wrap_or_drop,
 };
@@ -36,9 +37,6 @@ const GHOST_RUNNING: &str = crate::views::minimal_session::PLACEHOLDER_RUNNING;
 /// Right-hand footer hint, and its narrow form — the live footer's copy.
 const FOOTER_HINT: &str = crate::widgets::key_hints::FOOTER_HINT_IDLE;
 const FOOTER_HINT_SHORT: &str = "shift+tab modes";
-/// Keystroke hints under the splash, and the form that fits 40 columns.
-const LAUNCH_HINTS: &str = crate::views::minimal_session::EMPTY_SESSION_HINTS;
-const LAUNCH_HINTS_NARROW: &str = "/ commands · @ files · ! shell";
 /// Rows the composer takes: hairline, prompt, hairline.
 const COMPOSER_ROWS: u16 = crate::views::minimal_session::COMPOSER_ROWS;
 
@@ -783,46 +781,6 @@ fn bar(filled: u16, total: u16) -> String {
         s.push(if i < on { '█' } else { '░' });
     }
     s
-}
-
-/// Join `v{version}` to a hint legend, ellipsizing the version — never the
-/// legend — when the pair is wider than `width`.
-pub(crate) fn splash_legend(version: &str, width: usize) -> String {
-    let ver = format!("v{version}");
-    for legend in [LAUNCH_HINTS, LAUNCH_HINTS_NARROW] {
-        let line = format!("{ver} · {legend}");
-        if line.chars().count() <= width {
-            return line;
-        }
-    }
-    // Keep `/ commands · @ files · ! shell` (and `& cloud` when it fits).
-    // A longer package version is shortened; the keystroke legend is not.
-    for legend in [LAUNCH_HINTS, LAUNCH_HINTS_NARROW] {
-        let suffix = format!(" · {legend}");
-        let suffix_len = suffix.chars().count();
-        if suffix_len >= width {
-            continue;
-        }
-        let shown = ellipsis_prefix(&ver, width - suffix_len);
-        if shown.is_empty() {
-            continue;
-        }
-        return format!("{shown}{suffix}");
-    }
-    LAUNCH_HINTS_NARROW.to_string()
-}
-
-fn ellipsis_prefix(text: &str, budget: usize) -> String {
-    if text.chars().count() <= budget {
-        return text.to_string();
-    }
-    if budget == 0 {
-        return String::new();
-    }
-    if budget == 1 {
-        return "…".to_string();
-    }
-    format!("{}…", text.chars().take(budget - 1).collect::<String>())
 }
 
 /// Launch header: `Welcome to Cortex, the coding agent CLI` then

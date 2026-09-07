@@ -2338,21 +2338,6 @@ mod tests {
     }
 
     #[test]
-    fn splash_legend_keeps_mid_hints_when_version_grows() {
-        for version in [env!("CARGO_PKG_VERSION"), "0.1.10", "10.20.30-rc.1"] {
-            let legend = crate::lock_boards::splash_legend(version, 40);
-            assert!(
-                legend.contains("/ commands · @ files · ! shell"),
-                "40-col splash must keep mid hints for v{version}: {legend}"
-            );
-            assert!(
-                !legend.contains("& cloud"),
-                "40-col splash shortens before & cloud: {legend}"
-            );
-        }
-    }
-
-    #[test]
     fn splash_has_session_chrome() {
         for size in SIZES {
             let frame = render_lock_scene("splash", size.0, size.1).expect("splash");

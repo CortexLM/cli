@@ -85,14 +85,14 @@ plugins can read them; you should not set them yourself.
 | `CORTEX_PLUGIN_ARGS` | Plugin invocations |
 | `CORTEX_CHILD_TASK`, `CORTEX_SPEC_MODE`, `CORTEX_SURFACE`, `CORTEX_OPERATION_MODE` | Internal task routing |
 
-## OpenAI-compatible / live LLM (names only)
+## Live LLM / compatible `/v1` (names only)
 
-Used by the named `openai` / `openai-compatible` provider and by `/goal` live
+Used by the named `openai` / `openai-compatible` provider id and by `/goal` live
 smoke. Agent mode still uses the Cortex API. Never commit or log key values.
 
 | Variable | Effect |
 |----------|--------|
-| `OPENAI_BASE_URL` | OpenAI-compatible `/v1` base URL. Public default for tests and docs examples: `http://84.32.63.4:20128/v1` |
+| `OPENAI_BASE_URL` | Compatible `/v1` base URL. Public default for tests and docs examples: `http://84.32.63.4:20128/v1` |
 | `CORTEX_LLM_BASE_URL` | Alias of `OPENAI_BASE_URL` |
 | `OPENAI_API_KEY` | API key for that endpoint. Operator injects from local `~/.cortex-private/judge.key` |
 | `CORTEX_LLM_API_KEY` | Alias of `OPENAI_API_KEY` |

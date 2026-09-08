@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
-- `/goal` persisted long-horizon workflows: create/status/pause/resume/clear, `goal.json` on the session, idle continuation within an 8-turn budget, evidence-based `UpdateGoal`, and a composer chip (`#1F4945`). Live smoke uses `OPENAI_BASE_URL` / `CORTEX_LLM_BASE_URL`, `OPENAI_API_KEY` / `CORTEX_LLM_API_KEY`, and `CORTEX_LLM_MODEL=cx/gpt-6-astra`; without a key the live test SKIP and unit tests still pass.
+- `/goal` long-horizon persisted goals: create/status/pause/resume/clear, `goal.json` on the session, idle continuation within an 8-turn budget, evidence-based `UpdateGoal`, and a composer chip (`#1F4945`). Live smoke uses `OPENAI_BASE_URL` / `CORTEX_LLM_BASE_URL`, `OPENAI_API_KEY` / `CORTEX_LLM_API_KEY`, and `CORTEX_LLM_MODEL=cx/gpt-6-astra`; without a key the live test SKIP and unit tests still pass.
 - Hidden `cortex mcp-server --verify` stdio JSON-RPC server (`cortex-verify`) so CI and agents can audit TUI chrome, lock scenes, login product copy, and API error paths offline. Remains `hide = true` until Designer sign-off.
 
 ### Changed

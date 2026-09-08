@@ -21,7 +21,7 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [Sessions](guides/sessions.md) | Resume, list, export, import, share, protect |
 | [Headless / exec mode](guides/exec.md) | Non-interactive runs for scripts and CI |
 | [Plan and Spec modes](guides/plan.md) | Get a plan approved before anything is written |
-| [Durable goals](guides/goal.md) | `/goal` persisted long-horizon workflows |
+| [Long-horizon persisted goals](guides/goal.md) | `/goal` session-backed objectives |
 | [Editor integration](guides/editor.md) | What running Cortex inside an editor terminal does and does not provide |
 | [Development and local QA](guides/development.md) | Reproducible setup, real local tests, coverage and test reports |
 | [Source quality](guides/quality.md) | Dependency, complexity, duplication, feature-flag and contract gates |

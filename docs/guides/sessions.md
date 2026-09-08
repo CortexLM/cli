@@ -9,7 +9,7 @@ reuses the server-side Code session id for the current workspace
 Where they are stored is covered in
 [Data locations](../configuration/data-locations.md). A durable `/goal` is
 written as `goal.json` in that same session directory and is reloaded on
-resume; see [Durable goals](goal.md).
+resume; see [Long-horizon persisted goals](goal.md).
 
 ## Listing sessions
 

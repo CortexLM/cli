@@ -1,8 +1,9 @@
-//! OpenAI-compatible / live-LLM environment names.
+//! Live-LLM environment names for `/goal` smoke and the named compatible `/v1`
+//! provider id.
 //!
 //! Product Agent mode still uses the Cortex API client. These helpers align
-//! the named openai-compatible provider and `/goal` live smoke with the
-//! operator-injected Astra endpoint. Never log key values.
+//! that provider and `/goal` live smoke with the operator-injected Astra
+//! endpoint. Never log key values.
 
 /// Public Astra `/v1` default for test helpers and docs examples only.
 pub const DEFAULT_LLM_BASE_URL: &str = "http://84.32.63.4:20128/v1";
@@ -45,7 +46,7 @@ pub fn llm_model() -> String {
 /// Base URL for the named openai-compatible provider.
 ///
 /// Env overrides use the same names as live smoke. Unset keeps the generic
-/// OpenAI-compatible fallback (not the Astra test default).
+/// Compatible `/v1` fallback (not the Astra test default).
 pub fn openai_compatible_base_url() -> String {
     first_nonempty_env(&["OPENAI_BASE_URL", "CORTEX_LLM_BASE_URL"])
         .unwrap_or_else(|| OPENAI_COMPATIBLE_FALLBACK_URL.to_string())

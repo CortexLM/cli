@@ -1,12 +1,13 @@
-# Durable goals
+# Long-horizon persisted goals
 
 `/goal` keeps a long-horizon objective attached to the session. It survives the
 end of a turn, context compaction, and TUI resume. The agent keeps planning,
 acting, and verifying until the work is **evidence-complete** or you pause,
 clear, or hit the budget.
 
-This is not a second coding provider. Agent mode still talks to the Cortex API.
-`/goal` is harness state: persist, continue, and wrap up.
+This is Cortex session state, not a second coding provider. Agent mode still
+talks to the Cortex API. `/goal` is harness state: persist, continue, and wrap
+up.
 
 ## Commands
 
@@ -49,7 +50,7 @@ See [Sessions](sessions.md) and [Data locations](../configuration/data-locations
 
 ## Live smoke (operators)
 
-Unit tests always run. A live `/goal` smoke hits an OpenAI-compatible
+Unit tests always run. A live `/goal` smoke hits a compatible
 `/v1/chat/completions` only when a key is present. **Do not commit keys.**
 
 | Variable | Role |

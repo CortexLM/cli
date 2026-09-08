@@ -134,7 +134,7 @@ ordinary message.
 
 ## See also
 
-- [Durable goals](../guides/goal.md)
+- [Long-horizon persisted goals](../guides/goal.md)
 - [The TUI](../guides/tui.md)
 - [Keyboard shortcuts](keyboard.md)
 - [CLI reference](cli.md) — the equivalents outside the TUI

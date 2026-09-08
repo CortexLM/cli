@@ -1,4 +1,4 @@
-//! Live openai-compatible smoke for `/goal` against Astra.
+//! Live compatible `/v1` smoke for `/goal` against Astra.
 //!
 //! Skips cleanly when no key is injected. Never prints key values.
 

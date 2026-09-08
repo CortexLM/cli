@@ -71,7 +71,7 @@ Web search is enabled with `--search`.
 | `ListSubagents` | `include_custom` | List the available subagent types |
 | `Questions` | `title`, `questions` | Ask you a structured question. Question types are `single`, `multiple`, `text` and `number`. |
 
-See [Plan and Spec modes](../guides/plan.md) and [Durable goals](../guides/goal.md).
+See [Plan and Spec modes](../guides/plan.md) and [Long-horizon persisted goals](../guides/goal.md).
 
 ## Task tracking
 

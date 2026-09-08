@@ -98,6 +98,7 @@ class CodeBuildPublicSafetyTests(unittest.TestCase):
         self.assertIn("cortex-cli-gha-x64-pr", text)
         self.assertIn("cortex-cli-gha-arm64-pr", text)
         self.assertIn("github.event_name != 'pull_request'", text)
+        self.assertIn("github.event_name == 'pull_request_target'", text)
         self.assertIn("github.event_name == 'push'", text)
         self.assertIn("logs-only", text)
 

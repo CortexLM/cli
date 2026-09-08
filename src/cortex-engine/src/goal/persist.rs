@@ -307,7 +307,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn load_removes_tmp_owned_by_dead_process() {
-        let child = std::process::Command::new("true")
+        let mut child = std::process::Command::new("true")
             .spawn()
             .expect("spawn short-lived helper");
         let pid = child.id();

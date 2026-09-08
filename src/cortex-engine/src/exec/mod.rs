@@ -3,11 +3,14 @@
 mod environment;
 mod output;
 mod policy;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+// Process-group teardown is Unix-only; the runner itself is required on Windows
+// so local_shell / plugin exec still compile (job-object isolation is separate).
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod runner;
 pub use environment::{build_safe_environment, is_sensitive_env_name};
 
 pub use output::OutputCapture;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use runner::{
     ExecOptions, ExecOutput, OutputChunk, execute_command, execute_command_streaming,
 };

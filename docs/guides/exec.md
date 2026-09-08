@@ -8,7 +8,9 @@ Cortex has two non-interactive entry points:
 | `cortex run` | A single request from your own shell. Streams a formatted answer, can continue a session, can share the result. |
 
 Both work without a terminal, so they are safe in pipelines where the
-[TUI](tui.md) refuses to start.
+[TUI](tui.md) refuses to start. Turns use the **Cloud** Code runtime unless you
+set `CORTEX_COMPUTER` to `this_pc` or `ssh` (see
+[Environment variables](../configuration/env.md)).
 
 ## `cortex exec`
 

@@ -56,62 +56,7 @@ pub fn normalize_api_base(url: &str) -> String {
 /// Guest-cookie token prefix stored in the keyring / env.
 pub const GUEST_TOKEN_PREFIX: &str = "gt:";
 
-/// Where tools run for this CLI session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ComputerKind {
-    /// Local workspace passed to the CLI (This PC).
-    #[default]
-    ThisPc,
-    /// Cloud runtime (Firecracker VM when the API provisions one).
-    Cloud,
-    /// SSH remote, when `CORTEX_SSH_HOST` is set.
-    Ssh,
-}
-
-impl ComputerKind {
-    /// Detect from the environment. A workspace path (cwd) means This PC
-    /// unless the operator forces cloud or sets an SSH target.
-    pub fn detect() -> Self {
-        if std::env::var("CORTEX_SSH_HOST")
-            .ok()
-            .filter(|s| !s.is_empty())
-            .is_some()
-            || std::env::var("CORTEX_SSH_TARGET")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .is_some()
-        {
-            return Self::Ssh;
-        }
-        match std::env::var("CORTEX_COMPUTER")
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "cloud" => Self::Cloud,
-            "ssh" => Self::Ssh,
-            _ => Self::ThisPc,
-        }
-    }
-
-    /// Product label for the TUI.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::ThisPc => "This PC",
-            Self::Cloud => "Cloud",
-            Self::Ssh => "SSH",
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ThisPc => "this_pc",
-            Self::Cloud => "cloud",
-            Self::Ssh => "ssh",
-        }
-    }
-}
+pub use super::computer::{ComputerKind, DISCONNECTED_RUNTIME};
 
 /// Per-turn context the TUI sets before `complete()`.
 #[derive(Debug, Clone, Default)]
@@ -533,9 +478,7 @@ impl CodeAgentClient {
         }
         let ctx = self.turn_context();
         if ctx.computer != ComputerKind::Cloud {
-            return Err(CortexError::InvalidInput(
-                "Local and SSH Code execution require an already connected Code session. Connect a host and resume that session, or explicitly select Cloud. No runtime was substituted.".into()
-            ));
+            return Err(CortexError::InvalidInput(DISCONNECTED_RUNTIME.into()));
         }
         Ok(self
             .create_session_with(CreateCodeSession {
@@ -953,14 +896,6 @@ mod tests {
     #[test]
     fn guest_token_prefix_is_stable() {
         assert_eq!(GUEST_TOKEN_PREFIX, "gt:");
-    }
-
-    #[test]
-    fn computer_kind_labels() {
-        assert_eq!(ComputerKind::ThisPc.label(), "This PC");
-        assert_eq!(ComputerKind::Cloud.label(), "Cloud");
-        assert_eq!(ComputerKind::Ssh.label(), "SSH");
-        assert_eq!(ComputerKind::ThisPc.as_str(), "this_pc");
     }
 
     #[test]

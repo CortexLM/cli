@@ -157,9 +157,12 @@ cortex
 
 You get the session view from the recording on the [docs index](../README.md):
 a timeline, a composer at the bottom, and a status line showing the current mode
-and autonomy level. The welcome card shows the working directory and
-**Computer** (`This PC` when you started in a workspace, `Cloud` or `SSH` when
-those are configured). Type what you want changed and press `Enter`.
+and autonomy level. The TUI and `cortex exec` run on the **Cloud** Code runtime
+by default (Designer Q9), so a fresh install can complete a turn without extra
+configuration. To run tools on This PC or over SSH, set `CORTEX_COMPUTER` (see
+[Environment variables](../configuration/env.md)). Those runtimes are explicit
+opt-in in 0.1.x and need an already connected Code session; Cortex will not
+substitute Cloud. Type what you want changed and press `Enter`.
 
 Turns go to the Code session API (`POST /v1/code/sessions/{id}/turns`) with
 streaming tokens and first-class tool rows. Press `Esc` to cancel a turn that

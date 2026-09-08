@@ -33,6 +33,9 @@ impl Run {
             .env("CORTEX_HOME", self.home.path())
             .env("CORTEX_API_KEY", "offline-fixture")
             .env("CORTEX_API_URL", UNREACHABLE)
+            .env_remove("CORTEX_COMPUTER")
+            .env_remove("CORTEX_SSH_HOST")
+            .env_remove("CORTEX_SSH_TARGET")
             .env("RUST_LOG", "off")
             .current_dir(self.home.path());
         command
@@ -62,6 +65,56 @@ fn frames(stdout: &[u8]) -> Vec<serde_json::Value> {
         .filter(|line| line.starts_with('{'))
         .map(|line| serde_json::from_str(line).expect("each protocol line is one JSON object"))
         .collect()
+}
+
+#[test]
+fn default_runtime_reaches_the_api_instead_of_refusing_this_pc() {
+    let run = Run::new();
+    let output = run.exec(&["--output-format", "json", "--timeout", "20", "hello"], "");
+    assert!(!output.status.success());
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let error = result["error"].as_str().unwrap_or_default();
+    assert!(
+        !error.contains("already connected Code session"),
+        "unset CORTEX_COMPUTER must not refuse as This PC: {result}"
+    );
+    assert_eq!(
+        result["num_turns"], 1,
+        "the Cloud default must start a turn instead of refusing locally: {result}"
+    );
+    assert!(
+        error.contains("temporarily unavailable")
+            || error.contains("cortex login")
+            || error.contains("CORTEX_API_KEY"),
+        "default Cloud path fails closed after attempting a session, never This PC: {result}"
+    );
+}
+
+#[test]
+fn this_pc_without_a_session_refuses_with_product_copy() {
+    let run = Run::new();
+    let mut command = run.command(&["--output-format", "json", "--timeout", "20", "hello"]);
+    command.env("CORTEX_COMPUTER", "this_pc");
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let error = result["error"].as_str().unwrap_or_default();
+    assert!(
+        error.contains("This PC") && error.contains("already connected Code session"),
+        "This PC without a session must use product copy: {result}"
+    );
+    assert!(
+        error.contains("CORTEX_COMPUTER"),
+        "the refuse path must name the explicit override: {result}"
+    );
+    assert!(!error.to_lowercase().contains("reqwest"), "{result}");
 }
 
 #[test]

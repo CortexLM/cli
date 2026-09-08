@@ -31,6 +31,19 @@ See [Data locations](data-locations.md) for the defaults these override.
 Interactive use should prefer `cortex login`, which stores the session in the OS
 keyring. See [Signing in](../reference/login.md).
 
+## Code runtime
+
+The TUI and `cortex exec` create a **Cloud** Code session unless you explicitly
+select This PC or SSH. That is the shipped default (Designer Q9). A fresh
+install can complete a turn without extra configuration. This PC and SSH are
+opt-in and may ship in 0.1.x.
+
+| Variable | Effect |
+|----------|--------|
+| `CORTEX_COMPUTER` | Where tools run. Unset (or `cloud`) uses Cloud. Set `this_pc` (aliases: `this-pc`, `local`, `paired`, `connected`) or `ssh` to select those runtimes. This PC and SSH require an already connected Code session; Cortex will not substitute Cloud. |
+| `CORTEX_SSH_HOST` | SSH target. When set (or `CORTEX_SSH_TARGET`), the runtime is SSH — same connected-session rule as `CORTEX_COMPUTER=ssh`. |
+| `CORTEX_SSH_TARGET` | Alias of `CORTEX_SSH_HOST`. |
+
 ## Model selection
 
 | Variable | Effect |

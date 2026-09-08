@@ -4,8 +4,8 @@ use cortex_engine::client::runtime_contract::{
     INCOMPLETE_STREAM, LOCAL_TOOLS_UNSUPPORTED, code_message,
 };
 use cortex_engine::client::{
-    CodeTurnContext, CodeTurnMode, CompletionRequest, ComputerKind, ContentPart, CortexClient,
-    FinishReason, Message, MessageContent, ModelClient, ResponseEvent,
+    CodeAgentClient, CodeTurnContext, CodeTurnMode, CompletionRequest, ComputerKind, ContentPart,
+    CortexClient, FinishReason, Message, MessageContent, ModelClient, ResponseEvent,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_stream::StreamExt;
@@ -116,6 +116,30 @@ fn request() -> CompletionRequest {
         ],
         ..Default::default()
     }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn default_detect_ensures_a_cloud_session() {
+    let mut fixture = cortex_engine::testing::TestFixture::new();
+    fixture.unset_env("CORTEX_COMPUTER");
+    fixture.unset_env("CORTEX_SSH_HOST");
+    fixture.unset_env("CORTEX_SSH_TARGET");
+
+    let (url, peer) = peer(vec![creation()]).await;
+    let client = CodeAgentClient::new(Some(url), Some("contract-fixture-not-a-credential".into()));
+    assert_eq!(
+        client.turn_context().computer,
+        ComputerKind::Cloud,
+        "unset CORTEX_COMPUTER must default to Cloud"
+    );
+    let id = client
+        .ensure_session()
+        .await
+        .expect("Cloud can create a session");
+    assert_eq!(id, "session_fixture");
+    let bodies = peer.await.unwrap();
+    assert_eq!(bodies[0]["runtime"], "cloud");
 }
 
 #[tokio::test]

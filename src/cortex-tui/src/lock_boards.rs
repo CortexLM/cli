@@ -927,9 +927,7 @@ fn board_palette(area: Rect, buf: &mut Buffer) {
         }
         shown += 1;
     }
-    let remaining = crate::commands::PALETTE_HOME_COMMANDS
-        .len()
-        .saturating_sub(shown);
+    let remaining = 21usize.saturating_sub(shown);
     if remaining > 0 && y < limit {
         buf.set_string(
             area.x,

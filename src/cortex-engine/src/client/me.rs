@@ -78,11 +78,15 @@ impl CodeAgentClient {
             });
         }
         let url = me_url(self.base_url());
-        let resp = match timeout(ME_FETCH_TIMEOUT, self.authed_get(&url)).await {
+        let json = match timeout(ME_FETCH_TIMEOUT, async {
+            let resp = self.authed_get(&url).await?;
+            parse_json::<serde_json::Value>(resp).await
+        })
+        .await
+        {
             Ok(result) => result?,
             Err(_) => return Err(CortexError::Timeout),
         };
-        let json: serde_json::Value = parse_json(resp).await?;
         Ok(MeProfile::from_json(&json))
     }
 }
@@ -193,6 +197,43 @@ mod tests {
             .to_str()
             .unwrap();
         assert_eq!(auth, "Bearer staging-bearer");
+    }
+
+    #[tokio::test]
+    async fn fetch_me_times_out_when_the_body_stalls() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/v1/me"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_delay(ME_FETCH_TIMEOUT + Duration::from_secs(7))
+                    .set_body_json(serde_json::json!({
+                        "name": "too late"
+                    })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = CodeAgentClient::new(Some(server.uri()), Some("staging-bearer".into()));
+        let started = std::time::Instant::now();
+        let err = client
+            .fetch_me()
+            .await
+            .expect_err("a stalled /v1/me must not succeed");
+        assert!(
+            matches!(err, CortexError::Timeout),
+            "expected Timeout, got {err:?}"
+        );
+        assert!(
+            started.elapsed() < ME_FETCH_TIMEOUT + Duration::from_secs(2),
+            "timeout must cover headers and body, elapsed {:?}",
+            started.elapsed()
+        );
+        let msg = err.user_friendly_message();
+        assert!(
+            msg.contains("temporarily unavailable"),
+            "timeout uses product copy: {msg}"
+        );
     }
 
     #[tokio::test]

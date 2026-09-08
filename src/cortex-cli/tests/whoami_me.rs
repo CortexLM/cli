@@ -6,16 +6,25 @@
 use std::process::Command;
 
 fn whoami(home: &std::path::Path, api_url: &str, token: Option<&str>) -> std::process::Output {
+    whoami_with_homes(home, home, api_url, token)
+}
+
+fn whoami_with_homes(
+    home: &std::path::Path,
+    cortex_home: &std::path::Path,
+    api_url: &str,
+    token: Option<&str>,
+) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_Cortex"));
     command
         .arg("whoami")
         .env("HOME", home)
-        .env("CORTEX_HOME", home)
+        .env("CORTEX_HOME", cortex_home)
         .env("CORTEX_API_URL", api_url)
         .env("RUST_LOG", "off")
         .env("NO_COLOR", "1")
         .env_remove("CORTEX_API_KEY")
-        .current_dir(home);
+        .current_dir(cortex_home);
     match token {
         Some(token) => {
             command.env("CORTEX_AUTH_TOKEN", token);
@@ -35,7 +44,7 @@ fn combined(output: &std::process::Output) -> String {
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn whoami_hits_v1_me_on_configured_origin_never_production() {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("GET"))
@@ -88,7 +97,7 @@ async fn whoami_hits_v1_me_on_configured_origin_never_production() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn whoami_401_prints_cortex_login_and_exits_nonzero() {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("GET"))
@@ -117,6 +126,50 @@ async fn whoami_401_prints_cortex_login_and_exits_nonzero() {
     let requests = server.received_requests().await.expect("recorded requests");
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url.path(), "/v1/me");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn whoami_isolated_cortex_home_does_not_use_default_profile_token() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/v1/me"))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "name": "Default Profile"
+            })),
+        )
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let default_home = tempfile::tempdir().unwrap();
+    let isolated = tempfile::tempdir().unwrap();
+    let default_cortex = default_home.path().join(".cortex");
+    std::fs::create_dir_all(&default_cortex).unwrap();
+    std::fs::write(
+        default_cortex.join("auth.json"),
+        r#"{"mode":"ApiKey","api_key":"home-profile-bearer"}"#,
+    )
+    .unwrap();
+
+    let output = whoami_with_homes(default_home.path(), isolated.path(), &server.uri(), None);
+    assert!(
+        !output.status.success(),
+        "empty CORTEX_HOME must not inherit $HOME/.cortex: {}",
+        combined(&output)
+    );
+    let text = combined(&output);
+    assert!(
+        text.contains("cortex login") || text.contains("CORTEX_API_KEY"),
+        "{text}"
+    );
+    assert!(!text.contains("Default Profile"), "{text}");
+    let requests = server.received_requests().await.expect("recorded requests");
+    assert!(
+        requests.is_empty(),
+        "default-profile bearer must not reach /v1/me: {}",
+        requests.len()
+    );
 }
 
 #[test]

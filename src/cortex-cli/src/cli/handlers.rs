@@ -581,8 +581,7 @@ pub async fn run_whoami() -> Result<()> {
                 .ok()
                 .flatten()
                 .and_then(|auth| auth.get_token().map(str::to_string))
-        })
-        .or_else(cortex_login::get_auth_token);
+        });
 
     let Some(token) = token else {
         bail!("{AUTH_REQUIRED}");

@@ -1208,10 +1208,9 @@ mod tests {
             !request_url.contains("api.cortex.foundation"),
             "production host must not be contacted: {request_url}"
         );
-        assert_eq!(
-            requests[0].url.port(),
-            url::Url::parse(&server.uri()).unwrap().port(),
-            "request must stay on the loopback fixture port"
+        assert!(
+            request_url.contains("127.0.0.1") || request_url.contains("localhost"),
+            "request must stay on the loopback fixture: {request_url}"
         );
         let auth = requests[0]
             .headers

@@ -237,6 +237,9 @@ impl EventLoop {
                         }
                     }
                     crate::interactive::InteractiveResult::Cancelled => {
+                        if self.app_state.pending_approval.is_some() {
+                            self.app_state.reject();
+                        }
                         self.app_state.exit_interactive_mode();
                     }
                     crate::interactive::InteractiveResult::Continue => {

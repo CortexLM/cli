@@ -5,7 +5,7 @@
 //! ## Available Views
 //!
 //! - [`MinimalSessionView`](minimal_session::MinimalSessionView) - Minimalist terminal-style chat
-//! - [`ApprovalView`](approval::ApprovalView) - Tool approval modal
+//! - [`ApprovalView`](approval::ApprovalView) - Dead-pathed centred modal (inline radios own approval)
 //! - [`QuestionPromptView`](question_prompt::QuestionPromptView) - Interactive question prompt
 //! - [`TasksView`](tasks::TasksView) - Background tasks manager
 //! - [`ForgeView`](forge::ForgeView) - Forge validation dashboard

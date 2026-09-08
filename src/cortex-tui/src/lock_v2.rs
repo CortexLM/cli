@@ -16,7 +16,10 @@ use crate::app::{
     SubagentTodoItem, SubagentTodoStatus,
 };
 use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_LIMIT};
-use crate::interactive::builders::{SkillListItem, build_mcp_selector, build_model_selector};
+use crate::interactive::builders::{
+    SkillListItem, build_clear_confirm, build_mcp_selector, build_model_selector,
+    build_permissions_picker, build_plan_confirm, build_question_prompt, build_sandbox_deny_prompt,
+};
 use crate::interactive::state::{InteractiveAction, InteractiveItem, InteractiveState};
 use crate::lock_proof::{LOCK_SPLASH_VERSION, LockFrame};
 use crate::modal::mcp_manager::{McpServerInfo, McpStatus};
@@ -358,6 +361,34 @@ fn open_settings(state: &mut AppState, tune: impl FnOnce(&mut SettingsModalState
     modal.values = state.settings_values();
     tune(&mut modal);
     state.settings_modal = Some(modal);
+}
+
+/// Production permission prompt for lock `permission-prompt*`.
+fn lock_permission_prompt(state: &mut AppState, hovered: Option<usize>) {
+    resumed(state);
+    state.add_message(
+        Message::user("add ioredis and a mock for the tests").with_timestamp("09:40 AM"),
+    );
+    state.add_message(
+        Message::assistant(
+            "Cortex wants to run\n`$ npm install ioredis && npm install -D ioredis-mock`",
+        )
+        .with_timestamp("09:40 AM")
+        .with_thought_secs(1.4),
+    );
+    state.request_tool_approval(
+        "lock-perm".into(),
+        "shell".into(),
+        serde_json::json!({
+            "command": "npm install ioredis && npm install -D ioredis-mock"
+        }),
+        None,
+    );
+    if let Some(hover) = hovered
+        && let Some(interactive) = state.get_interactive_state_mut()
+    {
+        interactive.hovered = Some(hover);
+    }
 }
 
 fn radios(
@@ -742,74 +773,17 @@ Tell me what you'd like to do.",
             state.input.set_text("git status");
         }
         "permission-prompt" => {
-            resumed(&mut state);
-            state.add_message(
-                Message::user("add ioredis and a mock for the tests").with_timestamp("09:40 AM"),
-            );
-            state.add_message(
-                Message::assistant(
-                    "Cortex wants to run\n`$ npm install ioredis && npm install -D ioredis-mock`",
-                )
-                .with_timestamp("09:40 AM")
-                .with_thought_secs(1.4),
-            );
-            state.enter_interactive_mode(radios(
-                "Approve command",
-                &[
-                    ("once", "1 Yes, run once", "run this command once"),
-                    (
-                        "always",
-                        "2 Yes, always allow npm install in this project",
-                        "remember for this project",
-                    ),
-                    ("edit", "3 Edit command", "edit before running"),
-                    ("no", "4 No — tell Cortex what to do instead", "reject"),
-                ],
-                0,
-                None,
-            ));
+            lock_permission_prompt(&mut state, None);
         }
         "permission-prompt-hover" => {
-            resumed(&mut state);
-            state.add_message(
-                Message::user("add ioredis and a mock for the tests").with_timestamp("09:40 AM"),
-            );
-            state.add_message(
-                Message::assistant(
-                    "Cortex wants to run\n`$ npm install ioredis && npm install -D ioredis-mock`",
-                )
-                .with_timestamp("09:40 AM")
-                .with_thought_secs(1.4),
-            );
-            state.enter_interactive_mode(radios(
-                "Approve command",
-                &[
-                    ("once", "1 Yes, run once", "run this command once"),
-                    (
-                        "always",
-                        "2 Yes, always allow npm install in this project",
-                        "remember for this project",
-                    ),
-                    ("edit", "3 Edit command", "edit before running"),
-                    ("no", "4 No — tell Cortex what to do instead", "reject"),
-                ],
-                0,
-                Some(1),
-            ));
+            lock_permission_prompt(&mut state, Some(1));
         }
         "permissions-picker" => {
             resumed(&mut state);
             state.input.set_text("/permissions");
-            state.enter_interactive_mode(radios(
-                "Permissions",
-                &[
-                    ("ro", "Read-only", "never edit files or run commands"),
-                    ("smart", "Smart", "ask before leaving the sandbox"),
-                    ("full", "Full access", "only ask when leaving the sandbox"),
-                ],
-                1,
-                None,
-            ));
+            let mut interactive = build_permissions_picker(Some("smart"));
+            interactive.selected = 1;
+            state.enter_interactive_mode(interactive);
         }
         "mcp-servers" => {
             resumed(&mut state);
@@ -905,16 +879,7 @@ Tell me what you'd like to do.",
             state.add_message(Message::system(
                 "Sandbox denied: network egress is blocked for this command.",
             ));
-            state.enter_interactive_mode(radios(
-                "Sandbox blocked",
-                &[
-                    ("retry", "1 Retry inside the sandbox", "stay in workspace"),
-                    ("allow", "2 Allow this domain", "ask next time"),
-                    ("cancel", "3 Cancel", "do not run"),
-                ],
-                0,
-                None,
-            ));
+            state.enter_interactive_mode(build_sandbox_deny_prompt());
         }
         "cloud-handoff" => {
             resumed(&mut state);
@@ -1127,15 +1092,7 @@ Tell me what you'd like to do.",
         "clear-confirm" => {
             resumed(&mut state);
             conversation(&mut state);
-            state.enter_interactive_mode(radios(
-                "Clear conversation?",
-                &[
-                    ("yes", "1 Clear", "wipe this thread, keep the workspace"),
-                    ("no", "2 Keep", "leave messages in place"),
-                ],
-                0,
-                None,
-            ));
+            state.enter_interactive_mode(build_clear_confirm());
         }
         "plan-confirm" => {
             resumed(&mut state);
@@ -1146,15 +1103,7 @@ Tell me what you'd like to do.",
                 )
                 .with_timestamp("09:05 AM"),
             );
-            state.enter_interactive_mode(radios(
-                "Implement this plan?",
-                &[
-                    ("yes", "1 Yes, implement", "switch to Agent and execute"),
-                    ("no", "2 Not yet", "stay in Plan"),
-                ],
-                0,
-                None,
-            ));
+            state.enter_interactive_mode(build_plan_confirm());
         }
         "queue" => {
             resumed(&mut state);
@@ -1234,7 +1183,7 @@ Tell me what you'd like to do.",
                 Message::assistant("Which capture size should we lock first?")
                     .with_timestamp("09:44 AM"),
             );
-            state.enter_interactive_mode(radios(
+            state.enter_interactive_mode(build_question_prompt(
                 "Question",
                 &[
                     ("wide", "1 120×40 first", "wide boards"),
@@ -1242,7 +1191,6 @@ Tell me what you'd like to do.",
                     ("both", "3 Both together", "full SPEC §7 set"),
                 ],
                 2,
-                None,
             ));
         }
         "sudo" => {
@@ -1462,5 +1410,26 @@ mod tests {
         let frame = render_lock_v2_scene("first-run-tips", 120, 40).expect("tips");
         assert!(frame.plain.contains("A few tips"), "{}", frame.plain);
         assert!(frame.plain.contains("/model"), "{}", frame.plain);
+    }
+
+    #[test]
+    fn permission_prompt_comes_from_approval_state() {
+        let mut state = lock_app();
+        lock_permission_prompt(&mut state, None);
+        let approval = state.pending_approval.as_ref().expect("ApprovalState");
+        assert_eq!(approval.tool_name, "shell");
+        let interactive = state.get_interactive_state().expect("production radios");
+        assert_eq!(interactive.items.len(), 4);
+        assert_eq!(interactive.items[0].label, "1 Yes, run once");
+        assert!(interactive.prompt_owns_focus);
+        let frame = render_lock_v2_scene("permission-prompt", 120, 40).expect("wide");
+        assert!(frame.plain.contains("Yes, run once"), "{}", frame.plain);
+        assert!(
+            frame.plain.contains("Choose an option above"),
+            "{}",
+            frame.plain
+        );
+        let narrow = render_lock_v2_scene("permission-prompt", 40, 12).expect("narrow");
+        assert!(narrow.plain.contains("Yes, run once"), "{}", narrow.plain);
     }
 }

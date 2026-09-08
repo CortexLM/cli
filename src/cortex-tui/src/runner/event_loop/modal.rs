@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 
+use crate::actions::KeyAction;
 use crate::app::ActiveModal;
 use crate::commands::CommandResult;
 use crate::modal::ModalAction;
@@ -728,6 +729,43 @@ impl EventLoop {
                             .await;
                         return false;
                     }
+                    "permission-prompt" => {
+                        return self.handle_permission_prompt_choice(&item_id).await;
+                    }
+                    "permissions-picker" => {
+                        self.app_state.permission_mode = match item_id.as_str() {
+                            "ro" => crate::permissions::PermissionMode::High,
+                            "smart" => crate::permissions::PermissionMode::Medium,
+                            "full" => crate::permissions::PermissionMode::Low,
+                            _ => return false,
+                        };
+                        let label = match item_id.as_str() {
+                            "ro" => "Read-only",
+                            "smart" => "Smart",
+                            "full" => "Full access",
+                            _ => "Permissions",
+                        };
+                        self.app_state.toasts.info(format!("Permissions: {label}"));
+                        return false;
+                    }
+                    "clear-confirm" => {
+                        if item_id == "yes" {
+                            self.app_state.clear_messages();
+                            self.add_system_message("Display cleared. Stored conversation context is unchanged; use /new for a fresh conversation.");
+                        }
+                        return false;
+                    }
+                    "plan-confirm" => {
+                        if item_id == "yes" {
+                            self.app_state.set_agent_mode("agent");
+                            self.sync_agent_mode_harness();
+                            self.app_state.toasts.info("Mode: Agent");
+                        }
+                        return false;
+                    }
+                    "sandbox-deny" | "question" => {
+                        return false;
+                    }
                     "mcp-source" => {
                         let interactive = match item_id.as_str() {
                             "custom" => {
@@ -923,6 +961,32 @@ impl EventLoop {
             }
             _ => false,
         }
+    }
+
+    /// Apply a SPEC §3.10 permission-prompt choice.
+    async fn handle_permission_prompt_choice(&mut self, item_id: &str) -> bool {
+        match item_id {
+            "once" => {
+                let _ = self.handle_action(KeyAction::Approve).await;
+            }
+            "always" => {
+                let _ = self.handle_action(KeyAction::ApproveAlways).await;
+            }
+            "edit" => {
+                if let Some(approval) = self.app_state.pending_approval.as_ref() {
+                    let cmd = crate::interactive::builders::permission_command_line(approval);
+                    if !cmd.is_empty() {
+                        self.app_state.input.set_text(&cmd);
+                    }
+                }
+                let _ = self.handle_action(KeyAction::Reject).await;
+            }
+            "no" => {
+                let _ = self.handle_action(KeyAction::Reject).await;
+            }
+            _ => {}
+        }
+        false
     }
 
     /// Process pending actions from the card handler.

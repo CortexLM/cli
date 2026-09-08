@@ -141,6 +141,25 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
 
         // Shortcuts (when not searching)
         KeyCode::Char(c) if !state.searchable && key.modifiers.is_empty() => {
+            if c == 'e'
+                && matches!(
+                    &state.action,
+                    InteractiveAction::Custom(id) if id == "permission-prompt"
+                )
+            {
+                if let Some(idx) = state.items.iter().position(|item| item.id == "edit") {
+                    if let Some(filtered_idx) =
+                        state.filtered_indices.iter().position(|&i| i == idx)
+                    {
+                        state.selected = filtered_idx;
+                        return InteractiveResult::Selected {
+                            action: state.action.clone(),
+                            item_id: "edit".into(),
+                            item_ids: vec!["edit".into()],
+                        };
+                    }
+                }
+            }
             if let Some(result) = try_shortcut(state, c) {
                 return result;
             }
@@ -334,6 +353,39 @@ mod tests {
         let result = handle_interactive_key(&mut state, key);
 
         assert!(matches!(result, InteractiveResult::Cancelled));
+    }
+
+    #[test]
+    fn permission_prompt_digits_and_e() {
+        let approval = crate::app::ApprovalState::new(
+            "shell".into(),
+            serde_json::json!({"command": "npm install ioredis"}),
+        );
+        let mut state = crate::interactive::builders::build_permission_prompt(&approval);
+        let two = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            two,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "always"
+        ));
+        let four = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('4'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            four,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "no"
+        ));
+        let edit = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            edit,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "edit"
+        ));
     }
 
     #[test]

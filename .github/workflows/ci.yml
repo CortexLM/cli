@@ -140,12 +140,14 @@ jobs:
         run: python3 scripts/readiness/qa.py
       - uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: test-performance
           path: target/readiness/tests/
           retention-days: 30
       - uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: local-qa
           # Diagnostic journals and aggregates remain local to the runner.

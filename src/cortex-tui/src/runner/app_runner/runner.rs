@@ -960,11 +960,6 @@ pub(crate) fn spawn_me_profile_fetch(
     })
 }
 
-/// Identity URL used by the TUI runner — same resolver as device login and turns.
-pub(crate) fn me_profile_request_url(api_url: &str) -> String {
-    cortex_engine::client::me_url(api_url)
-}
-
 // ============================================================================
 // Tests
 // ============================================================================

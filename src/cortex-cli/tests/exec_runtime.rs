@@ -342,14 +342,18 @@ fn a_second_turn_is_refused_while_one_is_running_and_the_budget_is_enforced() {
     assert_eq!(answer(3)["result"]["cancellation_requested"], true);
 
     // The failing turn surfaces as an error/abort event, never as a completion.
+    // llvm-cov slows the first turn so cancel can land as method `turn_aborted`
+    // / reason `interrupted` before a typed Error event is emitted.
     assert!(
         frames.iter().any(|frame| {
             let event = &frame["params"]["event"];
-            event["type"] == "Error" || event["type"] == "TurnAborted"
+            event["type"] == "Error"
+                || event["type"] == "TurnAborted"
+                || event["reason"] == "interrupted"
         }) || frames.iter().any(|frame| {
             let msg = &frame["params"]["msg"];
             msg["type"] == "error" || msg["type"] == "turn_aborted"
-        }),
+        }) || frames.iter().any(|frame| frame["method"] == "turn_aborted"),
         "the unreachable service must produce a failure event: {frames:#?}"
     );
     assert!(

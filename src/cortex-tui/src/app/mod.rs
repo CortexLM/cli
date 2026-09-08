@@ -10,14 +10,16 @@ mod state;
 mod streaming;
 mod subagent;
 mod types;
+mod update_status;
 
 // Re-export all public types
 pub use approval::{ApprovalState, PendingToolResult};
 pub use autocomplete::{AutocompleteItem, AutocompleteState};
 pub use session::{ActiveModal, SessionSummary};
-pub use state::{AppState, UpdateStatus};
+pub use state::AppState;
 pub use streaming::StreamingState;
 pub use subagent::{
     SubagentDisplayStatus, SubagentTaskDisplay, SubagentTodoItem, SubagentTodoStatus,
 };
 pub use types::{AppView, ApprovalMode, AutocompleteTrigger, FocusTarget, OperationMode};
+pub use update_status::UpdateStatus;

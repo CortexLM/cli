@@ -457,6 +457,21 @@ impl Default for ModelProviderInfo {
     }
 }
 
+impl ModelProviderInfo {
+    /// Read the provider key from the environment. Never log the value.
+    ///
+    /// Compatible `/v1` providers accept `OPENAI_API_KEY` or `CORTEX_LLM_API_KEY`.
+    pub fn resolve_api_key(&self) -> Option<String> {
+        match self.api_type {
+            ApiType::OpenAi | ApiType::OpenAiCompatible => crate::config::llm_api_key(),
+            _ => self
+                .api_key_env
+                .as_deref()
+                .and_then(|name| crate::config::first_nonempty_env(&[name])),
+        }
+    }
+}
+
 /// API type for providers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ApiType {

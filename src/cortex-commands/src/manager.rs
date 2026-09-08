@@ -225,7 +225,7 @@ impl CommandManager {
         Ok(commands)
     }
 
-    /// Convert a command from external format (e.g., Claude Code) to Cortex format.
+    /// Convert a command from an external markdown format to Cortex format.
     async fn convert_external_command(&self, path: &Path) -> Result<Command, ManagerError> {
         let content = tokio::fs::read_to_string(path).await?;
 

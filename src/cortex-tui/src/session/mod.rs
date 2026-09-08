@@ -8,6 +8,7 @@
 //! +-- {session_id}/
 //! |   +-- meta.json        # Session metadata
 //! |   +-- history.jsonl    # Message history (append-only)
+//! |   +-- goal.json        # Optional durable `/goal` (survives resume)
 //! +-- ...
 //! ```
 //!

@@ -464,6 +464,32 @@ pub enum PlanItemStatus {
 }
 
 // ============================================================
+// Goal Events
+// ============================================================
+
+/// Snapshot of the persisted session goal after a user or model update.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct GoalUpdatedEvent {
+    /// True when `/goal clear` removed the persisted goal.
+    #[serde(default)]
+    pub cleared: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub goal_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub objective: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<String>,
+    #[serde(default)]
+    pub turns_used: u32,
+    #[serde(default)]
+    pub turn_budget: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chip: Option<String>,
+}
+
+// ============================================================
 // Share Events
 // ============================================================
 

@@ -29,6 +29,27 @@ impl CommandExecutor {
     /// Supports:
     /// - `/init` - Create AGENTS.md if it doesn't exist
     /// - `/init --force` - Overwrite existing AGENTS.md
+    pub(super) fn cmd_goal(&self, cmd: &ParsedCommand) -> CommandResult {
+        match cortex_engine::goal::parse_goal_args(&cmd.args) {
+            Ok(cortex_engine::goal::GoalCommand::Status) => {
+                CommandResult::Async("goal:status".to_string())
+            }
+            Ok(cortex_engine::goal::GoalCommand::Pause) => {
+                CommandResult::Async("goal:pause".to_string())
+            }
+            Ok(cortex_engine::goal::GoalCommand::Resume) => {
+                CommandResult::Async("goal:resume".to_string())
+            }
+            Ok(cortex_engine::goal::GoalCommand::Clear) => {
+                CommandResult::Async("goal:clear".to_string())
+            }
+            Ok(cortex_engine::goal::GoalCommand::Set { objective }) => {
+                CommandResult::Async(format!("goal:set:{objective}"))
+            }
+            Err(err) => CommandResult::Error(err),
+        }
+    }
+
     pub(super) fn cmd_init(&self, cmd: &ParsedCommand) -> CommandResult {
         let force = cmd.args.iter().any(|a| a == "--force" || a == "-f");
         if force {

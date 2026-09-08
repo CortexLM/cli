@@ -456,9 +456,16 @@ impl EventLoop {
                 tracing::info!("Processing message queue");
                 let _ = self.process_message_queue().await;
             } else {
-                // No more work to do - full reset the prompt timer
-                tracing::info!("Conversation turn complete, full resetting streaming state");
-                self.app_state.streaming.full_reset();
+                let tokens = tokens
+                    .as_ref()
+                    .map(|t| t.prompt_tokens as u64 + t.completion_tokens as u64)
+                    .unwrap_or(0);
+                if self.maybe_continue_goal(tokens).await {
+                    tracing::info!("Continuing durable goal");
+                } else {
+                    tracing::info!("Conversation turn complete, full resetting streaming state");
+                    self.app_state.streaming.full_reset();
+                }
             }
         } else {
             tracing::info!("Tools still running, will continue when they complete");

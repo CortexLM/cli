@@ -7,7 +7,9 @@ reuses the server-side Code session id for the current workspace
 (`~/.cortex/code-sessions.json`) so turns continue the same coding session.
 
 Where they are stored is covered in
-[Data locations](../configuration/data-locations.md).
+[Data locations](../configuration/data-locations.md). A durable `/goal` is
+written as `goal.json` in that same session directory and is reloaded on
+resume; see [Long-horizon persisted goals](goal.md).
 
 ## Listing sessions
 

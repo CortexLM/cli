@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- `/goal` long-horizon persisted goals: create/status/pause/resume/clear, `goal.json` on the session, idle continuation within an 8-turn budget, evidence-based `UpdateGoal`, and a composer chip (`#1F4945`). Lock v2 boards cover chip states (active / paused / done / budget / blocked) and slash palette (`/goal` after `/plan`) at 40×12 and 120×40. Live smoke uses `OPENAI_BASE_URL` / `CORTEX_LLM_BASE_URL`, `OPENAI_API_KEY` / `CORTEX_LLM_API_KEY`, and `CORTEX_LLM_MODEL=cx/gpt-6-astra`; without a key the live test SKIP and unit tests still pass.
 - Hidden `cortex mcp-server --verify` stdio JSON-RPC server (`cortex-verify`) so CI and agents can audit TUI chrome, lock scenes, login product copy, and API error paths offline. Remains `hide = true` until Designer sign-off.
 
 ### Changed
@@ -27,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Composer lock: empty is `> ` + white block at input col 0 + dim `Plan, search, build anything` after that cell (never a white rect after the placeholder). Blink-off (~530ms) hides the block so the placeholder starts at col 0. Typed copy is `#F5F5F5` with the block at the caret.
 
 - Focused composer `>` uses the green focus palette with contrast backing; past user `>` stays white. Interrupt `× Stopped`, quota title, failed MCP `x`, and sandbox deny paint error red `#F87171`. Primary copy is `#F5F5F5`. MCP connect/drop and sandbox deny are live, not painted-only.
-- The composer is the Devin-style bar in every session, working and queue state: a full-width thin gray hairline above the `> ` prompt and another below it, dim placeholder, white block cursor; it follows the transcript until the transcript fills the screen
+- The composer is the session composer bar (locked chrome composer) in every session, working and queue state: a full-width thin gray hairline above the `> ` prompt and another below it, dim placeholder, white block cursor; it follows the transcript until the transcript fills the screen
 - Past user turns sit on a full-width, slightly lighter gray bar behind `> prompt text`
 - Login, trust, `/mode`, `/permissions`, permission prompts, plan / clear / delete confirms and questions are numbered pickers: `> 1 …` with green focus styling on the selected row, `· 2 …` white on the others, dim descriptions under the titles, `↑↓ select · ↵ confirm · esc …` hints; the sign-in screen reads `Welcome to Cortex CLI!` / `How would you like to log in?`
 - `/model`, `/resume`, `/skills` and the settings hub frame their `/ Type to search` field with two hairlines; no pricing bar

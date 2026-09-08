@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > ship the rate limiter and prove it with tests                                                            09:20 AM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ─ Goal · paused─────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode  |  Ctrl+x:shortcuts

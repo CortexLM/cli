@@ -2409,7 +2409,7 @@ mod tests {
         }
         if plain.contains("Devi") {
             assert!(
-                plain.contains("Device") || plain.contains("device") || plain.contains("Devin"),
+                plain.contains("Device") || plain.contains("device"),
                 "truncated Device:\n{plain}"
             );
         }

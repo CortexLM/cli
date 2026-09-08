@@ -39,6 +39,8 @@ pub struct ToolContext {
     pub turn_id: String,
     /// Conversation ID.
     pub conversation_id: String,
+    /// Session directory that holds `goal.json` (and other per-session files).
+    pub session_dir: Option<PathBuf>,
     /// Whether to auto-approve.
     pub auto_approve: bool,
     /// Call ID for the current tool execution.
@@ -64,6 +66,7 @@ impl std::fmt::Debug for ToolContext {
             .field("env_keys", &self.env.keys().collect::<Vec<_>>())
             .field("turn_id", &self.turn_id)
             .field("conversation_id", &self.conversation_id)
+            .field("session_dir", &self.session_dir)
             .field("auto_approve", &self.auto_approve)
             .field("call_id", &self.call_id)
             .field("has_output_sender", &self.output_sender.is_some())
@@ -98,6 +101,7 @@ impl ToolContext {
             env,
             turn_id: String::new(),
             conversation_id: String::new(),
+            session_dir: None,
             auto_approve: false,
             call_id: String::new(),
             output_sender: None,
@@ -252,6 +256,12 @@ impl ToolContext {
     /// Set conversation ID.
     pub fn with_conversation_id(mut self, id: impl Into<String>) -> Self {
         self.conversation_id = id.into();
+        self
+    }
+
+    /// Set the session directory used for `goal.json`.
+    pub fn with_session_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.session_dir = Some(dir.into());
         self
     }
 

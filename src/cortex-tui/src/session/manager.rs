@@ -89,6 +89,22 @@ impl CortexSession {
         &self.storage
     }
 
+    /// Load `goal.json` from this session directory.
+    pub fn load_goal(&self) -> Result<Option<cortex_engine::goal::Goal>> {
+        cortex_engine::goal::load_goal(self.storage.session_dir(self.id()))
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
+    /// Persist or clear the session goal.
+    pub fn persist_goal(&self, goal: Option<&cortex_engine::goal::Goal>) -> Result<()> {
+        let dir = self.storage.session_dir(self.id());
+        match goal {
+            Some(goal) => cortex_engine::goal::save_goal(dir, goal),
+            None => cortex_engine::goal::clear_goal(dir),
+        }
+        .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
     /// Retrieve an error from a compatibility append API. New callers should
     /// use try_add_message_raw so failed persistence cannot look successful.
     pub fn take_persistence_error(&mut self) -> Option<String> {
@@ -646,5 +662,17 @@ mod tests {
         session.meta.total_input_tokens = 500000;
         session.meta.total_output_tokens = 600000;
         assert_eq!(session.format_tokens(), "1.1M");
+    }
+
+    #[test]
+    fn test_goal_roundtrip() {
+        let (session, _temp) = create_test_session();
+        assert!(session.load_goal().unwrap().is_none());
+        let goal = cortex_engine::goal::Goal::new("ship the feature");
+        session.persist_goal(Some(&goal)).unwrap();
+        let loaded = session.load_goal().unwrap().unwrap();
+        assert_eq!(loaded.objective, "ship the feature");
+        session.persist_goal(None).unwrap();
+        assert!(session.load_goal().unwrap().is_none());
     }
 }

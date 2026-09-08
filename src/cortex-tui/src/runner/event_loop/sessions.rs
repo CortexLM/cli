@@ -149,6 +149,9 @@ impl EventLoop {
                 worked_secs: None,
             });
         }
+        self.app_state.goal = session
+            .load_goal()
+            .map_err(|e| anyhow::anyhow!("Failed to load session goal: {e}"))?;
         self.cortex_session = Some(session);
         self.app_state.set_view(AppView::Session);
         Ok(())

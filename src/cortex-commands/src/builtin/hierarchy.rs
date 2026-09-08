@@ -13,9 +13,9 @@
 //! # Supported Filenames
 //!
 //! - `AGENTS.md` - Primary format
-//! - `CLAUDE.md` - Claude Code compatibility
+//! - `CLAUDE.md` - compatibility filename
 //! - `.cortex/AGENTS.md` - Local overrides
-//! - `.claude/CLAUDE.md` - Claude Code local format
+//! - `.claude/CLAUDE.md` - local compatibility filename
 
 use std::path::{Path, PathBuf};
 

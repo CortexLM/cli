@@ -16,6 +16,7 @@ pub const PALETTE_HOME_COMMANDS: [&str; 21] = [
     "mode",
     "permissions",
     "plan",
+    "goal",
     "effort",
     "mcp",
     "sandbox",
@@ -23,7 +24,6 @@ pub const PALETTE_HOME_COMMANDS: [&str; 21] = [
     "resume",
     "jobs",
     "skills",
-    "btw",
     "compact",
     "clear",
     "diff",
@@ -38,4 +38,16 @@ pub const PALETTE_HOME_COMMANDS: [&str; 21] = [
 /// True when `name` is one of the unfiltered palette rows.
 pub fn is_palette_home_command(name: &str) -> bool {
     PALETTE_HOME_COMMANDS.contains(&name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn home_includes_goal_and_keeps_lock_count() {
+        assert_eq!(PALETTE_HOME_COMMANDS.len(), 21);
+        assert!(PALETTE_HOME_COMMANDS.contains(&"goal"));
+        assert_eq!(PALETTE_HOME_COMMANDS[4], "goal");
+    }
 }

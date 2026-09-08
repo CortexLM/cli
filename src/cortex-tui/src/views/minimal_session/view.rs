@@ -269,6 +269,7 @@ impl<'a> MinimalSessionView<'a> {
             .as_deref()
             .unwrap_or("medium");
         let chip = model_chip(&self.app_state.model, Some(effort));
+        let goal_chip = self.app_state.goal.as_ref().map(|g| g.chip());
         paint_composer_box(
             area,
             buf,
@@ -276,6 +277,7 @@ impl<'a> MinimalSessionView<'a> {
             &chip,
             self.app_state.composer_hovered,
             focused,
+            goal_chip.as_deref(),
         );
 
         let inner = composer_inner(area);

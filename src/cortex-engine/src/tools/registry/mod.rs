@@ -201,6 +201,11 @@ impl ToolRegistry {
                     .execute(arguments, context)
                     .await
             }
+            "UpdateGoal" => {
+                super::handlers::UpdateGoalHandler::new()
+                    .execute(arguments, context)
+                    .await
+            }
             "Propose" => {
                 super::handlers::ProposeHandler::new()
                     .execute(arguments, context)

@@ -138,4 +138,13 @@ pub enum Op {
 
     /// Unshare current session.
     Unshare,
+
+    /// Durable session goal (`/goal` in the TUI).
+    Goal {
+        /// `status`, `pause`, `resume`, `clear`, or `set`.
+        action: String,
+        /// Required when `action` is `set`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        objective: Option<String>,
+    },
 }

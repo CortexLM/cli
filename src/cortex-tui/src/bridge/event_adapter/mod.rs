@@ -483,7 +483,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn test_adapt_goal_updated_uses_chip() {
         use cortex_protocol::GoalUpdatedEvent;
         let event = make_event(EventMsg::GoalUpdated(GoalUpdatedEvent {
@@ -511,6 +510,7 @@ mod tests {
         assert!(matches!(adapt_event(cleared), Some(AppEvent::Info(s)) if s == "Goal cleared."));
     }
 
+    #[test]
     fn test_adapt_events_batch() {
         let events = vec![
             make_event(EventMsg::TaskStarted(TaskStartedEvent {

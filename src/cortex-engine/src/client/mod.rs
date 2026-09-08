@@ -10,8 +10,8 @@ pub mod types;
 
 pub use code_agent::{
     CodeAgentClient, CodeHost, CodeHostPairing, CodeMessage, CodeSession, CodeTurnContext,
-    CodeTurnEvent, CodeTurnMode, ComputerKind, CreateCodeSession, GUEST_TOKEN_PREFIX, GuestSession,
-    cached_code_session_id,
+    CodeTurnEvent, CodeTurnMode, ComputerKind, CreateCodeSession, DISCONNECTED_RUNTIME,
+    GUEST_TOKEN_PREFIX, GuestSession, cached_code_session_id,
 };
 pub use cortex::{CortexClient, CortexModel, PricingInfo};
 pub use types::*;

@@ -31,6 +31,17 @@ See [Data locations](data-locations.md) for the defaults these override.
 Interactive use should prefer `cortex login`, which stores the session in the OS
 keyring. See [Signing in](../reference/login.md).
 
+## Code runtime
+
+Turns create a **Cloud** Code session unless you explicitly select This PC or
+SSH. A fresh install can complete a turn without extra configuration.
+
+| Variable | Effect |
+|----------|--------|
+| `CORTEX_COMPUTER` | Where tools run. Unset (or `cloud`) uses Cloud. Set `this_pc` (aliases: `this-pc`, `local`, `paired`, `connected`) or `ssh` to select those runtimes. This PC and SSH require an already connected Code session; Cortex will not substitute Cloud. |
+| `CORTEX_SSH_HOST` | SSH target. When set (or `CORTEX_SSH_TARGET`), the runtime is SSH — same connected-session rule as `CORTEX_COMPUTER=ssh`. |
+| `CORTEX_SSH_TARGET` | Alias of `CORTEX_SSH_HOST`. |
+
 ## Model selection
 
 | Variable | Effect |

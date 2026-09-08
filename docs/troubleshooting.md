@@ -31,6 +31,13 @@ Work through:
    will tell you.
 4. Are you signed in? `cortex whoami`.
 
+## "This PC and SSH Code execution require an already connected Code session"
+
+You selected This PC or SSH (`CORTEX_COMPUTER` or `CORTEX_SSH_HOST`) without a
+connected Code session. Those runtimes are never created on the fly, and Cloud
+is not substituted. Either resume a session that already has a host, or unset
+`CORTEX_COMPUTER` to use Cloud. See [Environment variables](configuration/env.md).
+
 ## The TUI will not start
 
 Cortex needs a terminal on both stdin and stdout. In a pipeline, a CI job, or

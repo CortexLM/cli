@@ -37,9 +37,11 @@ pub fn load_goal(session_dir: impl AsRef<Path>) -> Result<Option<Goal>> {
 }
 
 /// Load with an explicit missing / loaded / quarantined result for resume UX.
+///
+/// Load never deletes `.goal.json.tmp.*`. A concurrent `save_goal` may have
+/// that file open; removing it makes the writer's rename fail with ENOENT.
 pub fn load_goal_report(session_dir: impl AsRef<Path>) -> Result<GoalLoad> {
     let dir = session_dir.as_ref();
-    cleanup_stale_tmps(dir);
     let path = goal_path(dir);
     if !path.exists() {
         return Ok(GoalLoad::Missing);
@@ -99,65 +101,6 @@ fn quarantine(path: &Path, why: &str) -> GoalLoad {
         }
     };
     GoalLoad::Quarantined { reason }
-}
-
-fn is_goal_tmp_name(name: &str) -> bool {
-    name.starts_with(".goal.json.tmp.") || name.starts_with(".goal.tmp.")
-}
-
-fn tmp_owner_pid(name: &str) -> Option<u32> {
-    name.rsplit_once('.')?.1.parse().ok()
-}
-
-/// Probe whether `pid` still appears to be running.
-///
-/// A live owner may be mid-`save_goal`; deleting that temp makes the later
-/// rename fail with ENOENT and drops the write. Dead owners are leftovers.
-fn process_appears_alive(pid: u32) -> bool {
-    if pid == 0 {
-        return false;
-    }
-    if pid == std::process::id() {
-        return true;
-    }
-    #[cfg(unix)]
-    {
-        // Safety: `kill(pid, 0)` delivers no signal; it only checks existence.
-        let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
-        if rc == 0 {
-            return true;
-        }
-        std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
-    }
-    #[cfg(not(unix))]
-    {
-        // Cannot probe; keep the file so a concurrent writer is never stolen.
-        true
-    }
-}
-
-fn goal_tmp_owned_by_live_process(name: &str) -> bool {
-    match tmp_owner_pid(name) {
-        Some(pid) => process_appears_alive(pid),
-        // Unknown suffix: do not delete a file we cannot attribute.
-        None => true,
-    }
-}
-
-fn cleanup_stale_tmps(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        if !is_goal_tmp_name(name) || goal_tmp_owned_by_live_process(name) {
-            continue;
-        }
-        let _ = std::fs::remove_file(entry.path());
-    }
 }
 
 fn durable_atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -275,51 +218,73 @@ mod tests {
     }
 
     #[test]
-    fn load_does_not_delete_tmp_owned_by_live_process() {
+    fn load_never_deletes_goal_temps() {
         let dir = tempfile::tempdir().unwrap();
         let live = dir
             .path()
             .join(format!(".goal.json.tmp.{}", std::process::id()));
+        let other = dir.path().join(".goal.json.tmp.1");
         std::fs::write(&live, b"in-flight").unwrap();
+        std::fs::write(&other, b"other-writer").unwrap();
         assert!(matches!(
             load_goal_report(dir.path()).unwrap(),
             GoalLoad::Missing
         ));
-        assert!(
-            live.exists(),
-            "must not steal this process's in-flight goal write"
-        );
+        assert!(live.exists(), "load must not steal this process's temp");
+        assert!(other.exists(), "load must not steal another writer's temp");
     }
 
-    #[cfg(unix)]
     #[test]
-    fn load_does_not_delete_tmp_owned_by_init() {
+    fn load_does_not_break_in_flight_writer_rename() {
         let dir = tempfile::tempdir().unwrap();
-        let foreign = dir.path().join(".goal.json.tmp.1");
-        std::fs::write(&foreign, b"other-process").unwrap();
+        let goal = Goal::new("from writer");
+        let tmp = dir
+            .path()
+            .join(format!(".goal.json.tmp.{}", std::process::id()));
+        std::fs::write(&tmp, serde_json::to_string_pretty(&goal).unwrap()).unwrap();
         let _ = load_goal_report(dir.path()).unwrap();
-        assert!(
-            foreign.exists(),
-            "must not delete another live process's goal temp"
-        );
+        std::fs::rename(&tmp, goal_path(dir.path())).expect("writer rename must not ENOENT");
+        let loaded = load_goal(dir.path()).unwrap().unwrap();
+        assert_eq!(loaded.objective, "from writer");
     }
 
     #[cfg(unix)]
     #[test]
-    fn load_removes_tmp_owned_by_dead_process() {
-        let mut child = std::process::Command::new("true")
+    fn parent_load_does_not_steal_child_writer_temp() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path();
+        let script = r#"
+set -e
+tmp="$1/.goal.json.tmp.$$"
+printf '%s\n' '{"schema_version":1,"id":"child","objective":"child-writer","state":"active","progress":null,"turns_used":0,"turn_budget":8,"tokens_used":0,"token_budget":null,"evidence":[],"last_reason":null,"created_at":0,"updated_at":0}' > "$tmp"
+echo ready > "$1/ready"
+while [ ! -f "$1/go" ]; do sleep 0.05; done
+mv "$tmp" "$1/goal.json"
+"#;
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .arg("goal-tmp-writer")
+            .arg(session)
             .spawn()
-            .expect("spawn short-lived helper");
-        let pid = child.id();
-        let _ = child.wait();
-        let dir = tempfile::tempdir().unwrap();
-        let stale = dir.path().join(format!(".goal.json.tmp.{pid}"));
-        std::fs::write(&stale, b"orphan").unwrap();
-        let _ = load_goal_report(dir.path()).unwrap();
+            .expect("spawn child writer");
+        let ready = session.join("ready");
+        for _ in 0..200 {
+            if ready.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(ready.exists(), "child should publish its in-flight temp");
+        let _ = load_goal_report(session).unwrap();
+        std::fs::write(session.join("go"), b"go").unwrap();
+        let status = child.wait().expect("wait child writer");
         assert!(
-            !stale.exists(),
-            "dead-process leftover temp should be removed"
+            status.success(),
+            "child rename must succeed after parent load"
         );
+        let loaded = load_goal(session).unwrap().unwrap();
+        assert_eq!(loaded.objective, "child-writer");
     }
 
     #[test]

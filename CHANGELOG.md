@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 0.1.11
 
 ### Changed
-- `/goal` production harden: persist is atomic + fsynced; corrupt `goal.json` is quarantined so session resume continues (and the status text says so only when the move succeeded); load never deletes another process's in-flight `.goal.json.tmp.{pid}`; `/goal status` is a reserved status token; continuation records a finished turn *then* wrap-up/continues (last remaining turn still runs); `UpdateGoal` complete accepts only `file` / `command` / `test` evidence (globally deduped); status, pause, resume, and resume-on-session print the chip (`Goal · 2/8` / paused / done / budget / blocked). Live smoke still SKIP without a key.
+- `/goal` production harden: persist is atomic + fsynced; corrupt `goal.json` is quarantined so session resume continues (and the status text says so only when the move succeeded); load never deletes `.goal.json.tmp.*` (a concurrent save's in-flight temp is left alone); `/goal status` is a reserved status token; continuation records a finished turn *then* wrap-up/continues (last remaining turn still runs); `UpdateGoal` complete accepts only `file` / `command` / `test` evidence (globally deduped); status, pause, resume, and resume-on-session print the chip (`Goal · 2/8` / paused / done / budget / blocked). Live smoke still SKIP without a key.
 - Hidden `cortex mcp-server --verify` stdio JSON-RPC server (`cortex-verify`) so CI and agents can audit TUI chrome, lock scenes, login product copy, and API error paths offline. Remains `hide = true` until Designer sign-off.
 
 ### Changed

@@ -4,6 +4,7 @@
 //! All LLM requests go through the Cortex backend with OAuth authentication.
 
 mod code_agent;
+mod computer;
 mod cortex;
 pub mod runtime_contract;
 pub mod types;

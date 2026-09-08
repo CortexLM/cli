@@ -71,9 +71,6 @@ pub async fn run_config(args: ConfigArgs) -> Result<()> {
             "CORTEX_LOG_LEVEL",
             "CORTEX_AUTH_TOKEN",
             "CORTEX_API_URL",
-            "CORTEX_COMPUTER",
-            "CORTEX_SSH_HOST",
-            "CORTEX_SSH_TARGET",
             // Standard environment variables
             "EDITOR",
             "VISUAL",

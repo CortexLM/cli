@@ -77,12 +77,15 @@ async fn whoami_hits_v1_me_on_configured_origin_never_production() {
     let requests = server.received_requests().await.expect("recorded requests");
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url.path(), "/v1/me");
-    let host = requests[0].url.host_str().expect("loopback host");
-    assert_ne!(host, "api.cortex.foundation");
+    let request_url = requests[0].url.to_string();
     assert!(
-        server.uri().contains(host),
-        "request host {host} was not CORTEX_API_URL {}",
-        server.uri()
+        !request_url.contains("api.cortex.foundation"),
+        "production host must not be contacted: {request_url}"
+    );
+    assert_eq!(
+        requests[0].url.port(),
+        url::Url::parse(&server.uri()).unwrap().port(),
+        "request must stay on the loopback fixture port"
     );
 }
 

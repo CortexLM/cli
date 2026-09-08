@@ -1067,6 +1067,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -1220,6 +1221,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "which",
+ "wiremock",
  "zeroize",
 ]
 

@@ -68,6 +68,7 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [Local operations](guides/operations.md) | Alerts, error investigation, deployment comparison and profiling |
 | [Maintenance](guides/maintenance.md) | Ownership, labels, backlog triage and release review |
 | [Readiness remediation](guides/readiness-remediation.md) | Local validation snapshot and explicit remaining limits |
+| [CLI 100 % audit (2026-09-08)](audits/CORTEX_CLI_100_AUDIT_2026-09-08.md) | TUI + MCP audit against the product and Designer locks: gaps with evidence, verifier MCP spec, ordered fix PRs |
 
 ## Conventions used here
 

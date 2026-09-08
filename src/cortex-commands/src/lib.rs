@@ -56,9 +56,9 @@
 //! manager.load_all().await?;
 //! ```
 //!
-//! # Import from Claude Code
+//! # Import from external command dirs
 //!
-//! Commands can be imported from Claude Code format:
+//! Commands can be imported from `.claude/commands/` markdown:
 //!
 //! ```rust,ignore
 //! use cortex_commands::import::{ClaudeImporter, ImportType};

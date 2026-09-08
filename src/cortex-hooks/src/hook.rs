@@ -52,7 +52,7 @@ pub enum HookType {
     /// Triggered when a session completes.
     SessionCompleted,
 
-    // New events (Claude Code inspired)
+    // Additional lifecycle events
     /// Triggered before a tool is used.
     PreToolUse,
     /// Triggered after a tool is used successfully.

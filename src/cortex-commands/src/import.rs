@@ -1,7 +1,7 @@
 //! Import functionality for external command formats.
 //!
 //! Supports importing commands from:
-//! - `.claude/commands/` (Claude Code format)
+//! - `.claude/commands/` (external markdown command format)
 //! - `.agents/` (Agent configuration)
 //! - Other compatible markdown command formats
 
@@ -235,7 +235,7 @@ impl ClaudeImporter {
                     new_frontmatter.push_str(&format!("tools: {}\n", tools));
                 }
 
-                // Map allowed_tools (Claude Code format)
+                // Map allowed_tools (external frontmatter key)
                 if let Some(tools) = frontmatter.get("allowed_tools") {
                     new_frontmatter.push_str(&format!("tools: {}\n", tools));
                 }

@@ -248,6 +248,32 @@ else
     echo -e "  ${GREEN}✓ Updated Cargo.toml${NC}"
 fi
 
+# Keep the private SDK package version on VERSION_CLI (packages/sdk tests require it).
+SDK_PKG="$REPO_ROOT/packages/sdk/package.json"
+echo -e "${BLUE}Updating packages/sdk/package.json...${NC}"
+if [ "$DRY_RUN" = true ]; then
+    echo "  Would update version to \"$NEW_VERSION\" in $SDK_PKG"
+elif [ -f "$SDK_PKG" ]; then
+    SDK_PKG_TMP=$(mktemp "${SDK_PKG}.tmp.XXXXXX")
+    awk -v new_ver="$NEW_VERSION" '
+        BEGIN { done = 0 }
+        !done && /"version"[[:space:]]*:/ {
+            sub(/"[0-9][^"]*"/, "\"" new_ver "\"")
+            done = 1
+        }
+        { print }
+    ' "$SDK_PKG" > "$SDK_PKG_TMP"
+    if ! grep -q "\"version\": \"$NEW_VERSION\"" "$SDK_PKG_TMP"; then
+        rm -f "$SDK_PKG_TMP"
+        echo -e "${RED}ERROR: Failed to update version in packages/sdk/package.json${NC}"
+        exit 1
+    fi
+    mv "$SDK_PKG_TMP" "$SDK_PKG"
+    echo -e "  ${GREEN}✓ Updated packages/sdk/package.json${NC}"
+else
+    echo -e "  ${YELLOW}⚠ packages/sdk/package.json not found — skipped${NC}"
+fi
+
 echo ""
 
 # Verify consistency

@@ -17,6 +17,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::splash_chrome::splash_legend;
 use crate::ui::text_utils::{
     first_fitting_line, fit_line, trim_dangling_separator, wrap_keep_indent, wrap_or_drop,
 };
@@ -36,9 +37,6 @@ const GHOST_RUNNING: &str = crate::views::minimal_session::PLACEHOLDER_RUNNING;
 /// Right-hand footer hint, and its narrow form — the live footer's copy.
 const FOOTER_HINT: &str = crate::widgets::key_hints::FOOTER_HINT_IDLE;
 const FOOTER_HINT_SHORT: &str = "shift+tab modes";
-/// Keystroke hints under the splash, and the form that fits 40 columns.
-const LAUNCH_HINTS: &str = crate::views::minimal_session::EMPTY_SESSION_HINTS;
-const LAUNCH_HINTS_NARROW: &str = "/ commands · @ files · ! shell";
 /// Rows the composer takes: hairline, prompt, hairline.
 const COMPOSER_ROWS: u16 = crate::views::minimal_session::COMPOSER_ROWS;
 
@@ -788,7 +786,9 @@ fn bar(filled: u16, total: u16) -> String {
 /// Launch header: `Welcome to Cortex, the coding agent CLI` then
 /// `v{version} · / commands · …`. No fake `> cortex` or painted cwd.
 fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
-    let w = inner_width(area);
+    // Full terminal width so the 40-col lock can hold the mid legend; a
+    // longer version is ellipsized instead of dropping `@ files · ! shell`.
+    let w = area.width.max(1) as usize;
     let mut y = area.y;
     let dim = Style::default().fg(TEXT_DIM);
     let bold = Style::default().fg(TEXT).add_modifier(Modifier::BOLD);
@@ -797,16 +797,7 @@ fn paint_launch_header(area: Rect, buf: &mut Buffer, full: bool) -> u16 {
     buf.set_string(area.x + 17, y, ", the coding agent CLI", dim);
     y += 1;
     if full {
-        let version = env!("CARGO_PKG_VERSION");
-        let full_h = format!("v{version} · {LAUNCH_HINTS}");
-        let mid_h = format!("v{version} · {LAUNCH_HINTS_NARROW}");
-        let hints = if full_h.chars().count() <= w {
-            full_h
-        } else if mid_h.chars().count() <= w {
-            mid_h
-        } else {
-            format!("v{version} · / commands")
-        };
+        let hints = splash_legend(env!("CARGO_PKG_VERSION"), w);
         buf.set_string(
             area.x,
             y,

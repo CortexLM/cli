@@ -270,7 +270,7 @@
   "info": {
     "description": "Supported local session/health contract. Message POST stores a message; it does not generate a model response. Other development endpoints are not part of this stable contract.",
     "title": "Cortex local session API",
-    "version": "0.1.9"
+    "version": "0.1.10"
   },
   "openapi": "3.1.0",
   "paths": {

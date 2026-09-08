@@ -78,9 +78,15 @@ fn default_runtime_reaches_the_api_instead_of_refusing_this_pc() {
         !error.contains("already connected Code session"),
         "unset CORTEX_COMPUTER must not refuse as This PC: {result}"
     );
+    assert_eq!(
+        result["num_turns"], 1,
+        "the Cloud default must start a turn instead of refusing locally: {result}"
+    );
     assert!(
-        error.contains("temporarily unavailable"),
-        "default Cloud path must reach the coding service: {result}"
+        error.contains("temporarily unavailable")
+            || error.contains("cortex login")
+            || error.contains("CORTEX_API_KEY"),
+        "default Cloud path fails closed after attempting a session, never This PC: {result}"
     );
 }
 

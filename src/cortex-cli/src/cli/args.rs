@@ -288,6 +288,14 @@ pub struct InteractiveArgs {
     pub prompt: Vec<String>,
 }
 
+/// Hidden `cortex mcp-server` flags. `--verify` is the offline TUI+API verifier.
+#[derive(Debug, Parser)]
+pub struct McpServerCli {
+    /// Run the Cortex verification MCP over stdio JSON-RPC (`cortex-verify/1`).
+    #[arg(long)]
+    pub verify: bool,
+}
+
 /// CLI subcommands.
 #[derive(Subcommand)]
 pub enum Commands {
@@ -366,7 +374,7 @@ pub enum Commands {
     /// Run the MCP server (stdio transport)
     #[command(display_order = 32, hide = true)]
     #[command(next_help_heading = categories::EXTENSION)]
-    McpServer,
+    McpServer(McpServerCli),
 
     /// Start ACP server for IDE integration (e.g., Zed)
     #[command(display_order = 33)]
@@ -878,7 +886,7 @@ pub struct HistoryClearArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
 
     // ==========================================================================
     // LogLevel tests
@@ -1276,6 +1284,21 @@ mod tests {
     fn test_cli_exec_subcommand() {
         let cli = Cli::try_parse_from(["cortex", "exec"]).expect("should parse exec subcommand");
         assert!(matches!(cli.command, Some(Commands::Exec(_))));
+    }
+
+    #[test]
+    fn test_mcp_server_verify_stays_hidden() {
+        let command = Cli::command();
+        let mcp = command
+            .find_subcommand("mcp-server")
+            .expect("mcp-server must exist");
+        assert!(mcp.is_hide_set(), "keep hide=true until Designer sign-off");
+        let cli = Cli::try_parse_from(["cortex", "mcp-server", "--verify"])
+            .expect("should parse hidden mcp-server --verify");
+        match cli.command {
+            Some(Commands::McpServer(args)) => assert!(args.verify),
+            _ => panic!("expected McpServer --verify"),
+        }
     }
 
     #[test]

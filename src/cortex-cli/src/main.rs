@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
     let skip_auto_update = cli.interactive.debug
         || matches!(
             &cli.command,
-            Some(Commands::Upgrade(_) | Commands::Serve(_))
+            Some(Commands::Upgrade(_) | Commands::Serve(_) | Commands::McpServer(_))
         );
     let is_tui_mode = cli.command.is_none();
     if !skip_auto_update && !is_tui_mode && !is_debug_cmd {

@@ -32,7 +32,17 @@ pub async fn dispatch_command(cli: Cli) -> Result<()> {
         }
         Some(Commands::Mcp(mcp_cli)) => mcp_cli.run().await,
         Some(Commands::Agent(agent_cli)) => agent_cli.run().await,
-        Some(Commands::McpServer) => {
+        Some(Commands::McpServer(args)) => {
+            if args.verify {
+                #[cfg(feature = "cortex-tui")]
+                {
+                    return crate::verify_mcp::run().await;
+                }
+                #[cfg(not(feature = "cortex-tui"))]
+                {
+                    bail!("Verification MCP requires the cortex-tui feature.");
+                }
+            }
             bail!(
                 "MCP server mode is not yet implemented. Use 'cortex mcp' for MCP server management."
             );

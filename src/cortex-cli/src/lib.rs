@@ -200,6 +200,8 @@ pub mod stats_cmd;
 pub mod styled_output;
 pub mod uninstall_cmd;
 pub mod upgrade_cmd;
+#[cfg(feature = "cortex-tui")]
+pub mod verify_mcp;
 pub mod workspace_cmd;
 
 #[cfg(not(windows))]

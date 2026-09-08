@@ -24,7 +24,16 @@ workspace = true
 [features]
 default = ["cortex-tui", "audio"]
 # Use the new Cortex TUI (120 FPS, Cortex theme)
-cortex-tui = ["dep:cortex-tui"]
+cortex-tui = [
+    "dep:cortex-tui",
+    "dep:cortex-tui-capture",
+    "dep:cortex-mcp-server",
+    "dep:cortex-mcp-types",
+    "dep:sha2",
+    "dep:hex",
+    "dep:ratatui",
+    "dep:async-trait",
+]
 # Audio notifications - disabled on musl targets due to alsa-sys incompatibility
 # Falls back to terminal bell when disabled
 audio = ["cortex-tui?/audio"]
@@ -33,6 +42,13 @@ audio = ["cortex-tui?/audio"]
 cortex-engine = { workspace = true }
 cortex-protocol = { workspace = true }
 cortex-tui = { workspace = true, optional = true }
+cortex-tui-capture = { workspace = true, optional = true }
+cortex-mcp-server = { workspace = true, optional = true }
+cortex-mcp-types = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+ratatui = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
 
 cortex-common = { workspace = true, features = ["cli"] }
 cortex-commands = { workspace = true }

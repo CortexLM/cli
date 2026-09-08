@@ -94,3 +94,26 @@ failure to make CI green. See [testing rules](../../.rules/testing.md).
 The append regression test checks immediate visibility after Tokio 1.53.1 file
 writes. An awaited `flush` finishes the pending write; it is not an `fsync`
 durability guarantee. Do not replace this check with sleeps or retries.
+
+## Verification MCP (hidden)
+
+`cortex mcp-server --verify` is a hidden stdio JSON-RPC server (`hide = true`
+until Designer sign-off). It is built on the in-tree `cortex-mcp-server` crate
+as `cortex-verify` and drives the TUI through the same headless
+`EventLoop` + `MockTerminal` path as `ux_contract_tests.rs`.
+
+CI and agents add one MCP server entry:
+
+```bash
+./target/debug/Cortex mcp-server --verify
+```
+
+Tools: `tui.*`, `lock.*`, `login.run`, `api.*`, `mcp.*`, `report.finish`.
+Resources: `cortex-verify://matrix`, `cortex-verify://lock/v2/<size>/<id>.txt`,
+`cortex-verify://report/latest`. `report.finish` writes
+`target/readiness/cli-verify/<run_id>.json` with schema `cortex-verify/1`.
+
+Offline runs use `CORTEX_API_URL` (loopback fixture or an unreachable origin).
+They must still cover chrome, legend, product-facing errors, and palette
+audit. Live API checks are gated on `CORTEX_LIVE_API=1` and are not part of
+default CI. Integration coverage is `src/cortex-cli/tests/mcp_server_verify.rs`.

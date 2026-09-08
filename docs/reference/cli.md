@@ -257,7 +257,9 @@ help but supported.
 
 Also hidden, and supported: `shell` (aliases `interactive`, `repl`), `dag`
 (alias `tasks`), `servers`, `history`, `workspace` (alias `project`), `sandbox`
-(alias `sb`), `serve`, and `mcp-server`.
+(alias `sb`), `serve`, and `mcp-server`. The hidden `cortex mcp-server --verify`
+flag starts the offline TUI+API verification MCP (`cortex-verify/1`); see
+[Development](../guides/development.md#verification-mcp-hidden).
 
 ## See also
 

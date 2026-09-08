@@ -31,132 +31,11 @@ use crate::views::tool_call::{ToolCallDisplay, ToolResultDisplay, ToolStatus};
 use crate::widgets::SettingsModalState;
 use crate::widgets::settings_modal::SettingsRowKind;
 
+use crate::lock_v2_goal::{apply_goal_chip_scene, show_goal_in_narrow_palette};
+
+pub use crate::lock_v2_ids::{LOCK_V2_NARROW_IDS, LOCK_V2_WIDE_IDS, lock_v2_scene_ids};
+
 const PRODUCT_ERROR: &str = "The coding service is temporarily unavailable";
-
-/// Narrow (40×12) SPEC §7 set — 31 boards.
-pub const LOCK_V2_NARROW_IDS: &[&str] = &[
-    "welcome-cortex",
-    "welcome-agent",
-    "first-run-tips",
-    "session-empty",
-    "session-user-bars",
-    "session-thinking-live",
-    "session-assistant",
-    "session-optin",
-    "composer-empty",
-    "composer-typing",
-    "composer-hover",
-    "tokens-topright",
-    "compact-chat",
-    "slash-palette",
-    "slash-model-typed",
-    "model-list",
-    "model-effort-high",
-    "settings-appearance",
-    "settings-mouse",
-    "settings-row-hover",
-    "settings-theme-submenu",
-    "mode-plan",
-    "mode-ask",
-    "permission-prompt",
-    "mcp-servers",
-    "usage",
-    "diagnostics",
-    "interrupt-stopped",
-    "diff-hunk",
-    "login",
-    "shortcuts-overlay",
-];
-
-/// Wide (120×40) SPEC §7 set — 77 boards.
-pub const LOCK_V2_WIDE_IDS: &[&str] = &[
-    "welcome-cortex",
-    "welcome-agent",
-    "first-run-tips",
-    "session-empty",
-    "session-user-bars",
-    "session-thought",
-    "session-thought-expanded",
-    "session-thinking-live",
-    "session-assistant",
-    "session-worked",
-    "session-optin",
-    "session-optin-hover",
-    "composer-empty",
-    "composer-typing",
-    "composer-typing-blink",
-    "composer-hover",
-    "composer-multiline",
-    "footer-shortcuts",
-    "footer-hover",
-    "tokens-topright",
-    "tokens-topright-warn",
-    "compact-chat",
-    "slash-palette",
-    "slash-model-typed",
-    "model-list",
-    "model-list-hover",
-    "model-effort-high",
-    "model-effort-medium",
-    "model-effort-low",
-    "model-effort-hover",
-    "settings-appearance",
-    "settings-mouse",
-    "settings-row-hover",
-    "settings-search",
-    "settings-theme-submenu",
-    "mode-agent",
-    "mode-plan",
-    "mode-ask",
-    "mode-bash",
-    "permission-prompt",
-    "permission-prompt-hover",
-    "permissions-picker",
-    "mcp-servers",
-    "mcp-drop",
-    "plugins",
-    "usage",
-    "quota-exhausted",
-    "sandbox",
-    "sandbox-deny",
-    "cloud-handoff",
-    "diagnostics",
-    "interrupt-stopped",
-    "error-unavailable",
-    "tool-tiles",
-    "tool-tiles-collapsed",
-    "shell-running",
-    "diff-hunk",
-    "edit-collapsed",
-    "md-table",
-    "code-fence",
-    "login",
-    "login-waiting",
-    "login-success",
-    "login-error",
-    "shortcuts-overlay",
-    "resume-picker",
-    "clear-confirm",
-    "plan-confirm",
-    "queue",
-    "files-picker",
-    "jobs",
-    "skills",
-    "todos",
-    "question",
-    "sudo",
-    "config-tree",
-    "btw",
-];
-
-/// Boards captured at both sizes. Narrow (40×12) is a subset.
-pub fn lock_v2_scene_ids(width: u16) -> &'static [&'static str] {
-    if width <= 40 {
-        LOCK_V2_NARROW_IDS
-    } else {
-        LOCK_V2_WIDE_IDS
-    }
-}
 
 #[derive(Debug, Clone, Serialize)]
 struct Manifest {
@@ -671,7 +550,11 @@ Tell me what you'd like to do.",
         }
         "slash-palette" => {
             let mut s = palette_state("/");
-            s.autocomplete.hovered = Some(3);
+            if width <= 40 {
+                show_goal_in_narrow_palette(&mut s);
+            } else {
+                s.autocomplete.hovered = Some(3);
+            }
             s.terminal_size = (width, height);
             return s;
         }
@@ -1234,6 +1117,7 @@ Tell me what you'd like to do.",
                 Message::user("/btw keep the composer dual-hairline").with_timestamp("09:51 AM"),
             );
         }
+        id if apply_goal_chip_scene(id, &mut state) => {}
         other => panic!("unknown lock v2 scene {other}"),
     }
     state
@@ -1264,8 +1148,8 @@ mod tests {
 
     #[test]
     fn lock_v2_wide_count_is_spec() {
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 77);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 31);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 82);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 36);
     }
 
     #[test]

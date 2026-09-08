@@ -28,10 +28,10 @@
      /mode           Switch between Agent, Plan and Ask
      /permissions    Set the approval policy for edits and commands
      /plan           Draft a plan before writing any code
+     /goal           Persisted long-horizon objective
      /effort         Tune reasoning effort for the current model
      /mcp            View and manage MCP servers
      /sandbox        Configure sandboxed command execution
-     /usage          Plan usage, quota and limits
      … 87 more — keep typing to filter
  ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
  │ > /                                                                                                                │

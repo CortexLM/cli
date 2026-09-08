@@ -194,6 +194,7 @@ def composer(
     extra_lines: int = 0,
     sigil: str = ">",
     y_bottom: int | None = None,
+    goal: str | None = None,
 ) -> int:
     """Paint the composer box; returns the row of its top border."""
     hair = HAIR_HI if hover else HAIR
@@ -205,7 +206,14 @@ def composer(
     chip, chip_st = MODE_CHIPS.get(mode, (f" {mode} ", S))
     if c.narrow and mode == "Agent":
         chip = " Agent "
-    s.put(c.x0 + 2, top, clip(chip, c.inner_w - 6), chip_st)
+    shown = clip(chip, c.inner_w - 6)
+    s.put(c.x0 + 2, top, shown, chip_st)
+    after = c.x0 + 2 + len(shown)
+    if goal and after + 3 < c.x1 - 2:
+        # runtime chrome: hairline `─ ` then the goal chip in banner green
+        s.put(after, top, "─", St(fg=hair))
+        s.put(after + 1, top, " ", St(fg=hair))
+        s.put(after + 2, top, clip(goal, c.x1 - 3 - (after + 2)), S_ACC)
     # model chip, bottom-right, inside the hairline
     m = f" {model} "
     s.right(bottom, m, c.x1 - 2, S_DIM)
@@ -474,6 +482,7 @@ PALETTE_HOME = [
     ("/mode", "Switch between Agent, Plan and Ask"),
     ("/permissions", "Set the approval policy for edits and commands"),
     ("/plan", "Draft a plan before writing any code"),
+    ("/goal", "Persisted long-horizon objective"),
     ("/effort", "Tune reasoning effort for the current model"),
     ("/mcp", "View and manage MCP servers"),
     ("/sandbox", "Configure sandboxed command execution"),
@@ -859,10 +868,14 @@ def slash_rows(entries, typed: str = ""):
 def board_slash_palette(s, c):
     header(s, c)
     top = composer(s, c, content=[("/", S_ACC)])
-    n = 3 if c.narrow else 8
-    rows = slash_rows(PALETTE_HOME[:n], "/")
-    trailer = None if c.narrow else "… 87 more — keep typing to filter"
-    menu_top = menu(s, c, top, rows, focused=0, hover=3 if not c.narrow else None, name_w=16, trailer=trailer)
+    if c.narrow:
+        # 3-row window starts at /plan so /goal (row after /plan) is visible
+        rows = slash_rows(PALETTE_HOME[3:6], "/")
+        menu_top = menu(s, c, top, rows, focused=1, name_w=16)
+    else:
+        rows = slash_rows(PALETTE_HOME[:8], "/")
+        trailer = "… 87 more — keep typing to filter"
+        menu_top = menu(s, c, top, rows, focused=0, hover=3, name_w=16, trailer=trailer)
     backdrop_tail(s, c, menu_top)
     footer(s, c, FOOTER_TYPED_NARROW if c.narrow else FOOTER_TYPED)
 
@@ -872,6 +885,35 @@ def fuzzy_parts(name: str, idxs) -> list:
     for i, ch in enumerate(name):
         parts.append((ch, S_ACC if i in idxs else S))
     return parts
+
+
+def goal_chip_board(s, c, chip: str):
+    """Composer chip only — no radios, banner green `#1F4945` on the goal label."""
+    header(s, c)
+    top = composer(s, c, goal=chip)
+    f = Flow(s, c, limit=top - 1)
+    f.user("ship the rate limiter and prove it with tests", "09:20 AM")
+    footer(s, c)
+
+
+def board_goal_chip_active(s, c):
+    goal_chip_board(s, c, "Goal · 2/8")
+
+
+def board_goal_chip_paused(s, c):
+    goal_chip_board(s, c, "Goal · paused")
+
+
+def board_goal_chip_done(s, c):
+    goal_chip_board(s, c, "Goal · done")
+
+
+def board_goal_chip_budget(s, c):
+    goal_chip_board(s, c, "Goal · budget")
+
+
+def board_goal_chip_blocked(s, c):
+    goal_chip_board(s, c, "Goal · blocked")
 
 
 def board_slash_model_typed(s, c):
@@ -1776,7 +1818,12 @@ BOARDS_META = [
     ("tokens-topright-warn", board_tokens_topright_warn, False, "B", "Counter ≥ 90 % — amber + /compact hint"),
     ("compact-chat", board_compact_chat, True, "B", "Compact mode — edge-to-edge bars, no timestamps"),
     # C. Slash + model
-    ("slash-palette", board_slash_palette, True, "C", "`/` palette — focused row + hover row + `… more` trailer"),
+    ("slash-palette", board_slash_palette, True, "C", "`/` palette — `/goal` after `/plan`, focused row + hover + `… more`"),
+    ("goal-chip-active", board_goal_chip_active, True, "C", "Composer goal chip — `Goal · 2/8` (active), text-only"),
+    ("goal-chip-paused", board_goal_chip_paused, True, "C", "Composer goal chip — `Goal · paused`, text-only"),
+    ("goal-chip-done", board_goal_chip_done, True, "C", "Composer goal chip — `Goal · done` (complete), text-only"),
+    ("goal-chip-budget", board_goal_chip_budget, True, "C", "Composer goal chip — `Goal · budget` (budget_limited), text-only"),
+    ("goal-chip-blocked", board_goal_chip_blocked, True, "C", "Composer goal chip — `Goal · blocked`, text-only"),
     ("slash-model-typed", board_slash_model_typed, True, "C", "`/mod` typed — banner green matched chars, ghost completion"),
     ("model-list", board_model_list, True, "C", "`/model` — Cortex Mini 1 · Cortex 1 · Cortex Max 1"),
     ("model-list-hover", board_model_list_hover, False, "C", "Model list with mouse over row 3"),

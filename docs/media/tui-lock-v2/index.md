@@ -42,7 +42,12 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 
 | Board | State | Wide | Narrow |
 |---|---|---|---|
-| `slash-palette` | `/` palette — focused row + hover row + `… more` trailer | [120x40](120x40/slash-palette.png) | [40x12](40x12/slash-palette.png) |
+| `slash-palette` | `/` palette — `/goal` after `/plan`, focused row + hover + `… more` | [120x40](120x40/slash-palette.png) | [40x12](40x12/slash-palette.png) |
+| `goal-chip-active` | Composer goal chip — `Goal · 2/8` (active), text-only | [120x40](120x40/goal-chip-active.png) | [40x12](40x12/goal-chip-active.png) |
+| `goal-chip-paused` | Composer goal chip — `Goal · paused`, text-only | [120x40](120x40/goal-chip-paused.png) | [40x12](40x12/goal-chip-paused.png) |
+| `goal-chip-done` | Composer goal chip — `Goal · done` (complete), text-only | [120x40](120x40/goal-chip-done.png) | [40x12](40x12/goal-chip-done.png) |
+| `goal-chip-budget` | Composer goal chip — `Goal · budget` (budget_limited), text-only | [120x40](120x40/goal-chip-budget.png) | [40x12](40x12/goal-chip-budget.png) |
+| `goal-chip-blocked` | Composer goal chip — `Goal · blocked`, text-only | [120x40](120x40/goal-chip-blocked.png) | [40x12](40x12/goal-chip-blocked.png) |
 | `slash-model-typed` | `/mod` typed — banner green matched chars, ghost completion | [120x40](120x40/slash-model-typed.png) | [40x12](40x12/slash-model-typed.png) |
 | `model-list` | `/model` — Cortex Mini 1 · Cortex 1 · Cortex Max 1 | [120x40](120x40/model-list.png) | [40x12](40x12/model-list.png) |
 | `model-list-hover` | Model list with mouse over row 3 | [120x40](120x40/model-list-hover.png) | — |
@@ -108,4 +113,4 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `config-tree` | `/config` read-only key tree | [120x40](120x40/config-tree.png) | — |
 | `btw` | `/btw` side note during a running turn | [120x40](120x40/btw.png) | — |
 
-**77** boards at 120x40 · **31** at 40x12 · 108 PNGs.
+**82** boards at 120x40 · **36** at 40x12 · 118 PNGs.

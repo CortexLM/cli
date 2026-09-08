@@ -7,7 +7,7 @@ categorised rows + tip/nav footer, slash autocomplete above the composer, effort
 radios under `/model`, token counter top-right, footer shortcut strip) and
 re-skinned to the Cortex chrome. **No runtime code changes ship with this pack.**
 
-- Boards: [`index.md`](index.md) — 77 boards at 120×40, 31 of them also at 40×12 (108 PNGs).
+- Boards: [`index.md`](index.md) — 82 boards at 120×40, 36 of them also at 40×12 (118 PNGs).
 - Grids: `txt/<size>/<board>.txt` — the exact character grid of every board (diff a
   `MockTerminal` capture against these).
 - Renderer: `tools/render_lock_v2.py` + `tools/boards.py` (Python 3 + Pillow, IBM Plex Mono
@@ -169,7 +169,9 @@ Gold is retired. One blank row after (none in compact).
 ```
 - Box cols 1..118, hairline `H`. Corners `╭ ╮ ╰ ╯`.
 - Mode chip in the **top-left** hairline: `Agent` in `D` (default, quiet) · `Plan · no edits` in `T` ·
-  `Ask · read-only` in `T` · `Bash · runs in your shell` in `T`.
+  `Ask · read-only` in `T` · `Bash · runs in your shell` in `T`. When a session `/goal` is set, a
+  text-only chip follows in `V` (`Goal · 2/8` · `Goal · paused` · `Goal · done` · `Goal · budget` ·
+  `Goal · blocked`) — never radios.
 - Model chip in the **bottom-right** hairline, `D`: `{display name} ({effort})`, e.g.
   `Cortex Mini 1 (medium)`, `Cortex Max 1 (high)`. Click → `/model`.
 - `>` at col 3: `V` when the composer has keyboard focus, `D` otherwise (a modal, picker or prompt owns focus).
@@ -220,6 +222,7 @@ Stacked directly above the composer's top hairline, newest/first row on top, ful
    /mode             Switch between Agent, Plan and Ask           ← plain
    /permissions      Set the approval policy for edits and commands
    /plan             Draft a plan before writing any code         ← hover: bar #1A1A1A, no banner green
+   /goal             Persisted long-horizon objective
    … 87 more — keep typing to filter                              ← trailer M
 ```
 - Marker col 3, name col 5, description at `5 + name_w` where `name_w ≥ longest name + 2`.
@@ -405,7 +408,8 @@ Narrow: no bars, `used / total  pct%`.
 | session-user-bars / thought / assistant / worked / optin | `session-user-bars`, `session-thought`, `session-thought-expanded`, `session-thinking-live`, `session-assistant`, `session-worked`, `session-optin`, `session-optin-hover` |
 | composer-empty / typing (+blink) / hover | `composer-empty`, `composer-typing`, `composer-typing-blink`, `composer-hover`, `composer-multiline` |
 | footer-shortcuts / tokens-topright | `footer-shortcuts`, `footer-hover`, `tokens-topright`, `tokens-topright-warn` |
-| slash-palette / slash-model-typed | `slash-palette`, `slash-model-typed` |
+| slash-palette / slash-model-typed | `slash-palette` (`/goal` after `/plan`), `slash-model-typed` |
+| goal-chip (active / paused / done / budget / blocked) | `goal-chip-active`, `goal-chip-paused`, `goal-chip-done`, `goal-chip-budget`, `goal-chip-blocked` |
 | model-effort-low·medium·high / model-list-hover | `model-list`, `model-list-hover`, `model-effort-high`, `model-effort-medium`, `model-effort-low`, `model-effort-hover` |
 | settings-appearance / mouse / row-hover / search / theme-submenu | `settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-search`, `settings-theme-submenu` |
 | mode chips (Shift+Tab) | `mode-agent`, `mode-plan`, `mode-ask`, `mode-bash` |
@@ -418,7 +422,8 @@ Narrow: no bars, `used / total  pct%`.
 
 Narrow (40×12) set: `welcome-cortex`, `welcome-agent`, `first-run-tips`, `session-empty`, `session-user-bars`,
 `session-thinking-live`, `session-assistant`, `session-optin`, `composer-empty`, `composer-typing`, `composer-hover`,
-`tokens-topright`, `compact-chat`, `slash-palette`, `slash-model-typed`, `model-list`, `model-effort-high`,
+`tokens-topright`, `compact-chat`, `slash-palette`, `goal-chip-active`, `goal-chip-paused`, `goal-chip-done`,
+`goal-chip-budget`, `goal-chip-blocked`, `slash-model-typed`, `model-list`, `model-effort-high`,
 `settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-theme-submenu`, `mode-plan`, `mode-ask`,
 `permission-prompt`, `mcp-servers`, `usage`, `diagnostics`, `interrupt-stopped`, `diff-hunk`, `login`, `shortcuts-overlay`.
 

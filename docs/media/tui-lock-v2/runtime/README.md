@@ -8,5 +8,6 @@ is banner green `#1F4945`; historical violet `#A78BFA` is not the lock.
 Designer boards (pixel target) live in `docs/media/tui-lock-v2/{40x12,120x40}/`.
 These runtime frames are what Designer cli signs off against.
 
-SPEC §7: **77** boards at 120×40 and **31** at 40×12. Each filename is one
-distinct live state — no two PNGs share a sha256.
+SPEC §7: **82** boards at 120×40 and **36** at 40×12. Each filename is one
+distinct live state — no two PNGs share a sha256. Includes `/goal` composer
+chips (`goal-chip-*`) and slash palette with `/goal` after `/plan`.

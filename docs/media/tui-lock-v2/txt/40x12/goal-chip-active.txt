@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   > ship the rate limiter and prove …
+
+
+
+
+ ╭─ Agent ─ Goal · 2/8────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

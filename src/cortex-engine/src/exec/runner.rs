@@ -211,7 +211,7 @@ pub async fn execute_command_streaming(
     Ok(output)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     #[tokio::test]

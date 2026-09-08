@@ -38,21 +38,27 @@ python3 - <<'PY'
 from pathlib import Path
 from PIL import Image
 
-ACCENT = (167, 139, 250)
+# Signed chrome lock: banner green `#1F4945`. Violet is historical only.
+ACCENT = (31, 73, 69)
+VIOLET = (167, 139, 250)
 root = Path("docs/media/tui-lock/120x40")
 
-def exact_accent(path: Path) -> int:
+def exact(path: Path, colour: tuple[int, int, int]) -> int:
     im = Image.open(path).convert("RGB")
-    return sum(1 for p in im.getdata() if p == ACCENT)
+    return sum(1 for p in im.getdata() if p == colour)
 
-splash = exact_accent(root / "splash.png")
-login = exact_accent(root / "login.png")
-empty = exact_accent(root / "session_empty.png")
+splash = exact(root / "splash.png", ACCENT)
+login = exact(root / "login.png", ACCENT)
+empty = exact(root / "session_empty.png", ACCENT)
 print(f"accent pixels 120×40: splash={splash} session_empty={empty} login={login}")
 if splash < 40:
-    raise SystemExit(f"splash composer `>` is not lock violet (#A78BFA): {splash} exact pixels")
+    raise SystemExit(f"splash composer `>` is not lock green (#1F4945): {splash} exact pixels")
 if empty < 40:
-    raise SystemExit(f"session_empty composer `>` is not lock violet: {empty} exact pixels")
+    raise SystemExit(f"session_empty composer `>` is not lock green: {empty} exact pixels")
+for png in sorted(root.glob("*.png")):
+    violet = exact(png, VIOLET)
+    if violet:
+        raise SystemExit(f"{png.name} still has {violet} historical violet (#A78BFA) pixels")
 splash_bytes = (root / "splash.png").read_bytes()
 empty_bytes = (root / "session_empty.png").read_bytes()
 if splash_bytes == empty_bytes:
@@ -84,13 +90,14 @@ Each scene is captured at **40×12** (narrow) and **120×40** (wide), twice:
 Chrome rules: structure is gray — `#3A3A3A` hairlines above and below the
 `> ` composer and around search fields, `#141414` charcoal panels for tips,
 `#1C1C1C` bars behind past user turns, `#6B7280` secondary copy, white
-primary copy. The one accent is the Cortex violet `#A78BFA`, on the focused
+primary copy. The one accent is the Cortex banner green `#1F4945`, on the focused
 selection only (the `>` caret and the selected label on the `#262626` gray bar,
 never inverted, never a `#221A38` wash); unselected rows lead with a dim
 middot. Green `#4ADE80` appears only on `✓`
 and `+N` diff additions, red / amber only on diagnostics, and the Thinking
-status is the muted gold `#C9A95C`. The footer is the model on the left and
-one shortcut hint on the right, all gray.
+status is dim `#6B7280` (gold is retired). The footer is the model on the left and
+one shortcut hint on the right, all gray. Historical violet `#A78BFA` is not
+the signed lock.
 
 Replies auto-format through the real `MarkdownRenderer`: markdown tables are
 the gray plus-ASCII grid (`+---+`, `|` — never Unicode box drawing), fenced
@@ -102,7 +109,9 @@ word-level colour on a changed line.
 
 Splash copy in these frames is `Welcome to Cortex, the coding agent CLI`
 plus `v{CARGO_PKG_VERSION} · / commands · …`. After the first user turn,
-`session_empty` is composer and footer only.
+`session_empty` is composer and footer only. Captures are full-viewport
+(matching the default alternate-screen launch); they do not paint a fake
+`> cortex` prompt or cwd line.
 
 | File | Surface |
 |------|---------|
@@ -153,7 +162,7 @@ plus `v{CARGO_PKG_VERSION} · / commands · …`. After the first user turn,
 | `config.png` | `/config` tree |
 | `footer_max.png` | MAX footer after push |
 | `login.png` | Sign in — numbered options, option 1 (`> 1 Continue with browser`) focused |
-| `thinking.png` | Thinking (muted gold) + reasoning |
+| `thinking.png` | Thinking (dim) + reasoning |
 | `todos.png` | Working 1/5 checklist |
 | `question.png` | Clarifying question |
 | `skills.png` | `/skills` picker |

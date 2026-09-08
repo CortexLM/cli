@@ -62,12 +62,40 @@ done
 unique_pngs "$output_dir/40x12" 31
 unique_pngs "$output_dir/120x40" 77
 
+python3 - "$output_dir" <<'PY'
+from pathlib import Path
+import sys
+from PIL import Image
+
+ACCENT = (31, 73, 69)
+VIOLET = (167, 139, 250)
+root = Path(sys.argv[1]) / "120x40"
+
+def exact(path: Path, colour: tuple[int, int, int]) -> int:
+    im = Image.open(path).convert("RGB")
+    return sum(1 for p in im.getdata() if p == colour)
+
+welcome = exact(root / "welcome-cortex.png", ACCENT)
+empty = exact(root / "session-empty.png", ACCENT)
+print(f"v2 accent pixels 120×40: welcome-cortex={welcome} session-empty={empty}")
+if welcome < 40:
+    raise SystemExit(f"welcome-cortex composer `>` is not lock green (#1F4945): {welcome} exact pixels")
+if empty < 40:
+    raise SystemExit(f"session-empty composer `>` is not lock green: {empty} exact pixels")
+for png in sorted(root.glob("*.png")):
+    violet = exact(png, VIOLET)
+    if violet:
+        raise SystemExit(f"{png.name} still has {violet} historical violet (#A78BFA) pixels")
+print("v2 lock colour check ok")
+PY
+
 cat > "$output_dir/README.md" <<'EOF'
 # Cortex CLI TUI lock v2 — runtime captures
 
 Headless `MockTerminal` renders of the live session chrome (inky background,
 dual-hairline composer, model chip, slash palette, settings modal, effort
-radios). Regenerated with `./scripts/render-tui-lock-v2.sh`.
+radios). Regenerated with `./scripts/render-tui-lock-v2.sh`. The signed accent
+is banner green `#1F4945`; historical violet `#A78BFA` is not the lock.
 
 Designer boards (pixel target) live in `docs/media/tui-lock-v2/{40x12,120x40}/`.
 These runtime frames are what Designer cli signs off against.

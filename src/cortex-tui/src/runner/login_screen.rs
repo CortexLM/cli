@@ -999,7 +999,7 @@ mod tests {
         assert_eq!(buf[(0, other)].style().fg, Some(TEXT_DIM));
         assert_eq!(buf[(4, other)].style().fg, Some(TEXT));
         assert_ne!(buf[(4, other)].style().bg, Some(SELECTION_BG));
-        // The selected row uses the locked selection wash `#221A38`.
+        // The selected row uses the locked `#262626` selection bar.
         // Banner green is never a background — no inverted bar.
         for y in 0..24u16 {
             for x in 0..80u16 {

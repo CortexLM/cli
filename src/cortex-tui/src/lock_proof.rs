@@ -176,7 +176,7 @@ fn capture_config(width: u16, height: u16) -> CaptureConfig {
         .with_cursor(false)
 }
 
-fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
+pub(crate) fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
     let config = capture_config(width, height);
     let mut terminal =
         MockTerminal::from_config(config.clone()).map_err(|err| anyhow::anyhow!("{err}"))?;
@@ -805,7 +805,7 @@ mod tests {
     #[test]
     fn selection_rows_are_banner_green_on_the_selection_bar_never_inverted() {
         // Banner green is never a background (no inverted bar). The selection bar
-        // is the locked `#221A38` wash.
+        // is the locked `#262626` gray.
         const ACCENT_BG: &str = "48;2;31;73;69";
         const SELECTION_WASH: &str = "48;2;38;38;38";
         for id in lock_scene_ids() {

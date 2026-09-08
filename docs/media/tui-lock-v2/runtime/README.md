@@ -2,7 +2,8 @@
 
 Headless `MockTerminal` renders of the live session chrome (inky background,
 dual-hairline composer, model chip, slash palette, settings modal, effort
-radios). Regenerated with `./scripts/render-tui-lock-v2.sh`.
+radios). Regenerated with `./scripts/render-tui-lock-v2.sh`. The signed accent
+is banner green `#1F4945`; historical violet `#A78BFA` is not the lock.
 
 Designer boards (pixel target) live in `docs/media/tui-lock-v2/{40x12,120x40}/`.
 These runtime frames are what Designer cli signs off against.

@@ -43,7 +43,7 @@ ordinary message.
 | `/ide` | | Manage IDE integration |
 | `/install-github-app` | | Install the Cortex GitHub App |
 | `/bug` | | `/bug [description]` |
-| `/goal` | | `/goal [objective\|pause\|resume\|clear]` — persisted long-horizon objective |
+| `/goal` | | `/goal [objective\|status\|pause\|resume\|clear]` — persisted long-horizon objective |
 
 ## Authentication and billing
 

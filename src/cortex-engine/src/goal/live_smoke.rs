@@ -41,7 +41,7 @@ mod tests {
             .json(&serde_json::json!({
                 "model": model,
                 "messages": [
-                    {"role": "user", "content": "Reply with the single word pong."}
+                    {"role": "user", "content": "Durable goal smoke. Reply with the single word pong."}
                 ],
                 "max_tokens": 16
             }))

@@ -87,4 +87,15 @@ mod tests {
         assert!(text.contains("create hello.txt"));
         assert!(text.contains("UpdateGoal"));
     }
+
+    #[test]
+    fn wrap_up_prompt_is_used_on_last_remaining_turn() {
+        let mut goal = Goal::new("ship tests");
+        goal.turn_budget = 2;
+        crate::goal::machine::finish_turn(&mut goal, 0);
+        assert!(continuation_gate(Some(&goal)));
+        let text = continuation_prompt(&goal);
+        assert!(text.contains("Wrap up"), "{text}");
+        assert!(text.contains("ship tests"), "{text}");
+    }
 }

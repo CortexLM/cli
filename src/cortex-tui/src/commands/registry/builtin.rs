@@ -88,7 +88,7 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
         "goal",
         &[],
         "Persisted long-horizon objective",
-        "/goal [objective|pause|resume|clear]",
+        "/goal [objective|status|pause|resume|clear]",
         CommandCategory::General,
         true,
     ));

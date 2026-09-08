@@ -285,6 +285,10 @@ fn test_goal_commands() {
         CommandResult::Async(ref s) if s == "goal:status"
     ));
     assert!(matches!(
+        executor.execute_str("/goal status"),
+        CommandResult::Async(ref s) if s == "goal:status"
+    ));
+    assert!(matches!(
         executor.execute_str("/goal pause"),
         CommandResult::Async(ref s) if s == "goal:pause"
     ));

@@ -283,11 +283,10 @@ pub fn adapt_event(event: Event) -> Option<AppEvent> {
             if e.cleared {
                 Some(AppEvent::Info("Goal cleared.".to_string()))
             } else {
-                Some(AppEvent::Info(format!(
-                    "Goal · {} ({})",
-                    e.state.as_deref().unwrap_or("active"),
-                    e.chip.as_deref().unwrap_or("in progress")
-                )))
+                let chip = e.chip.clone().unwrap_or_else(|| {
+                    format!("Goal · {}", e.state.as_deref().unwrap_or("active"))
+                });
+                Some(AppEvent::Info(chip))
             }
         }
 
@@ -484,6 +483,34 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn test_adapt_goal_updated_uses_chip() {
+        use cortex_protocol::GoalUpdatedEvent;
+        let event = make_event(EventMsg::GoalUpdated(GoalUpdatedEvent {
+            cleared: false,
+            goal_id: Some("g1".to_string()),
+            objective: Some("create foo.txt".to_string()),
+            state: Some("active".to_string()),
+            progress: None,
+            turns_used: 2,
+            turn_budget: 8,
+            chip: Some("Goal · 2/8".to_string()),
+        }));
+        assert!(matches!(adapt_event(event), Some(AppEvent::Info(s)) if s == "Goal · 2/8"));
+
+        let cleared = make_event(EventMsg::GoalUpdated(GoalUpdatedEvent {
+            cleared: true,
+            goal_id: None,
+            objective: None,
+            state: Some("cleared".to_string()),
+            progress: None,
+            turns_used: 0,
+            turn_budget: 0,
+            chip: None,
+        }));
+        assert!(matches!(adapt_event(cleared), Some(AppEvent::Info(s)) if s == "Goal cleared."));
+    }
+
     fn test_adapt_events_batch() {
         let events = vec![
             make_event(EventMsg::TaskStarted(TaskStartedEvent {

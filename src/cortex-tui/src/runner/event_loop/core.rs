@@ -259,18 +259,6 @@ impl EventLoop {
         self
     }
 
-    /// Dispatch a crossterm key through [`ActionMapper`] and the live action path.
-    pub async fn dispatch_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
-        let context = match self.app_state.focus {
-            crate::app::FocusTarget::Chat => crate::actions::ActionContext::Chat,
-            crate::app::FocusTarget::Sidebar => crate::actions::ActionContext::Sidebar,
-            crate::app::FocusTarget::Modal => crate::actions::ActionContext::Approval,
-            crate::app::FocusTarget::Input => crate::actions::ActionContext::Input,
-        };
-        let action = self.action_mapper.get_action(key, context);
-        self.handle_action(action).await
-    }
-
     /// Sets the cortex session.
     pub fn with_cortex_session(mut self, session: CortexSession) -> Self {
         if let Err(error) = self.activate_local_session(session) {

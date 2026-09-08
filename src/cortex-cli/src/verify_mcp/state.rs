@@ -181,3 +181,79 @@ pub fn git_sha() -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".into())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_start_and_report_counters() {
+        let session = TuiSession::start(40, 12, false).expect("session");
+        assert_eq!(session.width, 40);
+        let agent = TuiSession::start(80, 24, true).expect("agent");
+        assert!(agent.app_state.agent_entrypoint);
+
+        let mut state = VerifyState::new();
+        assert_eq!(state.report.schema, "cortex-verify/1");
+        state.record_state(StateRow {
+            id: "ok".into(),
+            pack: "v2".into(),
+            size: [40, 12],
+            status: "pass".into(),
+            frame_sha256: None,
+            checks: vec![],
+        });
+        state.record_state(StateRow {
+            id: "bad".into(),
+            pack: "v2".into(),
+            size: [40, 12],
+            status: "fail".into(),
+            frame_sha256: None,
+            checks: vec![],
+        });
+        state.record_state(StateRow {
+            id: "skip".into(),
+            pack: "v2".into(),
+            size: [40, 12],
+            status: "skip".into(),
+            frame_sha256: None,
+            checks: vec![],
+        });
+        state.record_flow(FlowRow {
+            id: "flow-ok".into(),
+            status: "pass".into(),
+            checks: vec![],
+        });
+        state.record_flow(FlowRow {
+            id: "flow-bad".into(),
+            status: "fail".into(),
+            checks: vec![],
+        });
+        state.record_flow(FlowRow {
+            id: "flow-skip".into(),
+            status: "skip".into(),
+            checks: vec![],
+        });
+        assert_eq!(state.report.summary.pass, 2);
+        assert_eq!(state.report.summary.fail, 2);
+        assert_eq!(state.report.summary.skip, 2);
+        assert_eq!(state.report.summary.total, 6);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn git_sha_prefers_env_and_falls_back() {
+        let previous = std::env::var("CORTEX_GIT_HASH").ok();
+        unsafe { std::env::set_var("CORTEX_GIT_HASH", "abcdef1234") };
+        assert_eq!(git_sha(), "abcdef1");
+        unsafe { std::env::set_var("CORTEX_GIT_HASH", "unknown") };
+        let fallback = git_sha();
+        assert!(!fallback.is_empty());
+        unsafe { std::env::set_var("CORTEX_GIT_HASH", "") };
+        assert!(!git_sha().is_empty());
+        match previous {
+            Some(hash) => unsafe { std::env::set_var("CORTEX_GIT_HASH", hash) },
+            None => unsafe { std::env::remove_var("CORTEX_GIT_HASH") },
+        }
+    }
+}

@@ -102,3 +102,44 @@ pub fn frame_payload(frame: &LockFrame, format: &str) -> Value {
         }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::layout::Rect;
+    use ratatui::style::Color;
+
+    #[test]
+    fn hashes_plain_cells_and_color_hex() {
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let buffer = Buffer::empty(Rect::new(0, 0, 2, 1));
+        let plain = buffer_plain(&buffer);
+        assert_eq!(plain.chars().count(), 2);
+        assert_eq!(color_hex(Color::Reset), None);
+        assert_eq!(
+            color_hex(Color::Rgb(0x1F, 0x49, 0x45)),
+            Some("#1F4945".into())
+        );
+        assert!(color_hex(Color::Cyan).is_some());
+        assert!(
+            cells_json(&buffer)
+                .as_array()
+                .is_some_and(|rows| rows.len() == 1)
+        );
+
+        let frame = LockFrame {
+            id: "session".into(),
+            ansi: "ansi".into(),
+            plain: "plain".into(),
+            buffer,
+        };
+        assert!(frame_payload(&frame, "plain")["sha256"].as_str().is_some());
+        assert_eq!(frame_payload(&frame, "ansi")["ansi"], "ansi");
+        assert!(frame_payload(&frame, "cells")["cells"].is_array());
+        let config = capture_config(8, 4);
+        assert_eq!(config.width, 8);
+    }
+}

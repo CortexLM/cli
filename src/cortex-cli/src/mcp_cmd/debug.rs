@@ -230,4 +230,25 @@ mod tests {
                 .unwrap();
         assert!(probe("fixture", &value, 1).await.is_err());
     }
+
+    #[tokio::test]
+    async fn probe_named_rejects_empty_and_missing_servers() {
+        assert!(probe_named("", 1).await.is_err());
+        assert!(probe_named("missing-verify-peer", 1).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn call_named_rejects_empty_missing_and_zero_timeout() {
+        assert!(call_named("", "tool", json!({}), 1).await.is_err());
+        assert!(
+            call_named("missing-verify-peer", "tool", json!({}), 1)
+                .await
+                .is_err()
+        );
+        assert!(
+            call_named("missing-verify-peer", "tool", json!({}), 0)
+                .await
+                .is_err()
+        );
+    }
 }

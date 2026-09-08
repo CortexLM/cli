@@ -346,3 +346,103 @@ fn session_mut<'a>(state: &'a mut VerifyState, id: &str) -> Result<&'a mut TuiSe
         .get_mut(id)
         .ok_or_else(|| anyhow::anyhow!("unknown session"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::verify_mcp::state::VerifyState;
+    use serde_json::json;
+
+    fn started(entry: &str) -> (VerifyState, String) {
+        let mut state = VerifyState::new();
+        let started = start(
+            &mut state,
+            &json!({"width": 40, "height": 12, "entry": entry}),
+        )
+        .expect("tui.start");
+        let id = started["session_id"]
+            .as_str()
+            .expect("session_id")
+            .to_string();
+        (state, id)
+    }
+
+    #[test]
+    fn start_key_type_resize_frame_state_slash_assert_stop() {
+        let (mut state, id) = started("cortex");
+        let typed = type_text(&mut state, &json!({"session_id": id, "text": "ab"})).expect("type");
+        assert!(typed["sha256"].as_str().is_some());
+
+        let keys = key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["c", "Backspace", "Ctrl+U", "Shift+Enter", "Esc"]}),
+        )
+        .expect("keys");
+        assert_eq!(keys["frames"].as_array().map(Vec::len), Some(5));
+
+        let resized = resize(
+            &mut state,
+            &json!({"session_id": id, "width": 80, "height": 24}),
+        )
+        .expect("resize");
+        assert_eq!(resized["width"], 80);
+
+        let plain = frame(&state, &json!({"session_id": id, "format": "plain"})).expect("plain");
+        assert!(plain["plain"].as_str().is_some());
+        let ansi = frame(&state, &json!({"session_id": id, "format": "ansi"})).expect("ansi");
+        assert!(ansi["ansi"].as_str().is_some());
+        let cells = frame(&state, &json!({"session_id": id, "format": "cells"})).expect("cells");
+        assert!(cells["cells"].as_array().is_some());
+
+        let projection = state_json(&state, &json!({"session_id": id})).expect("state");
+        assert!(projection["composer"].is_object());
+        assert!(projection["picker"].is_object());
+
+        let slashed = slash(&mut state, &json!({"session_id": id, "query": "/"})).expect("slash");
+        assert!(
+            slashed["rows"]
+                .as_array()
+                .is_some_and(|rows| !rows.is_empty())
+        );
+        let filtered =
+            slash(&mut state, &json!({"session_id": id, "query": "/he"})).expect("filter");
+        assert!(filtered["rows"].as_array().is_some());
+
+        let checks = json!({"session_id": id, "checks": [
+            {"kind": "contains", "text": "Plan"},
+            {"kind": "not_contains", "text": "this-string-must-not-appear-zz"},
+            {"kind": "legend_complete"},
+            {"kind": "no_color", "rgb": "#A78BFA"},
+            {"kind": "no_color", "rgb": "#221A38"},
+            {"kind": "no_color", "rgb": "#C9A95C"},
+            {"kind": "no_color", "rgb": "#00F5D4"},
+            {"kind": "no_color", "rgb": "#FFFFFF"},
+            {"kind": "row", "y": 0, "eq": "no-such-row"},
+            {"kind": "cell", "x": 0, "y": 0, "ch": "X"},
+            {"kind": "accent_only_on_focus"},
+            {"kind": "unknown_kind"}
+        ]});
+        let asserted = assert_frame(&mut state, &checks).expect("assert");
+        assert!(asserted.as_array().is_some_and(|rows| rows.len() == 12));
+
+        let stopped = stop(&mut state, &json!({"session_id": id})).expect("stop");
+        assert_eq!(stopped["stopped"], true);
+        assert!(state.sessions.is_empty());
+    }
+
+    #[test]
+    fn agent_entry_and_error_paths() {
+        let (mut state, id) = started("agent");
+        assert!(key(&mut state, &json!({"session_id": "missing", "keys": ["a"]})).is_err());
+        assert!(key(&mut state, &json!({"session_id": id, "keys": [1]})).is_err());
+        assert!(key(&mut state, &json!({"session_id": id, "keys": ["NotAKey"]})).is_err());
+        assert!(resize(&mut state, &json!({"session_id": id})).is_err());
+        assert!(frame(&state, &json!({})).is_err());
+        assert!(state_json(&state, &json!({})).is_err());
+        assert!(type_text(&mut state, &json!({})).is_err());
+        assert!(slash(&mut state, &json!({})).is_err());
+        assert!(stop(&mut state, &json!({})).is_err());
+        let empty = assert_frame(&mut state, &json!({"session_id": id})).expect("no checks");
+        assert_eq!(empty, json!([]));
+    }
+}

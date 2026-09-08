@@ -69,3 +69,56 @@ impl ResourceProvider for VerifyResources {
         Err(anyhow!("Resource not found: {uri}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn list_and_read_matrix_report_and_lock_txt() {
+        let provider = VerifyResources {
+            state: Arc::new(Mutex::new(VerifyState::new())),
+        };
+        let listed = provider.list().await.expect("list");
+        assert!(listed.iter().any(|r| r.uri == "cortex-verify://matrix"));
+        assert!(
+            listed
+                .iter()
+                .any(|r| r.uri == "cortex-verify://report/latest")
+        );
+
+        let matrix = provider
+            .read("cortex-verify://matrix")
+            .await
+            .expect("matrix");
+        assert!(matrix.text.is_some_and(|t| t.contains("v2_narrow")));
+
+        let latest = provider
+            .read("cortex-verify://report/latest")
+            .await
+            .expect("latest");
+        assert_eq!(latest.text.as_deref(), Some("{}"));
+
+        {
+            let mut guard = provider.state.lock().await;
+            guard.last_report = Some(serde_json::json!({"schema": "cortex-verify/1"}));
+        }
+        let written = provider
+            .read("cortex-verify://report/latest")
+            .await
+            .expect("written");
+        assert!(written.text.is_some_and(|t| t.contains("cortex-verify/1")));
+
+        let missing = provider.read("cortex-verify://nope").await;
+        assert!(missing.is_err());
+        let lock_missing = provider
+            .read("cortex-verify://lock/v2/40x12/not-a-scene.txt")
+            .await;
+        assert!(lock_missing.is_err());
+
+        if let Some(lock) = listed.iter().find(|r| r.uri.contains("lock/v2/40x12/")) {
+            let body = provider.read(&lock.uri).await.expect("lock txt");
+            assert!(body.text.is_some_and(|t| !t.is_empty()));
+        }
+    }
+}

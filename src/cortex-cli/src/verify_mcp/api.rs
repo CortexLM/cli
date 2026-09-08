@@ -143,3 +143,33 @@ pub async fn turn(state: &mut VerifyState, args: &Value) -> Result<Value> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::verify_mcp::state::VerifyState;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn unreachable_models_me_and_turn_use_product_copy() {
+        let previous = std::env::var("CORTEX_API_URL").ok();
+        unsafe { std::env::set_var("CORTEX_API_URL", "http://127.0.0.1:1") };
+        let mut state = VerifyState::new();
+        let models_value = models(&mut state, &json!({})).await.expect("models");
+        let me_value = me(&mut state, &json!({})).await.expect("me");
+        let chat_value = turn(&mut state, &json!({"message": "ping", "mode": "chat"}))
+            .await
+            .expect("chat");
+        let code_value = turn(&mut state, &json!({"mode": "code", "message": "hi"}))
+            .await
+            .expect("code");
+        match previous {
+            Some(url) => unsafe { std::env::set_var("CORTEX_API_URL", url) },
+            None => unsafe { std::env::remove_var("CORTEX_API_URL") },
+        }
+        assert_eq!(models_value["error"], SERVICE_UNAVAILABLE);
+        assert_eq!(me_value["error"], SERVICE_UNAVAILABLE);
+        assert_eq!(chat_value["error"], SERVICE_UNAVAILABLE);
+        assert_eq!(code_value["error"], SERVICE_UNAVAILABLE);
+    }
+}

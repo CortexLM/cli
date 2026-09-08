@@ -205,7 +205,6 @@ fn capture_config(width: u16, height: u16) -> CaptureConfig {
         .with_cursor(false)
 }
 
-/// Render one lock-v2 scene through the production widgets into a mock terminal.
 pub fn render_lock_v2_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
     let config = capture_config(width, height);
     let mut terminal =

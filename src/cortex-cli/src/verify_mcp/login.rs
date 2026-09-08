@@ -115,3 +115,74 @@ fn render_login(screen: LoginScreen) -> Result<LockFrame> {
         buffer,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::verify_mcp::state::VerifyState;
+
+    async fn fixture(name: &str) -> Value {
+        let mut state = VerifyState::new();
+        run(
+            &mut state,
+            &json!({
+                "method": "browser",
+                "api_url": "http://127.0.0.1:1",
+                "fixture": name
+            }),
+        )
+        .await
+        .unwrap_or_else(|err| panic!("{name}: {err}"))
+    }
+
+    #[tokio::test]
+    async fn fixtures_use_product_facing_copy() {
+        let unreachable = fixture("unreachable").await;
+        assert_eq!(unreachable["product_copy"], SERVICE_UNAVAILABLE);
+        assert!(
+            unreachable["product_copy"]
+                .as_str()
+                .is_some_and(|c| c.contains("temporarily unavailable"))
+        );
+
+        let denied = fixture("denied").await;
+        assert!(
+            denied["product_copy"]
+                .as_str()
+                .is_some_and(|c| c.contains("Not signed in"))
+        );
+
+        let expired = fixture("expired").await;
+        assert_eq!(expired["product_copy"], SERVICE_UNAVAILABLE);
+
+        let rate = fixture("429").await;
+        assert!(
+            rate["product_copy"]
+                .as_str()
+                .is_some_and(|c| c.contains("Too many requests"))
+        );
+
+        let ok = fixture("ok").await;
+        assert!(ok["product_copy"].is_null());
+        assert!(ok["frames"]["select"].is_object());
+        assert!(ok["frames"]["waiting"].is_object());
+    }
+
+    #[tokio::test]
+    async fn api_key_method_defaults_and_probe_error() {
+        let mut state = VerifyState::new();
+        let value = run(&mut state, &json!({"method": "api_key"}))
+            .await
+            .expect("default fixture");
+        assert_eq!(value["method"], "api_key");
+        assert_eq!(value["product_copy"], SERVICE_UNAVAILABLE);
+        let probed = probe_device("http://127.0.0.1:1").await;
+        assert!(probed.is_err());
+        assert!(
+            probed
+                .unwrap_err()
+                .to_string()
+                .contains("temporarily unavailable")
+        );
+    }
+}

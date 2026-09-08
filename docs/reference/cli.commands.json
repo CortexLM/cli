@@ -2745,6 +2745,13 @@
       "about": "Run the MCP server (stdio transport)",
       "arguments": [
         {
+          "help": "Run the Cortex verification MCP over stdio JSON-RPC (`cortex-verify/1`)",
+          "id": "verify",
+          "long": "verify",
+          "required": false,
+          "short": null
+        },
+        {
           "help": "Enable verbose output (same as --log-level debug)",
           "id": "verbose",
           "long": "verbose",

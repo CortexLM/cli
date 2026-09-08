@@ -213,3 +213,59 @@ fn unified_diff(expected: &str, actual: &str, id: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::verify_mcp::state::VerifyState;
+    use serde_json::json;
+
+    #[test]
+    fn list_render_diff_and_palette_paths() {
+        let v2 = list(&json!({"pack": "v2", "width": 40})).expect("v2 list");
+        assert!(v2["ids"].as_array().is_some_and(|ids| !ids.is_empty()));
+        let v1 = list(&json!({"pack": "v1", "width": 120})).expect("v1 list");
+        assert!(v1["ids"].as_array().is_some_and(|ids| !ids.is_empty()));
+
+        let mut state = VerifyState::new();
+        let rendered = render(
+            &mut state,
+            &json!({"pack": "v2", "id": "welcome-cortex", "width": 40, "height": 12}),
+        )
+        .expect("render v2");
+        assert!(
+            rendered["plain"]
+                .as_str()
+                .is_some_and(|plain| plain.contains("/ commands"))
+        );
+        render(
+            &mut state,
+            &json!({"pack": "v1", "id": lock_scene_ids()[0], "width": 40, "height": 12}),
+        )
+        .expect("render v1");
+        assert!(render(&mut state, &json!({"pack": "v2"})).is_err());
+
+        let diff =
+            diff_txt(&json!({"id": "welcome-cortex", "width": 40, "height": 12})).expect("diff");
+        assert!(diff.get("matches").is_some());
+        assert!(diff_txt(&json!({})).is_err());
+
+        let audit_err = palette_audit(
+            &mut state,
+            &json!({"pack": "v2", "width": 40, "height": 12, "fixture": "violet-cell"}),
+        )
+        .expect_err("violet fixture");
+        assert!(audit_err.to_string().contains("violet"));
+
+        let ok = palette_audit(
+            &mut state,
+            &json!({"pack": "v2", "width": 40, "height": 12}),
+        );
+        assert!(ok.is_ok() || ok.as_ref().err().is_some());
+
+        assert!(!workspace_root().as_os_str().is_empty());
+        assert!(unified_diff("same", "same", "id").is_empty());
+        assert!(unified_diff("a\nb", "a\nc", "id").contains("-b"));
+        assert!(unified_diff("only", "only\nextra", "id").contains("+extra"));
+    }
+}

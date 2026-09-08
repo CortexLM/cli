@@ -298,9 +298,231 @@ fn tool_specs() -> Vec<ToolSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    async fn call(name: &str, args: Value) -> Result<Value> {
+        let state = Arc::new(Mutex::new(VerifyState::new()));
+        dispatch(name, args, &state).await
+    }
 
     #[test]
     fn test_verify_tool_inventory_meets_floor() {
-        assert!(tool_specs().len() >= 20);
+        let specs = tool_specs();
+        assert!(specs.len() >= 20);
+        let names: Vec<_> = specs.iter().map(|s| s.name).collect();
+        for required in [
+            "tui.start",
+            "tui.key",
+            "tui.type",
+            "tui.resize",
+            "tui.frame",
+            "tui.state",
+            "tui.assert",
+            "tui.slash",
+            "tui.stop",
+            "lock.list",
+            "lock.render",
+            "lock.diff_txt",
+            "lock.palette_audit",
+            "login.run",
+            "api.models",
+            "api.me",
+            "api.turn",
+            "mcp.probe",
+            "mcp.call",
+            "report.finish",
+        ] {
+            assert!(names.contains(&required), "missing tool {required}");
+        }
+    }
+
+    #[tokio::test]
+    async fn unknown_tool_fails_closed() {
+        let err = call("not.a.tool", json!({}))
+            .await
+            .expect_err("unknown tool");
+        assert!(err.to_string().contains("unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn mcp_probe_and_call_require_names() {
+        let probe = call("mcp.probe", json!({})).await.expect_err("server");
+        assert!(probe.to_string().contains("server is required"));
+        let call_err = call("mcp.call", json!({"server": "x"}))
+            .await
+            .expect_err("tool");
+        assert!(call_err.to_string().contains("tool is required"));
+    }
+
+    #[tokio::test]
+    async fn mcp_probe_unconfigured_server_is_not_success() {
+        let err = call("mcp.probe", json!({"server": "missing-verify-peer"}))
+            .await
+            .expect_err("unconfigured");
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[tokio::test]
+    async fn mcp_call_unconfigured_server_is_not_success() {
+        let err = call(
+            "mcp.call",
+            json!({"server": "missing-verify-peer", "tool": "x", "args": {}}),
+        )
+        .await
+        .expect_err("unconfigured");
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[tokio::test]
+    async fn verify_tool_execute_reports_errors_as_tool_errors() {
+        let spec = tool_specs()
+            .into_iter()
+            .find(|s| s.name == "mcp.probe")
+            .expect("mcp.probe");
+        let tool = VerifyTool {
+            spec,
+            state: Arc::new(Mutex::new(VerifyState::new())),
+        };
+        let listed = tool.tool();
+        assert_eq!(listed.name, "mcp.probe");
+        let result = tool.execute(json!({})).await.expect("execute");
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn verify_tool_execute_pretty_prints_success() {
+        let spec = tool_specs()
+            .into_iter()
+            .find(|s| s.name == "lock.list")
+            .expect("lock.list");
+        let tool = VerifyTool {
+            spec,
+            state: Arc::new(Mutex::new(VerifyState::new())),
+        };
+        let result = tool
+            .execute(json!({"pack": "v2", "width": 40}))
+            .await
+            .expect("execute");
+        assert_ne!(result.is_error, Some(true));
+        let text = match &result.content[0] {
+            cortex_mcp_types::Content::Text { text, .. } => text,
+            other => panic!("expected text content, got {other:?}"),
+        };
+        let parsed: Value = serde_json::from_str(text).expect("json");
+        assert_eq!(parsed["pack"], "v2");
+        assert!(parsed["ids"].as_array().is_some_and(|ids| !ids.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn dispatch_report_finish_writes_schema() {
+        let value = call("report.finish", json!({"run_id": "unit-dispatch"}))
+            .await
+            .expect("finish");
+        assert_eq!(value["schema"], "cortex-verify/1");
+        assert_eq!(value["report"]["schema"], "cortex-verify/1");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn dispatch_covers_tui_lock_login_and_api_tools() {
+        let state = Arc::new(Mutex::new(VerifyState::new()));
+        let started = dispatch(
+            "tui.start",
+            json!({"width": 40, "height": 12, "entry": "cortex"}),
+            &state,
+        )
+        .await
+        .expect("start");
+        let session_id = started["session_id"].as_str().expect("id").to_string();
+        dispatch(
+            "tui.type",
+            json!({"session_id": session_id, "text": "hi"}),
+            &state,
+        )
+        .await
+        .expect("type");
+        dispatch(
+            "tui.key",
+            json!({"session_id": session_id, "keys": ["a"]}),
+            &state,
+        )
+        .await
+        .expect("key");
+        dispatch(
+            "tui.resize",
+            json!({"session_id": session_id, "width": 60, "height": 16}),
+            &state,
+        )
+        .await
+        .expect("resize");
+        dispatch(
+            "tui.frame",
+            json!({"session_id": session_id, "format": "plain"}),
+            &state,
+        )
+        .await
+        .expect("frame");
+        dispatch("tui.state", json!({"session_id": session_id}), &state)
+            .await
+            .expect("state");
+        dispatch("tui.assert", json!({"session_id": session_id}), &state)
+            .await
+            .expect("assert");
+        dispatch(
+            "tui.slash",
+            json!({"session_id": session_id, "query": "/"}),
+            &state,
+        )
+        .await
+        .expect("slash");
+        dispatch("tui.stop", json!({"session_id": session_id}), &state)
+            .await
+            .expect("stop");
+
+        dispatch("lock.list", json!({"pack": "v2", "width": 40}), &state)
+            .await
+            .expect("list");
+        dispatch(
+            "lock.render",
+            json!({"pack": "v2", "id": "welcome-cortex", "width": 40, "height": 12}),
+            &state,
+        )
+        .await
+        .expect("render");
+        dispatch(
+            "lock.diff_txt",
+            json!({"id": "welcome-cortex", "width": 40, "height": 12}),
+            &state,
+        )
+        .await
+        .expect("diff");
+        let audit = dispatch(
+            "lock.palette_audit",
+            json!({"pack": "v2", "width": 40, "height": 12, "fixture": "violet-cell"}),
+            &state,
+        )
+        .await;
+        assert!(audit.is_err());
+
+        let previous = std::env::var("CORTEX_API_URL").ok();
+        unsafe { std::env::set_var("CORTEX_API_URL", "http://127.0.0.1:1") };
+        dispatch(
+            "login.run",
+            json!({"fixture": "unreachable", "api_url": "http://127.0.0.1:1"}),
+            &state,
+        )
+        .await
+        .expect("login");
+        dispatch("api.models", json!({}), &state)
+            .await
+            .expect("models");
+        dispatch("api.me", json!({}), &state).await.expect("me");
+        dispatch("api.turn", json!({"message": "ping"}), &state)
+            .await
+            .expect("turn");
+        match previous {
+            Some(url) => unsafe { std::env::set_var("CORTEX_API_URL", url) },
+            None => unsafe { std::env::remove_var("CORTEX_API_URL") },
+        }
     }
 }

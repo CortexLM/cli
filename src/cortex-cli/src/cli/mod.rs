@@ -13,6 +13,7 @@
 
 pub mod args;
 pub mod handlers;
+pub mod mcp_server;
 pub mod styles;
 
 // Re-export main types

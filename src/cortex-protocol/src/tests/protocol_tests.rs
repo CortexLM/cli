@@ -618,6 +618,26 @@ fn test_plan_update_event() {
 }
 
 #[test]
+fn test_goal_update_event() {
+    let event = EventMsg::GoalUpdated(GoalUpdatedEvent {
+        cleared: false,
+        goal_id: Some("g1".to_string()),
+        objective: Some("create foo.txt".to_string()),
+        state: Some("active".to_string()),
+        progress: Some("wrote the file".to_string()),
+        turns_used: 2,
+        turn_budget: 8,
+        chip: Some("Goal · 2/8".to_string()),
+    });
+
+    let json = serde_json::to_string(&event).expect("serialize");
+    assert!(json.contains("goal_updated"));
+    assert!(json.contains("create foo.txt"));
+    assert!(json.contains("active"));
+    assert!(json.contains("Goal · 2/8"));
+}
+
+#[test]
 fn test_web_search_events() {
     let begin = EventMsg::WebSearchBegin(WebSearchBeginEvent {
         call_id: "search_1".to_string(),

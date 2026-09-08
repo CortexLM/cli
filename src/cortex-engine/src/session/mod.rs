@@ -77,6 +77,14 @@ pub struct Session {
 }
 
 impl Session {
+    /// Directory that holds `goal.json` for this conversation.
+    pub(crate) fn goal_session_dir(&self) -> std::path::PathBuf {
+        self.config
+            .cortex_home
+            .join("sessions")
+            .join(self.conversation_id.to_string())
+    }
+
     /// Emit an event to the event channel and optionally record it.
     pub(crate) async fn emit(&mut self, msg: cortex_protocol::EventMsg) {
         // Skip rollout recording for delta events (too frequent, causes latency)

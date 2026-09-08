@@ -348,6 +348,10 @@ impl EventLoop {
             }
         }
 
+        if name == "UpdateGoal" {
+            self.reload_goal_from_session();
+        }
+
         // Store for agentic continuation
         self.app_state
             .add_pending_tool_result(id.clone(), name.clone(), output, success);
@@ -374,6 +378,8 @@ impl EventLoop {
             } else if self.app_state.has_queued_messages() {
                 tracing::info!("Processing message queue after tool completion");
                 let _ = self.process_message_queue().await;
+            } else if self.maybe_continue_goal(0).await {
+                tracing::info!("Continuing durable goal after tools");
             } else {
                 tracing::info!("All tools done, full resetting streaming state");
                 self.app_state.streaming.full_reset();

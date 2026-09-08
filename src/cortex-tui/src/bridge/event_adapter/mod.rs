@@ -279,6 +279,18 @@ pub fn adapt_event(event: Event) -> Option<AppEvent> {
             Some(AppEvent::Info(format!("Plan updated:\n{}", summary)))
         }
 
+        EventMsg::GoalUpdated(e) => {
+            if e.cleared {
+                Some(AppEvent::Info("Goal cleared.".to_string()))
+            } else {
+                Some(AppEvent::Info(format!(
+                    "Goal · {} ({})",
+                    e.state.as_deref().unwrap_or("active"),
+                    e.chip.as_deref().unwrap_or("in progress")
+                )))
+            }
+        }
+
         // === Share events ===
         EventMsg::SessionShared(e) => Some(AppEvent::Info(format!("Session shared: {}", e.url))),
         EventMsg::SessionUnshared(e) => {

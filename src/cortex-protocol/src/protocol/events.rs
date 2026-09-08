@@ -110,6 +110,9 @@ pub enum EventMsg {
     // Plan
     PlanUpdate(PlanUpdateEvent),
 
+    // Durable goal
+    GoalUpdated(GoalUpdatedEvent),
+
     // Share
     SessionShared(SessionSharedEvent),
     SessionUnshared(SessionUnsharedEvent),

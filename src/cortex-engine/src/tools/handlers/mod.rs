@@ -19,6 +19,7 @@ pub mod skill;
 pub mod subagent;
 pub mod task;
 mod todo;
+mod update_goal;
 mod web_search;
 
 pub use apply_patch::ApplyPatchHandler;
@@ -66,6 +67,7 @@ pub use plan::{PlanHandler, PlanTask, PlanTaskStatus};
 pub use propose::ProposeHandler;
 pub use questions::QuestionsHandler;
 pub use todo::{TodoItem, TodoPriority, TodoReadHandler, TodoStatus, TodoWriteHandler};
+pub use update_goal::UpdateGoalHandler;
 pub use web_search::WebSearchHandler;
 
 // Skill exports

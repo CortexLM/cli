@@ -43,6 +43,7 @@ ordinary message.
 | `/ide` | | Manage IDE integration |
 | `/install-github-app` | | Install the Cortex GitHub App |
 | `/bug` | | `/bug [description]` |
+| `/goal` | | `/goal [objective\|pause\|resume\|clear]` — persisted long-horizon objective |
 
 ## Authentication and billing
 
@@ -133,6 +134,7 @@ ordinary message.
 
 ## See also
 
+- [Durable goals](../guides/goal.md)
 - [The TUI](../guides/tui.md)
 - [Keyboard shortcuts](keyboard.md)
 - [CLI reference](cli.md) — the equivalents outside the TUI

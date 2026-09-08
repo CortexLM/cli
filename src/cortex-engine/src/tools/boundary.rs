@@ -56,6 +56,7 @@ pub fn is_read_only_tool(name: &str) -> bool {
             | "TodoRead"
             | "TodoWrite"
             | "Plan"
+            | "UpdateGoal"
             | "Propose"
             | "Questions"
             | "ListSubagents"

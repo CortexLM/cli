@@ -30,6 +30,7 @@ impl ToolRegistry {
         self.register_task_tools();
         self.register_lsp_tools();
         self.register_plan_tool();
+        self.register_update_goal_tool();
         self.register_questions_tool();
         self.register_skill_tool();
         self.register_batch_tool();
@@ -715,6 +716,52 @@ impl ToolRegistry {
                     }
                 },
                 "required": ["title", "description", "tasks", "agent_analyses"]
+            }),
+        ));
+    }
+
+    fn register_update_goal_tool(&mut self) {
+        self.register(ToolDefinition::new(
+            "UpdateGoal",
+            "Record evidence-based progress on the user's durable /goal. \
+             Call with status=complete only when files, commands, or tests prove the objective. \
+             The model cannot pause; the user runs /goal pause.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "blocked", "complete"],
+                        "description": "Goal lifecycle. complete requires evidence and a reason."
+                    },
+                    "progress": {
+                        "type": "string",
+                        "description": "Short progress note"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Why this status applies. Required for complete."
+                    },
+                    "evidence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "kind": {
+                                    "type": "string",
+                                    "description": "file, command, or test"
+                                },
+                                "detail": {
+                                    "type": "string",
+                                    "description": "Path, command line, or test name"
+                                }
+                            },
+                            "required": ["kind", "detail"]
+                        },
+                        "description": "Concrete proof. Required to mark complete."
+                    }
+                },
+                "required": ["status"]
             }),
         ));
     }

@@ -851,6 +851,7 @@ const PALETTE_ROWS: &[(&str, &str)] = &[
         "Set the approval policy for edits and commands",
     ),
     ("/plan", "Draft a plan before writing any code"),
+    ("/goal", "Persisted long-horizon objective"),
     ("/effort", "Tune reasoning effort for the current model"),
     ("/mcp", "View and manage MCP servers"),
     ("/sandbox", "Configure sandboxed command execution"),
@@ -858,7 +859,6 @@ const PALETTE_ROWS: &[(&str, &str)] = &[
     ("/resume", "Resume a previous session"),
     ("/jobs", "Background agents and subagents"),
     ("/skills", "List and manage skills"),
-    ("/btw", "Side note for the current turn"),
     ("/compact", "Toggle compact display mode"),
     ("/clear", "Clear current conversation"),
     ("/diff", "Show file diff"),
@@ -927,7 +927,9 @@ fn board_palette(area: Rect, buf: &mut Buffer) {
         }
         shown += 1;
     }
-    let remaining = 21usize.saturating_sub(shown);
+    let remaining = crate::commands::PALETTE_HOME_COMMANDS
+        .len()
+        .saturating_sub(shown);
     if remaining > 0 && y < limit {
         buf.set_string(
             area.x,
@@ -2445,6 +2447,7 @@ fn board_help(area: Rect, buf: &mut Buffer) {
         ("/mode", "Switch between Agent, Plan and Ask"),
         ("/permissions", "Set the approval policy for edits"),
         ("/plan", "Draft a plan before writing any code"),
+        ("/goal", "Persisted long-horizon objective"),
         ("/effort", "Tune reasoning effort for the model"),
         ("/mcp", "View and manage MCP servers"),
         ("/sandbox", "Configure sandboxed command execution"),
@@ -2452,7 +2455,6 @@ fn board_help(area: Rect, buf: &mut Buffer) {
         ("/resume", "Resume a previous session"),
         ("/jobs", "Background agents and subagents"),
         ("/skills", "Run a skill, or pin one as always-on"),
-        ("/btw", "Ask a side question without changing the plan"),
         ("/compact", "Summarize the thread to free context"),
         ("/clear", "Start a new thread, keep the workspace"),
         ("/diff", "Review the files Cortex has changed"),

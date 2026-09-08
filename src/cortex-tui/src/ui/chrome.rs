@@ -134,6 +134,7 @@ pub fn paint_composer_box(
     model_chip_text: &str,
     hovered: bool,
     focused: bool,
+    goal_chip: Option<&str>,
 ) {
     if area.height < 3 || area.width < 8 {
         return;
@@ -160,7 +161,19 @@ pub fn paint_composer_box(
     let chip_x = x + 3;
     let chip_shown = first_fitting_line(&chip, w.saturating_sub(6) as usize);
     buf.set_string(chip_x, top_y, &chip_shown, chip_style);
-    let after_chip = chip_x + chip_shown.chars().count() as u16;
+    let mut after_chip = chip_x + chip_shown.chars().count() as u16;
+    if let Some(goal) = goal_chip.filter(|s| !s.is_empty()) {
+        let room = (x + w.saturating_sub(1)).saturating_sub(after_chip.saturating_add(2)) as usize;
+        let shown = first_fitting_line(goal, room);
+        if !shown.is_empty() && after_chip + 2 < x + w.saturating_sub(1) {
+            buf.set_string(after_chip, top_y, "─", rule);
+            after_chip += 1;
+            buf.set_string(after_chip, top_y, " ", rule);
+            after_chip += 1;
+            buf.set_string(after_chip, top_y, &shown, Style::default().fg(ACCENT));
+            after_chip += shown.chars().count() as u16;
+        }
+    }
     for col in after_chip..x + w.saturating_sub(1) {
         buf.set_string(col, top_y, "─", rule);
     }
@@ -657,6 +670,7 @@ mod tests {
             "Cortex Mini 1 (medium)",
             false,
             true,
+            None,
         );
         let top: String = (0..40)
             .map(|x| buf[(x, 0)].symbol().chars().next().unwrap_or(' '))
@@ -669,5 +683,32 @@ mod tests {
         assert!(bot.contains('╰'), "{bot}");
         assert!(bot.contains("Cortex Mini 1 (medium)"), "{bot}");
         assert_eq!(buf[(1, 0)].style().fg, Some(HAIRLINE));
+    }
+
+    #[test]
+    fn composer_box_paints_goal_chip_in_accent() {
+        let area = Rect::new(0, 0, 48, 3);
+        let mut buf = Buffer::empty(area);
+        fill_inky(area, &mut buf);
+        paint_composer_box(
+            area,
+            &mut buf,
+            "Agent",
+            "Cortex Mini 1",
+            false,
+            true,
+            Some("Goal · 2/8"),
+        );
+        let top: String = (0..48)
+            .map(|x| buf[(x, 0)].symbol().chars().next().unwrap_or(' '))
+            .collect();
+        assert!(top.contains("Agent"), "{top}");
+        assert!(top.contains("Goal"), "{top}");
+        let goal_x = top.find("Goal").expect("goal chip");
+        assert_eq!(
+            buf[(goal_x as u16, 0)].style().fg,
+            Some(ACCENT),
+            "goal chip uses designer accent"
+        );
     }
 }

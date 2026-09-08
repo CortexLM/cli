@@ -85,6 +85,22 @@ plugins can read them; you should not set them yourself.
 | `CORTEX_PLUGIN_ARGS` | Plugin invocations |
 | `CORTEX_CHILD_TASK`, `CORTEX_SPEC_MODE`, `CORTEX_SURFACE`, `CORTEX_OPERATION_MODE` | Internal task routing |
 
+## OpenAI-compatible / live LLM (names only)
+
+Used by the named `openai` / `openai-compatible` provider and by `/goal` live
+smoke. Agent mode still uses the Cortex API. Never commit or log key values.
+
+| Variable | Effect |
+|----------|--------|
+| `OPENAI_BASE_URL` | OpenAI-compatible `/v1` base URL. Public default for tests and docs examples: `http://84.32.63.4:20128/v1` |
+| `CORTEX_LLM_BASE_URL` | Alias of `OPENAI_BASE_URL` |
+| `OPENAI_API_KEY` | API key for that endpoint. Operator injects from local `~/.cortex-private/judge.key` |
+| `CORTEX_LLM_API_KEY` | Alias of `OPENAI_API_KEY` |
+| `CORTEX_LLM_MODEL` | Model id. Default for live smoke: `cx/gpt-6-astra` (`gpt-astra` 404s) |
+
+If no key is set, unit tests still pass and the live smoke prints `SKIP:` with
+this same list.
+
 ## Development and testing
 
 | Variable | Effect |

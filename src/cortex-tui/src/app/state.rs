@@ -279,6 +279,8 @@ pub struct AppState {
     pub invert_scroll: bool,
     pub copy_on_select: bool,
     pub notifications_enabled: bool,
+    /// Persisted durable goal for `/goal` (survives turns and resume).
+    pub goal: Option<cortex_engine::goal::Goal>,
 }
 
 impl AppState {
@@ -409,6 +411,7 @@ impl AppState {
             invert_scroll: false,
             copy_on_select: false,
             notifications_enabled: false,
+            goal: None,
         }
     }
 

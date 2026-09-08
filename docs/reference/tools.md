@@ -65,12 +65,13 @@ Web search is enabled with `--search`.
 | Tool | Parameters | Does |
 |------|-----------|------|
 | `Plan` | `title`, `description`, `tasks`, `agent_analyses`, and optional `architecture`, `tech_stack`, `use_cases`, `risks`, `success_criteria`, `timeline`, `estimated_changes` | Submit a structured plan for approval |
+| `UpdateGoal` | `status` (`active`, `blocked`, `complete`), optional `progress`, `reason`, `evidence` (`kind` + `detail`) | Record evidence-based progress on the user's `/goal`. `complete` requires evidence and a reason. The model cannot pause. |
 | `ExitSpecMode` | `reason` | Leave specification mode and unlock the mutating tools |
 | `Task` | `mode` (`explore`, `plan`, `worker`), `prompt`, `description`, `context`, `await_result` | Delegate to a subagent |
 | `ListSubagents` | `include_custom` | List the available subagent types |
 | `Questions` | `title`, `questions` | Ask you a structured question. Question types are `single`, `multiple`, `text` and `number`. |
 
-See [Plan and Spec modes](../guides/plan.md).
+See [Plan and Spec modes](../guides/plan.md) and [Durable goals](../guides/goal.md).
 
 ## Task tracking
 

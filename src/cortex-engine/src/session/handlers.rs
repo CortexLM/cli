@@ -155,6 +155,9 @@ impl Session {
                 ))
                 .await;
             }
+            Op::Goal { action, objective } => {
+                self.handle_goal(action, objective).await?;
+            }
             Op::ReloadMcpServers => {
                 info!("Reloading MCP servers...");
             }
@@ -290,6 +293,7 @@ impl Session {
         tracing::info!("Starting agent loop for turn {}...", turn_id);
         self.run_agent_loop(&turn_id).await?;
         tracing::info!("Agent loop completed for turn {}", turn_id);
+        self.continue_goal_if_needed().await?;
 
         // Fast git-based diff (if we have a pre-snapshot)
         if let Some(hash) = pre_snapshot_hash {
@@ -622,6 +626,7 @@ impl Session {
                         .with_sandbox_policy(self.config.sandbox_policy.clone())
                         .with_turn_id(self.turn_id.to_string())
                         .with_conversation_id(self.conversation_id.to_string())
+                        .with_session_dir(self.goal_session_dir())
                         .with_lsp(self.lsp.clone());
 
                     let result = self
@@ -650,6 +655,96 @@ impl Session {
                     return Err(CortexError::Cancelled);
                 }
             }
+        }
+        Ok(())
+    }
+
+    async fn handle_goal(&mut self, action: String, objective: Option<String>) -> Result<()> {
+        use crate::goal::{
+            Goal, GoalCommand, apply_command, clear_goal, kickoff_prompt, load_goal, save_goal,
+        };
+
+        let command = match action.to_ascii_lowercase().as_str() {
+            "status" | "" => GoalCommand::Status,
+            "pause" => GoalCommand::Pause,
+            "resume" => GoalCommand::Resume,
+            "clear" => GoalCommand::Clear,
+            "set" => {
+                let objective = objective
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        CortexError::InvalidInput("Goal objective cannot be empty.".into())
+                    })?
+                    .to_string();
+                GoalCommand::Set { objective }
+            }
+            other => {
+                return Err(CortexError::InvalidInput(format!(
+                    "Unknown goal action: {other}"
+                )));
+            }
+        };
+
+        let dir = self.goal_session_dir();
+        let current = load_goal(&dir)?;
+        let next = apply_command(current, command.clone()).map_err(CortexError::InvalidInput)?;
+        match &next {
+            Some(goal) => save_goal(&dir, goal)?,
+            None => clear_goal(&dir)?,
+        }
+        self.emit(EventMsg::GoalUpdated(match &next {
+            Some(goal) => goal.to_event(),
+            None => Goal::cleared_event(),
+        }))
+        .await;
+
+        if let GoalCommand::Set { objective } = command {
+            let items = vec![cortex_protocol::UserInput::Text {
+                text: kickoff_prompt(&objective),
+            }];
+            self.handle_user_input(&self.turn_id.to_string(), items)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn continue_goal_if_needed(&mut self) -> Result<()> {
+        use crate::goal::{
+            continuation_prompt, load_goal, record_turn, save_goal, should_continue,
+        };
+
+        let dir = self.goal_session_dir();
+        loop {
+            let Some(mut goal) = load_goal(&dir)? else {
+                break;
+            };
+            if !should_continue(&goal) {
+                break;
+            }
+            record_turn(&mut goal, 0);
+            save_goal(&dir, &goal)?;
+            self.emit(EventMsg::GoalUpdated(goal.to_event())).await;
+            if !should_continue(&goal) {
+                break;
+            }
+            let prompt = continuation_prompt(&goal);
+            self.emit(EventMsg::UserMessage(UserMessageEvent {
+                id: None,
+                parent_id: None,
+                message: prompt.clone(),
+                images: None,
+            }))
+            .await;
+            self.messages.push(Message::user(&prompt));
+            self.turn_id += 1;
+            let turn_id = self.turn_id.to_string();
+            self.emit(EventMsg::TaskStarted(TaskStartedEvent {
+                model_context_window: self.config.model_context_window,
+            }))
+            .await;
+            self.run_agent_loop(&turn_id).await?;
         }
         Ok(())
     }

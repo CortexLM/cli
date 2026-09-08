@@ -277,6 +277,36 @@ fn test_async_commands() {
 }
 
 #[test]
+fn test_goal_commands() {
+    let executor = CommandExecutor::new();
+
+    assert!(matches!(
+        executor.execute_str("/goal"),
+        CommandResult::Async(ref s) if s == "goal:status"
+    ));
+    assert!(matches!(
+        executor.execute_str("/goal pause"),
+        CommandResult::Async(ref s) if s == "goal:pause"
+    ));
+    assert!(matches!(
+        executor.execute_str("/goal resume"),
+        CommandResult::Async(ref s) if s == "goal:resume"
+    ));
+    assert!(matches!(
+        executor.execute_str("/goal clear"),
+        CommandResult::Async(ref s) if s == "goal:clear"
+    ));
+    assert!(matches!(
+        executor.execute_str("/goal create foo.txt and assert it"),
+        CommandResult::Async(ref s) if s == "goal:set:create foo.txt and assert it"
+    ));
+    assert!(matches!(
+        executor.execute_str("/goal pause the deploy"),
+        CommandResult::Async(ref s) if s == "goal:set:pause the deploy"
+    ));
+}
+
+#[test]
 fn test_add_command() {
     let executor = CommandExecutor::new();
 

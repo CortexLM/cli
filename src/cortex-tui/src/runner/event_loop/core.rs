@@ -311,6 +311,9 @@ impl EventLoop {
         if let Some(session) = self.app_state.session_id {
             context = context.with_conversation_id(session.to_string());
         }
+        if let Some(session) = &self.cortex_session {
+            context = context.with_session_dir(session.storage().session_dir(session.id()));
+        }
         if approved {
             context = context.with_approved_tool_call(tool_name, arguments);
         }

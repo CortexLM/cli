@@ -85,6 +85,15 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     ));
 
     registry.register(CommandDef::new(
+        "goal",
+        &[],
+        "Persisted long-horizon objective",
+        "/goal [objective|pause|resume|clear]",
+        CommandCategory::General,
+        true,
+    ));
+
+    registry.register(CommandDef::new(
         "effort",
         &[],
         "Tune reasoning effort on the model picker (Tab)",

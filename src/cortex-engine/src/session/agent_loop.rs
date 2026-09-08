@@ -511,6 +511,7 @@ impl Session {
             .with_sandbox_policy(self.config.sandbox_policy.clone())
             .with_turn_id(self.turn_id.to_string())
             .with_conversation_id(self.conversation_id.to_string())
+            .with_session_dir(self.goal_session_dir())
             .with_call_id(tool_call.id.clone())
             .with_output_sender(output_tx)
             .with_lsp(self.lsp.clone());

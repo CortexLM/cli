@@ -8,6 +8,7 @@
 
 mod config_discovery;
 mod execution;
+mod llm_env;
 mod loader;
 mod project_config;
 mod providers;
@@ -19,6 +20,11 @@ pub use execution::ExecutionConfig;
 pub use config_discovery::{
     cache_size as config_cache_size, clear_cache as clear_config_cache, find_project_root, find_up,
     git_root, is_in_git_repo,
+};
+pub use llm_env::{
+    DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL, OPENAI_COMPATIBLE_FALLBACK_URL, first_nonempty_env,
+    llm_api_key, llm_base_url, llm_model, openai_compatible_api_key_env,
+    openai_compatible_base_url,
 };
 pub use loader::{
     CONFIG_FILE_JSON, CONFIG_FILE_JSONC, CORTEX_CONFIG_DIR_ENV, CORTEX_CONFIG_ENV, ConfigFormat,
@@ -293,9 +299,9 @@ fn resolve_model_provider(
         "openai" | "openai-compatible" => ModelProviderInfo {
             id: id.to_string(),
             name: "OpenAI-compatible".into(),
-            base_url: "https://api.openai.com/v1".into(),
+            base_url: openai_compatible_base_url(),
             api_type: ApiType::OpenAiCompatible,
-            api_key_env: Some("OPENAI_API_KEY".into()),
+            api_key_env: Some(openai_compatible_api_key_env()),
         },
         _ => ModelProviderInfo::default(),
     }
@@ -369,5 +375,32 @@ mod alternate_screen_tests {
             PathBuf::from("/tmp"),
         );
         assert!(!cfg.alternate_screen);
+    }
+}
+
+#[cfg(test)]
+mod openai_compatible_env_tests {
+    use super::*;
+
+    #[test]
+    fn openai_compatible_uses_aligned_env_names() {
+        let info = resolve_model_provider("openai-compatible", &HashMap::new());
+        assert_eq!(info.api_type, ApiType::OpenAiCompatible);
+        assert!(
+            info.api_key_env.as_deref() == Some("OPENAI_API_KEY")
+                || info.api_key_env.as_deref() == Some("CORTEX_LLM_API_KEY")
+        );
+        assert!(
+            info.base_url == OPENAI_COMPATIBLE_FALLBACK_URL
+                || info.base_url == DEFAULT_LLM_BASE_URL
+                || info.base_url.ends_with("/v1")
+        );
+        // Never treat the key as present in assertions; only names.
+        let _ = info.resolve_api_key();
+    }
+
+    #[test]
+    fn default_live_model_is_not_gpt_astra() {
+        assert_eq!(DEFAULT_LLM_MODEL, "cx/gpt-6-astra");
     }
 }

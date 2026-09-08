@@ -33,8 +33,10 @@ keyring. See [Signing in](../reference/login.md).
 
 ## Code runtime
 
-Turns create a **Cloud** Code session unless you explicitly select This PC or
-SSH. A fresh install can complete a turn without extra configuration.
+The TUI and `cortex exec` create a **Cloud** Code session unless you explicitly
+select This PC or SSH. That is the shipped default (Designer Q9). A fresh
+install can complete a turn without extra configuration. This PC and SSH are
+opt-in and may ship in 0.1.x.
 
 | Variable | Effect |
 |----------|--------|

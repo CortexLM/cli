@@ -5,5 +5,6 @@
 - Software / updates: `https://software.cortex.foundation`.
 - The harness is a client. Chat/Code turns, tools, computers, plugins, and snapshots go through that API. Do not embed a second model provider.
 - Code turns: `POST /v1/code/sessions/{id}/turns` with `{ message, mode: "chat"|"code" }`. Plan/ask are TUI/harness locks, not API modes.
+- Code runtime: **Cloud is the shipped default** for the TUI and `cortex exec` (Designer Q9, `CLI_100_CHROME_LOCK_SIGNED`). This PC and SSH are explicit opt-in (`CORTEX_COMPUTER`, or `CORTEX_SSH_HOST` / `CORTEX_SSH_TARGET`) and may ship in 0.1.x. They require an already connected Code session; do not substitute Cloud.
 - When the API is unreachable, the product fails closed with a product-facing error. Do not fall back to a local mock model.
 - Environment overrides (`CORTEX_API_URL`, `CORTEX_API_KEY`, `CORTEX_AUTH_TOKEN`) are for operators and tests. Defaults must stay production Cortex URLs.

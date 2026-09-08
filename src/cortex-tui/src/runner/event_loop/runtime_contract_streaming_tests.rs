@@ -1,4 +1,5 @@
 use super::*;
+use super::{CodeTurnMode, ComputerKind, tui_code_turn_context};
 use crate::app::AppState;
 use crate::views::MinimalSessionView;
 use cortex_engine::client::runtime_contract::INCOMPLETE_STREAM;
@@ -203,4 +204,24 @@ async fn runtime_contract_forwarder_cancels_silent_initial_request() {
         matches!(rx.recv().await, Some(StreamEvent::Error(error)) if error.contains("Cancelled"))
     );
     assert_eq!(cancels.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn first_submit_uses_cloud_as_the_shipped_tui_default() {
+    let ctx = tui_code_turn_context(false);
+    assert_eq!(ctx.computer, ComputerKind::detect());
+    assert_eq!(ctx.turn_mode, Some(CodeTurnMode::Code));
+    assert_eq!(
+        ComputerKind::from_env(None, None, None),
+        ComputerKind::Cloud,
+        "Designer Q9 / CLI_100_CHROME_LOCK_SIGNED: Cloud is the TUI+exec default"
+    );
+    assert_eq!(
+        ComputerKind::from_env(None, None, Some("this_pc")),
+        ComputerKind::ThisPc
+    );
+    assert_eq!(
+        tui_code_turn_context(true).turn_mode,
+        Some(CodeTurnMode::Chat)
+    );
 }

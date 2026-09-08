@@ -14,7 +14,8 @@ use crate::session::StoredToolCall;
 use crate::views::tool_call::ToolStatus;
 
 use cortex_engine::client::{
-    CompletionRequest, Message, ResponseEvent, ToolDefinition as ClientToolDefinition,
+    CodeTurnContext, CodeTurnMode, CompletionRequest, ComputerKind, Message, ResponseEvent,
+    ToolDefinition as ClientToolDefinition,
 };
 use cortex_engine::streaming::StreamEvent;
 
@@ -92,6 +93,29 @@ pub(super) fn classify_stream_error(error: &str) -> StreamErrorKind {
         return StreamErrorKind::ServiceUnavailable;
     }
     StreamErrorKind::Actionable
+}
+
+/// Shared TUI + exec product rule: Cloud unless This PC/SSH is explicit.
+fn tui_code_turn_context(plan_or_spec: bool) -> CodeTurnContext {
+    CodeTurnContext {
+        workspace: std::env::current_dir()
+            .ok()
+            .map(|p| p.display().to_string()),
+        computer: ComputerKind::detect(),
+        turn_mode: Some(if plan_or_spec {
+            CodeTurnMode::Chat
+        } else {
+            CodeTurnMode::Code
+        }),
+        ssh_target: std::env::var("CORTEX_SSH_HOST")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                std::env::var("CORTEX_SSH_TARGET")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+            }),
+    }
 }
 
 impl EventLoop {
@@ -226,23 +250,11 @@ impl EventLoop {
         }
 
         if let Some(ref c) = client {
-            let computer = cortex_engine::client::ComputerKind::detect();
-            let turn_mode = if self.app_state.is_plan_mode() || self.app_state.is_spec_mode() {
+            let plan_or_spec = self.app_state.is_plan_mode() || self.app_state.is_spec_mode();
+            if plan_or_spec {
                 cortex_engine::harness::enter_spec_mode();
-                cortex_engine::client::CodeTurnMode::Chat
-            } else {
-                cortex_engine::client::CodeTurnMode::Code
-            };
-            c.configure_code_turn(cortex_engine::client::CodeTurnContext {
-                workspace: std::env::current_dir()
-                    .ok()
-                    .map(|p| p.display().to_string()),
-                computer,
-                turn_mode: Some(turn_mode),
-                ssh_target: std::env::var("CORTEX_SSH_HOST")
-                    .ok()
-                    .or_else(|| std::env::var("CORTEX_SSH_TARGET").ok()),
-            });
+            }
+            c.configure_code_turn(tui_code_turn_context(plan_or_spec));
         }
 
         // Create channel for streaming events
@@ -741,22 +753,8 @@ impl EventLoop {
         }
 
         if let Some(ref c) = client {
-            let computer = cortex_engine::client::ComputerKind::detect();
-            let turn_mode = if self.app_state.is_plan_mode() || self.app_state.is_spec_mode() {
-                cortex_engine::client::CodeTurnMode::Chat
-            } else {
-                cortex_engine::client::CodeTurnMode::Code
-            };
-            c.configure_code_turn(cortex_engine::client::CodeTurnContext {
-                workspace: std::env::current_dir()
-                    .ok()
-                    .map(|p| p.display().to_string()),
-                computer,
-                turn_mode: Some(turn_mode),
-                ssh_target: std::env::var("CORTEX_SSH_HOST")
-                    .ok()
-                    .or_else(|| std::env::var("CORTEX_SSH_TARGET").ok()),
-            });
+            let plan_or_spec = self.app_state.is_plan_mode() || self.app_state.is_spec_mode();
+            c.configure_code_turn(tui_code_turn_context(plan_or_spec));
         }
 
         // Create channel for streaming events

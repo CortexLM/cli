@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Changed
-- Code turns default to the **Cloud** runtime. This PC and SSH are explicit (`CORTEX_COMPUTER` or `CORTEX_SSH_HOST`) and refuse a fresh session with product copy instead of blocking every first turn.
+- Code turns default to the **Cloud** runtime for the TUI and `cortex exec` (Designer Q9 / `CLI_100_CHROME_LOCK_SIGNED`). This PC and SSH are explicit opt-in in 0.1.x (`CORTEX_COMPUTER` or `CORTEX_SSH_HOST`) and refuse a fresh session with product copy instead of blocking every first turn.
 - README `docs/media/intro.gif` sits on a photographed green forest desktop (not teal blobs): Terminal chrome, a pointer that walks titlebar → composer → slash / model → Shell, and the signed lock TUI. Local CLI only — no Cortex Cloud handoff in the banner story.
 
 ## 0.1.9

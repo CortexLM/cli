@@ -2288,25 +2288,14 @@ mod tests {
 
     #[test]
     fn no_rounded_frame_glyphs_anywhere() {
-        // Composer uses a rounded dual-hairline box (╭╮╰╯│). Other surfaces
-        // must not grow extra frames.
+        // Rounded corners belong on hairline box edges only: the composer
+        // dual-hairline (`ui/chrome.rs`) and the settings / shortcuts overlays.
+        // They must not appear as content glyphs.
         const ROUNDED: &[char] = &['╭', '╮', '╰', '╯'];
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
                 let buf = &frame.buffer;
-                let composer_box = composer_prompt_cell(buf).and_then(|(_, y)| {
-                    let above = y
-                        .checked_sub(1)
-                        .map(|row| row_text(buf, row))
-                        .unwrap_or_default();
-                    let below = if y + 1 < buf.area.height {
-                        row_text(buf, y + 1)
-                    } else {
-                        String::new()
-                    };
-                    (above.contains('╭') && below.contains('╰')).then_some(y)
-                });
                 for (x, y, cell) in cells(buf) {
                     let Some(ch) = cell.symbol().chars().next() else {
                         continue;
@@ -2314,10 +2303,11 @@ mod tests {
                     if !ROUNDED.contains(&ch) {
                         continue;
                     }
-                    let on_box = composer_box.is_some_and(|cy| y.abs_diff(cy) <= 1);
+                    let row = row_text(buf, y);
+                    let on_box_edge = row.contains('─') && (row.contains('╭') || row.contains('╰'));
                     assert!(
-                        on_box,
-                        "{id} paints rounded `{ch}` off the composer box at {size:?} ({x},{y})"
+                        on_box_edge,
+                        "{id} paints rounded `{ch}` off a hairline box at {size:?} ({x},{y}):\n{row}"
                     );
                 }
             }

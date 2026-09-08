@@ -946,9 +946,7 @@ pub(crate) fn spawn_me_profile_fetch(
     token: Option<String>,
 ) -> tokio::task::JoinHandle<Option<cortex_engine::client::MeProfile>> {
     tokio::spawn(async move {
-        let Some(token) = token.filter(|t| !t.is_empty()) else {
-            return None;
-        };
+        let token = token.filter(|t| !t.is_empty())?;
         let client = cortex_engine::client::CodeAgentClient::new(Some(api_url), Some(token));
         match client.fetch_me().await {
             Ok(profile) => Some(profile),

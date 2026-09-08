@@ -141,29 +141,7 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
 
         // Shortcuts (when not searching)
         KeyCode::Char(c) if !state.searchable && key.modifiers.is_empty() => {
-            if c == 'e'
-                && matches!(
-                    &state.action,
-                    InteractiveAction::Custom(id) if id == "permission-prompt"
-                )
-            {
-                if let Some(idx) = state.items.iter().position(|item| item.id == "edit") {
-                    if let Some(filtered_idx) =
-                        state.filtered_indices.iter().position(|&i| i == idx)
-                    {
-                        state.selected = filtered_idx;
-                        return InteractiveResult::Selected {
-                            action: state.action.clone(),
-                            item_id: "edit".into(),
-                            item_ids: vec!["edit".into()],
-                        };
-                    }
-                }
-            }
-            if let Some(result) = try_shortcut(state, c) {
-                return result;
-            }
-            InteractiveResult::Continue
+            handle_non_search_char(state, c)
         }
 
         // Backspace (search)
@@ -251,6 +229,37 @@ fn handle_form_key(state: &mut InteractiveState, key: KeyEvent) -> InteractiveRe
 /// Check if a character is a shortcut for any item.
 fn is_shortcut(state: &InteractiveState, c: char) -> bool {
     state.items.iter().any(|item| item.shortcut == Some(c))
+}
+
+/// Shortcuts when the picker is not in search-input mode.
+fn handle_non_search_char(state: &mut InteractiveState, c: char) -> InteractiveResult {
+    if let Some(result) = try_permission_prompt_edit(state, c) {
+        return result;
+    }
+    if let Some(result) = try_shortcut(state, c) {
+        return result;
+    }
+    InteractiveResult::Continue
+}
+
+/// `e` selects Edit on the §3.10 permission prompt (in addition to digit `3`).
+fn try_permission_prompt_edit(state: &mut InteractiveState, c: char) -> Option<InteractiveResult> {
+    if c != 'e'
+        || !matches!(
+            &state.action,
+            InteractiveAction::Custom(id) if id == super::builders::PERMISSION_PROMPT_ACTION
+        )
+    {
+        return None;
+    }
+    let idx = state.items.iter().position(|item| item.id == "edit")?;
+    let filtered_idx = state.filtered_indices.iter().position(|&i| i == idx)?;
+    state.selected = filtered_idx;
+    Some(InteractiveResult::Selected {
+        action: state.action.clone(),
+        item_id: "edit".into(),
+        item_ids: vec!["edit".into()],
+    })
 }
 
 /// Try to select an item by its shortcut.
@@ -386,6 +395,18 @@ mod tests {
             edit,
             InteractiveResult::Selected { ref item_id, .. } if item_id == "edit"
         ));
+    }
+
+    #[test]
+    fn e_is_not_edit_outside_permission_prompt() {
+        let items = vec![InteractiveItem::new("edit", "Edit")];
+        let mut state =
+            InteractiveState::new("Test", items, InteractiveAction::Custom("other".into()));
+        let result = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE),
+        );
+        assert!(matches!(result, InteractiveResult::Continue));
     }
 
     #[test]

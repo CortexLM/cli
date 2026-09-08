@@ -1,4 +1,4 @@
-//! Green-lock palette asserts.
+//! Green-lock palette asserts (test-only).
 //!
 //! Split out of [`crate::lock_proof`] and [`crate::lock_v2`] the same way
 //! [`crate::splash_chrome`] was extracted from lock boards: the signed accent
@@ -35,11 +35,11 @@ const RETIRED: [Color; 3] = [
 
 const ROUNDED: &[char] = &['╭', '╮', '╰', '╯'];
 
-pub(crate) fn is_retired_rgb(r: u8, g: u8, b: u8) -> bool {
+fn is_retired_rgb(r: u8, g: u8, b: u8) -> bool {
     BANNED_RGB.contains(&(r, g, b))
 }
 
-pub(crate) fn is_hairline_box_edge(row: &str) -> bool {
+fn is_hairline_box_edge(row: &str) -> bool {
     row.contains('─') && (row.contains('╭') || row.contains('╰'))
 }
 
@@ -82,82 +82,77 @@ fn count_retired_cells(frame: &LockFrame) -> u32 {
     retired
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn v1_retired_palette_is_absent() {
-        let mut retired = 0u32;
-        for id in lock_scene_ids() {
-            for size in SIZES {
-                let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                for banned in BANNED_ANSI {
-                    assert!(
-                        !frame.ansi.contains(banned),
-                        "{id} paints banned color {banned} at {size:?}"
-                    );
-                }
-                retired += count_retired_style(&frame);
-                for y in 0..frame.buffer.area.height {
-                    for x in 0..frame.buffer.area.width {
-                        if let Some(Color::Rgb(r, g, b)) = frame.buffer[(x, y)].style().bg {
-                            assert!(
-                                r == g && g == b,
-                                "{id} paints a tinted background {r},{g},{b} at {size:?} ({x},{y})"
-                            );
-                        }
-                    }
-                }
+#[test]
+fn v1_retired_palette_is_absent() {
+    let mut retired = 0u32;
+    for id in lock_scene_ids() {
+        for size in SIZES {
+            let frame = render_lock_scene(id, size.0, size.1).expect(id);
+            for banned in BANNED_ANSI {
+                assert!(
+                    !frame.ansi.contains(banned),
+                    "{id} paints banned color {banned} at {size:?}"
+                );
             }
-        }
-        assert_eq!(
-            retired, 0,
-            "retired violet/wash/gold cells in lock v1 frames"
-        );
-    }
-
-    #[test]
-    fn v1_rounded_glyphs_stay_on_hairline_boxes() {
-        for id in lock_scene_ids() {
-            for size in SIZES {
-                let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let buf = &frame.buffer;
-                for y in 0..buf.area.height {
-                    let row = row_text(buf, y);
-                    for x in 0..buf.area.width {
-                        let Some(ch) = buf[(x, y)].symbol().chars().next() else {
-                            continue;
-                        };
-                        if !ROUNDED.contains(&ch) {
-                            continue;
-                        }
+            retired += count_retired_style(&frame);
+            for y in 0..frame.buffer.area.height {
+                for x in 0..frame.buffer.area.width {
+                    if let Some(Color::Rgb(r, g, b)) = frame.buffer[(x, y)].style().bg {
                         assert!(
-                            is_hairline_box_edge(&row),
-                            "{id} paints rounded `{ch}` off a hairline box at {size:?} ({x},{y}):\n{row}"
+                            r == g && g == b,
+                            "{id} paints a tinted background {r},{g},{b} at {size:?} ({x},{y})"
                         );
                     }
                 }
             }
         }
     }
+    assert_eq!(
+        retired, 0,
+        "retired violet/wash/gold cells in lock v1 frames"
+    );
+}
 
-    #[test]
-    fn v2_retired_palette_is_absent() {
-        let mut retired = 0u32;
-        for (width, height, ids) in [
-            (120u16, 40u16, LOCK_V2_WIDE_IDS),
-            (40u16, 12u16, LOCK_V2_NARROW_IDS),
-        ] {
-            for id in ids {
-                let frame =
-                    render_lock_v2_scene(id, width, height).unwrap_or_else(|e| panic!("{id}: {e}"));
-                retired += count_retired_cells(&frame);
+#[test]
+fn v1_rounded_glyphs_stay_on_hairline_boxes() {
+    for id in lock_scene_ids() {
+        for size in SIZES {
+            let frame = render_lock_scene(id, size.0, size.1).expect(id);
+            let buf = &frame.buffer;
+            for y in 0..buf.area.height {
+                let row = row_text(buf, y);
+                for x in 0..buf.area.width {
+                    let Some(ch) = buf[(x, y)].symbol().chars().next() else {
+                        continue;
+                    };
+                    if !ROUNDED.contains(&ch) {
+                        continue;
+                    }
+                    assert!(
+                        is_hairline_box_edge(&row),
+                        "{id} paints rounded `{ch}` off a hairline box at {size:?} ({x},{y}):\n{row}"
+                    );
+                }
             }
         }
-        assert_eq!(
-            retired, 0,
-            "retired violet/wash/gold cells in lock v2 frames"
-        );
     }
+}
+
+#[test]
+fn v2_retired_palette_is_absent() {
+    let mut retired = 0u32;
+    for (width, height, ids) in [
+        (120u16, 40u16, LOCK_V2_WIDE_IDS),
+        (40u16, 12u16, LOCK_V2_NARROW_IDS),
+    ] {
+        for id in ids {
+            let frame =
+                render_lock_v2_scene(id, width, height).unwrap_or_else(|e| panic!("{id}: {e}"));
+            retired += count_retired_cells(&frame);
+        }
+    }
+    assert_eq!(
+        retired, 0,
+        "retired violet/wash/gold cells in lock v2 frames"
+    );
 }

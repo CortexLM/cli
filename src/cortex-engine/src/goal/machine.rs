@@ -43,6 +43,7 @@ pub fn apply_command(current: Option<Goal>, command: GoalCommand) -> Result<Opti
 }
 
 /// Model-facing update. The model cannot pause; the user owns that.
+/// Rejected updates leave the goal unchanged.
 pub fn apply_model_update(
     goal: &mut Goal,
     status: &str,
@@ -50,55 +51,56 @@ pub fn apply_model_update(
     reason: Option<String>,
     evidence: Vec<GoalEvidence>,
 ) -> Result<(), String> {
+    let mut next = goal.clone();
     if let Some(progress) = progress {
         if !progress.trim().is_empty() {
-            goal.progress = Some(progress);
+            next.progress = Some(progress);
         }
     }
     if let Some(reason) = reason {
         if !reason.trim().is_empty() {
-            goal.last_reason = Some(reason);
+            next.last_reason = Some(reason);
         }
     }
     for item in evidence {
         if item.is_usable() {
-            goal.evidence.push(item);
+            next.evidence.push(item);
         }
     }
 
     match status {
         "active" => {
-            if matches!(goal.state, GoalState::Complete | GoalState::BudgetLimited) {
-                return Err(format!("Cannot reactivate a goal that is {}.", goal.state));
+            if matches!(next.state, GoalState::Complete | GoalState::BudgetLimited) {
+                return Err(format!("Cannot reactivate a goal that is {}.", next.state));
             }
-            if goal.state == GoalState::Paused {
+            if next.state == GoalState::Paused {
                 return Err(
                     "The user paused this goal. Use /goal resume; the model cannot unpause."
                         .to_string(),
                 );
             }
-            goal.state = GoalState::Active;
+            next.state = GoalState::Active;
         }
         "blocked" => {
-            if goal.state == GoalState::Paused {
+            if next.state == GoalState::Paused {
                 return Err("The user paused this goal.".to_string());
             }
-            if matches!(goal.state, GoalState::Complete | GoalState::BudgetLimited) {
-                return Err(format!("Cannot block a goal that is {}.", goal.state));
+            if matches!(next.state, GoalState::Complete | GoalState::BudgetLimited) {
+                return Err(format!("Cannot block a goal that is {}.", next.state));
             }
-            goal.state = GoalState::Blocked;
+            next.state = GoalState::Blocked;
         }
         "complete" => {
-            if goal.state == GoalState::Paused {
+            if next.state == GoalState::Paused {
                 return Err("The user paused this goal.".to_string());
             }
-            if !goal.evidence.iter().any(GoalEvidence::is_usable) {
+            if !next.evidence.iter().any(GoalEvidence::is_usable) {
                 return Err(
                     "Completion requires evidence (file, command, or test). Do not mark complete on vibes."
                         .to_string(),
                 );
             }
-            if goal
+            if next
                 .last_reason
                 .as_deref()
                 .map(str::trim)
@@ -107,14 +109,15 @@ pub fn apply_model_update(
             {
                 return Err("Completion requires a reason describing the evidence.".to_string());
             }
-            goal.state = GoalState::Complete;
+            next.state = GoalState::Complete;
         }
         "paused" => {
             return Err("The model cannot pause a goal. The user runs /goal pause.".to_string());
         }
         other => return Err(format!("Unknown goal status: {other}")),
     }
-    goal.touch();
+    next.touch();
+    *goal = next;
     Ok(())
 }
 

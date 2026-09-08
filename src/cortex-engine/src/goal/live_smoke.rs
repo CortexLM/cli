@@ -2,7 +2,7 @@
 //!
 //! Skips cleanly when no key is injected. Never prints key values.
 
-use super::super::config::llm_env::{llm_api_key, llm_base_url, llm_model};
+use crate::config::{llm_api_key, llm_base_url, llm_model};
 
 /// Human-readable skip when the operator has not injected a key.
 pub const LIVE_SMOKE_SKIP: &str = "SKIP: live /goal smoke needs OPENAI_API_KEY or CORTEX_LLM_API_KEY \

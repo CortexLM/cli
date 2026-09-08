@@ -362,3 +362,155 @@ async fn ux_contract_me_profile_applies_off_the_render_path() {
         Some("Analytical Engines")
     );
 }
+
+#[tokio::test]
+async fn ux_contract_permission_prompt_numbered_radios() {
+    use crate::interactive::handle_interactive_key;
+    use cortex_core::style::{ACCENT, TEXT_DIM};
+    use crossterm::event::KeyModifiers;
+
+    let (_temp, mut runner) = fixture();
+    runner.app_state.request_tool_approval(
+        "call-1".into(),
+        "shell".into(),
+        serde_json::json!({
+            "command": "npm install ioredis && npm install -D ioredis-mock"
+        }),
+        None,
+    );
+    assert!(runner.app_state.has_pending_approval());
+    assert_ne!(runner.app_state.view, crate::app::AppView::Approval);
+    let interactive = runner
+        .app_state
+        .get_interactive_state()
+        .expect("permission prompt");
+    assert_eq!(interactive.items.len(), 4);
+    assert_eq!(interactive.items[0].label, "1 Yes, run once");
+    assert_eq!(
+        interactive.items[1].label,
+        "2 Yes, always allow npm install in this project"
+    );
+    assert_eq!(interactive.items[2].label, "3 Edit command");
+    assert_eq!(
+        interactive.items[3].label,
+        "4 No — tell Cortex what to do instead"
+    );
+
+    for (width, height) in [(40, 12), (120, 40)] {
+        runner.app_state.terminal_size = (width, height);
+        let area = Rect::new(0, 0, width, height);
+        let mut buffer = Buffer::empty(area);
+        crate::views::minimal_session::MinimalSessionView::new(&runner.app_state)
+            .render(area, &mut buffer);
+        let text: String = (0..height)
+            .map(|y| {
+                (0..width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("Yes, run once"),
+            "{width}x{height} missing option 1:\n{text}"
+        );
+        assert!(
+            text.contains("Choose an option above"),
+            "{width}x{height} missing prompt placeholder:\n{text}"
+        );
+        assert!(
+            !text.contains("Tool Approval Required"),
+            "{width}x{height} still paints the centred modal:\n{text}"
+        );
+        let mut found_green_caret = false;
+        let mut found_dim_composer = false;
+        for y in 0..height {
+            for x in 0..width {
+                let cell = &buffer[(x, y)];
+                if cell.symbol() == ">" && cell.style().fg == Some(ACCENT) {
+                    found_green_caret = true;
+                }
+                if cell.symbol() == ">" && cell.style().fg == Some(TEXT_DIM) {
+                    found_dim_composer = true;
+                }
+            }
+        }
+        assert!(
+            found_green_caret,
+            "{width}x{height} selected row must use banner-green `>`"
+        );
+        assert!(
+            found_dim_composer,
+            "{width}x{height} composer `>` must be dim while the prompt owns focus"
+        );
+    }
+
+    {
+        let state = runner
+            .app_state
+            .get_interactive_state_mut()
+            .expect("prompt");
+        assert_eq!(state.selected, 0);
+        handle_interactive_key(state, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(state.selected, 1);
+        handle_interactive_key(state, KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(state.selected, 0);
+        let three =
+            handle_interactive_key(state, KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE));
+        assert!(matches!(
+            three,
+            crate::interactive::InteractiveResult::Selected { ref item_id, .. } if item_id == "edit"
+        ));
+    }
+
+    runner.app_state.request_tool_approval(
+        "call-2".into(),
+        "shell".into(),
+        serde_json::json!({"command": "npm install ioredis && npm install -D ioredis-mock"}),
+        None,
+    );
+    {
+        let state = runner
+            .app_state
+            .get_interactive_state_mut()
+            .expect("prompt");
+        let enter =
+            handle_interactive_key(state, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        match enter {
+            crate::interactive::InteractiveResult::Selected {
+                action,
+                item_id,
+                item_ids,
+            } => {
+                runner
+                    .handle_interactive_selection(action, item_id, item_ids)
+                    .await;
+            }
+            other => panic!("expected Selected, got {other:?}"),
+        }
+    }
+    assert!(
+        !runner.app_state.has_pending_approval(),
+        "Enter on option 1 must approve"
+    );
+
+    runner.app_state.request_tool_approval(
+        "call-3".into(),
+        "shell".into(),
+        serde_json::json!({"command": "true"}),
+        None,
+    );
+    {
+        let state = runner
+            .app_state
+            .get_interactive_state_mut()
+            .expect("prompt");
+        let esc = handle_interactive_key(state, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(matches!(
+            esc,
+            crate::interactive::InteractiveResult::Cancelled
+        ));
+    }
+    runner.app_state.reject();
+    assert!(!runner.app_state.has_pending_approval());
+}

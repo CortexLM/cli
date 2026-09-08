@@ -32,6 +32,8 @@ pub const PLACEHOLDER_IDLE: &str = "Plan, search, build anything";
 /// Composer placeholder while a run is live — stdin stays alive and a
 /// submitted follow-up is queued.
 pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up — Enter to queue";
+/// Composer placeholder while a SPEC §3.10 prompt owns focus.
+pub const PLACEHOLDER_PROMPT: &str = crate::interactive::builders::PERMISSION_PROMPT_PLACEHOLDER;
 
 /// Paint the composer input row (after `> `) to the lock:
 /// empty = block cursor at input col 0, dim placeholder after that cell;
@@ -252,7 +254,15 @@ impl<'a> MinimalSessionView<'a> {
             return;
         }
 
-        let focused = self.app_state.settings_modal.is_none() && !self.app_state.shortcuts_open;
+        let prompt_owns_focus = self
+            .app_state
+            .get_interactive_state()
+            .map(|s| s.prompt_owns_focus)
+            .unwrap_or(false)
+            || self.app_state.has_pending_approval();
+        let focused = self.app_state.settings_modal.is_none()
+            && !self.app_state.shortcuts_open
+            && !prompt_owns_focus;
         let effort = self
             .app_state
             .thinking_budget
@@ -292,7 +302,9 @@ impl<'a> MinimalSessionView<'a> {
         }
         let text_budget = inner.width.saturating_sub(badge_cols);
         let placeholder = if input_text.is_empty() {
-            Some(if self.app_state.quota_held {
+            Some(if prompt_owns_focus {
+                PLACEHOLDER_PROMPT
+            } else if self.app_state.quota_held {
                 crate::ui::consts::PLACEHOLDER_QUOTA
             } else if self.is_task_running() {
                 PLACEHOLDER_RUNNING

@@ -7,7 +7,7 @@ use ratatui::widgets::Clear;
 use crate::app::AppView;
 use crate::input::ClickZoneId;
 use crate::runner::terminal::CortexTerminal;
-use crate::views::{ApprovalView, QuestionPromptView};
+use crate::views::QuestionPromptView;
 
 use super::core::EventLoop;
 
@@ -41,10 +41,11 @@ impl EventLoop {
                 }
 
                 AppView::Approval => {
-                    let session_view = crate::views::MinimalSessionView::new(&self.app_state);
-                    frame.render_widget(session_view, area);
-                    let approval_view = ApprovalView::new(&self.app_state);
-                    frame.render_widget(approval_view, area);
+                    // Dead path: tool approval is inline numbered radios on
+                    // the session view (SPEC §3.10). AppView::Approval is
+                    // kept for compatibility and paints the same session.
+                    let view = crate::views::MinimalSessionView::new(&self.app_state);
+                    frame.render_widget(view, area);
                 }
 
                 AppView::Questions => {
@@ -295,10 +296,8 @@ impl EventLoop {
                         frame.render_widget(widget, area);
                     }
                     AppView::Approval => {
-                        let session_view = crate::views::MinimalSessionView::new(&self.app_state);
-                        frame.render_widget(session_view, area);
-                        let approval_view = ApprovalView::new(&self.app_state);
-                        frame.render_widget(approval_view, area);
+                        let widget = crate::views::MinimalSessionView::new(&self.app_state);
+                        frame.render_widget(widget, area);
                     }
                     AppView::Questions => {
                         let session_view = crate::views::MinimalSessionView::new(&self.app_state);

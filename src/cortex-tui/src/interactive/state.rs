@@ -215,6 +215,9 @@ pub struct InteractiveState {
     pub effort: Option<EffortLevel>,
     /// When true, the effort radio pane has keyboard focus (Tab from the model list).
     pub effort_focused: bool,
+    /// SPEC §3.10 prompt: composer yields (`>` dim, placeholder
+    /// `Choose an option above`). Slash pickers leave this false.
+    pub prompt_owns_focus: bool,
 }
 
 /// Reasoning effort shown as `/model` radios: High → Medium → Low.
@@ -322,7 +325,14 @@ impl InteractiveState {
             tab_click_zones: Vec::new(),
             effort: None,
             effort_focused: false,
+            prompt_owns_focus: false,
         }
+    }
+
+    /// Composer yields focus to this inline prompt (SPEC §3.10).
+    pub fn with_prompt_focus(mut self) -> Self {
+        self.prompt_owns_focus = true;
+        self
     }
 
     /// Show High / Medium / Low effort radios and bind Tab to the effort pane.

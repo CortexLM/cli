@@ -33,7 +33,7 @@ impl AppState {
             diff_preview,
             approval_mode: ApprovalMode::Ask,
         });
-        self.set_view(AppView::Approval);
+        self.open_permission_prompt();
     }
 
     /// Request approval for a tool with full details
@@ -52,23 +52,44 @@ impl AppState {
             diff_preview,
             approval_mode: ApprovalMode::Ask,
         });
-        self.set_view(AppView::Approval);
+        self.open_permission_prompt();
 
         // Play approval required sound
         crate::sound::play_approval_required(self.sound_enabled);
     }
 
+    /// Open the SPEC §3.10 inline numbered radios for the pending approval.
+    /// Stays on the session view — there is no centred approval modal.
+    pub fn open_permission_prompt(&mut self) {
+        if self.view == AppView::Approval {
+            self.go_back();
+        }
+        if self.view != AppView::Session {
+            self.set_view(AppView::Session);
+        }
+        if let Some(ref approval) = self.pending_approval {
+            let interactive = crate::interactive::builders::build_permission_prompt(approval);
+            self.enter_interactive_mode(interactive);
+        }
+    }
+
     /// Approve the pending tool
     pub fn approve(&mut self) -> Option<ApprovalState> {
         let approval = self.pending_approval.take();
-        self.go_back();
+        self.exit_interactive_mode();
+        if self.view == AppView::Approval {
+            self.go_back();
+        }
         approval
     }
 
     /// Reject the pending tool
     pub fn reject(&mut self) -> Option<ApprovalState> {
         let approval = self.pending_approval.take();
-        self.go_back();
+        self.exit_interactive_mode();
+        if self.view == AppView::Approval {
+            self.go_back();
+        }
         approval
     }
 
@@ -808,5 +829,25 @@ mod agent_mode_tests {
         assert_eq!(state.user_name.as_deref(), Some("Ada Lovelace"));
         assert_eq!(state.user_email.as_deref(), Some("ada@example.com"));
         assert_eq!(state.org_name.as_deref(), Some("Analytical Engines"));
+    }
+
+    #[test]
+    fn request_tool_approval_opens_inline_radios() {
+        let mut state = AppState::new();
+        state.request_tool_approval(
+            "id".into(),
+            "shell".into(),
+            serde_json::json!({"command": "npm install ioredis"}),
+            None,
+        );
+        assert!(state.has_pending_approval());
+        assert_eq!(state.view, AppView::Session);
+        let radios = state.get_interactive_state().expect("inline radios");
+        assert_eq!(radios.items.len(), 4);
+        assert!(radios.prompt_owns_focus);
+        assert_eq!(radios.items[0].shortcut, Some('1'));
+        state.approve();
+        assert!(!state.has_pending_approval());
+        assert!(!state.is_interactive_mode());
     }
 }

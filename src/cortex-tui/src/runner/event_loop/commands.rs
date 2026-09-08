@@ -32,8 +32,8 @@ impl EventLoop {
             }
 
             CommandResult::Clear => {
-                self.app_state.clear_messages();
-                self.add_system_message("Display cleared. Stored conversation context is unchanged; use /new for a fresh conversation.");
+                self.app_state
+                    .enter_interactive_mode(crate::interactive::builders::build_clear_confirm());
             }
 
             CommandResult::Interrupt => {
@@ -256,9 +256,14 @@ impl EventLoop {
                 }
             },
             ModalType::ApprovalPicker | ModalType::Permissions => {
-                let current = self.app_state.approval_mode_string();
+                let current = match self.app_state.permission_mode {
+                    crate::permissions::PermissionMode::High => "ro",
+                    crate::permissions::PermissionMode::Medium => "smart",
+                    crate::permissions::PermissionMode::Low
+                    | crate::permissions::PermissionMode::Yolo => "full",
+                };
                 let interactive =
-                    crate::interactive::builders::build_approval_selector(Some(&current));
+                    crate::interactive::builders::build_permissions_picker(Some(current));
                 self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::LogLevelPicker => {

@@ -237,7 +237,7 @@ impl EventLoop {
                         }
                     }
                     crate::interactive::InteractiveResult::Cancelled => {
-                        self.app_state.exit_interactive_mode();
+                        self.reject_pending_approval_and_exit_interactive();
                     }
                     crate::interactive::InteractiveResult::Continue => {
                         // Just re-render
@@ -374,6 +374,14 @@ impl EventLoop {
         self.render(terminal)?;
 
         Ok(())
+    }
+
+    /// Esc / cancel on a permission prompt rejects the pending tool call.
+    fn reject_pending_approval_and_exit_interactive(&mut self) {
+        if self.app_state.pending_approval.is_some() {
+            self.app_state.reject();
+        }
+        self.app_state.exit_interactive_mode();
     }
 
     /// Handle Ctrl+C with contextual behavior

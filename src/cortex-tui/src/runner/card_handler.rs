@@ -226,12 +226,12 @@ impl CardHandler {
     /// };
     /// handler.request_approval(request);
     /// ```
-    pub fn request_approval(&mut self, request: ApprovalRequest) {
-        if let Some(ref mut overlay) = self.approval_overlay {
-            overlay.enqueue(request);
-        } else {
-            self.approval_overlay = Some(ApprovalOverlay::new(request));
-        }
+    /// Dead path. Tool approval is the SPEC §3.10 inline radios on
+    /// [`crate::app::AppState`]. The overlay is not opened.
+    pub fn request_approval(&mut self, _request: ApprovalRequest) {
+        tracing::debug!(
+            "CardHandler::request_approval is dead-pathed; use AppState::request_tool_approval"
+        );
     }
 
     /// Checks if there is a pending approval request.
@@ -423,13 +423,7 @@ impl CardHandler {
     /// }
     /// ```
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
-        // Approval overlay takes priority
-        if let Some(ref overlay) = self.approval_overlay {
-            overlay.render(area, buf);
-            return;
-        }
-
-        // Otherwise render the card stack
+        // Approval overlay is dead-pathed (inline radios). Cards only.
         if self.card_stack.is_active() {
             self.card_stack.render(area, buf);
         }
@@ -690,20 +684,19 @@ mod tests {
 
         handler.request_approval(request);
 
-        assert!(handler.is_active());
-        assert!(handler.has_pending_approval());
-        assert!(handler.current_approval().is_some());
+        // Overlay is dead-pathed; production approval is AppState radios.
+        assert!(!handler.is_active());
+        assert!(!handler.has_pending_approval());
+        assert!(handler.current_approval().is_none());
     }
 
     #[test]
-    fn test_approval_takes_priority_over_cards() {
+    fn test_approval_does_not_override_cards() {
         let mut handler = CardHandler::new();
 
-        // Open a card first
         handler.open_help();
         assert_eq!(handler.current_card_title(), Some("Help"));
 
-        // Then request approval
         let request = ApprovalRequest::Exec {
             id: "cmd-1".to_string(),
             command: vec!["git".into(), "add".into(), ".".into()],
@@ -711,12 +704,10 @@ mod tests {
         };
         handler.request_approval(request);
 
-        // Approval should take priority
-        assert!(handler.has_pending_approval());
-
-        // Key hints should be for approval
+        assert!(!handler.has_pending_approval());
+        assert_eq!(handler.current_card_title(), Some("Help"));
         let hints = handler.key_hints();
-        assert!(hints.iter().any(|(_, desc)| *desc == "reject"));
+        assert!(!hints.iter().any(|(_, desc)| *desc == "reject"));
     }
 
     #[test]
@@ -751,7 +742,7 @@ mod tests {
     }
 
     #[test]
-    fn test_close_dismisses_approval() {
+    fn test_close_does_not_open_dead_approval() {
         let mut handler = CardHandler::new();
 
         let request = ApprovalRequest::Exec {
@@ -760,7 +751,7 @@ mod tests {
             reason: None,
         };
         handler.request_approval(request);
-        assert!(handler.has_pending_approval());
+        assert!(!handler.has_pending_approval());
 
         handler.close();
         assert!(!handler.has_pending_approval());
@@ -819,20 +810,10 @@ mod tests {
         };
         handler.request_approval(request);
 
-        // Simulate pressing Enter to approve
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         handler.handle_key(key);
 
-        // Should have a pending decision
-        let decision = handler.take_approval_decision();
-        assert!(decision.is_some());
-        let (id, dec) = decision.unwrap();
-        assert_eq!(id, "cmd-1");
-        assert!(matches!(dec, ApprovalDecision::Approved));
-
-        // Second call should return None
-        let decision2 = handler.take_approval_decision();
-        assert!(decision2.is_none());
+        assert!(handler.take_approval_decision().is_none());
     }
 
     #[test]
@@ -874,7 +855,7 @@ mod tests {
         handler.request_approval(request);
 
         let height = handler.desired_height(20, 80);
-        assert_eq!(height, 10); // Fixed approval height
+        assert_eq!(height, 0);
     }
 
     #[test]

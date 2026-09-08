@@ -23,7 +23,7 @@ pub enum HeroScene<'a> {
     Palette,
     /// `/model` picker with effort radios.
     Model,
-    /// Live Shell tool row (`✓` mint on passing tests).
+    /// Live Shell tool row (`✓` success green on passing tests).
     Shell,
     /// Back to the idle composer after the first user turn (no welcome card).
     Composer,

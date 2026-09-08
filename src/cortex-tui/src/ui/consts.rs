@@ -52,8 +52,9 @@ pub const PLACEHOLDER_QUOTA_NARROW: &str = "Follow-up — held until quota reset
 /// Sandbox deny title painted in error red.
 pub const SANDBOX_DENIED_TITLE: &str = "Sandbox denied";
 
-/// Border characters (Unicode box drawing) — square corners only; the
-/// locked chrome never draws rounded frames.
+/// Border characters (Unicode box drawing) — square corners for chips and
+/// painted v1 boards. Runtime session chrome uses the rounded dual-hairline
+/// composer (`╭╮╰╯`) in `ui/chrome.rs`.
 pub mod border {
     pub const TOP_LEFT: char = '┌';
     pub const TOP_RIGHT: char = '┐';

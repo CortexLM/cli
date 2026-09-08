@@ -805,7 +805,7 @@ mod tests {
     #[test]
     fn selection_rows_are_banner_green_on_the_selection_bar_never_inverted() {
         // Banner green is never a background (no inverted bar). The selection bar
-        // is the locked `#221A38` wash.
+        // is the locked `#262626` gray.
         const ACCENT_BG: &str = "48;2;31;73;69";
         const SELECTION_WASH: &str = "48;2;38;38;38";
         for id in lock_scene_ids() {
@@ -999,29 +999,54 @@ mod tests {
 
     #[test]
     fn banned_colors_never_painted() {
-        // Retired mint, brand green, and navy colors must never paint.
-        const BANNED: [&str; 4] = ["0;245;212", "26;51;48", "0;255;163", "10;22;40"];
+        // Retired mint, navy, historical lock violet, violet wash, thinking gold.
+        const BANNED_ANSI: [&str; 7] = [
+            "0;245;212",
+            "26;51;48",
+            "0;255;163",
+            "10;22;40",
+            "167;139;250",
+            "34;26;56",
+            "201;169;92",
+        ];
+        const BANNED_RGB: [(u8, u8, u8); 3] = [
+            (167, 139, 250), // #A78BFA historical violet
+            (34, 26, 56),    // #221A38 retired wash
+            (201, 169, 92),  // #C9A95C retired gold
+        ];
+        let mut retired = 0u32;
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                for banned in BANNED {
+                for banned in BANNED_ANSI {
                     assert!(
                         !frame.ansi.contains(banned),
                         "{id} paints banned color {banned} at {size:?}"
                     );
                 }
                 for (x, y, cell) in cells(&frame.buffer) {
+                    if let Some(Color::Rgb(r, g, b)) = cell.style().fg {
+                        if BANNED_RGB.contains(&(r, g, b)) {
+                            retired += 1;
+                        }
+                    }
                     if let Some(Color::Rgb(r, g, b)) = cell.style().bg {
-                        let is_selection = r == 0x22 && g == 0x1A && b == 0x38;
+                        if BANNED_RGB.contains(&(r, g, b)) {
+                            retired += 1;
+                        }
                         let is_gray = r == g && g == b;
                         assert!(
-                            is_selection || is_gray,
+                            is_gray,
                             "{id} paints a tinted background {r},{g},{b} at {size:?} ({x},{y})"
                         );
                     }
                 }
             }
         }
+        assert_eq!(
+            retired, 0,
+            "retired violet/wash/gold cells in lock v1 frames"
+        );
     }
 
     #[test]
@@ -2265,10 +2290,36 @@ mod tests {
     fn no_rounded_frame_glyphs_anywhere() {
         // Composer uses a rounded dual-hairline box (╭╮╰╯│). Other surfaces
         // must not grow extra frames.
+        const ROUNDED: &[char] = &['╭', '╮', '╰', '╯'];
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let _ = frame;
+                let buf = &frame.buffer;
+                let composer_box = composer_prompt_cell(buf).and_then(|(_, y)| {
+                    let above = y
+                        .checked_sub(1)
+                        .map(|row| row_text(buf, row))
+                        .unwrap_or_default();
+                    let below = if y + 1 < buf.area.height {
+                        row_text(buf, y + 1)
+                    } else {
+                        String::new()
+                    };
+                    (above.contains('╭') && below.contains('╰')).then_some(y)
+                });
+                for (x, y, cell) in cells(buf) {
+                    let Some(ch) = cell.symbol().chars().next() else {
+                        continue;
+                    };
+                    if !ROUNDED.contains(&ch) {
+                        continue;
+                    }
+                    let on_box = composer_box.is_some_and(|cy| y.abs_diff(cy) <= 1);
+                    assert!(
+                        on_box,
+                        "{id} paints rounded `{ch}` off the composer box at {size:?} ({x},{y})"
+                    );
+                }
             }
         }
     }

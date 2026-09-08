@@ -26,8 +26,9 @@ selection only (the `>` caret and the selected label on the `#262626` gray bar,
 never inverted, never a `#221A38` wash); unselected rows lead with a dim
 middot. Green `#4ADE80` appears only on `✓`
 and `+N` diff additions, red / amber only on diagnostics, and the Thinking
-status is the muted gold `#C9A95C`. The footer is the model on the left and
-one shortcut hint on the right, all gray.
+status is dim `#6B7280` (gold is retired). The footer is the model on the left and
+one shortcut hint on the right, all gray. Historical violet `#A78BFA` is not
+the signed lock.
 
 Replies auto-format through the real `MarkdownRenderer`: markdown tables are
 the gray plus-ASCII grid (`+---+`, `|` — never Unicode box drawing), fenced
@@ -92,7 +93,7 @@ plus `v{CARGO_PKG_VERSION} · / commands · …`. After the first user turn,
 | `config.png` | `/config` tree |
 | `footer_max.png` | MAX footer after push |
 | `login.png` | Sign in — numbered options, option 1 (`> 1 Continue with browser`) focused |
-| `thinking.png` | Thinking (muted gold) + reasoning |
+| `thinking.png` | Thinking (dim) + reasoning |
 | `todos.png` | Working 1/5 checklist |
 | `question.png` | Clarifying question |
 | `skills.png` | `/skills` picker |

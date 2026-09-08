@@ -39,7 +39,7 @@ For reference — these are the colours the demo recording on the
 | Role | Colour |
 |------|--------|
 | Selection accent (`>` caret + focused label; focused composer `>`) | `#1F4945` |
-| Background | terminal default (`Color::Reset` — never painted) |
+| Background | `#000000` (painted alternate-screen void) |
 | Charcoal panel (tips / info) | `#141414` |
 | Past user turn bar | `#1C1C1C` |
 | Selection bar | `#262626` (focused green glyphs have a `#F5F5F5` backing for contrast; descriptions stay dim) |
@@ -51,7 +51,7 @@ For reference — these are the colours the demo recording on the
 | Success `✓` and diff additions `+N` | `#4ADE80` (bright semantic green) |
 | Warning (`warn` in diagnostics) | `#FFC857` |
 | Error (`error`, `× Stopped`, quota, failed MCP `x`) | `#F87171` |
-| Thinking status | `#C9A95C` (the only gold) |
+| Thinking status | `#6B7280` (dim session chrome; gold `#C9A95C` is retired) |
 
 The footer is gray: the model on the left (`Cortex Mini 1 · Agent · 92%
 context`), one shortcut hint on the right (`shift+tab to cycle modes`).

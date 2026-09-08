@@ -66,6 +66,31 @@ mod harness_snapshots {
     }
 
     #[test]
+    fn snapshot_motd_shows_org_from_me_profile() {
+        let mut state = AppState::default();
+        state.apply_me_profile(cortex_engine::client::MeProfile {
+            name: Some("Ada Lovelace".into()),
+            email: Some("ada@example.com".into()),
+            org_name: Some("Analytical Engines".into()),
+        });
+        let colors = crate::ui::colors::AdaptiveColors::from_theme_name("Cortex Night");
+        for (width, height) in [(80, 24), (120, 40)] {
+            let area = Rect::new(0, 0, width, height);
+            let mut buf = Buffer::empty(area);
+            super::super::rendering::_render_motd(area, &mut buf, &colors, &state);
+            let text = buffer_text(&buf);
+            assert!(
+                text.contains("Analytical Engines"),
+                "{width}x{height} motd should show the live org, got: {text}"
+            );
+            assert!(
+                !text.contains("Personal") || text.contains("Analytical Engines"),
+                "{width}x{height}: {text}"
+            );
+        }
+    }
+
+    #[test]
     fn snapshot_session_with_turn() {
         let mut state = AppState::default();
         state.add_message(cortex_core::widgets::Message::user("List the files"));

@@ -13,7 +13,7 @@ use crate::login::{
     read_api_key_from_stdin, run_login_status, run_login_with_api_key, run_login_with_device_code,
     run_logout,
 };
-use crate::styled_output::{print_success, print_warning};
+use crate::styled_output::print_success;
 
 /// Dispatch a CLI command to its handler.
 ///
@@ -561,65 +561,48 @@ fn install_completions(shell: Shell) -> Result<()> {
 // Command handler stubs (implemented elsewhere)
 // ============================================================================
 
-/// Show current logged-in user.
+/// Show current logged-in user via live `GET /v1/me` on the configured origin.
 pub async fn run_whoami() -> Result<()> {
-    use cortex_login::{AuthMode, load_auth_with_fallback, safe_format_key};
+    use cortex_engine::client::{AUTH_REQUIRED, CodeAgentClient};
+    use cortex_login::load_auth_with_fallback;
 
-    let cortex_home = dirs::home_dir()
-        .map(|h| h.join(".cortex"))
-        .unwrap_or_else(|| std::path::PathBuf::from(".cortex"));
+    let cortex_home = crate::utils::paths::get_cortex_home();
 
-    // Check environment variables first
-    if let Ok(token) = std::env::var("CORTEX_AUTH_TOKEN")
-        && !token.is_empty()
-    {
-        println!(
-            "Authenticated via CORTEX_AUTH_TOKEN: {}",
-            safe_format_key(&token)
-        );
-        return Ok(());
-    }
+    let token = std::env::var("CORTEX_AUTH_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty())
+        .or_else(|| {
+            std::env::var("CORTEX_API_KEY")
+                .ok()
+                .filter(|token| !token.is_empty())
+        })
+        .or_else(|| {
+            load_auth_with_fallback(&cortex_home)
+                .ok()
+                .flatten()
+                .and_then(|auth| auth.get_token().map(str::to_string))
+        });
 
-    if let Ok(token) = std::env::var("CORTEX_API_KEY")
-        && !token.is_empty()
-    {
-        println!(
-            "Authenticated via CORTEX_API_KEY: {}",
-            safe_format_key(&token)
-        );
-        return Ok(());
-    }
+    let Some(token) = token else {
+        bail!("{AUTH_REQUIRED}");
+    };
 
-    // Load stored credentials
-    match load_auth_with_fallback(&cortex_home) {
-        Ok(Some(auth)) => match auth.mode {
-            AuthMode::ApiKey => {
-                if let Some(key) = auth.get_token() {
-                    println!("Logged in with API key: {}", safe_format_key(key));
-                } else {
-                    println!("Logged in with API key (stored)");
-                }
+    let client = CodeAgentClient::new(None, Some(token));
+    match client.fetch_me().await {
+        Ok(me) => {
+            match (&me.name, &me.email) {
+                (Some(name), Some(email)) => println!("Logged in as {name} <{email}>"),
+                (Some(name), None) => println!("Logged in as {name}"),
+                (None, Some(email)) => println!("Logged in as {email}"),
+                (None, None) => println!("Logged in"),
             }
-            AuthMode::OAuth => {
-                if let Some(account_id) = &auth.account_id {
-                    println!("Logged in via OAuth (account: {})", account_id);
-                } else {
-                    println!("Logged in via OAuth");
-                }
-                if auth.is_expired() {
-                    print_warning("Token is expired. Run 'cortex login' to refresh.");
-                }
+            if let Some(org) = &me.org_name {
+                println!("Organization: {org}");
             }
-        },
-        Ok(None) => {
-            println!("Not logged in. Run 'cortex login' to authenticate.");
+            Ok(())
         }
-        Err(e) => {
-            return Err(anyhow::anyhow!("Error checking login status: {}", e));
-        }
+        Err(e) => bail!("{}", e.user_friendly_message()),
     }
-
-    Ok(())
 }
 
 #[path = "ux_sessions.rs"]

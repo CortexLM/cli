@@ -89,3 +89,15 @@ fn test_app_runner_cortex_session_id() {
     // Direct provider mode should still be enabled
     assert!(runner.use_direct_provider);
 }
+
+#[test]
+fn me_profile_request_url_uses_configured_origin_never_production_or_auth_me() {
+    let url = cortex_engine::client::me_url("http://127.0.0.1:18081/");
+    assert_eq!(url, "http://127.0.0.1:18081/v1/me");
+    assert!(!url.contains("api.cortex.foundation"));
+    assert!(!url.contains("/auth/me"));
+    assert_eq!(
+        cortex_engine::client::me_url("https://api.cortex.foundation"),
+        "https://api.cortex.foundation/v1/me"
+    );
+}

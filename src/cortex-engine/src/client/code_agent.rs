@@ -659,7 +659,7 @@ impl CodeAgentClient {
             .to_string()
     }
 
-    async fn authed_get(&self, url: &str) -> Result<reqwest::Response> {
+    pub(super) async fn authed_get(&self, url: &str) -> Result<reqwest::Response> {
         let mut req = self
             .http
             .get(url)
@@ -786,7 +786,7 @@ fn apply_auth(mut req: reqwest::RequestBuilder, auth: Option<&str>) -> reqwest::
     req
 }
 
-async fn parse_json<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Result<T> {
+pub(super) async fn parse_json<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Result<T> {
     resp.json().await.map_err(|e| CortexError::BackendError {
         message: format!("Failed to parse API response: {e}"),
     })

@@ -6,15 +6,18 @@
 mod code_agent;
 mod computer;
 mod cortex;
+mod me;
 pub mod runtime_contract;
 pub mod types;
 
 pub use code_agent::{
-    CodeAgentClient, CodeHost, CodeHostPairing, CodeMessage, CodeSession, CodeTurnContext,
-    CodeTurnEvent, CodeTurnMode, ComputerKind, CreateCodeSession, DISCONNECTED_RUNTIME,
-    GUEST_TOKEN_PREFIX, GuestSession, cached_code_session_id,
+    AUTH_REQUIRED, CodeAgentClient, CodeHost, CodeHostPairing, CodeMessage, CodeSession,
+    CodeTurnContext, CodeTurnEvent, CodeTurnMode, ComputerKind, CreateCodeSession,
+    DISCONNECTED_RUNTIME, GUEST_TOKEN_PREFIX, GuestSession, cached_code_session_id,
+    normalize_api_base,
 };
 pub use cortex::{CortexClient, CortexModel, PricingInfo};
+pub use me::{ME_FETCH_TIMEOUT, ME_PATH, MeProfile, me_url};
 pub use types::*;
 
 use async_trait::async_trait;

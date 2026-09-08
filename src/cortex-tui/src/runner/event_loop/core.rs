@@ -178,6 +178,9 @@ pub struct EventLoop {
         Option<tokio::sync::mpsc::UnboundedReceiver<cortex_engine::mcp::McpLifecycleEvent>>,
     /// Servers the user is stopping (disconnect is not a drop).
     pub(super) mcp_stopping: std::collections::HashSet<String>,
+
+    /// In-flight `GET /v1/me` on the configured API origin (off the render path).
+    pub(super) me_profile_task: Option<JoinHandle<Option<cortex_engine::client::MeProfile>>>,
 }
 
 impl EventLoop {
@@ -234,6 +237,7 @@ impl EventLoop {
             mcp_manager,
             mcp_event_rx: Some(mcp_event_rx),
             mcp_stopping: std::collections::HashSet::new(),
+            me_profile_task: None,
         }
     }
 

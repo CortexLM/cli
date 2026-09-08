@@ -753,6 +753,21 @@ impl AppState {
     }
 }
 
+impl AppState {
+    /// Apply identity from `GET /v1/me` without blocking startup.
+    pub fn apply_me_profile(&mut self, profile: cortex_engine::client::MeProfile) {
+        if profile.name.is_some() {
+            self.user_name = profile.name;
+        }
+        if profile.email.is_some() {
+            self.user_email = profile.email;
+        }
+        if profile.org_name.is_some() {
+            self.org_name = profile.org_name;
+        }
+    }
+}
+
 #[cfg(test)]
 mod agent_mode_tests {
     use super::*;
@@ -780,5 +795,18 @@ mod agent_mode_tests {
         assert!(state.is_spec_mode());
         state.set_agent_mode("agent");
         assert!(state.can_write());
+    }
+
+    #[test]
+    fn apply_me_profile_sets_identity_fields() {
+        let mut state = AppState::default();
+        state.apply_me_profile(cortex_engine::client::MeProfile {
+            name: Some("Ada Lovelace".into()),
+            email: Some("ada@example.com".into()),
+            org_name: Some("Analytical Engines".into()),
+        });
+        assert_eq!(state.user_name.as_deref(), Some("Ada Lovelace"));
+        assert_eq!(state.user_email.as_deref(), Some("ada@example.com"));
+        assert_eq!(state.org_name.as_deref(), Some("Analytical Engines"));
     }
 }

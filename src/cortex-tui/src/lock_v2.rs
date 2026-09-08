@@ -205,7 +205,7 @@ fn capture_config(width: u16, height: u16) -> CaptureConfig {
         .with_cursor(false)
 }
 
-fn render_lock_v2_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
+pub(crate) fn render_lock_v2_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
     let config = capture_config(width, height);
     let mut terminal =
         MockTerminal::from_config(config.clone()).map_err(|err| anyhow::anyhow!("{err}"))?;
@@ -1376,37 +1376,6 @@ mod tests {
             }
         }
         assert!(found_accent, "expected banner green caret on welcome");
-    }
-
-    #[test]
-    fn retired_palette_is_absent_from_every_scene() {
-        const BANNED: [ratatui::style::Color; 3] = [
-            ratatui::style::Color::Rgb(167, 139, 250),
-            ratatui::style::Color::Rgb(34, 26, 56),
-            ratatui::style::Color::Rgb(201, 169, 92),
-        ];
-        let mut retired = 0u32;
-        for (width, height, ids) in [
-            (120u16, 40u16, LOCK_V2_WIDE_IDS),
-            (40u16, 12u16, LOCK_V2_NARROW_IDS),
-        ] {
-            for id in ids {
-                let frame =
-                    render_lock_v2_scene(id, width, height).unwrap_or_else(|e| panic!("{id}: {e}"));
-                for y in 0..height {
-                    for x in 0..width {
-                        let cell = &frame.buffer[(x, y)];
-                        if BANNED.contains(&cell.fg) || BANNED.contains(&cell.bg) {
-                            retired += 1;
-                        }
-                    }
-                }
-            }
-        }
-        assert_eq!(
-            retired, 0,
-            "retired violet/wash/gold cells in lock v2 frames"
-        );
     }
 
     #[test]

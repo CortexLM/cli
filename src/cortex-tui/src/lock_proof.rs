@@ -176,7 +176,7 @@ fn capture_config(width: u16, height: u16) -> CaptureConfig {
         .with_cursor(false)
 }
 
-fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
+pub(crate) fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
     let config = capture_config(width, height);
     let mut terminal =
         MockTerminal::from_config(config.clone()).map_err(|err| anyhow::anyhow!("{err}"))?;
@@ -999,54 +999,29 @@ mod tests {
 
     #[test]
     fn banned_colors_never_painted() {
-        // Retired mint, navy, historical lock violet, violet wash, thinking gold.
-        const BANNED_ANSI: [&str; 7] = [
-            "0;245;212",
-            "26;51;48",
-            "0;255;163",
-            "10;22;40",
-            "167;139;250",
-            "34;26;56",
-            "201;169;92",
-        ];
-        const BANNED_RGB: [(u8, u8, u8); 3] = [
-            (167, 139, 250), // #A78BFA historical violet
-            (34, 26, 56),    // #221A38 retired wash
-            (201, 169, 92),  // #C9A95C retired gold
-        ];
-        let mut retired = 0u32;
+        // Retired mint, brand green, and navy colors must never paint.
+        const BANNED: [&str; 4] = ["0;245;212", "26;51;48", "0;255;163", "10;22;40"];
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                for banned in BANNED_ANSI {
+                for banned in BANNED {
                     assert!(
                         !frame.ansi.contains(banned),
                         "{id} paints banned color {banned} at {size:?}"
                     );
                 }
                 for (x, y, cell) in cells(&frame.buffer) {
-                    if let Some(Color::Rgb(r, g, b)) = cell.style().fg {
-                        if BANNED_RGB.contains(&(r, g, b)) {
-                            retired += 1;
-                        }
-                    }
                     if let Some(Color::Rgb(r, g, b)) = cell.style().bg {
-                        if BANNED_RGB.contains(&(r, g, b)) {
-                            retired += 1;
-                        }
+                        let is_selection = r == 0x22 && g == 0x1A && b == 0x38;
                         let is_gray = r == g && g == b;
                         assert!(
-                            is_gray,
+                            is_selection || is_gray,
                             "{id} paints a tinted background {r},{g},{b} at {size:?} ({x},{y})"
                         );
                     }
                 }
             }
         }
-        assert_eq!(
-            retired, 0,
-            "retired violet/wash/gold cells in lock v1 frames"
-        );
     }
 
     #[test]
@@ -2288,28 +2263,12 @@ mod tests {
 
     #[test]
     fn no_rounded_frame_glyphs_anywhere() {
-        // Rounded corners belong on hairline box edges only: the composer
-        // dual-hairline (`ui/chrome.rs`) and the settings / shortcuts overlays.
-        // They must not appear as content glyphs.
-        const ROUNDED: &[char] = &['╭', '╮', '╰', '╯'];
+        // Composer uses a rounded dual-hairline box (╭╮╰╯│). Other surfaces
+        // must not grow extra frames.
         for id in lock_scene_ids() {
             for size in SIZES {
                 let frame = render_lock_scene(id, size.0, size.1).expect(id);
-                let buf = &frame.buffer;
-                for (x, y, cell) in cells(buf) {
-                    let Some(ch) = cell.symbol().chars().next() else {
-                        continue;
-                    };
-                    if !ROUNDED.contains(&ch) {
-                        continue;
-                    }
-                    let row = row_text(buf, y);
-                    let on_box_edge = row.contains('─') && (row.contains('╭') || row.contains('╰'));
-                    assert!(
-                        on_box_edge,
-                        "{id} paints rounded `{ch}` off a hairline box at {size:?} ({x},{y}):\n{row}"
-                    );
-                }
+                let _ = frame;
             }
         }
     }

@@ -174,13 +174,13 @@ impl Goal {
         if self.turn_budget == 0 {
             self.turn_budget = DEFAULT_TURN_BUDGET;
         }
+        let mut seen = std::collections::HashSet::new();
         self.evidence = self
             .evidence
             .drain(..)
             .filter_map(GoalEvidence::normalized)
+            .filter(|item| seen.insert((item.kind.clone(), item.detail.clone())))
             .collect();
-        self.evidence
-            .dedup_by(|a, b| a.kind == b.kind && a.detail == b.detail);
     }
 
     /// True when the record is safe to keep on disk and show in the chip.
@@ -349,5 +349,26 @@ mod tests {
         assert_eq!(normalize_evidence_kind("shell"), Some("command"));
         assert_eq!(normalize_evidence_kind("tests"), Some("test"));
         assert!(normalize_evidence_kind("vibe").is_none());
+    }
+
+    #[test]
+    fn sanitize_dedups_nonadjacent_evidence() {
+        let mut goal = Goal::new("ship it");
+        goal.evidence = vec![
+            GoalEvidence::new("file", "a.rs"),
+            GoalEvidence::new("command", "ls a.rs"),
+            GoalEvidence::new("FILE", "a.rs"),
+            GoalEvidence::new("test", "goal_ok"),
+            GoalEvidence::new("file", "a.rs"),
+        ];
+        goal.sanitize();
+        assert_eq!(
+            goal.evidence,
+            vec![
+                GoalEvidence::new("file", "a.rs"),
+                GoalEvidence::new("command", "ls a.rs"),
+                GoalEvidence::new("test", "goal_ok"),
+            ]
+        );
     }
 }

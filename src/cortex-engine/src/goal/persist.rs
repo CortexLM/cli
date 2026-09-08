@@ -20,7 +20,7 @@ pub enum GoalLoad {
     Missing,
     /// A persistable goal.
     Loaded(Goal),
-    /// File existed but was unreadable; it was moved aside so resume can continue.
+    /// File existed but was unreadable. The reason says whether it was moved aside.
     Quarantined { reason: String },
 }
 
@@ -49,25 +49,19 @@ pub fn load_goal_report(session_dir: impl AsRef<Path>) -> Result<GoalLoad> {
         Err(error) => {
             return Ok(quarantine(
                 &path,
-                &format!("could not read goal.json ({error})"),
+                &format!("could not read goal.json ({error})."),
             ));
         }
     };
     let mut goal: Goal = match serde_json::from_str(&content) {
         Ok(goal) => goal,
         Err(_) => {
-            return Ok(quarantine(
-                &path,
-                "goal.json was unreadable. Moved aside so the session can resume.",
-            ));
+            return Ok(quarantine(&path, "goal.json was unreadable."));
         }
     };
     goal.sanitize();
     if !goal.is_persistable() {
-        return Ok(quarantine(
-            &path,
-            "goal.json was missing an objective. Moved aside so the session can resume.",
-        ));
+        return Ok(quarantine(&path, "goal.json was missing an objective."));
     }
     Ok(GoalLoad::Loaded(goal))
 }
@@ -96,11 +90,57 @@ pub fn clear_goal(session_dir: impl AsRef<Path>) -> Result<()> {
     Ok(())
 }
 
-fn quarantine(path: &Path, reason: &str) -> GoalLoad {
+fn quarantine(path: &Path, why: &str) -> GoalLoad {
     let dest = path.with_extension(GOAL_CORRUPT_SUFFIX);
-    let _ = std::fs::rename(path, &dest);
-    GoalLoad::Quarantined {
-        reason: reason.to_string(),
+    let reason = match std::fs::rename(path, &dest) {
+        Ok(()) => format!("{why} Moved aside so the session can resume."),
+        Err(error) => {
+            format!("{why} Could not move the file aside ({error}); it remains in place.")
+        }
+    };
+    GoalLoad::Quarantined { reason }
+}
+
+fn is_goal_tmp_name(name: &str) -> bool {
+    name.starts_with(".goal.json.tmp.") || name.starts_with(".goal.tmp.")
+}
+
+fn tmp_owner_pid(name: &str) -> Option<u32> {
+    name.rsplit_once('.')?.1.parse().ok()
+}
+
+/// Probe whether `pid` still appears to be running.
+///
+/// A live owner may be mid-`save_goal`; deleting that temp makes the later
+/// rename fail with ENOENT and drops the write. Dead owners are leftovers.
+fn process_appears_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    if pid == std::process::id() {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        // Safety: `kill(pid, 0)` delivers no signal; it only checks existence.
+        let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        if rc == 0 {
+            return true;
+        }
+        std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    }
+    #[cfg(not(unix))]
+    {
+        // Cannot probe; keep the file so a concurrent writer is never stolen.
+        true
+    }
+}
+
+fn goal_tmp_owned_by_live_process(name: &str) -> bool {
+    match tmp_owner_pid(name) {
+        Some(pid) => process_appears_alive(pid),
+        // Unknown suffix: do not delete a file we cannot attribute.
+        None => true,
     }
 }
 
@@ -113,9 +153,10 @@ fn cleanup_stale_tmps(dir: &Path) {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.starts_with(".goal.json.tmp.") || name.starts_with(".goal.tmp.") {
-            let _ = std::fs::remove_file(entry.path());
+        if !is_goal_tmp_name(name) || goal_tmp_owned_by_live_process(name) {
+            continue;
         }
+        let _ = std::fs::remove_file(entry.path());
     }
 }
 
@@ -231,5 +272,77 @@ mod tests {
         let mut goal = Goal::new("x");
         goal.objective.clear();
         assert!(save_goal(dir.path(), &goal).is_err());
+    }
+
+    #[test]
+    fn load_does_not_delete_tmp_owned_by_live_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir
+            .path()
+            .join(format!(".goal.json.tmp.{}", std::process::id()));
+        std::fs::write(&live, b"in-flight").unwrap();
+        assert!(matches!(
+            load_goal_report(dir.path()).unwrap(),
+            GoalLoad::Missing
+        ));
+        assert!(
+            live.exists(),
+            "must not steal this process's in-flight goal write"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_does_not_delete_tmp_owned_by_init() {
+        let dir = tempfile::tempdir().unwrap();
+        let foreign = dir.path().join(".goal.json.tmp.1");
+        std::fs::write(&foreign, b"other-process").unwrap();
+        let _ = load_goal_report(dir.path()).unwrap();
+        assert!(
+            foreign.exists(),
+            "must not delete another live process's goal temp"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_removes_tmp_owned_by_dead_process() {
+        let child = std::process::Command::new("true")
+            .spawn()
+            .expect("spawn short-lived helper");
+        let pid = child.id();
+        let _ = child.wait();
+        let dir = tempfile::tempdir().unwrap();
+        let stale = dir.path().join(format!(".goal.json.tmp.{pid}"));
+        std::fs::write(&stale, b"orphan").unwrap();
+        let _ = load_goal_report(dir.path()).unwrap();
+        assert!(
+            !stale.exists(),
+            "dead-process leftover temp should be removed"
+        );
+    }
+
+    #[test]
+    fn quarantine_reports_when_rename_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = goal_path(dir.path());
+        std::fs::write(&path, "{not-json").unwrap();
+        // Occupying the destination makes rename fail without depending on uid.
+        std::fs::create_dir(dir.path().join("goal.json.corrupt")).unwrap();
+        match load_goal_report(dir.path()).unwrap() {
+            GoalLoad::Quarantined { reason } => {
+                assert!(reason.contains("unreadable"), "{reason}");
+                assert!(
+                    reason.contains("remains in place"),
+                    "must not claim the file was moved: {reason}"
+                );
+                assert!(
+                    !reason.contains("Moved aside"),
+                    "must not claim a successful quarantine: {reason}"
+                );
+            }
+            other => panic!("expected quarantine, got {other:?}"),
+        }
+        assert!(path.exists(), "corrupt goal.json must stay when move fails");
     }
 }

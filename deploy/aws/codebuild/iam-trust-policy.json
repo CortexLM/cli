@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitHubActionsOidcCortexLmCli",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:CortexLM/cli:ref:refs/heads/main"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:job_workflow_ref": "CortexLM/cli/.github/workflows/codebuild.yml@refs/heads/main"
+        }
+      }
+    }
+  ]
+}

@@ -62,6 +62,12 @@ Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
 
 ## The gates
 
+PRs to `main` also grow two CodeBuild status checks once an admin has
+applied the one-time IAM in
+[`deploy/aws/codebuild/README.md`](../deploy/aws/codebuild/README.md):
+`cortex-cli-gha-x64` and `cortex-cli-gha-arm64`. Until that role variable
+is set, GitHub-hosted `ci.yml` remains the merge gate.
+
 These are exactly what CI runs, so run them before you push:
 
 ```bash

@@ -1,5 +1,10 @@
 name: CI
 
+# Linux clippy/test/coverage/TUI also run on AWS CodeBuild when
+# vars.AWS_CODEBUILD_ROLE_ARN is set. Status checks: cortex-cli-gha-x64
+# and cortex-cli-gha-arm64. See deploy/aws/codebuild/README.md.
+# Jobs in this workflow stay required and unchanged.
+
 on:
   push:
     branches: [main]

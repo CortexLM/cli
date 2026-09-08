@@ -49,3 +49,5 @@ registry dates, or remove `--locked`.
 The existing formatting, Clippy, audit, version, and TUI gates remain required.
 CI Success also depends on source policy and changed-line coverage. Test and
 coverage artifacts are retained for 14–30 days, not sent to a third-party service.
+Linux CodeBuild status checks (`cortex-cli-gha-x64` / `cortex-cli-gha-arm64`)
+are documented in [CodeBuild CI](../../deploy/aws/codebuild/README.md).

@@ -95,6 +95,12 @@ The append regression test checks immediate visibility after Tokio 1.53.1 file
 writes. An awaited `flush` finishes the pending write; it is not an `fsync`
 durability guarantee. Do not replace this check with sleeps or retries.
 
+Linux clippy, tests, TUI, schema, local QA, and changed-line coverage also run
+on AWS CodeBuild (`cortex-cli-gha-x64` / `cortex-cli-gha-arm64`) when
+`AWS_CODEBUILD_ROLE_ARN` is configured. Setup is
+[CodeBuild CI](../../deploy/aws/codebuild/README.md). That path uses GitHub
+OIDC; it does not add AWS keys to this repository.
+
 ## Verification MCP (hidden)
 
 `cortex mcp-server --verify` is a hidden stdio JSON-RPC server (`hide = true`

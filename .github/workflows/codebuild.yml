@@ -1,0 +1,172 @@
+# AWS CodeBuild CI for CortexLM/cli (Linux x64 + arm64).
+# Marker: CLI_CODEBUILD_CI_READY
+#
+# Assumes a dedicated IAM role via GitHub OIDC. No long-lived AWS keys.
+# Role ARN and region come from repository *variables*, not secrets.
+# See deploy/aws/codebuild/README.md for the one-time admin steps.
+#
+# Does not replace ci.yml / release.yml / publish-r2.yml / homebrew.yml /
+# winget.yml / version-bump.yml / test-stability.yml.
+
+name: CodeBuild CI
+
+"on":
+  push:
+    branches: [main]
+  # Unprivileged wiring only. StartBuild is skipped for this event because
+  # the workflow file would come from the unapproved head.
+  pull_request:
+    branches: [main]
+  # Privileged StartBuild. Workflow YAML and OIDC come from main.
+  pull_request_target:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: codebuild-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+  statuses: write
+
+jobs:
+  wiring:
+    name: CodeBuild wiring
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      enabled: ${{ steps.gate.outputs.enabled }}
+      same_repo: ${{ steps.gate.outputs.same_repo }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          # pull_request must validate the PR tree (github.sha). pin the base
+          # only for pull_request_target, which must not execute unapproved code.
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r scripts/readiness/requirements.txt
+      - name: Validate CodeBuild assets
+        run: python -B -m unittest discover -s scripts/readiness -p test_codebuild.py -v
+      - name: Decide whether StartBuild is configured
+        id: gate
+        env:
+          ROLE_ARN: ${{ vars.AWS_CODEBUILD_ROLE_ARN }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          same_repo=false
+          if [ "$PR_HEAD_REPO" = "${{ github.repository }}" ]; then
+            same_repo=true
+          fi
+          echo "same_repo=$same_repo" >> "$GITHUB_OUTPUT"
+          if [ -z "$ROLE_ARN" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "AWS_CODEBUILD_ROLE_ARN is unset. Skipping StartBuild. One-time IAM is in deploy/aws/codebuild/README.md"
+            exit 0
+          fi
+          case "$ROLE_ARN" in
+            arn:aws:iam::*:role/*) ;;
+            *)
+              echo "::error::AWS_CODEBUILD_ROLE_ARN must be an IAM role ARN (set a variable, do not commit it)"
+              exit 1
+              ;;
+          esac
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+  codebuild:
+    name: ${{ matrix.context }}
+    needs: wiring
+    if: needs.wiring.outputs.enabled == 'true' && needs.wiring.outputs.same_repo == 'true' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - context: cortex-cli-gha-x64
+            project_var: AWS_CODEBUILD_PROJECT_X64
+            project_default: cortex-cli-gha-x64
+            pr_project_var: AWS_CODEBUILD_PROJECT_X64_PR
+            pr_project_default: cortex-cli-gha-x64-pr
+          - context: cortex-cli-gha-arm64
+            project_var: AWS_CODEBUILD_PROJECT_ARM64
+            project_default: cortex-cli-gha-arm64
+            pr_project_var: AWS_CODEBUILD_PROJECT_ARM64_PR
+            pr_project_default: cortex-cli-gha-arm64-pr
+    env:
+      STATUS_CONTEXT: ${{ matrix.context }}
+      QUALITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      CORTEX_GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Checkout trusted buildspec revision
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          # pull_request_target already runs on the base. Pin the ref so a
+          # later step cannot silently check out the unapproved head.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+      - name: Resolve head SHA
+        id: rev
+        run: echo "sha=${{ github.event.pull_request.head.sha || github.sha }}" >> "$GITHUB_OUTPUT"
+      - name: Post pending status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.rev.outputs.sha }}
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/${SHA}" \
+            --field state=pending \
+            --field context="${STATUS_CONTEXT}" \
+            --field description="AWS CodeBuild starting" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_CODEBUILD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          role-session-name: ${{ matrix.context }}
+      - name: Read trusted buildspec
+        id: spec
+        run: |
+          test -f deploy/aws/codebuild/buildspec-ci.yml
+          {
+            echo "yaml<<ENDOFFILE"
+            cat deploy/aws/codebuild/buildspec-ci.yml
+            echo "ENDOFFILE"
+          } >> "$GITHUB_OUTPUT"
+      - name: Run CodeBuild
+        uses: aws-actions/aws-codebuild-run-build@v1
+        with:
+          # Only push/workflow_dispatch on main use the S3-cached projects.
+          # pull_request_target always uses *-pr (logs-only, NO_CACHE).
+          project-name: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (vars[matrix.project_var] || matrix.project_default) || (vars[matrix.pr_project_var] || matrix.pr_project_default) }}
+          disable-source-override: true
+          buildspec-override: ${{ steps.spec.outputs.yaml }}
+          env-vars-for-codebuild: |
+            QUALITY_BASE,
+            CORTEX_SOURCE_SHA,
+            CORTEX_GITHUB_REPOSITORY
+        env:
+          CORTEX_SOURCE_SHA: ${{ steps.rev.outputs.sha }}
+      - name: Post final status
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.rev.outputs.sha }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          if [ "$OUTCOME" = "success" ]; then
+            state=success
+            desc="AWS CodeBuild passed"
+          else
+            state=failure
+            desc="AWS CodeBuild failed"
+          fi
+          gh api "repos/${{ github.repository }}/statuses/${SHA}" \
+            --field state="$state" \
+            --field context="${STATUS_CONTEXT}" \
+            --field description="$desc" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

@@ -1,0 +1,67 @@
+# Linux CI for CortexLM/cli on AWS CodeBuild (x64 and arm64).
+# Marker: CLI_CODEBUILD_CI_READY
+#
+# GitHub Actions loads this file from the PR *base* (or pushed main SHA),
+# never from an unapproved PR head. The install phase then clones the
+# commit under test over public HTTPS (no PAT). Cargo artifacts live in
+# CARGO_TARGET_DIR so a source refresh cannot delete the restored cache.
+version: 0.2
+
+env:
+  variables:
+    CARGO_TERM_COLOR: always
+    CARGO_INCREMENTAL: "0"
+    CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+    RUST_BACKTRACE: "1"
+    GIT_TERMINAL_PROMPT: "0"
+    CARGO_TARGET_DIR: /tmp/cortex-cli-target
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+      nodejs: 22
+    commands:
+      - |
+        set -euo pipefail
+        REPO="${CORTEX_GITHUB_REPOSITORY:-${GITHUB_REPOSITORY:-CortexLM/cli}}"
+        SHA="${CORTEX_SOURCE_SHA:-${GITHUB_SHA:-}}"
+        if [ -z "$SHA" ]; then
+          echo "Missing CORTEX_SOURCE_SHA / GITHUB_SHA" >&2
+          exit 1
+        fi
+        TARGET="${CARGO_TARGET_DIR:-/tmp/cortex-cli-target}"
+        mkdir -p "$TARGET"
+        if [ -f "${CODEBUILD_SRC_DIR:-}/Cargo.toml" ]; then
+          SRC="$CODEBUILD_SRC_DIR"
+        else
+          SRC=/tmp/cortex-cli-src
+          # Wipe only the source clone. Cargo artifacts live in
+          # CARGO_TARGET_DIR (/tmp/cortex-cli-target), which cache restores
+          # and this command must not delete.
+          rm -rf "$SRC"
+          git clone --no-tags "https://github.com/${REPO}.git" "$SRC"
+          git -C "$SRC" checkout --detach "$SHA"
+        fi
+        {
+          printf 'export CORTEX_CLI_SRC=%q\n' "$SRC"
+          printf 'export CARGO_TARGET_DIR=%q\n' "$TARGET"
+        } > /tmp/cortex-cli-env.sh
+        # shellcheck disable=SC1091
+        . /tmp/cortex-cli-env.sh
+        bash "$CORTEX_CLI_SRC/deploy/aws/codebuild/install-deps.sh"
+
+  build:
+    commands:
+      - |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        . /tmp/cortex-cli-env.sh
+        bash "$CORTEX_CLI_SRC/deploy/aws/codebuild/run-ci.sh"
+
+cache:
+  paths:
+    - /root/.cargo/registry/**/*
+    - /root/.cargo/git/**/*
+    - /root/.rustup/toolchains/**/*
+    - /tmp/cortex-cli-target/**/*

@@ -32,6 +32,7 @@ mod commands;
 mod core;
 mod input;
 mod local_workflows;
+mod me;
 mod modal;
 mod mouse;
 mod rendering;

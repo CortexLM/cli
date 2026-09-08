@@ -28,11 +28,16 @@ After the one-time AWS setup below, add these **required** checks on `main`:
 | `cortex-cli-gha-x64` | `cortex-cli-gha-x64` | `cortex-cli-gha-x64-pr` | Linux x86_64 |
 | `cortex-cli-gha-arm64` | `cortex-cli-gha-arm64` | `cortex-cli-gha-arm64-pr` | Linux aarch64 |
 
-Unapproved same-repository pull requests start the `*-pr` projects only.
-Those projects use a **logs-only** service role and `NO_CACHE`. They cannot
-read, write, or delete the shared cargo cache. The workflow also loads
-`buildspec-ci.yml` from the PR **base** (or the pushed `main` SHA), not
-from the unapproved head.
+Unapproved same-repository pull requests are handled with
+`pull_request_target` so this workflow file and the OIDC token come from
+`main`, not from the unapproved head. Those runs start the `*-pr` projects
+only (logs-only service role, `NO_CACHE`). They cannot read, write, or
+delete the shared cargo cache. The runner checks out the PR **base** for
+`buildspec-ci.yml` and passes the head SHA into CodeBuild as
+`CORTEX_SOURCE_SHA`. OIDC trust is only
+`repo:CortexLM/cli:ref:refs/heads/main` plus
+`job_workflow_ref` for `.github/workflows/codebuild.yml` on `main`.
+Untrusted `pull_request` workflows cannot assume the role.
 
 Keep the existing `ci.yml` checks (`Format`, `Clippy`, `Test`, `TUI checks`,
 `Security Audit`, `Source and dependency policy`, `Changed-line coverage`,
@@ -40,9 +45,10 @@ Keep the existing `ci.yml` checks (`Format`, `Clippy`, `Test`, `TUI checks`,
 change. After CodeBuild is required and stable, a later PR can slim the
 duplicate GitHub-hosted Linux cargo jobs.
 
-Same-repo PRs start the `*-pr` projects. Pushes to `main` start the
-cached projects. Fork PRs keep using GitHub-hosted `ci.yml` only (OIDC
-is not granted to forks).
+Same-repo PRs start the `*-pr` projects via `pull_request_target`. Pushes
+to `main` start the cached projects. Fork PRs keep using GitHub-hosted
+`ci.yml` only (StartBuild is skipped when the head repo is not this
+repository).
 
 ## Prefer existing org projects?
 
@@ -92,9 +98,11 @@ it as a GitHub **variable**, not in git.
 
 1. Create role `cortex-cli-codebuild-gha`.
 2. Trust policy: `iam-trust-policy.json` with `ACCOUNT_ID` replaced at
-   deploy time. Subjects must be only
-   `repo:CortexLM/cli:ref:refs/heads/main` and
-   `repo:CortexLM/cli:pull_request`.
+   deploy time. The subject must be only
+   `repo:CortexLM/cli:ref:refs/heads/main`. Also require
+   `job_workflow_ref` `CortexLM/cli/.github/workflows/codebuild.yml@refs/heads/main`.
+   Do not trust `repo:CortexLM/cli:pull_request` — that would let an
+   unapproved `pull_request` workflow assume the role.
 3. Permissions: `iam-gha-permissions.json` with `ACCOUNT_ID` and `REGION`
    replaced. Actions are only `codebuild:StartBuild`,
    `codebuild:BatchGetBuilds`, and `logs:GetLogEvents` on the two CLI

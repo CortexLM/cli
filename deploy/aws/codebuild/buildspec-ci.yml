@@ -36,6 +36,9 @@ phases:
           SRC="$CODEBUILD_SRC_DIR"
         else
           SRC=/tmp/cortex-cli-src
+          # Wipe only the source clone. Cargo artifacts live in
+          # CARGO_TARGET_DIR (/tmp/cortex-cli-target), which cache restores
+          # and this command must not delete.
           rm -rf "$SRC"
           git clone --no-tags "https://github.com/${REPO}.git" "$SRC"
           git -C "$SRC" checkout --detach "$SHA"

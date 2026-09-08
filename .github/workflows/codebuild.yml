@@ -10,10 +10,15 @@
 
 name: CodeBuild CI
 
-on:
+"on":
   push:
     branches: [main]
+  # Unprivileged wiring only. StartBuild is skipped for this event because
+  # the workflow file would come from the unapproved head.
   pull_request:
+    branches: [main]
+  # Privileged StartBuild. Workflow YAML and OIDC come from main.
+  pull_request_target:
     branches: [main]
   workflow_dispatch:
 
@@ -36,6 +41,9 @@ jobs:
       same_repo: ${{ steps.gate.outputs.same_repo }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -70,7 +78,7 @@ jobs:
   codebuild:
     name: ${{ matrix.context }}
     needs: wiring
-    if: needs.wiring.outputs.enabled == 'true' && needs.wiring.outputs.same_repo == 'true'
+    if: needs.wiring.outputs.enabled == 'true' && needs.wiring.outputs.same_repo == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -95,8 +103,9 @@ jobs:
       - name: Checkout trusted buildspec revision
         uses: actions/checkout@v7
         with:
-          # Same-repo PRs are not trusted. Load buildspec from the PR base
-          # (or the pushed main SHA). The commit under test is CORTEX_SOURCE_SHA.
+          persist-credentials: false
+          # pull_request_target already runs on the base. Pin the ref so a
+          # later step cannot silently check out the unapproved head.
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
       - name: Resolve head SHA
         id: rev
@@ -129,9 +138,9 @@ jobs:
       - name: Run CodeBuild
         uses: aws-actions/aws-codebuild-run-build@v1
         with:
-          # Pull requests use *-pr projects: no S3 cache and a logs-only
-          # service role, so unapproved PR code cannot read or poison cache.
-          project-name: ${{ github.event_name == 'pull_request' && (vars[matrix.pr_project_var] || matrix.pr_project_default) || (vars[matrix.project_var] || matrix.project_default) }}
+          # Only push/workflow_dispatch on main use the S3-cached projects.
+          # pull_request_target always uses *-pr (logs-only, NO_CACHE).
+          project-name: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (vars[matrix.project_var] || matrix.project_default) || (vars[matrix.pr_project_var] || matrix.pr_project_default) }}
           disable-source-override: true
           buildspec-override: ${{ steps.spec.outputs.yaml }}
           env-vars-for-codebuild: |

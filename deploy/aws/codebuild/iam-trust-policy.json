@@ -10,13 +10,11 @@
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:CortexLM/cli:ref:refs/heads/main"
         },
-        "ForAnyValue:StringEquals": {
-          "token.actions.githubusercontent.com:sub": [
-            "repo:CortexLM/cli:ref:refs/heads/main",
-            "repo:CortexLM/cli:pull_request"
-          ]
+        "StringLike": {
+          "token.actions.githubusercontent.com:job_workflow_ref": "CortexLM/cli/.github/workflows/codebuild.yml@refs/heads/main"
         }
       }
     }

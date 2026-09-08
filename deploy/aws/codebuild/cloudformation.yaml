@@ -174,10 +174,9 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-              ForAnyValue:StringEquals:
-                token.actions.githubusercontent.com:sub:
-                  - !Sub "repo:${GitHubOrgRepo}:ref:refs/heads/main"
-                  - !Sub "repo:${GitHubOrgRepo}:pull_request"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrgRepo}:ref:refs/heads/main"
+              StringLike:
+                token.actions.githubusercontent.com:job_workflow_ref: !Sub "${GitHubOrgRepo}/.github/workflows/codebuild.yml@refs/heads/main"
       Policies:
         - PolicyName: start-cli-codebuild
           PolicyDocument:

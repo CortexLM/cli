@@ -84,8 +84,19 @@ mod tests {
 
     #[test]
     fn splash_legend_ellipsizes_version_not_legend() {
-        let legend = splash_legend("0.1.10", 40);
-        assert_eq!(legend, "v0.1.… · / commands · @ files · ! shell");
-        assert_eq!(legend.chars().count(), 40);
+        let exact = splash_legend("0.1.10", 40);
+        assert_eq!(exact, "v0.1.10 · / commands · @ files · ! shell");
+        assert_eq!(exact.chars().count(), 40);
+
+        let overflow = splash_legend("10.20.30-rc.1", 40);
+        assert!(
+            overflow.contains("/ commands · @ files · ! shell"),
+            "overflow must keep the mid legend: {overflow}"
+        );
+        assert!(
+            overflow.contains('…'),
+            "a longer version ellipsizes: {overflow}"
+        );
+        assert!(overflow.chars().count() <= 40, "{overflow}");
     }
 }

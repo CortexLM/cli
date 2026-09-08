@@ -9,7 +9,7 @@
 
 mod auth;
 mod config;
-mod debug;
+pub(crate) mod debug;
 mod handlers;
 mod macros;
 mod types;

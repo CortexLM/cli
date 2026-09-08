@@ -101,8 +101,7 @@ pub mod runner;
 
 // Visual-lock PNG / ANSI captures
 pub mod lock_boards;
-#[cfg(test)]
-mod lock_palette;
+pub mod lock_palette;
 pub mod lock_proof;
 pub mod lock_v2;
 pub mod readme_hero;

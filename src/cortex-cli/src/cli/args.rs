@@ -366,7 +366,7 @@ pub enum Commands {
     /// Run the MCP server (stdio transport)
     #[command(display_order = 32, hide = true)]
     #[command(next_help_heading = categories::EXTENSION)]
-    McpServer,
+    McpServer(super::mcp_server::McpServerCli),
 
     /// Start ACP server for IDE integration (e.g., Zed)
     #[command(display_order = 33)]

@@ -32,11 +32,7 @@ pub async fn dispatch_command(cli: Cli) -> Result<()> {
         }
         Some(Commands::Mcp(mcp_cli)) => mcp_cli.run().await,
         Some(Commands::Agent(agent_cli)) => agent_cli.run().await,
-        Some(Commands::McpServer) => {
-            bail!(
-                "MCP server mode is not yet implemented. Use 'cortex mcp' for MCP server management."
-            );
-        }
+        Some(Commands::McpServer(args)) => super::mcp_server::run(args).await,
         Some(Commands::Completion(completion_cli)) => handle_completion(completion_cli),
         Some(Commands::Sandbox(sandbox_args)) => handle_sandbox(sandbox_args).await,
         Some(Commands::Resume(resume_cli)) => run_resume(resume_cli).await,

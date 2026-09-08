@@ -176,7 +176,7 @@ fn capture_config(width: u16, height: u16) -> CaptureConfig {
         .with_cursor(false)
 }
 
-pub(crate) fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
+pub fn render_lock_scene(id: &str, width: u16, height: u16) -> Result<LockFrame> {
     let config = capture_config(width, height);
     let mut terminal =
         MockTerminal::from_config(config.clone()).map_err(|err| anyhow::anyhow!("{err}"))?;

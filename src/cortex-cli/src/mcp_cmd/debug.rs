@@ -57,6 +57,29 @@ pub(crate) async fn run_tools(args: ToolsArgs) -> Result<()> {
     Ok(())
 }
 
+/// Probe a configured MCP server and return the JSON report used by `mcp debug --json`.
+pub(crate) async fn probe_named(name: &str, timeout: u64) -> Result<serde_json::Value> {
+    validate_server_name(name)?;
+    let server = get_mcp_server(name)?.ok_or_else(|| anyhow!("MCP server is not configured"))?;
+    match probe(name, &server, timeout).await {
+        Ok(info) => Ok(json!({
+            "name": name,
+            "connection": {"success": true},
+            "capabilities": info["capabilities"],
+            "tools": info["tools"],
+            "resources": info["resources"],
+            "prompts": info["prompts"],
+            "cached": false
+        })),
+        Err(error) => Ok(json!({
+            "name": name,
+            "connection": {"success": false},
+            "error": error.to_string(),
+            "cached": false
+        })),
+    }
+}
+
 async fn probe(name: &str, value: &toml::Value, timeout: u64) -> Result<serde_json::Value> {
     if timeout == 0 {
         bail!("MCP timeout must be positive");
@@ -74,6 +97,38 @@ async fn probe(name: &str, value: &toml::Value, timeout: u64) -> Result<serde_js
         Ok(info) => {
             closed?;
             Ok(info)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) async fn call_named(
+    name: &str,
+    tool: &str,
+    arguments: serde_json::Value,
+    timeout: u64,
+) -> Result<serde_json::Value> {
+    validate_server_name(name)?;
+    let server = get_mcp_server(name)?.ok_or_else(|| anyhow!("MCP server is not configured"))?;
+    if timeout == 0 {
+        bail!("MCP timeout must be positive");
+    }
+    let started = std::time::Instant::now();
+    let client =
+        McpClient::with_timeout(runtime_config(name, &server)?, Duration::from_secs(timeout));
+    let result = async {
+        client.connect().await?;
+        client.call_tool(tool, Some(arguments)).await
+    }
+    .await;
+    let closed = client.disconnect().await;
+    match result {
+        Ok(call) => {
+            closed?;
+            Ok(json!({
+                "result": call,
+                "duration_ms": started.elapsed().as_millis(),
+            }))
         }
         Err(error) => Err(error),
     }
@@ -174,5 +229,26 @@ mod tests {
             toml::from_str("[transport]\ntype = 'stdio'\ncommand = '/nonexistent/mcp-fixture'")
                 .unwrap();
         assert!(probe("fixture", &value, 1).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn probe_named_rejects_empty_and_missing_servers() {
+        assert!(probe_named("", 1).await.is_err());
+        assert!(probe_named("missing-verify-peer", 1).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn call_named_rejects_empty_missing_and_zero_timeout() {
+        assert!(call_named("", "tool", json!({}), 1).await.is_err());
+        assert!(
+            call_named("missing-verify-peer", "tool", json!({}), 1)
+                .await
+                .is_err()
+        );
+        assert!(
+            call_named("missing-verify-peer", "tool", json!({}), 0)
+                .await
+                .is_err()
+        );
     }
 }

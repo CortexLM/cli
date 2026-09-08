@@ -610,6 +610,19 @@ impl AppState {
         self.message_queue.len()
     }
 
+    /// Apply identity from `GET /v1/me` without blocking startup.
+    pub fn apply_me_profile(&mut self, profile: cortex_engine::client::MeProfile) {
+        if profile.name.is_some() {
+            self.user_name = profile.name;
+        }
+        if profile.email.is_some() {
+            self.user_email = profile.email;
+        }
+        if profile.org_name.is_some() {
+            self.org_name = profile.org_name;
+        }
+    }
+
     /// Apply `[tui]` config keys (SPEC §9).
     pub fn apply_tui_config(&mut self, tui: &cortex_engine::config::TuiConfig) {
         self.compact_mode = tui.compact_mode;
@@ -1012,5 +1025,18 @@ mod tests {
             !state.show_launch_splash,
             "/clear must not restore the splash"
         );
+    }
+
+    #[test]
+    fn apply_me_profile_sets_identity_fields() {
+        let mut state = AppState::default();
+        state.apply_me_profile(cortex_engine::client::MeProfile {
+            name: Some("Ada Lovelace".into()),
+            email: Some("ada@example.com".into()),
+            org_name: Some("Analytical Engines".into()),
+        });
+        assert_eq!(state.user_name.as_deref(), Some("Ada Lovelace"));
+        assert_eq!(state.user_email.as_deref(), Some("ada@example.com"));
+        assert_eq!(state.org_name.as_deref(), Some("Analytical Engines"));
     }
 }

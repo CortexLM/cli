@@ -119,6 +119,10 @@ impl EventLoop {
                 || brain_animating;
         }
 
+        if self.apply_pending_me_profile().await {
+            needs_render = true;
+        }
+
         // Render frame (respecting frame time to avoid over-rendering)
         // During idle states, we can skip renders entirely
         if needs_render && self.last_render.elapsed() >= self.min_frame_time {

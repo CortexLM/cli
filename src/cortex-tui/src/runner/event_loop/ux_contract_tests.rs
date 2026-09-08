@@ -332,3 +332,33 @@ fn ux_contract_unicode_auto_title_and_concurrent_append_are_lossless() {
     runner.app_state.input.set_text("界🙂 Unicode input");
     assert_views(&mut runner, "Unicode input");
 }
+
+#[tokio::test]
+async fn ux_contract_me_profile_applies_off_the_render_path() {
+    let (_temp, mut runner) = fixture();
+    let handle = tokio::spawn(async {
+        Some(cortex_engine::client::MeProfile {
+            name: Some("Ada Lovelace".into()),
+            email: Some("ada@example.com".into()),
+            org_name: Some("Analytical Engines".into()),
+        })
+    });
+    runner.me_profile_task = Some(handle);
+    let mut applied = false;
+    for _ in 0..50 {
+        if runner.apply_pending_me_profile().await {
+            applied = true;
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        applied,
+        "finished /v1/me task must apply without blocking startup"
+    );
+    assert_eq!(runner.app_state.user_name.as_deref(), Some("Ada Lovelace"));
+    assert_eq!(
+        runner.app_state.org_name.as_deref(),
+        Some("Analytical Engines")
+    );
+}

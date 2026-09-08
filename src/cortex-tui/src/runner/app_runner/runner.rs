@@ -471,54 +471,16 @@ impl AppRunner {
             }
         }
 
-        // ====================================================================
-        // Fetch user info BEFORE showing TUI to avoid "User" placeholder
-        // ====================================================================
-        let mut user_name: Option<String> = None;
-        let mut user_email: Option<String> = None;
-        let mut org_name: Option<String> = None;
-
-        // Fetch user info from /me API - wait for this before showing TUI
-        if let Some(token) = cortex_login::get_auth_token() {
-            tracing::debug!("Fetching user info from /me API...");
-            if let Ok(client) = cortex_engine::create_default_client() {
-                match client
-                    .get("https://api.cortex.foundation/auth/me")
-                    .bearer_auth(&token)
-                    .timeout(std::time::Duration::from_secs(5))
-                    .send()
-                    .await
-                {
-                    Ok(resp) if resp.status().is_success() => {
-                        if let Ok(json) = resp.json::<serde_json::Value>().await {
-                            if let Some(name) = json.get("name").and_then(|v| v.as_str()) {
-                                user_name = Some(name.to_string());
-                                tracing::info!("User info loaded: {}", name);
-                            }
-                            if let Some(email) = json.get("email").and_then(|v| v.as_str()) {
-                                user_email = Some(email.to_string());
-                            }
-                            if let Some(orgs) = json.get("organizations").and_then(|v| v.as_array())
-                                && let Some(first_org) = orgs.first()
-                                && let Some(org) =
-                                    first_org.get("org_name").and_then(|v| v.as_str())
-                            {
-                                org_name = Some(org.to_string());
-                            }
-                        }
-                    }
-                    Ok(resp) => {
-                        tracing::warn!("Failed to fetch user info: HTTP {}", resp.status());
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to fetch user info: {}", e);
-                    }
-                }
-            }
-        }
+        // Identity is fetched off the render path (`GET {CORTEX_API_URL}/v1/me`).
+        // Never block TUI open on this call — the event loop applies the profile
+        // when the 3s-capped request finishes.
+        let me_profile_task = spawn_me_profile_fetch(
+            provider_manager.api_url().to_string(),
+            cortex_login::get_auth_token(),
+        );
 
         // ====================================================================
-        // Now initialize TUI after we have user info
+        // Initialize TUI without waiting on network I/O
         // ====================================================================
 
         let mut terminal = CortexTerminal::with_options(self.terminal_options)?;
@@ -550,11 +512,6 @@ impl AppRunner {
 
         app_state.apply_tui_config(&self.config.tui);
         app_state.agent_entrypoint = launched_as_agent();
-
-        // Set user info from pre-fetched data
-        app_state.user_name = user_name;
-        app_state.user_email = user_email;
-        app_state.org_name = org_name;
 
         // Load last used theme from config
         if let Ok(config) = crate::providers::config::CortexConfig::load()
@@ -738,7 +695,8 @@ impl AppRunner {
             .with_provider_manager(provider_manager)
             .try_with_cortex_session(cortex_session)?
             .with_tool_registry(tool_registry)
-            .with_sandbox_policy(self.config.sandbox_policy.clone());
+            .with_sandbox_policy(self.config.sandbox_policy.clone())
+            .with_me_profile_task(me_profile_task);
 
         // Add unified executor if available
         if let Some(executor) = unified_executor {
@@ -980,6 +938,31 @@ fn launched_as_agent() -> bool {
         .next()
         .and_then(|a| std::path::Path::new(&a).file_stem().map(|s| s == "agent"))
         .unwrap_or(false)
+}
+
+/// `GET {api_url}/v1/me` on the configured origin. Never contacts a hard-coded host.
+pub(crate) fn spawn_me_profile_fetch(
+    api_url: String,
+    token: Option<String>,
+) -> tokio::task::JoinHandle<Option<cortex_engine::client::MeProfile>> {
+    tokio::spawn(async move {
+        let Some(token) = token.filter(|t| !t.is_empty()) else {
+            return None;
+        };
+        let client = cortex_engine::client::CodeAgentClient::new(Some(api_url), Some(token));
+        match client.fetch_me().await {
+            Ok(profile) => Some(profile),
+            Err(e) => {
+                tracing::warn!("Failed to fetch user info: {}", e.user_friendly_message());
+                None
+            }
+        }
+    })
+}
+
+/// Identity URL used by the TUI runner — same resolver as device login and turns.
+pub(crate) fn me_profile_request_url(api_url: &str) -> String {
+    cortex_engine::client::me_url(api_url)
 }
 
 // ============================================================================

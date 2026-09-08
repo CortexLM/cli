@@ -178,6 +178,9 @@ pub struct EventLoop {
         Option<tokio::sync::mpsc::UnboundedReceiver<cortex_engine::mcp::McpLifecycleEvent>>,
     /// Servers the user is stopping (disconnect is not a drop).
     pub(super) mcp_stopping: std::collections::HashSet<String>,
+
+    /// In-flight `GET /v1/me` on the configured API origin (off the render path).
+    pub(super) me_profile_task: Option<JoinHandle<Option<cortex_engine::client::MeProfile>>>,
 }
 
 impl EventLoop {
@@ -234,6 +237,7 @@ impl EventLoop {
             mcp_manager,
             mcp_event_rx: Some(mcp_event_rx),
             mcp_stopping: std::collections::HashSet::new(),
+            me_profile_task: None,
         }
     }
 
@@ -279,6 +283,37 @@ impl EventLoop {
     pub fn with_sandbox_policy(mut self, policy: cortex_protocol::SandboxPolicy) -> Self {
         self.sandbox_policy = policy;
         self
+    }
+
+    /// Attach a background `GET /v1/me` so identity can land after the first frame.
+    pub fn with_me_profile_task(
+        mut self,
+        task: JoinHandle<Option<cortex_engine::client::MeProfile>>,
+    ) -> Self {
+        self.me_profile_task = Some(task);
+        self
+    }
+
+    /// Apply a finished `/v1/me` fetch without waiting on the render path.
+    pub(super) async fn apply_pending_me_profile(&mut self) -> bool {
+        let Some(handle) = self.me_profile_task.take() else {
+            return false;
+        };
+        if !handle.is_finished() {
+            self.me_profile_task = Some(handle);
+            return false;
+        }
+        match handle.await {
+            Ok(Some(profile)) => {
+                self.app_state.apply_me_profile(profile);
+                true
+            }
+            Ok(None) => false,
+            Err(e) => {
+                tracing::debug!("User info task ended: {e}");
+                false
+            }
+        }
     }
 
     /// Builds the authorization context for one local tool call.

@@ -46,7 +46,7 @@ jobs:
           # pull_request must validate the PR tree (github.sha). pin the base
           # only for pull_request_target, which must not execute unapproved code.
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r scripts/readiness/requirements.txt

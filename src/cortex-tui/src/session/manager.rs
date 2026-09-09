@@ -95,6 +95,12 @@ impl CortexSession {
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
+    /// Load with missing / loaded / quarantined so resume can continue after a bad file.
+    pub fn load_goal_report(&self) -> Result<cortex_engine::goal::GoalLoad> {
+        cortex_engine::goal::load_goal_report(self.storage.session_dir(self.id()))
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
     /// Persist or clear the session goal.
     pub fn persist_goal(&self, goal: Option<&cortex_engine::goal::Goal>) -> Result<()> {
         let dir = self.storage.session_dir(self.id());
@@ -673,6 +679,24 @@ mod tests {
         let loaded = session.load_goal().unwrap().unwrap();
         assert_eq!(loaded.objective, "ship the feature");
         session.persist_goal(None).unwrap();
+        assert!(session.load_goal().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_goal_corrupt_is_quarantined() {
+        let (session, _temp) = create_test_session();
+        let path = session
+            .storage()
+            .session_dir(session.id())
+            .join("goal.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{not-json").unwrap();
+        match session.load_goal_report().unwrap() {
+            cortex_engine::goal::GoalLoad::Quarantined { reason } => {
+                assert!(reason.contains("unreadable"), "{reason}");
+            }
+            other => panic!("expected quarantine, got {other:?}"),
+        }
         assert!(session.load_goal().unwrap().is_none());
     }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@cortexlm/sdk",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Typed, local Cortex CLI subprocess client",
   "license": "Apache-2.0",
   "private": true,

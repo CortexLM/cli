@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-### Added
-- `/goal` long-horizon persisted goals: create/status/pause/resume/clear, `goal.json` on the session, idle continuation within an 8-turn budget, evidence-based `UpdateGoal`, and a composer chip (`#1F4945`). Lock v2 boards cover chip states (active / paused / done / budget / blocked) and slash palette (`/goal` after `/plan`) at 40×12 and 120×40. Live smoke uses `OPENAI_BASE_URL` / `CORTEX_LLM_BASE_URL`, `OPENAI_API_KEY` / `CORTEX_LLM_API_KEY`, and `CORTEX_LLM_MODEL=cx/gpt-6-astra`; without a key the live test SKIP and unit tests still pass.
+## 0.1.11
+
+### Changed
+- `/goal` production harden: persist is atomic + fsynced; corrupt `goal.json` is quarantined so session resume continues (and the status text says so only when the move succeeded); load never deletes `.goal.json.tmp.*` (a concurrent save's in-flight temp is left alone); `/goal status` is a reserved status token; continuation records a finished turn *then* wrap-up/continues (last remaining turn still runs); `UpdateGoal` complete accepts only `file` / `command` / `test` evidence (globally deduped); status, pause, resume, and resume-on-session print the chip (`Goal · 2/8` / paused / done / budget / blocked). Live smoke still SKIP without a key.
 - Hidden `cortex mcp-server --verify` stdio JSON-RPC server (`cortex-verify`) so CI and agents can audit TUI chrome, lock scenes, login product copy, and API error paths offline. Remains `hide = true` until Designer sign-off.
 
 ### Changed

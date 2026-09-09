@@ -84,7 +84,20 @@ impl ToolHandler for UpdateGoalHandler {
             .evidence
             .into_iter()
             .map(|e| GoalEvidence::new(e.kind, e.detail))
-            .collect();
+            .collect::<Vec<_>>();
+        if args.status == "complete"
+            && !evidence.iter().any(GoalEvidence::is_usable)
+            && evidence
+                .iter()
+                .any(|e| !e.kind.trim().is_empty() || !e.detail.trim().is_empty())
+        {
+            return Err(CortexError::ToolExecution {
+                tool: "UpdateGoal".to_string(),
+                message:
+                    "Completion requires evidence kind file, command, or test (plus a non-empty detail)."
+                        .to_string(),
+            });
+        }
 
         apply_model_update(
             &mut goal,
@@ -186,6 +199,28 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("cannot pause"));
+    }
+
+    #[tokio::test]
+    async fn complete_rejects_unknown_evidence_kind() {
+        let dir = tempfile::tempdir().unwrap();
+        save_goal(dir.path(), &Goal::new("write out.txt")).unwrap();
+        let ctx =
+            ToolContext::new(dir.path().to_path_buf()).with_session_dir(dir.path().to_path_buf());
+        let err = UpdateGoalHandler::new()
+            .execute(
+                json!({
+                    "status": "complete",
+                    "reason": "looks good",
+                    "evidence": [{"kind": "vibe", "detail": "shipped"}]
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("file, command, or test"));
+        let loaded = load_goal(dir.path()).unwrap().unwrap();
+        assert_eq!(loaded.state, crate::goal::GoalState::Active);
     }
 
     #[tokio::test]

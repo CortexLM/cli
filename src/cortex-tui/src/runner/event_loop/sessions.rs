@@ -149,11 +149,31 @@ impl EventLoop {
                 worked_secs: None,
             });
         }
-        self.app_state.goal = session
-            .load_goal()
-            .map_err(|e| anyhow::anyhow!("Failed to load session goal: {e}"))?;
+        let mut resume_note = None;
+        match session.load_goal_report() {
+            Ok(cortex_engine::goal::GoalLoad::Loaded(goal)) => {
+                resume_note = Some(format!("Resumed {}", goal.chip()));
+                self.app_state.goal = Some(goal);
+            }
+            Ok(cortex_engine::goal::GoalLoad::Missing) => {
+                self.app_state.goal = None;
+            }
+            Ok(cortex_engine::goal::GoalLoad::Quarantined { reason }) => {
+                self.app_state.goal = None;
+                resume_note = Some(reason);
+            }
+            Err(error) => {
+                self.app_state.goal = None;
+                resume_note = Some(format!(
+                    "Could not load session goal. Session resumed without it ({error})."
+                ));
+            }
+        }
         self.cortex_session = Some(session);
         self.app_state.set_view(AppView::Session);
+        if let Some(note) = resume_note {
+            self.add_system_message(&note);
+        }
         Ok(())
     }
 

@@ -773,11 +773,17 @@ impl EventLoop {
             return Ok(());
         };
 
+        self.reload_goal_from_session();
         match apply_command(self.app_state.goal.clone(), command.clone()) {
             Ok(next) => {
+                let previous = self.app_state.goal.clone();
                 self.app_state.goal = next;
-                if let Err(error) = self.persist_app_goal() {
-                    self.add_system_message(&format!("Could not persist goal: {error}"));
+                if !matches!(command, GoalCommand::Status) {
+                    if let Err(error) = self.persist_app_goal() {
+                        self.app_state.goal = previous;
+                        self.add_system_message(&format!("Could not persist goal: {error}"));
+                        return Ok(());
+                    }
                 }
                 match command {
                     GoalCommand::Status => {
@@ -788,18 +794,30 @@ impl EventLoop {
                         }
                     }
                     GoalCommand::Pause => {
-                        self.add_system_message("Goal paused.");
+                        if let Some(goal) = &self.app_state.goal {
+                            self.add_system_message(&goal.action_text("Goal paused."));
+                        } else {
+                            self.add_system_message("Goal paused.");
+                        }
                     }
                     GoalCommand::Resume => {
                         if let Some(goal) = &self.app_state.goal {
-                            self.add_system_message(&format!("Goal is {}.", goal.state));
+                            self.add_system_message(
+                                &goal.action_text(&format!("Goal is {}.", goal.state)),
+                            );
                         }
                     }
                     GoalCommand::Clear => {
                         self.add_system_message("Goal cleared.");
                     }
                     GoalCommand::Set { objective } => {
-                        self.add_system_message(&format!("Goal set: {objective}"));
+                        if let Some(goal) = &self.app_state.goal {
+                            self.add_system_message(
+                                &goal.action_text(&format!("Goal set: {objective}.")),
+                            );
+                        } else {
+                            self.add_system_message(&format!("Goal set: {objective}"));
+                        }
                         self.send_text_message(cortex_engine::goal::kickoff_prompt(&objective))
                             .await?;
                     }
@@ -811,34 +829,50 @@ impl EventLoop {
     }
 
     fn persist_app_goal(&mut self) -> Result<()> {
-        if let Some(session) = &self.cortex_session {
-            session.persist_goal(self.app_state.goal.as_ref())?;
-        }
+        let session = self
+            .cortex_session
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No session to persist the goal."))?;
+        session.persist_goal(self.app_state.goal.as_ref())?;
         Ok(())
     }
 
     pub(super) fn reload_goal_from_session(&mut self) {
-        if let Some(session) = &self.cortex_session
-            && let Ok(goal) = session.load_goal()
-        {
-            self.app_state.goal = goal;
+        let Some(session) = &self.cortex_session else {
+            return;
+        };
+        match session.load_goal_report() {
+            Ok(cortex_engine::goal::GoalLoad::Loaded(goal)) => {
+                self.app_state.goal = Some(goal);
+            }
+            Ok(cortex_engine::goal::GoalLoad::Missing) => {
+                self.app_state.goal = None;
+            }
+            Ok(cortex_engine::goal::GoalLoad::Quarantined { reason }) => {
+                self.app_state.goal = None;
+                self.add_system_message(&reason);
+            }
+            Err(error) => {
+                self.add_system_message(&format!("Could not reload goal: {error}"));
+            }
         }
     }
 
     pub(super) async fn maybe_continue_goal(&mut self, tokens: u64) -> bool {
         self.reload_goal_from_session();
-        if !cortex_engine::goal::continuation_gate(self.app_state.goal.as_ref()) {
+        let Some(goal) = self.app_state.goal.as_mut() else {
+            return false;
+        };
+        if goal.state != cortex_engine::goal::GoalState::Active {
             return false;
         }
-        {
-            let goal = self.app_state.goal.as_mut().expect("continuation gate");
-            cortex_engine::goal::record_turn(goal, tokens);
-        }
+        let cont = cortex_engine::goal::finish_turn(goal, tokens);
         if let Err(error) = self.persist_app_goal() {
             self.add_system_message(&format!("Could not persist goal: {error}"));
+            self.reload_goal_from_session();
             return false;
         }
-        if !cortex_engine::goal::continuation_gate(self.app_state.goal.as_ref()) {
+        if !cont {
             return false;
         }
         let prompt = cortex_engine::goal::continuation_prompt(

@@ -19,7 +19,13 @@ pub fn apply_command(current: Option<Goal>, command: GoalCommand) -> Result<Opti
                     Ok(Some(goal))
                 }
                 GoalState::Paused => Ok(Some(goal)),
-                other => Err(format!("Cannot pause a goal that is {other}.")),
+                GoalState::Complete => Err(
+                    "Goal is already complete. /goal clear or set a new /goal <objective>."
+                        .to_string(),
+                ),
+                GoalState::BudgetLimited => Err(
+                    "Budget exhausted. Start a new /goal <objective> or /goal clear.".to_string(),
+                ),
             }
         }
         GoalCommand::Resume => {
@@ -28,6 +34,7 @@ pub fn apply_command(current: Option<Goal>, command: GoalCommand) -> Result<Opti
                 GoalState::Paused | GoalState::Blocked => {
                     if goal.turns_remaining() == 0 {
                         goal.state = GoalState::BudgetLimited;
+                        goal.last_reason = Some("Turn or token budget exhausted.".to_string());
                         goal.touch();
                         return Ok(Some(goal));
                     }
@@ -36,7 +43,13 @@ pub fn apply_command(current: Option<Goal>, command: GoalCommand) -> Result<Opti
                     Ok(Some(goal))
                 }
                 GoalState::Active => Ok(Some(goal)),
-                other => Err(format!("Cannot resume a goal that is {other}.")),
+                GoalState::Complete => Err(
+                    "Goal is already complete. /goal clear or set a new /goal <objective>."
+                        .to_string(),
+                ),
+                GoalState::BudgetLimited => Err(
+                    "Budget exhausted. Start a new /goal <objective> or /goal clear.".to_string(),
+                ),
             }
         }
     }
@@ -63,7 +76,14 @@ pub fn apply_model_update(
         }
     }
     for item in evidence {
-        if item.is_usable() {
+        let Some(item) = item.normalized() else {
+            continue;
+        };
+        if !next
+            .evidence
+            .iter()
+            .any(|existing| existing.kind == item.kind && existing.detail == item.detail)
+        {
             next.evidence.push(item);
         }
     }
@@ -130,6 +150,18 @@ pub fn record_turn(goal: &mut Goal, tokens: u64) {
         goal.last_reason = Some("Turn or token budget exhausted.".to_string());
     }
     goal.touch();
+}
+
+/// Count a finished *active* agent turn. Returns whether idle continuation should start.
+///
+/// Call this *after* the turn completes. Recording first and then deciding
+/// whether to continue lets the last remaining turn run as wrap-up.
+pub fn finish_turn(goal: &mut Goal, tokens: u64) -> bool {
+    if goal.state != GoalState::Active {
+        return false;
+    }
+    record_turn(goal, tokens);
+    should_continue(goal)
 }
 
 pub fn within_budget(goal: &Goal) -> bool {
@@ -201,6 +233,19 @@ mod tests {
     }
 
     #[test]
+    fn resume_complete_and_budget_explain_next_step() {
+        let mut done = Goal::new("x");
+        done.state = GoalState::Complete;
+        let err = apply_command(Some(done), GoalCommand::Resume).unwrap_err();
+        assert!(err.contains("already complete"), "{err}");
+
+        let mut limited = Goal::new("x");
+        limited.state = GoalState::BudgetLimited;
+        let err = apply_command(Some(limited), GoalCommand::Resume).unwrap_err();
+        assert!(err.contains("Budget exhausted"), "{err}");
+    }
+
+    #[test]
     fn complete_requires_evidence_and_reason() {
         let mut goal = Goal::new("write a file");
         assert!(
@@ -229,6 +274,42 @@ mod tests {
     }
 
     #[test]
+    fn complete_rejects_unknown_evidence_kind() {
+        let mut goal = Goal::new("write a file");
+        let err = apply_model_update(
+            &mut goal,
+            "complete",
+            None,
+            Some("feels done".into()),
+            vec![GoalEvidence::new("vibe", "shipped")],
+        )
+        .unwrap_err();
+        assert!(err.contains("evidence"), "{err}");
+        assert_eq!(goal.state, GoalState::Active);
+        assert!(goal.evidence.is_empty());
+    }
+
+    #[test]
+    fn evidence_is_normalized_and_deduped() {
+        let mut goal = Goal::new("write a file");
+        apply_model_update(
+            &mut goal,
+            "active",
+            Some("wrote it".into()),
+            None,
+            vec![
+                GoalEvidence::new("FILE", "out.txt"),
+                GoalEvidence::new("file", "out.txt"),
+                GoalEvidence::new("shell", "ls out.txt"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(goal.evidence.len(), 2);
+        assert_eq!(goal.evidence[0].kind, "file");
+        assert_eq!(goal.evidence[1].kind, "command");
+    }
+
+    #[test]
     fn model_cannot_pause() {
         let mut goal = Goal::new("x");
         assert!(apply_model_update(&mut goal, "paused", None, None, vec![]).is_err());
@@ -254,6 +335,31 @@ mod tests {
         goal.turns_used = 1;
         assert!(needs_wrap_up(&goal));
         assert!(should_continue(&goal));
+    }
+
+    #[test]
+    fn finish_turn_lets_last_remaining_turn_wrap_up() {
+        let mut goal = Goal::new("x");
+        goal.turn_budget = 2;
+        assert!(should_continue(&goal));
+        assert!(!needs_wrap_up(&goal));
+
+        assert!(finish_turn(&mut goal, 4));
+        assert_eq!(goal.turns_used, 1);
+        assert!(needs_wrap_up(&goal));
+        assert!(should_continue(&goal));
+
+        assert!(!finish_turn(&mut goal, 4));
+        assert_eq!(goal.state, GoalState::BudgetLimited);
+        assert!(!should_continue(&goal));
+    }
+
+    #[test]
+    fn finish_turn_ignores_paused() {
+        let mut goal = Goal::new("x");
+        goal.state = GoalState::Paused;
+        assert!(!finish_turn(&mut goal, 10));
+        assert_eq!(goal.turns_used, 0);
     }
 
     #[test]

@@ -16,24 +16,41 @@ Type these in the TUI composer:
 | Command | Effect |
 |---------|--------|
 | `/goal <objective>` | Create or replace the active goal and start a kickoff turn |
-| `/goal` | Show objective, state, progress, and budget |
+| `/goal` or `/goal status` | Show chip, objective, state, progress, next step, and budget |
 | `/goal pause` | Stop auto-continuation. The model cannot pause. |
 | `/goal resume` | Resume a paused (or blocked) goal if budget remains |
 | `/goal clear` | Delete the persisted goal |
 
 A reserved token is only special when it is the entire argument. `/goal pause
-the deploy` sets an objective; it does not pause.
+the deploy` and `/goal status the rollout` set an objective; they do not pause
+or show status.
+
+Resume of a complete or budget-limited goal is refused. Start a new
+`/goal <objective>` or `/goal clear`.
 
 ## States
 
 `active` · `paused` · `complete` · `budget_limited` · `blocked`
 
-Completion is evidence-based. The model calls `UpdateGoal` with a reason and
-at least one of: a file path, a command, or a test. Vibes are not enough.
+Composer chip copy is text-only (no radios):
 
-Default budget is **8 turns**. Near the limit (one turn left, or 85% of a token
-cap), the next continuation asks the agent to wrap up instead of opening new
-scope.
+| State | Chip |
+|-------|------|
+| `active` | `Goal · 2/8` (turns used / budget) |
+| `paused` | `Goal · paused` |
+| `complete` | `Goal · done` |
+| `budget_limited` | `Goal · budget` |
+| `blocked` | `Goal · blocked` |
+
+Completion is evidence-based. The model calls `UpdateGoal` with a reason and
+at least one of: a **file** path, a **command**, or a **test**. Unknown kinds
+and vibes are rejected. Resume reloads `goal.json` and paints the chip. A
+corrupt file is moved to `goal.json.corrupt` so the session still opens.
+
+Default budget is **8 turns**. After each finished turn the harness records
+usage, then continues if budget remains. Near the limit (one turn left, or 85%
+of a token cap), the next continuation asks the agent to wrap up instead of
+opening new scope. That last remaining turn still runs.
 
 ## Where it is stored
 
@@ -43,10 +60,8 @@ scope.
 ~/.cortex/sessions/{session-id}/goal.json
 ```
 
-Resume reloads it. The composer chip (`Goal · 2/8`, or paused / done / budget)
-uses designer accent `#1F4945`.
-
-See [Sessions](sessions.md) and [Data locations](../configuration/data-locations.md).
+Writes are atomic and fsynced. Resume reloads the file. See [Sessions](sessions.md)
+and [Data locations](../configuration/data-locations.md).
 
 ## Live smoke (operators)
 

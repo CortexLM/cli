@@ -712,7 +712,7 @@ impl Session {
 
     async fn continue_goal_if_needed(&mut self) -> Result<()> {
         use crate::goal::{
-            continuation_prompt, load_goal, record_turn, save_goal, should_continue,
+            continuation_prompt, finish_turn, load_goal, save_goal, should_continue,
         };
 
         let dir = self.goal_session_dir();
@@ -720,13 +720,13 @@ impl Session {
             let Some(mut goal) = load_goal(&dir)? else {
                 break;
             };
-            if !should_continue(&goal) {
+            if goal.state != crate::goal::GoalState::Active {
                 break;
             }
-            record_turn(&mut goal, 0);
+            let cont = finish_turn(&mut goal, 0);
             save_goal(&dir, &goal)?;
             self.emit(EventMsg::GoalUpdated(goal.to_event())).await;
-            if !should_continue(&goal) {
+            if !cont || !should_continue(&goal) {
                 break;
             }
             let prompt = continuation_prompt(&goal);

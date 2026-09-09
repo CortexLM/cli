@@ -134,4 +134,14 @@ mod tests {
     fn goal_chip_ids_are_registered() {
         assert_eq!(GOAL_CHIP_IDS.len(), 5);
     }
+
+    #[test]
+    fn status_text_repeats_chip_and_next_step() {
+        let mut goal = Goal::new("ship the rate limiter and prove it with tests");
+        goal.state = GoalState::Paused;
+        let text = goal.status_text();
+        assert!(text.contains("Goal · paused"), "{text}");
+        assert!(text.contains("/goal resume"), "{text}");
+        assert!(!text.contains("Yes, run once"), "{text}");
+    }
 }

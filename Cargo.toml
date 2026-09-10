@@ -288,7 +288,7 @@ starlark = "0.13"
 
 # CLI - MCP
 rmcp = { version = "0.13", default-features = false }
-schemars = "0.8"
+schemars = "1.2"
 
 # CLI - Utilities
 time = { version = "0.3", features = ["formatting", "parsing", "local-offset", "macros"] }

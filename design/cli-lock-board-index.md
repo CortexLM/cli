@@ -6,12 +6,34 @@ Generated from the id lists in the tree at `3035361` (`v0.1.10`):
 `LOCK_V2_WIDE_IDS` / `LOCK_V2_NARROW_IDS` in `src/cortex-tui/src/lock_v2.rs:33-147`.
 
 Current Designer lock: **v2** (77 wide / 31 narrow), green focus `#1F4945`.
-The committed PNGs of every pack are still the historical violet render
-(see audit §1); the ids and tests below are the truth the verifier reads.
+Committed PNGs under `docs/media/tui-lock/` and `docs/media/tui-lock-v2/`
+still include historical violet `#A78BFA` pixels (see those READMEs). The
+ids and tests below are the source of truth:
+`src/cortex-tui/src/lock_palette.rs`, `lock_proof.rs`, `lock_boards.rs`,
+`lock_v2.rs`.
 
-Verifier tool names are the ones specified in audit §6 (`lock.render`,
+Verifier tools are the hidden `cortex mcp-server --verify` surface
+(`src/cortex-cli/src/verify_mcp/mod.rs`, integration test
+`src/cortex-cli/tests/mcp_server_verify.rs`). Names: `lock.render`,
 `lock.palette_audit`, `lock.diff_txt`, `tui.*`, `login.run`, `api.*`,
-`mcp.*`). "Flow" refers to audit §8.
+`mcp.*`, `report.finish`. Guide: [Verification MCP](../docs/guides/development.md).
+
+**Flow** in the tables is a named interactive scenario on that verify server
+(or the matching `cargo test -p cortex-tui` case), not a separate spec:
+
+| Flow | How to drive it |
+|---|---|
+| *Cold start* | `tui.start` (empty session / welcome) |
+| *Agent entry* | agent-mode welcome |
+| *Slash* | `tui.type "/"` (palette) |
+| *Model* | model picker |
+| *Modes* | Ask / Plan / Agent / Bash chips |
+| *Session run* | live turn, tool tiles, queue |
+| *Errors* | 503 / 429 / diagnostics |
+| *Permission* | approval prompt / sandbox deny |
+| *MCP* | MCP list / `mcp.probe` / peer drop |
+| *Cancel* | interrupt → stopped |
+| *Settings* | `tui.key F2` |
 
 ## Cross-pack tests (run over every id at 40×12 and 120×40)
 
@@ -22,11 +44,11 @@ Verifier tool names are the ones specified in audit §6 (`lock.render`,
 | `lock_proof::tests::green_is_reserved_for_checks_and_diff_additions` | v1 | `#4ADE80` only on `✓` / `+` |
 | `lock_proof::tests::every_edit_plus_count_is_green` | v1 | `+N` on Edit/Write/commit rows is diff green |
 | `lock_proof::tests::red_and_amber_stay_on_diagnostics` | v1 | red/amber only on error scenes / diff deletions |
-| `lock_proof::tests::banned_colors_never_painted` | v1 | mint/navy/brand-green banned — **still permits `#221A38`** (audit P0-3) |
+| `lock_proof::tests::banned_colors_never_painted` | v1 | mint/navy/brand-green banned; v1 still allows wash `#221A38` (v2 `slash_hover_is_not_banner_green_wash` and `lock_palette.rs` ban it) |
 | `lock_proof::tests::composer_is_framed_by_hairlines_in_every_session_state` | v1 | composer `>` accent + block cursor in every composer scene |
 | `lock_proof::tests::distinct_states_render_distinct_frames` | v1 | only the 4 documented aliases share a frame |
 | `lock_proof::tests::no_smashed_tokens_anywhere` | v1 | wrapped copy never breaks tokens |
-| `lock_proof::tests::no_rounded_frame_glyphs_anywhere` | v1 | **asserts nothing** (audit P0-3) |
+| `lock_proof::tests::no_rounded_frame_glyphs_anywhere` | v1 | currently a no-op (no glyph assertions); TUI bleeds to terminal edges — see `docs/media/tui-lock/README.md` |
 | `lock_v2::tests::lock_v2_wide_count_is_spec` | v2 | 77 / 31 ids |
 | `lock_v2::tests::lock_v2_wide_frames_are_unique`, `lock_v2_narrow_frames_are_unique` | v2 | every id is a distinct frame |
 | `lock_v2::tests::slash_hover_is_not_banner_green_wash` | v2 | hover `#1A1A1A`; `#221A38` banned |
@@ -47,7 +69,7 @@ Kinds: **painted** = `lock_boards.rs` painter (not the runtime view);
 | `login_select` | live `LoginScreen` (option 2) | `login_is_a_numbered_picker_with_live_sub_states`, `runner::login_screen::tests::lock_select_option_moves_the_caret_and_bar` | `login.run{method:api_key}` |
 | `login_waiting` | live `LoginScreen` | `login_is_a_numbered_picker_with_live_sub_states`, `snapshot_auth_waiting_and_error` | `login.run{fixture:ok}` step 2 |
 | `login_success` | live `LoginScreen` | `login_success_check_is_the_only_green`, `snapshot_auth_success_and_failed` | `login.run{fixture:ok}` step 3 |
-| `login_error` | live `LoginScreen` (fed the product string) | `snapshot_auth_success_and_failed` | `login.run{fixture:unreachable}` — must produce the string from the real code path (audit P1-1) |
+| `login_error` | live `LoginScreen` (fed the product string) | `snapshot_auth_success_and_failed` | `login.run{fixture:unreachable}` — product copy from the real login error path, not a painted string |
 | `palette` | painted (`board_palette`) | `slash_palette_rows_are_middot_or_banner_green_caret`, `palette_home_leads_with_lock_order` | `lock.render v1 palette`; live = flow *Slash* |
 | `palette_empty` | live `MinimalSessionView` | `live_states_keep_chrome_complete` | `tui.type "/zzzz"` |
 | `model_compact` | painted | `lock_boards_02_09_product_copy` | flow *Model* |
@@ -69,7 +91,7 @@ Kinds: **painted** = `lock_boards.rs` painter (not the runtime view);
 | `session_error` | live `MinimalSessionView` | `live_states_keep_chrome_complete` | flow *Errors* (503) |
 | `session_success` | live `MinimalSessionView` | `live_states_keep_chrome_complete`, `completed_turns_do_not_get_a_fake_check` | flow *Session run* (done) |
 | `shell` | painted | `green_is_reserved_for_checks_and_diff_additions` | flow *Session run* |
-| `permission` | painted | `pickers_are_numbered_with_dim_descriptions` | flow *Permission* — runtime widget differs (audit P1-2) |
+| `permission` | painted | `pickers_are_numbered_with_dim_descriptions` | flow *Permission* — painted board; runtime approval UI is the live widget, not this painter |
 | `plan` | painted | `pickers_are_numbered_with_dim_descriptions` | `tui.key Shift+Tab` → plan → confirm |
 | `streaming` | painted | `lock_boards_21_30_product_copy` | flow *Session run* |
 | `resume` | painted | `search_fields_are_framed_by_hairlines_without_a_pricing_bar` | `tui.type "/resume"` |
@@ -79,7 +101,7 @@ Kinds: **painted** = `lock_boards.rs` painter (not the runtime view);
 | `sandbox` | painted | `green_is_reserved_for_checks_and_diff_additions` | `tui.type "/sandbox"` |
 | `cloud` | painted | `lock_boards_31_40_product_copy` | `tui.type "& …"` |
 | `sudo` | painted | `lock_boards_31_40_product_copy` | fixture: elevated Shell |
-| `ask` | painted (`┌ Ask — read-only ┐` chip, v1 chrome) | `mode_chips_are_kept` | flow *Modes* — runtime chip is `Ask · read-only` (audit §2.3) |
+| `ask` | painted (`┌ Ask — read-only ┐` chip, v1 chrome) | `mode_chips_are_kept` | flow *Modes* — runtime chip copy is `Ask · read-only` |
 | `files` | painted | `pickers_are_numbered_with_dim_descriptions` | `tui.type "@"` |
 | `queue` | painted (footer says `ctrl+x clear queue`, stale) | `every_edit_plus_count_is_green` | flow *Session run* (queue) |
 | `jobs` | painted | `green_is_reserved_for_checks_and_diff_additions` | `tui.type "/jobs"` |
@@ -119,8 +141,8 @@ Kinds: **painted** = `lock_boards.rs` painter (not the runtime view);
 
 Kinds: **real** = production view/builder with a real `AppState`;
 **seed** = real view but the runtime-emitted line is inserted as
-`Message::system`; **synthetic** = `radios()` stand-in (audit P1-2 turns these
-into production state); **login** = `LoginScreen::lock_*`.
+`Message::system`; **synthetic** = `radios()` stand-in (not production
+approval / picker state); **login** = `LoginScreen::lock_*`.
 
 Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 `lock_v2_narrow_frames_are_unique` when narrow = yes) and by
@@ -167,7 +189,7 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | `mode-plan` | yes | real | uniqueness | flow *Modes* |
 | `mode-ask` | yes | real | uniqueness | flow *Modes* |
 | `mode-bash` | — | real | uniqueness | `tui.type "!"` |
-| `permission-prompt` | yes | **synthetic** | uniqueness | flow *Permission* — must come from a real approval request (P1-2) |
+| `permission-prompt` | yes | **synthetic** | uniqueness | flow *Permission* — board is a `radios()` stand-in; live coverage is a real approval request |
 | `permission-prompt-hover` | — | **synthetic** | uniqueness | flow *Permission* + mouse |
 | `permissions-picker` | — | **synthetic** | uniqueness | `tui.type "/permissions"` (real builder) |
 | `mcp-servers` | yes | real (`build_mcp_selector`) | uniqueness | flow *MCP* (`mcp.probe`) |
@@ -191,7 +213,7 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | `login` | yes | login | `runner::login_screen::tests::*` | `login.run` step 1 |
 | `login-waiting` | — | login | `snapshot_auth_waiting_and_error` | `login.run{fixture:ok}` step 2 |
 | `login-success` | — | login | `login_success_check_is_the_only_green` | `login.run{fixture:ok}` step 3 |
-| `login-error` | — | login (fed product string) | `snapshot_auth_success_and_failed` | `login.run{fixture:unreachable}` (P1-1) |
+| `login-error` | — | login (fed product string) | `snapshot_auth_success_and_failed` | `login.run{fixture:unreachable}` — product copy from the real login error path |
 | `shortcuts-overlay` | yes | real | uniqueness | `tui.key Ctrl+x` |
 | `resume-picker` | — | real (`build_resume_picker`) | uniqueness | `tui.type "/resume"` |
 | `clear-confirm` | — | **synthetic** | uniqueness | `tui.type "/clear"` (real confirm) |
@@ -213,5 +235,5 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | v1 | 72 | 40×12, 120×40 | 144 (+144 macOS composites) | 17 | 51 painted + 4 aliases | 65/72 files carry `#A78BFA` at each size |
 | v2 | 77 wide / 31 narrow | 120×40 / 40×12 | 108 | 63 (5 seeded) | 14 synthetic | runtime 73/77 + 30/31; designer boards 68/77 + 29/31 |
 
-Regeneration commands (after audit P0-3 lands): `./scripts/render-tui-lock.sh`,
+Regenerate captures: `./scripts/render-tui-lock.sh`,
 `./scripts/render-tui-lock-v2.sh`, `python3 docs/media/tui-lock-v2/tools/render_lock_v2.py --index`.

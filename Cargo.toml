@@ -246,7 +246,7 @@ async-stream = "0.3"
 
 # CLI - Serialization
 serde_with = { version = "3", features = ["macros", "base64"] }
-toml_edit = "0.23"
+toml_edit = "0.25"
 
 # CLI - Arguments
 clap = { version = "4", features = ["derive", "wrap_help", "env"] }

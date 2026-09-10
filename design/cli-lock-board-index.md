@@ -1,6 +1,5 @@
 # Cortex CLI — lock board index (state → source → test → verifier tool)
 
-Companion to [`docs/audits/CORTEX_CLI_100_AUDIT_2026-09-08.md`](../docs/audits/CORTEX_CLI_100_AUDIT_2026-09-08.md).
 Generated from the id lists in the tree at `3035361` (`v0.1.10`):
 `lock_scene_ids()` in `src/cortex-tui/src/lock_proof.rs:53-131`,
 `is_lock_board()` in `src/cortex-tui/src/lock_boards.rs:44-99`,

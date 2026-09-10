@@ -115,6 +115,10 @@ CI and agents add one MCP server entry:
 ```
 
 Tools: `tui.*`, `lock.*`, `login.run`, `api.*`, `mcp.*`, `report.finish`.
+`tui.key` only applies composer Clear, NewLine (`Shift+Enter`), Backspace,
+and single-character insert (`src/cortex-cli/src/verify_mcp/tui.rs`).
+`F2`, `Shift+Tab`, `Alt+Enter`, and `Ctrl+x` return success but do not open
+Settings/Shortcuts, change mode, or add a newline.
 Resources: `cortex-verify://matrix`, `cortex-verify://lock/v2/<size>/<id>.txt`,
 `cortex-verify://report/latest`. `report.finish` writes
 `target/readiness/cli-verify/<run_id>.json` with schema `cortex-verify/1`.

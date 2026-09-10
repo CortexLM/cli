@@ -18,6 +18,14 @@ Verifier tools are the hidden `cortex mcp-server --verify` surface
 `lock.palette_audit`, `lock.diff_txt`, `tui.*`, `login.run`, `api.*`,
 `mcp.*`, `report.finish`. Guide: [Verification MCP](../docs/guides/development.md).
 
+`tui.key` (`verify_mcp/tui.rs` `apply_key`) only applies composer **Clear**,
+**NewLine** (`Shift+Enter` in the production mapper), **Backspace**, and
+**single-character insert**. `F2`, `Shift+Tab`, `Alt+Enter`, and `Ctrl+x`
+parse as keys and return success but are no-ops: they do not open Settings
+or Shortcuts, cycle mode, or insert a newline. Designer lock copy still
+shows those chords; cover those boards with `lock.render`,
+`cargo test -p cortex-tui`, or `tui.type` / `tui.slash`, not `tui.key`.
+
 **Flow** in the tables is a named interactive scenario on that verify server
 (or the matching `cargo test -p cortex-tui` case), not a separate spec:
 
@@ -25,15 +33,15 @@ Verifier tools are the hidden `cortex mcp-server --verify` surface
 |---|---|
 | *Cold start* | `tui.start` (empty session / welcome) |
 | *Agent entry* | agent-mode welcome |
-| *Slash* | `tui.type "/"` (palette) |
-| *Model* | model picker |
-| *Modes* | Ask / Plan / Agent / Bash chips |
+| *Slash* | `tui.type "/"` or `tui.slash` (palette) |
+| *Model* | model picker (`lock.render` / cargo tests) |
+| *Modes* | Ask / Plan / Agent / Bash chips (`lock.render` / cargo tests) |
 | *Session run* | live turn, tool tiles, queue |
 | *Errors* | 503 / 429 / diagnostics |
 | *Permission* | approval prompt / sandbox deny |
 | *MCP* | MCP list / `mcp.probe` / peer drop |
 | *Cancel* | interrupt → stopped |
-| *Settings* | `tui.key F2` |
+| *Settings* | `lock.render` / `settings_modal_has_appearance_and_search` (not `tui.key F2`) |
 
 ## Cross-pack tests (run over every id at 40×12 and 120×40)
 
@@ -78,8 +86,8 @@ Kinds: **painted** = `lock_boards.rs` painter (not the runtime view);
 | `permissions` | painted | `pickers_are_numbered_with_dim_descriptions` | `tui.type "/permissions"` |
 | `working` | painted | `session_stays_interactive_while_running` | flow *Session run* |
 | `read` | painted | `tool_tile_dots_are_white`, `tool_tiles_one_card` | flow *Session run* |
-| `settings_hub` | painted | `settings_hub_is_lock_rows` | `tui.key F2` |
-| `settings_empty` | live `MinimalSessionView` | `live_states_keep_chrome_complete` | `tui.key F2` → `/` → `zzzz` |
+| `settings_hub` | painted | `settings_hub_is_lock_rows` | `lock.render v1 settings_hub` |
+| `settings_empty` | live `MinimalSessionView` | `live_states_keep_chrome_complete` | `tui.type "/zzzz"` (empty slash; not Settings) |
 | `tool_tiles` | alias → `grep` | `tool_tiles_one_card` | — |
 | `diagnostics` | painted | `diagnostics_severity_words_carry_the_only_color` | flow *Errors* |
 | `multi_diff` | painted | `lock_boards_11_20_product_copy` | `tui.type "/diff"` |
@@ -92,7 +100,7 @@ Kinds: **painted** = `lock_boards.rs` painter (not the runtime view);
 | `session_success` | live `MinimalSessionView` | `live_states_keep_chrome_complete`, `completed_turns_do_not_get_a_fake_check` | flow *Session run* (done) |
 | `shell` | painted | `green_is_reserved_for_checks_and_diff_additions` | flow *Session run* |
 | `permission` | painted | `pickers_are_numbered_with_dim_descriptions` | flow *Permission* — painted board; runtime approval UI is the live widget, not this painter |
-| `plan` | painted | `pickers_are_numbered_with_dim_descriptions` | `tui.key Shift+Tab` → plan → confirm |
+| `plan` | painted | `pickers_are_numbered_with_dim_descriptions` | `lock.render v1 plan`; production `Shift+Tab` cycles autonomy (`docs/reference/keyboard.md`), not this painted board |
 | `streaming` | painted | `lock_boards_21_30_product_copy` | flow *Session run* |
 | `resume` | painted | `search_fields_are_framed_by_hairlines_without_a_pricing_bar` | `tui.type "/resume"` |
 | `mcp` | painted | `green_is_reserved_for_checks_and_diff_additions` | flow *MCP* |
@@ -156,7 +164,7 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | `session-empty` | yes | real | uniqueness | `tui.start{resumed:true}` |
 | `session-user-bars` | yes | real | `reported_collisions_are_distinct` | flow *Session run* |
 | `session-thought` | — | real | `user_bars_and_thought_metadata` | flow *Session run* |
-| `session-thought-expanded` | — | real | uniqueness | `tui.key F2` → Show thinking blocks |
+| `session-thought-expanded` | — | real | uniqueness | `lock.render` / `user_bars_and_thought_metadata` (Show thinking blocks; not `tui.key F2`) |
 | `session-thinking-live` | yes | real | uniqueness | flow *Session run* (live) |
 | `session-assistant` | yes | real | `reported_collisions_are_distinct` | flow *Session run* |
 | `session-worked` | — | real | uniqueness | flow *Session run* (done) |
@@ -166,7 +174,7 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | `composer-typing` | yes | real | uniqueness | `tui.type` |
 | `composer-typing-blink` | — | real | uniqueness | `tui.state.composer.caret_visible=false` |
 | `composer-hover` | yes | real | uniqueness | mouse fixture |
-| `composer-multiline` | — | real | uniqueness | `tui.key Alt+Enter` |
+| `composer-multiline` | — | real | uniqueness | `tui.key Shift+Enter` (production newline; designer footer still says Alt+Enter) |
 | `footer-shortcuts` | — | real | `reported_collisions_are_distinct` | `tui.type` (footer strip) |
 | `footer-hover` | — | real | uniqueness | mouse fixture |
 | `tokens-topright` | yes | real | uniqueness | `api.turn` usage event |
@@ -207,14 +215,14 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | `tool-tiles-collapsed` | — | real | uniqueness | flow *Session run* |
 | `shell-running` | — | real | uniqueness | flow *Session run* (live Shell) |
 | `diff-hunk` | yes | real | uniqueness | Edit tool fixture |
-| `edit-collapsed` | — | real | uniqueness | `tui.key F2` → Collapsed edit blocks |
+| `edit-collapsed` | — | real | uniqueness | `lock.render` (Collapsed edit blocks; not `tui.key F2`) |
 | `md-table` | — | real | uniqueness | fixture reply with a table |
 | `code-fence` | — | real | uniqueness | fixture reply with a fence |
 | `login` | yes | login | `runner::login_screen::tests::*` | `login.run` step 1 |
 | `login-waiting` | — | login | `snapshot_auth_waiting_and_error` | `login.run{fixture:ok}` step 2 |
 | `login-success` | — | login | `login_success_check_is_the_only_green` | `login.run{fixture:ok}` step 3 |
 | `login-error` | — | login (fed product string) | `snapshot_auth_success_and_failed` | `login.run{fixture:unreachable}` — product copy from the real login error path |
-| `shortcuts-overlay` | yes | real | uniqueness | `tui.key Ctrl+x` |
+| `shortcuts-overlay` | yes | real | uniqueness | `lock.render` (designer Ctrl+x overlay; `tui.key Ctrl+x` is a no-op) |
 | `resume-picker` | — | real (`build_resume_picker`) | uniqueness | `tui.type "/resume"` |
 | `clear-confirm` | — | **synthetic** | uniqueness | `tui.type "/clear"` (real confirm) |
 | `plan-confirm` | — | **synthetic** | uniqueness | Plan → `Implement this plan?` (real) |

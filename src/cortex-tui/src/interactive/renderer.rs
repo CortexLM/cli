@@ -56,71 +56,9 @@ impl<'a> InteractiveWidget<'a> {
         self
     }
 
-    /// Calculate click zones for the interactive list.
-    /// Call this after rendering to populate state.click_zones.
+    /// Calculate click zones for the rows-only picker (banner/search skipped).
     pub fn calculate_click_zones(state: &mut InteractiveState, area: Rect) {
-        state.click_zones.clear();
-        state.tab_click_zones.clear();
-
-        if !state.tabs.is_empty() {
-            let title = format!(" {} ", state.title);
-            let title_y = area.y + 1;
-            let tabs_x = area.x + 2 + title.len() as u16 + 2;
-            let mut x = tabs_x;
-            for (i, tab) in state.tabs.iter().enumerate() {
-                let tab_text = format!(" {} ", tab.label);
-                let tab_width = tab_text.len() as u16;
-                let tab_rect = Rect::new(x, title_y, tab_width, 1);
-                state.tab_click_zones.push((tab_rect, i));
-                x += tab_width + 2;
-            }
-        }
-
-        if state.is_form_active() {
-            return;
-        }
-
-        let inner = Rect::new(
-            area.x,
-            area.y + 2,
-            area.width,
-            area.height.saturating_sub(2),
-        );
-
-        if inner.height < 3 {
-            return;
-        }
-
-        let search_height = if state.searchable {
-            SEARCH_FIELD_ROWS
-        } else {
-            0
-        };
-        let hints_height = 1;
-        let effort_height = if state.effort_focused { 3 } else { 0 };
-        let items_height = inner
-            .height
-            .saturating_sub(search_height + hints_height + effort_height);
-
-        let items_y = inner.y + search_height;
-        let items_area = Rect::new(inner.x, items_y, inner.width, items_height);
-
-        // Register click zones for visible items
-        // We need to collect indices first to avoid borrow conflicts
-        let start = state.scroll_offset;
-        let visible_count = state.filtered_indices.len();
-        let end = (start + items_area.height as usize).min(visible_count);
-
-        for i in 0..(end - start) {
-            let y = items_area.y + i as u16;
-            if y >= items_area.y + items_area.height {
-                break;
-            }
-
-            let filtered_idx = start + i;
-            let item_rect = Rect::new(items_area.x, y, items_area.width, 1);
-            state.click_zones.push((item_rect, filtered_idx));
-        }
+        super::picker_layout::calculate_inline_click_zones(state, area);
     }
 
     /// Calculate the required height for this widget.

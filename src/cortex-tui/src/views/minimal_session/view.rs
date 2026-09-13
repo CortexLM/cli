@@ -657,23 +657,9 @@ impl<'a> Widget for MinimalSessionView<'a> {
         };
 
         let interactive = self.app_state.is_interactive_mode();
-        let effort_focused = self
-            .app_state
-            .get_interactive_state()
-            .map(|s| s.effort_focused)
-            .unwrap_or(false);
         let picker_height: u16 = if interactive {
             if let Some(state) = self.app_state.get_interactive_state() {
-                if effort_focused {
-                    3
-                } else {
-                    let n = if state.filtered_indices.is_empty() {
-                        1
-                    } else {
-                        state.filtered_indices.len().min(state.max_visible).min(8)
-                    };
-                    (n as u16).saturating_add(state.inline_chrome_rows())
-                }
+                crate::interactive::picker_layout::picker_stack_height(state)
             } else {
                 0
             }

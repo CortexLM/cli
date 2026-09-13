@@ -48,6 +48,7 @@
 
 pub mod builders;
 pub mod handlers;
+pub mod picker_layout;
 pub mod renderer;
 pub mod state;
 

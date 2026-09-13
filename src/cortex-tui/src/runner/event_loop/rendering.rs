@@ -198,31 +198,17 @@ impl EventLoop {
                 self.click_zones
                     .register(ClickZoneId::InputField, input_area);
 
-                // Calculate click zones for interactive mode: the panel sits
-                // directly above the footer and is `required_height` tall
-                // (hairline, title, optional framed search, rows, hints).
+                // Rows-only picker: same origin as MinimalSessionView (chrome then options).
                 if self.app_state.is_interactive_mode()
                     && let Some(state) = self.app_state.get_interactive_state_mut()
                 {
-                    let items_count = if state.filtered_indices.is_empty() {
-                        2
-                    } else {
-                        state.filtered_indices.len().min(state.max_visible)
-                    };
-                    let search_rows: u16 = if state.searchable {
-                        crate::interactive::renderer::SEARCH_FIELD_ROWS
-                    } else {
-                        0
-                    };
-                    let required_height = (items_count as u16) + 3 + search_rows;
-                    let max_height = area.height.saturating_sub(footer_height).max(3);
-                    let widget_height = required_height.min(max_height);
-                    let interactive_y = area
-                        .bottom()
-                        .saturating_sub(footer_height)
-                        .saturating_sub(widget_height);
+                    let picker_height =
+                        crate::interactive::picker_layout::picker_stack_height(state);
                     let interactive_area =
-                        Rect::new(area.x, interactive_y, area.width, widget_height);
+                        crate::interactive::picker_layout::session_inline_picker_area(
+                            area,
+                            picker_height,
+                        );
                     crate::interactive::InteractiveWidget::calculate_click_zones(
                         state,
                         interactive_area,

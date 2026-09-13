@@ -5,7 +5,7 @@ Generated from the id lists in the tree at `3035361` (`v0.1.10`):
 `is_lock_board()` in `src/cortex-tui/src/lock_boards.rs:44-99`,
 `LOCK_V2_WIDE_IDS` / `LOCK_V2_NARROW_IDS` in `src/cortex-tui/src/lock_v2_ids.rs`.
 
-Current Designer lock: **v2** (86 wide / 40 narrow), green focus `#1F4945`.
+Current Designer lock: **v2** (89 wide / 43 narrow), green focus `#1F4945`.
 Committed PNGs under `docs/media/tui-lock/` and `docs/media/tui-lock-v2/`
 still include historical violet `#A78BFA` pixels (see those READMEs). The
 ids and tests below are the source of truth:
@@ -57,7 +57,7 @@ shows those chords; cover those boards with `lock.render`,
 | `lock_proof::tests::distinct_states_render_distinct_frames` | v1 | only the 4 documented aliases share a frame |
 | `lock_proof::tests::no_smashed_tokens_anywhere` | v1 | wrapped copy never breaks tokens |
 | `lock_proof::tests::no_rounded_frame_glyphs_anywhere` | v1 | currently a no-op (no glyph assertions); TUI bleeds to terminal edges — see `docs/media/tui-lock/README.md` |
-| `lock_v2::tests::lock_v2_wide_count_is_spec` | v2 | 86 / 40 ids |
+| `lock_v2::tests::lock_v2_wide_count_is_spec` | v2 | 89 / 43 ids |
 | `lock_v2::tests::lock_v2_wide_frames_are_unique`, `lock_v2_narrow_frames_are_unique` | v2 | every id is a distinct frame |
 | `lock_v2::tests::slash_hover_is_not_banner_green_wash` | v2 | hover `#1A1A1A`; `#221A38` banned |
 | `style::tests::gray_chrome_palette_is_locked` (`cortex-core`) | palette | `ACCENT == #1F4945`, grays neutral, mint/cyan banned, gold retired |
@@ -250,7 +250,7 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | Pack | Ids | Sizes | Frames | Live / real | Painted or synthetic | PNGs in repo (all violet) |
 |---|---|---|---|---|---|---|
 | v1 | 72 | 40×12, 120×40 | 144 (+144 macOS composites) | 17 | 51 painted + 4 aliases | 65/72 files carry `#A78BFA` at each size |
-| v2 | 86 wide / 40 narrow | 120×40 / 40×12 | 126 | 72 (7 seeded) | 14 synthetic | runtime 86/86 + 40/40; designer boards 86/86 + 40/40 |
+| v2 | 89 wide / 43 narrow | 120×40 / 40×12 | 132 | 72 (7 seeded) | 14 synthetic | runtime 89/89 + 43/43; designer boards 89/89 + 43/43 |
 
 Regenerate captures: `./scripts/render-tui-lock.sh`,
 `./scripts/render-tui-lock-v2.sh`, `python3 docs/media/tui-lock-v2/tools/render_lock_v2.py --index`.

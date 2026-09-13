@@ -751,6 +751,17 @@ impl EventLoop {
                         self.app_state.toasts.info(format!("Permissions: {label}"));
                         return false;
                     }
+                    "handoff-confirm" => {
+                        if item_id == "cloud" {
+                            self.add_system_message(
+                                "This CLI session stays here (Chat · Code · Bot). Follow Cortex Cloud agents with /jobs.",
+                            );
+                            self.handle_open_modal(crate::commands::ModalType::Tasks)
+                                .await;
+                            return true;
+                        }
+                        return false;
+                    }
                     "clear-confirm" => {
                         if item_id == "yes" {
                             self.app_state.clear_messages();

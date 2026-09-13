@@ -514,3 +514,51 @@ async fn ux_contract_permission_prompt_numbered_radios() {
     runner.app_state.reject();
     assert!(!runner.app_state.has_pending_approval());
 }
+
+#[tokio::test]
+async fn ux_contract_handoff_opens_confirm_instead_of_unsupported() {
+    let (_temp, mut runner) = fixture();
+    runner
+        .handle_command_result(CommandResult::Async("handoff".into()))
+        .await
+        .unwrap();
+    let state = runner
+        .app_state
+        .get_interactive_state()
+        .expect("/handoff must open the confirm picker");
+    assert_eq!(state.title, "Handoff");
+    assert!(
+        state.items.iter().any(|i| i.id == "cloud"),
+        "missing Cortex Cloud option"
+    );
+    assert!(
+        state.items.iter().any(|i| i.id == "stay"),
+        "missing stay option"
+    );
+    assert_views(&mut runner, "Cortex Cloud");
+    runner
+        .handle_interactive_selection(
+            crate::interactive::InteractiveAction::Custom("handoff-confirm".into()),
+            "stay".into(),
+            vec![],
+        )
+        .await;
+    runner.app_state.exit_interactive_mode();
+    runner
+        .handle_command_result(CommandResult::Async("handoff".into()))
+        .await
+        .unwrap();
+    runner
+        .handle_interactive_selection(
+            crate::interactive::InteractiveAction::Custom("handoff-confirm".into()),
+            "cloud".into(),
+            vec![],
+        )
+        .await;
+    assert_views(&mut runner, "Chat");
+    let jobs = runner
+        .app_state
+        .get_interactive_state()
+        .expect("cloud choice opens /jobs");
+    assert!(jobs.title.contains("jobs"), "{}", jobs.title);
+}

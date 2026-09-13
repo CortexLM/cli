@@ -777,7 +777,7 @@ impl<'a> MinimalSessionView<'a> {
             return FooterSet::Palette;
         }
         let typed = self.app_state.input.text();
-        if typed.contains('@') && !self.app_state.is_interactive_mode() {
+        if composer_has_completed_file_chip(&typed) && !self.app_state.is_interactive_mode() {
             return FooterSet::FileChip;
         }
         if !typed.is_empty() {
@@ -840,6 +840,15 @@ fn composer_char_accent(chars: &[char], index: usize) -> bool {
     false
 }
 
+/// True when the composer holds a completed `@path` chip, not an email or a bare `@`.
+fn composer_has_completed_file_chip(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    chars
+        .iter()
+        .enumerate()
+        .any(|(i, ch)| *ch == '@' && composer_char_accent(&chars, i))
+}
+
 fn composer_display_text(state: &AppState) -> String {
     if let Some(istate) = state.get_interactive_state() {
         let title = istate.title.to_ascii_lowercase();
@@ -855,4 +864,28 @@ fn composer_display_text(state: &AppState) -> String {
         }
     }
     state.input.text()
+}
+
+#[cfg(test)]
+mod file_chip_footer_tests {
+    use super::*;
+
+    #[test]
+    fn completed_at_path_is_a_file_chip() {
+        assert!(composer_has_completed_file_chip(
+            "explain @src/cortex-tui/src/composer.rs "
+        ));
+        assert!(composer_has_completed_file_chip(
+            "explain @src/composer.rs "
+        ));
+        assert!(composer_has_completed_file_chip("@src/foo.rs"));
+    }
+
+    #[test]
+    fn email_and_bare_at_are_not_file_chips() {
+        assert!(!composer_has_completed_file_chip("contact me@example.com"));
+        assert!(!composer_has_completed_file_chip("please inspect @"));
+        assert!(!composer_has_completed_file_chip("@"));
+        assert!(!composer_has_completed_file_chip("hello world"));
+    }
 }

@@ -35,7 +35,9 @@ pub struct WorktreeSessionMeta {
 pub fn isolate_worktree(cwd: &Path, dest: Option<&Path>, id: &str) -> Result<IsolatedWorktree> {
     let repo = git_root(cwd)?;
     let path = match dest {
-        Some(p) if p.as_os_str().is_empty() => default_worktree_path(&repo, id),
+        Some(p) if p.as_os_str().is_empty() || p == Path::new("auto") => {
+            default_worktree_path(&repo, id)
+        }
         Some(p) => {
             if p.is_absolute() {
                 p.to_path_buf()

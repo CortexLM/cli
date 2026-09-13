@@ -205,7 +205,7 @@ pub struct InteractiveArgs {
         long = "worktree",
         value_name = "DIR",
         num_args = 0..=1,
-        default_missing_value = "",
+        default_missing_value = "auto",
         help_heading = "Workspace"
     )]
     pub worktree: Option<PathBuf>,
@@ -1316,7 +1316,7 @@ mod tests {
         assert!(cli.interactive.bash_edit_diff);
         assert_eq!(
             cli.interactive.worktree.as_deref(),
-            Some(std::path::Path::new(""))
+            Some(std::path::Path::new("auto"))
         );
 
         let cli = Cli::try_parse_from(["cortex", "attach", "sess-9"]).expect("attach");

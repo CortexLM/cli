@@ -18,7 +18,7 @@ pub fn apply_worktree(cwd: &Path, worktree: Option<&PathBuf>) -> Result<PathBuf>
     let Some(flag) = worktree else {
         return Ok(cwd.to_path_buf());
     };
-    let dest = if flag.as_os_str().is_empty() {
+    let dest = if flag.as_os_str().is_empty() || flag == Path::new("auto") {
         None
     } else {
         Some(flag.as_path())

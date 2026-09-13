@@ -25,7 +25,7 @@ pub fn bash_edit_diff_enabled(env: &HashMap<String, String>) -> bool {
 /// Snapshot of regular files under `cwd` (no `.git` / `target` / `node_modules`).
 pub fn snapshot_workspace(cwd: &Path) -> HashMap<PathBuf, Vec<u8>> {
     let mut files = HashMap::new();
-    walk(cwd, cwd, &mut files);
+    walk(cwd, &mut files);
     files
 }
 
@@ -78,7 +78,7 @@ pub fn append_edit_diff(output: &str, diff_text: &str) -> String {
     }
 }
 
-fn walk(cwd: &Path, dir: &Path, files: &mut HashMap<PathBuf, Vec<u8>>) {
+fn walk(dir: &Path, files: &mut HashMap<PathBuf, Vec<u8>>) {
     if files.len() >= MAX_FILES {
         return;
     }
@@ -107,7 +107,7 @@ fn walk(cwd: &Path, dir: &Path, files: &mut HashMap<PathBuf, Vec<u8>>) {
             continue;
         }
         if ft.is_dir() {
-            walk(cwd, &path, files);
+            walk(&path, files);
             continue;
         }
         if !ft.is_file() {

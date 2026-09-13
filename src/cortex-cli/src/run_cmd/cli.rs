@@ -141,7 +141,7 @@ pub struct RunCli {
     pub cwd: Option<PathBuf>,
 
     /// Isolated git worktree for this run (`--worktree` or `--worktree DIR`).
-    #[arg(long = "worktree", value_name = "DIR", num_args = 0..=1, default_missing_value = "")]
+    #[arg(long = "worktree", value_name = "DIR", num_args = 0..=1, default_missing_value = "auto")]
     pub worktree: Option<PathBuf>,
 
     /// Extra plugin folder (folder-of-plugins or a single plugin). Repeatable.

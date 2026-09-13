@@ -266,7 +266,9 @@ pub enum FooterSet {
     Running,
     Queue,
     ModelList,
+    ModelListNarrow,
     Effort,
+    EffortNarrow,
     Approval,
     Mcp,
     Plugins,
@@ -374,6 +376,20 @@ impl FooterSet {
                     label: "close",
                 },
             ],
+            Self::ModelListNarrow => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "choose",
+                },
+                FooterHint {
+                    key: "Tab",
+                    label: "effort",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "close",
+                },
+            ],
             Self::Effort => &[
                 FooterHint {
                     key: "Enter",
@@ -382,6 +398,16 @@ impl FooterSet {
                 FooterHint {
                     key: "Tab",
                     label: "back to models",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "close",
+                },
+            ],
+            Self::EffortNarrow => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "apply",
                 },
                 FooterHint {
                     key: "Esc",

@@ -156,4 +156,53 @@ mod tests {
         assert!(think_n.plain.contains("Thinking"), "{}", think_n.plain);
         assert!(stop_n.plain.contains("Stopped"), "{}", stop_n.plain);
     }
+
+    #[test]
+    fn model_picker_matches_lock_copy() {
+        let list = render_lock_v2_scene("model-list", 120, 40).expect("list");
+        assert!(
+            list.plain.contains("Fast default for everyday coding"),
+            "{}",
+            list.plain
+        );
+        assert!(
+            list.plain.contains("Deeper reasoning for hard changes"),
+            "{}",
+            list.plain
+        );
+        assert!(
+            list.plain.contains("Longest context") && list.plain.contains("MAX"),
+            "{}",
+            list.plain
+        );
+        assert!(list.plain.contains("current"), "{}", list.plain);
+        assert!(!list.plain.contains("200K ctx"), "{}", list.plain);
+        let lower = list.plain.to_ascii_lowercase();
+        assert!(!lower.contains("claude"), "{}", list.plain);
+        assert!(!lower.contains("anthropic"), "{}", list.plain);
+        let effort = render_lock_v2_scene("model-effort-high", 120, 40).expect("effort");
+        assert!(
+            effort
+                .plain
+                .contains("Deepest reasoning — best for hard, multi-file changes"),
+            "{}",
+            effort.plain
+        );
+        assert!(
+            effort.plain.contains("Cortex Mini 1 (medium)"),
+            "{}",
+            effort.plain
+        );
+        assert!(effort.plain.contains("Tab"), "{}", effort.plain);
+        let narrow = render_lock_v2_scene("model-effort-high", 40, 12).expect("narrow");
+        assert!(narrow.plain.contains("High Effort"), "{}", narrow.plain);
+        assert!(
+            narrow.plain.contains("Esc") && !narrow.plain.contains("Tab:back"),
+            "{}",
+            narrow.plain
+        );
+        let hover = render_lock_v2_scene("model-effort-hover", 120, 40).expect("hover");
+        assert!(hover.plain.contains("Medium Effort"), "{}", hover.plain);
+        assert_ne!(effort.ansi, hover.ansi);
+    }
 }

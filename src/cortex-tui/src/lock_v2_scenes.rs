@@ -124,7 +124,6 @@ pub(crate) fn effort_picker(
     if hover_low {
         interactive.hovered = Some(1000 + 2);
     }
-    state.thinking_budget = Some(effort.as_str().to_ascii_lowercase());
     state.enter_interactive_mode(interactive);
 }
 

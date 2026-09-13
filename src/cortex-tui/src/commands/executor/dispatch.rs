@@ -27,7 +27,7 @@ impl CommandExecutor {
             "plan" => CommandResult::OpenModal(ModalType::Plan),
             "goal" => self.cmd_goal(cmd),
             // Effort radios live on `/model` (Tab). `/effort` is an alias.
-            "effort" => CommandResult::OpenModal(ModalType::ModelPicker),
+            "effort" => CommandResult::OpenModal(ModalType::Effort),
             "btw" => CommandResult::Message("Side note captured for this turn.".to_string()),
             "jobs" | "bg" | "background" | "tasks" => CommandResult::OpenModal(ModalType::Tasks),
             "skills" | "sk" => CommandResult::OpenModal(ModalType::Skills),

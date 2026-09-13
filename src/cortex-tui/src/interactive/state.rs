@@ -631,6 +631,9 @@ impl InteractiveState {
         for (rect, filtered_idx) in &self.click_zones {
             if x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height {
                 // Check if this item is selectable
+                if *filtered_idx >= 1000 {
+                    return Some(*filtered_idx);
+                }
                 if let Some(item) = self
                     .filtered_indices
                     .get(*filtered_idx)

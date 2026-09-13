@@ -172,7 +172,8 @@ impl EventLoop {
             ModalType::Settings => {
                 self.app_state.open_settings_modal();
             }
-            ModalType::ModelPicker | ModalType::Effort => {
+            kind @ (ModalType::ModelPicker | ModalType::Effort) => {
+                let focus_effort = matches!(kind, ModalType::Effort);
                 let (models, current_model) = if let Some(ref pm) = self.provider_manager {
                     if let Ok(manager) = pm.try_read() {
                         let models = manager.available_models();
@@ -200,11 +201,14 @@ impl EventLoop {
                     );
                 }
 
-                let interactive = crate::interactive::builders::build_model_selector(
+                let mut interactive = crate::interactive::builders::build_model_selector(
                     models,
                     current_model.as_deref(),
                     self.app_state.thinking_budget.as_deref(),
                 );
+                if focus_effort {
+                    interactive.effort_focused = true;
+                }
                 self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::CommandPalette => {

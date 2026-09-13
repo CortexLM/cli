@@ -88,6 +88,10 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
 
         // Selection
         KeyCode::Enter => {
+            if state.effort.is_some() && !state.effort_focused {
+                state.effort_focused = true;
+                return InteractiveResult::Continue;
+            }
             if let Some(item) = state.selected_item() {
                 if item.disabled {
                     InteractiveResult::Continue
@@ -448,6 +452,24 @@ mod tests {
         handle_interactive_key(&mut state, tab);
         assert!(!state.effort_focused);
         assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Medium));
+    }
+
+    #[test]
+    fn enter_on_model_list_opens_effort_then_applies() {
+        let items = vec![InteractiveItem::new("mini", "Cortex Mini 1")];
+        let mut state = InteractiveState::new("Model", items, InteractiveAction::SetModel)
+            .with_effort(crate::interactive::EffortLevel::Medium);
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let first = handle_interactive_key(&mut state, enter);
+        assert!(matches!(first, InteractiveResult::Continue));
+        assert!(state.effort_focused);
+        state.effort_down();
+        let apply = handle_interactive_key(&mut state, enter);
+        assert!(matches!(
+            apply,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "mini"
+        ));
+        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Low));
     }
 
     #[test]

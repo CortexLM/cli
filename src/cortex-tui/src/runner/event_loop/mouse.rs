@@ -255,15 +255,23 @@ impl EventLoop {
         // Hit test using stored click zones
         let idx = state.hit_test(x, y)?;
 
-        // Move selection to clicked item
-        state.selected = idx;
-        state.hovered = Some(idx);
+        if idx >= 1000 {
+            let i = idx - 1000;
+            if let Some((level, _, _)) = crate::interactive::EffortLevel::rows().get(i) {
+                state.effort = Some(*level);
+                state.effort_focused = true;
+            }
+        } else {
+            state.selected = idx;
+            state.hovered = Some(idx);
+        }
 
-        // Get the selected item to check if it's selectable
-        let _item = match state.selected_item() {
-            Some(item) if !item.disabled && !item.is_separator => item,
-            _ => return None,
-        };
+        if idx < 1000 {
+            let _item = match state.selected_item() {
+                Some(item) if !item.disabled && !item.is_separator => item,
+                _ => return None,
+            };
+        }
 
         let is_multi = state.multi_select;
 

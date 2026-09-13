@@ -1,6 +1,8 @@
 //! Renderer for interactive selection in the input area.
 
-use super::state::{EffortLevel, InlineFormState, InteractiveItem, InteractiveState};
+use super::state::{
+    EffortLevel, InlineFormState, InteractiveAction, InteractiveItem, InteractiveState,
+};
 use cortex_core::style::{
     ACCENT, BAR_HOVER, BORDER_FOCUS, HAIRLINE, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM,
     TEXT_MUTED,
@@ -333,6 +335,7 @@ impl<'a> InteractiveWidget<'a> {
         }
         let start = self.state.scroll_offset;
         let end = (start + area.height as usize).min(visible_items.len());
+        let name_w = self.lock_name_width();
 
         for (i, (real_idx, item)) in visible_items
             .iter()
@@ -357,6 +360,7 @@ impl<'a> InteractiveWidget<'a> {
                 is_selected,
                 is_hovered,
                 is_checked,
+                name_w,
             );
         }
 
@@ -380,6 +384,29 @@ impl<'a> InteractiveWidget<'a> {
     }
 
     /// Render a single item.
+    fn lock_menu(&self) -> bool {
+        matches!(self.state.action, InteractiveAction::SetModel) || self.state.effort.is_some()
+    }
+
+    fn lock_gutter(&self) -> u16 {
+        if self.rows_only && self.lock_menu() {
+            3
+        } else {
+            0
+        }
+    }
+
+    fn lock_name_width(&self) -> usize {
+        let longest = self
+            .state
+            .visible_items()
+            .iter()
+            .map(|(_, item)| item.label.chars().count())
+            .max()
+            .unwrap_or(0);
+        longest.saturating_add(2).max(16)
+    }
+
     fn render_item(
         &self,
         area: Rect,
@@ -388,6 +415,7 @@ impl<'a> InteractiveWidget<'a> {
         is_selected: bool,
         is_hovered: bool,
         is_checked: bool,
+        name_w: usize,
     ) {
         // Selected row: the dark gray bar with a banner green `>` and a banner green label —
         // never inverted onto the accent. Unselected rows lead with a dim
@@ -416,7 +444,7 @@ impl<'a> InteractiveWidget<'a> {
             }
         }
 
-        let mut x = area.x;
+        let mut x = area.x + self.lock_gutter();
         if !item.is_separator {
             let (marker, marker_style) = if selected_bar {
                 (
@@ -425,6 +453,8 @@ impl<'a> InteractiveWidget<'a> {
                 )
             } else if item.disabled {
                 ("  ", Style::default().fg(TEXT_MUTED))
+            } else if self.lock_menu() {
+                ("  ", Style::default().fg(TEXT_DIM))
             } else {
                 ("· ", Style::default().fg(TEXT_DIM))
             };
@@ -472,21 +502,32 @@ impl<'a> InteractiveWidget<'a> {
         buf.set_string(x, area.y, &label, label_style);
         x += label.chars().count() as u16;
 
-        // Description right-aligned when it fits beside the label; dim even
-        // on the selection bar.
         if let Some(ref desc) = item.description {
-            let remaining = (area.x + area.width).saturating_sub(x + 2) as usize;
-            let desc_text = crate::ui::text_utils::first_fitting_line(desc, remaining);
-            if !desc_text.is_empty() {
-                let desc_w = desc_text.chars().count() as u16;
-                let desc_x = area.x + area.width.saturating_sub(desc_w + 1);
-                if desc_x > x + 1 {
-                    let desc_style = if selected_bar {
-                        Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
-                    } else {
-                        Style::default().fg(TEXT_DIM)
-                    };
-                    buf.set_string(desc_x, area.y, &desc_text, desc_style);
+            let desc_style = if selected_bar {
+                Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
+            } else {
+                Style::default().fg(TEXT_DIM)
+            };
+            if self.lock_menu() {
+                let desc_x = area.x + self.lock_gutter() + 2 + name_w as u16;
+                if desc_x + 2 < area.right() {
+                    let shown = crate::ui::text_utils::first_fitting_line(
+                        desc,
+                        area.right().saturating_sub(desc_x + 1) as usize,
+                    );
+                    if !shown.is_empty() {
+                        buf.set_string(desc_x, area.y, &shown, desc_style);
+                    }
+                }
+            } else {
+                let remaining = (area.x + area.width).saturating_sub(x + 2) as usize;
+                let desc_text = crate::ui::text_utils::first_fitting_line(desc, remaining);
+                if !desc_text.is_empty() {
+                    let desc_w = desc_text.chars().count() as u16;
+                    let desc_x = area.x + area.width.saturating_sub(desc_w + 1);
+                    if desc_x > x + 1 {
+                        buf.set_string(desc_x, area.y, &desc_text, desc_style);
+                    }
                 }
             }
         }
@@ -500,6 +541,7 @@ impl<'a> InteractiveWidget<'a> {
         if area.height < 1 {
             return;
         }
+        let gutter = self.lock_gutter();
         for (i, (level, label, desc)) in EffortLevel::rows().iter().enumerate() {
             let y = area.y + i as u16;
             if y >= area.bottom() {
@@ -507,6 +549,7 @@ impl<'a> InteractiveWidget<'a> {
             }
             let focused = self.state.effort_focused && *level == effort;
             let hovered = !focused && self.state.hovered == Some(1000 + i);
+            let row_x = area.x + gutter;
             if focused {
                 for dx in 0..area.width {
                     if let Some(cell) = buf.cell_mut((area.x + dx, y)) {
@@ -514,7 +557,7 @@ impl<'a> InteractiveWidget<'a> {
                     }
                 }
                 buf.set_string(
-                    area.x,
+                    row_x,
                     y,
                     "> ",
                     Style::default().fg(ACCENT).bg(cortex_core::style::TEXT),
@@ -525,9 +568,9 @@ impl<'a> InteractiveWidget<'a> {
                         cell.set_bg(BAR_HOVER);
                     }
                 }
-                buf.set_string(area.x, y, "  ", Style::default().fg(TEXT_DIM).bg(BAR_HOVER));
+                buf.set_string(row_x, y, "  ", Style::default().fg(TEXT_DIM).bg(BAR_HOVER));
             } else {
-                buf.set_string(area.x, y, "  ", Style::default().fg(TEXT_DIM));
+                buf.set_string(row_x, y, "  ", Style::default().fg(TEXT_DIM));
             }
             let name_style = if focused {
                 Style::default()
@@ -537,8 +580,8 @@ impl<'a> InteractiveWidget<'a> {
             } else {
                 Style::default().fg(TEXT)
             };
-            buf.set_string(area.x + 2, y, *label, name_style);
-            let desc_x = area.x + 2 + 16;
+            buf.set_string(row_x + 2, y, *label, name_style);
+            let desc_x = row_x + 2 + 16;
             if desc_x + 4 < area.right() {
                 let desc_style = if focused {
                     Style::default().fg(TEXT_DIM).bg(SELECTION_BG)

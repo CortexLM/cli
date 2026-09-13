@@ -769,11 +769,19 @@ impl<'a> MinimalSessionView<'a> {
         }
         if let Some(state) = self.app_state.get_interactive_state() {
             if state.effort_focused {
-                return FooterSet::Effort;
+                return if area_is_narrow(width) {
+                    FooterSet::EffortNarrow
+                } else {
+                    FooterSet::Effort
+                };
             }
             let title = state.title.to_ascii_lowercase();
             if title.contains("model") {
-                return FooterSet::ModelList;
+                return if area_is_narrow(width) {
+                    FooterSet::ModelListNarrow
+                } else {
+                    FooterSet::ModelList
+                };
             }
             if title.contains("mcp") {
                 return FooterSet::Mcp;

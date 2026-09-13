@@ -75,12 +75,27 @@ impl ShortcutsOverlay {
         self
     }
 
-    pub fn row_count(area: Rect) -> usize {
+    pub fn catalog_len(area: Rect) -> usize {
         if compact(area) {
             NARROW.len()
         } else {
             LEFT.len() + RIGHT.len()
         }
+    }
+
+    /// Rows that actually paint inside `area` (compact terminals clip the list).
+    pub fn row_count(area: Rect) -> usize {
+        let modal = Self::modal_rect(area);
+        let inner_h = modal.height.saturating_sub(4);
+        if compact(area) {
+            let visible = inner_h.saturating_sub(2) as usize;
+            NARROW.len().min(visible.max(1))
+        } else {
+            let per = inner_h.saturating_sub(3) as usize;
+            LEFT.len().min(per) + RIGHT.len().min(per)
+        }
+        .max(1)
+        .min(Self::catalog_len(area))
     }
 
     pub fn wrap_index(area: Rect, index: usize) -> usize {
@@ -110,9 +125,12 @@ impl ShortcutsOverlay {
         x >= close_x && x < close_x.saturating_add(3)
     }
 
-    /// Binding under `(x, y)`, if any.
+    /// Binding under `(x, y)`, if any. Pointers outside the sheet are ignored.
     pub fn row_at(area: Rect, x: u16, y: u16) -> Option<usize> {
         let modal = Self::modal_rect(area);
+        if x < modal.x || x >= modal.right() || y < modal.y || y >= modal.bottom() {
+            return None;
+        }
         let inner = Rect::new(
             modal.x + 2,
             modal.y + 2,
@@ -124,7 +142,15 @@ impl ShortcutsOverlay {
         }
         let idx = (y - inner.y) as usize;
         if compact(area) {
+            let stop = inner.bottom().saturating_sub(2);
+            if y >= stop {
+                return None;
+            }
             return (idx < NARROW.len()).then_some(idx);
+        }
+        let stop = inner.bottom().saturating_sub(3);
+        if y >= stop {
+            return None;
         }
         let col2 = inner.x + inner.width / 2;
         if x >= col2 {
@@ -340,7 +366,18 @@ mod tests {
             ShortcutsOverlay::row_at(area, modal.x + 3, modal.y + 2),
             Some(0)
         );
-        assert_eq!(ShortcutsOverlay::row_count(area), LEFT.len() + RIGHT.len());
+        assert_eq!(
+            ShortcutsOverlay::row_at(area, modal.x.saturating_sub(1), modal.y + 2),
+            None
+        );
+        assert_eq!(
+            ShortcutsOverlay::row_at(area, modal.right(), modal.y + 2),
+            None
+        );
+        assert_eq!(
+            ShortcutsOverlay::catalog_len(area),
+            LEFT.len() + RIGHT.len()
+        );
     }
 
     #[test]
@@ -355,6 +392,18 @@ mod tests {
             }
         }
         assert!(found);
-        assert_eq!(ShortcutsOverlay::row_count(area), NARROW.len());
+        let visible = ShortcutsOverlay::row_count(area);
+        assert!(
+            visible <= 4,
+            "40×12 paints at most 4 bindings, got {visible}"
+        );
+        assert_eq!(ShortcutsOverlay::catalog_len(area), NARROW.len());
+        assert_eq!(ShortcutsOverlay::wrap_index(area, visible), 0);
+        let modal = ShortcutsOverlay::modal_rect(area);
+        let inner_y = modal.y + 2;
+        assert_eq!(
+            ShortcutsOverlay::row_at(area, modal.x + 2, inner_y + visible as u16),
+            None
+        );
     }
 }

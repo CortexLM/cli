@@ -77,4 +77,21 @@ mod tests {
         state.toggle_shortcuts_sheet();
         assert!(!state.shortcuts_open);
     }
+
+    #[test]
+    fn compact_navigation_stays_on_painted_rows() {
+        let mut state = AppState::default();
+        state.terminal_size = (40, 12);
+        state.toggle_shortcuts_sheet();
+        let area = Rect::new(0, 0, 40, 12);
+        let visible = ShortcutsOverlay::row_count(area);
+        for _ in 0..(visible + 3) {
+            state.shortcuts_move(1);
+        }
+        assert!(state.shortcuts_selected < visible);
+        assert!(
+            ShortcutsOverlay::row_at(area, 0, area.y + 2).is_none(),
+            "margin left of the sheet is not a hit"
+        );
+    }
 }

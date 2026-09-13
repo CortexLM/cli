@@ -985,27 +985,13 @@ Tell me what you'd like to do.",
                 None,
             ));
         }
-        "btw" => {
-            resumed(&mut state);
-            state.add_message(Message::user("keep rewriting chrome.rs").with_timestamp("09:50 AM"));
-            state.start_streaming(None, true);
-            state.streaming.thinking = false;
-            state.streaming.is_actively_streaming = true;
-            state.add_message(
-                Message::user("/btw keep the composer dual-hairline").with_timestamp("09:51 AM"),
-            );
-        }
+        id if apply_btw_scene(id, &mut state) => {}
         id if apply_offline_rate_limit_scene(id, &mut state) => {}
         id if apply_parity_scene(id, &mut state, width) => {}
         id if apply_designed_scene(id, &mut state, width) => {}
         id if apply_share_scene(id, &mut state) => {}
         id if apply_goal_chip_scene(id, &mut state) => {}
-        "computer-disconnected" | "computer-cloud-default" => {
-            assert!(
-                apply_computer_scene(id, &mut state, width),
-                "computer lock scene {id}"
-            );
-        }
+        id if apply_computer_scene(id, &mut state, width) => {}
         other => panic!("unknown lock v2 scene {other}"),
     }
     state

@@ -564,10 +564,10 @@ impl AppState {
     pub fn clear_messages(&mut self) {
         self.messages.clear();
         self.chat_scroll = 0;
-        // Reset scroll state to bottom (no "↓ End" hint after clearing)
         self.chat_scroll_pinned_bottom = true;
-        // Request clearing terminal scrollback buffer for privacy
         self.pending_scrollback_clear = true;
+        self.last_turn_stopped = false;
+        self.working_checklist = None;
     }
 
     /// Check if scrollback clear is pending and reset the flag

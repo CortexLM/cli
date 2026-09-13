@@ -35,6 +35,14 @@ impl EventLoop {
         let tool_tx = self.tool_event_tx.clone();
         let id = tool_call_id.clone();
         let name = tool_name.clone();
+        if matches!(tool_name.as_str(), "TodoWrite" | "todo_write")
+            && let Some(todos) = todo_pairs_from_write_args(&args)
+        {
+            let _ = self.tool_event_tx.try_send(ToolEvent::TodoUpdated {
+                session_id: String::new(),
+                todos,
+            });
+        }
         let mcp_manager = self.mcp_manager.clone();
         // Every caller reaches here only after the permission manager passed
         // the call or the user approved it in the modal.
@@ -679,6 +687,42 @@ where
         }
     });
     futures::future::join_all(futures).await
+}
+
+fn todo_pairs_from_write_args(args: &serde_json::Value) -> Option<Vec<(String, String)>> {
+    let todos = args.get("todos")?.as_array()?;
+    let pairs: Vec<(String, String)> = todos
+        .iter()
+        .filter_map(|item| {
+            let content = item.get("content")?.as_str()?.to_string();
+            let status = item
+                .get("status")?
+                .as_str()
+                .unwrap_or("pending")
+                .to_string();
+            Some((content, status))
+        })
+        .collect();
+    (!pairs.is_empty()).then_some(pairs)
+}
+
+#[cfg(test)]
+mod todo_write_live_tests {
+    use super::todo_pairs_from_write_args;
+
+    #[test]
+    fn todo_write_args_become_checklist_pairs() {
+        let args = serde_json::json!({
+            "todos": [
+                {"id": "1", "content": "Read composer.rs", "status": "completed"},
+                {"id": "2", "content": "Move the chip", "status": "in_progress"},
+            ]
+        });
+        let pairs = todo_pairs_from_write_args(&args).expect("pairs");
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].1, "completed");
+        assert_eq!(pairs[1].0, "Move the chip");
+    }
 }
 
 #[cfg(test)]

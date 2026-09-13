@@ -225,6 +225,21 @@ pub(crate) const MD_TABLE: &str = r#"Here is how the three models compare:
 | Cortex Max 1 | High | 1M | per token |
 "#;
 
+pub(crate) fn apply_btw_scene(id: &str, state: &mut AppState) -> bool {
+    if id != "btw" {
+        return false;
+    }
+    resumed(state);
+    state.add_message(Message::user("keep rewriting chrome.rs").with_timestamp("09:50 AM"));
+    state.start_streaming(None, true);
+    state.streaming.thinking = false;
+    state.streaming.is_actively_streaming = true;
+    state.add_message(
+        Message::user("/btw keep the composer dual-hairline").with_timestamp("09:51 AM"),
+    );
+    true
+}
+
 pub(crate) const MD_FENCE: &str = r#"```rust
 pub async fn with_retry<F, T>(mut op: F) -> Result<T>
 where F: FnMut() -> Fut<Result<T>>,

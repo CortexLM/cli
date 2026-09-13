@@ -850,4 +850,15 @@ mod agent_mode_tests {
         assert!(!state.has_pending_approval());
         assert!(!state.is_interactive_mode());
     }
+
+    #[test]
+    fn clear_and_new_session_drop_stopped_placeholder() {
+        let mut state = AppState::default();
+        state.last_turn_stopped = true;
+        state.clear_messages();
+        assert!(!state.last_turn_stopped);
+        state.last_turn_stopped = true;
+        state.new_session();
+        assert!(!state.last_turn_stopped);
+    }
 }

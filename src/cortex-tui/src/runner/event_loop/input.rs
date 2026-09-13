@@ -268,11 +268,23 @@ impl EventLoop {
         if key_event.code == KeyCode::Char('x')
             && key_event.modifiers.contains(KeyModifiers::CONTROL)
         {
+            if self.shortcuts_toggle_blocked() {
+                return Ok(false);
+            }
             self.app_state.toggle_shortcuts_sheet();
             self.render(terminal)?;
             return Ok(true);
         }
         Ok(false)
+    }
+
+    fn shortcuts_toggle_blocked(&self) -> bool {
+        self.app_state.is_interactive_mode()
+            || self.card_handler.is_active()
+            || self.app_state.has_modal()
+            || self.modal_stack.is_active()
+            || self.app_state.view == AppView::Questions
+            || self.app_state.get_question_state().is_some()
     }
 
     async fn handle_interactive_mode_key(

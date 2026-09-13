@@ -5,7 +5,10 @@ Design-only deliverable for the full TUI redesign. Layout language is taken
 composer with the model chip in the bottom border, Settings modal with search +
 categorised rows + tip/nav footer, slash autocomplete above the composer, effort
 radios under `/model`, token counter top-right, footer shortcut strip) and
-re-skinned to the Cortex chrome. **No runtime code changes ship with this pack.**
+re-skinned to the Cortex chrome. Designer boards stay design-only; runtime
+captures use `MinimalSessionView` plus lock flags (`computer_held`,
+`show_computer_default`, `offline_held`, `rate_limit_held`) so MockTerminal
+matches live chrome.
 
 - Boards: [`index.md`](index.md) — 89 boards at 120×40, 43 of them also at 40×12 (132 PNGs).
 - Grids: `txt/<size>/<board>.txt` — the exact character grid of every board (diff a

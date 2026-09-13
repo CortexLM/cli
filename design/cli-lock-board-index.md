@@ -3,9 +3,9 @@
 Generated from the id lists in the tree at `3035361` (`v0.1.10`):
 `lock_scene_ids()` in `src/cortex-tui/src/lock_proof.rs:53-131`,
 `is_lock_board()` in `src/cortex-tui/src/lock_boards.rs:44-99`,
-`LOCK_V2_WIDE_IDS` / `LOCK_V2_NARROW_IDS` in `src/cortex-tui/src/lock_v2.rs:33-147`.
+`LOCK_V2_WIDE_IDS` / `LOCK_V2_NARROW_IDS` in `src/cortex-tui/src/lock_v2_ids.rs`.
 
-Current Designer lock: **v2** (84 wide / 38 narrow), green focus `#1F4945`.
+Current Designer lock: **v2** (86 wide / 40 narrow), green focus `#1F4945`.
 Committed PNGs under `docs/media/tui-lock/` and `docs/media/tui-lock-v2/`
 still include historical violet `#A78BFA` pixels (see those READMEs). The
 ids and tests below are the source of truth:
@@ -57,7 +57,7 @@ shows those chords; cover those boards with `lock.render`,
 | `lock_proof::tests::distinct_states_render_distinct_frames` | v1 | only the 4 documented aliases share a frame |
 | `lock_proof::tests::no_smashed_tokens_anywhere` | v1 | wrapped copy never breaks tokens |
 | `lock_proof::tests::no_rounded_frame_glyphs_anywhere` | v1 | currently a no-op (no glyph assertions); TUI bleeds to terminal edges — see `docs/media/tui-lock/README.md` |
-| `lock_v2::tests::lock_v2_wide_count_is_spec` | v2 | 84 / 38 ids |
+| `lock_v2::tests::lock_v2_wide_count_is_spec` | v2 | 86 / 40 ids |
 | `lock_v2::tests::lock_v2_wide_frames_are_unique`, `lock_v2_narrow_frames_are_unique` | v2 | every id is a distinct frame |
 | `lock_v2::tests::slash_hover_is_not_banner_green_wash` | v2 | hover `#1A1A1A`; `#221A38` banned |
 | `style::tests::gray_chrome_palette_is_locked` (`cortex-core`) | palette | `ACCENT == #1F4945`, grays neutral, mint/cyan banned, gold retired |
@@ -145,7 +145,7 @@ Kinds: **painted** = `lock_boards.rs` painter (not the runtime view);
 | `sandbox_deny` | painted | `red_and_amber_stay_on_diagnostics` | flow *Permission* (deny) |
 | `mcp_drop` | painted | `red_and_amber_stay_on_diagnostics`; runtime path: `runner::event_loop::tests::mcp_disconnect_without_user_stop_is_a_drop` | flow *MCP* (kill peer) |
 
-## Lock v2 — 77 ids (`docs/media/tui-lock-v2/`), 31 also at 40×12
+## Lock v2 — 86 ids (`docs/media/tui-lock-v2/`), 40 also at 40×12
 
 Kinds: **real** = production view/builder with a real `AppState`;
 **seed** = real view but the runtime-emitted line is inserted as
@@ -213,8 +213,10 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | `sandbox` | — | **synthetic** | uniqueness | `tui.type "/sandbox"` (`build_sandbox_selector`) |
 | `sandbox-deny` | — | **synthetic** | uniqueness | flow *Permission* (deny) via `CortexError::SandboxDenied` |
 | `cloud-handoff` | — | seed | uniqueness | `tui.type "& …"` |
-| `computer-disconnected` | yes | real | `lock_v2_computer::tests::*` | This PC/SSH fail-closed — no substitute runtime |
-| `computer-cloud-default` | yes | real | `lock_v2_computer::tests::*` | Computer · Cloud welcome default |
+| `offline` | yes | seed | `lock_v2_network::tests::*` | Network unreachable — no API-down copy |
+| `rate-limit` | yes | seed | `lock_v2_network::tests::*` | HTTP 429 — distinct from quota |
+| `computer-disconnected` | yes | seed | `lock_v2_computer::tests::*` | This PC/SSH fail-closed — no substitute runtime |
+| `computer-cloud-default` | yes | seed | `lock_v2_computer::tests::*` | Computer · Cloud welcome default |
 | `diagnostics` | yes | seed | uniqueness | flow *Errors* (diagnostics tool) |
 | `interrupt-stopped` | yes | seed | runtime path `interrupt_records_stopped_once` | flow *Cancel* |
 | `error-unavailable` | — | real | uniqueness | flow *Errors* (503) |
@@ -248,7 +250,7 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | Pack | Ids | Sizes | Frames | Live / real | Painted or synthetic | PNGs in repo (all violet) |
 |---|---|---|---|---|---|---|
 | v1 | 72 | 40×12, 120×40 | 144 (+144 macOS composites) | 17 | 51 painted + 4 aliases | 65/72 files carry `#A78BFA` at each size |
-| v2 | 84 wide / 38 narrow | 120×40 / 40×12 | 122 | 70 (5 seeded) | 14 synthetic | runtime 84/84 + 38/38; designer boards 84/84 + 38/38 |
+| v2 | 86 wide / 40 narrow | 120×40 / 40×12 | 126 | 72 (7 seeded) | 14 synthetic | runtime 86/86 + 40/40; designer boards 86/86 + 40/40 |
 
 Regenerate captures: `./scripts/render-tui-lock.sh`,
 `./scripts/render-tui-lock-v2.sh`, `python3 docs/media/tui-lock-v2/tools/render_lock_v2.py --index`.

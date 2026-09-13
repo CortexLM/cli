@@ -670,13 +670,11 @@ impl<'a> Widget for MinimalSessionView<'a> {
         };
 
         let show_optin = self.app_state.opt_in_banner && !self.app_state.messages.is_empty();
-        let optin_height: u16 = if show_optin {
-            if area.height >= 20 { 5 } else { 3 }
-        } else {
-            0
-        };
+        let optin_height =
+            crate::interactive::picker_layout::session_optin_height(show_optin, area.height);
         let show_update_banner = self.app_state.should_show_update_banner();
-        let update_banner_height: u16 = if show_update_banner { 1 } else { 0 };
+        let update_banner_height =
+            crate::interactive::picker_layout::session_update_height(show_update_banner);
 
         let stack_below_transcript = picker_height + optin_height + update_banner_height;
         let transcript_bottom = composer_y.saturating_sub(stack_below_transcript);
@@ -710,7 +708,12 @@ impl<'a> Widget for MinimalSessionView<'a> {
         }
 
         if picker_height > 0 {
-            let picker_area = Rect::new(area.x, next_y, area.width, picker_height);
+            let picker_area = crate::interactive::picker_layout::session_inline_picker_area(
+                area,
+                picker_height,
+                update_banner_height,
+                optin_height,
+            );
             if interactive {
                 if let Some(state) = self.app_state.get_interactive_state() {
                     crate::interactive::InteractiveWidget::new(state)

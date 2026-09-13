@@ -199,20 +199,29 @@ impl EventLoop {
                     .register(ClickZoneId::InputField, input_area);
 
                 // Rows-only picker: same origin as MinimalSessionView (chrome then options).
-                if self.app_state.is_interactive_mode()
-                    && let Some(state) = self.app_state.get_interactive_state_mut()
-                {
-                    let picker_height =
-                        crate::interactive::picker_layout::picker_stack_height(state);
-                    let interactive_area =
-                        crate::interactive::picker_layout::session_inline_picker_area(
-                            area,
-                            picker_height,
-                        );
-                    crate::interactive::InteractiveWidget::calculate_click_zones(
-                        state,
-                        interactive_area,
+                if self.app_state.is_interactive_mode() {
+                    let update_h = crate::interactive::picker_layout::session_update_height(
+                        self.app_state.should_show_update_banner(),
                     );
+                    let optin_h = crate::interactive::picker_layout::session_optin_height(
+                        self.app_state.opt_in_banner && !self.app_state.messages.is_empty(),
+                        height,
+                    );
+                    if let Some(state) = self.app_state.get_interactive_state_mut() {
+                        let picker_height =
+                            crate::interactive::picker_layout::picker_stack_height(state);
+                        let interactive_area =
+                            crate::interactive::picker_layout::session_inline_picker_area(
+                                area,
+                                picker_height,
+                                update_h,
+                                optin_h,
+                            );
+                        crate::interactive::InteractiveWidget::calculate_click_zones(
+                            state,
+                            interactive_area,
+                        );
+                    }
                 }
             }
         }

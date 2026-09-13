@@ -31,14 +31,49 @@ pub fn picker_stack_height(state: &InteractiveState) -> u16 {
     (n as u16).saturating_add(state.inline_chrome_rows())
 }
 
+/// Opt-in banner height used by the session view.
+pub fn session_optin_height(show: bool, terminal_height: u16) -> u16 {
+    if !show {
+        0
+    } else if terminal_height >= 20 {
+        5
+    } else {
+        3
+    }
+}
+
+/// Update-available banner height used by the session view.
+pub fn session_update_height(show: bool) -> u16 {
+    u16::from(show)
+}
+
 /// Screen rect of the rows-only picker (matches [`crate::views::minimal_session::MinimalSessionView`]).
-pub fn session_inline_picker_area(screen: Rect, picker_height: u16) -> Rect {
+///
+/// Update and opt-in banners paint *above* the picker. On a short terminal the
+/// transcript collapses and the stack starts at the token row, so the picker
+/// is not `composer_y - picker_height`.
+pub fn session_inline_picker_area(
+    screen: Rect,
+    picker_height: u16,
+    update_height: u16,
+    optin_height: u16,
+) -> Rect {
     let footer_y = screen.bottom().saturating_sub(FOOTER_ROWS);
     let composer_y = footer_y
         .saturating_sub(BLANK_BEFORE_FOOTER)
         .saturating_sub(COMPOSER_ROWS);
-    let y = composer_y.saturating_sub(picker_height);
-    Rect::new(screen.x, y, screen.width, picker_height)
+    let stack = picker_height
+        .saturating_add(optin_height)
+        .saturating_add(update_height);
+    let transcript_bottom = composer_y.saturating_sub(stack);
+    let content_y = screen.y.saturating_add(1);
+    let content_height = transcript_bottom.saturating_sub(content_y);
+    let y = content_y
+        .saturating_add(content_height)
+        .saturating_add(update_height)
+        .saturating_add(optin_height);
+    let height = picker_height.min(screen.bottom().saturating_sub(y));
+    Rect::new(screen.x, y, screen.width, height)
 }
 
 /// Click targets for rows-only chrome: banner / subtitle / search skip, then options.
@@ -154,8 +189,63 @@ mod tests {
     #[test]
     fn session_picker_sits_above_composer() {
         let screen = Rect::new(0, 0, 80, 24);
-        let area = session_inline_picker_area(screen, 4);
+        let area = session_inline_picker_area(screen, 4, 0, 0);
         assert_eq!(area.height, 4);
         assert_eq!(area.y, 24 - 1 - 1 - COMPOSER_ROWS - 4);
+    }
+
+    #[test]
+    fn cramped_banners_move_picker_below_optin() {
+        let screen = Rect::new(0, 0, 80, 10);
+        let picker = 4;
+        let update = 1;
+        let optin = session_optin_height(true, 10);
+        assert_eq!(optin, 3);
+        let area = session_inline_picker_area(screen, picker, update, optin);
+        // content_y=1, stack does not fit above composer_y=5, so picker starts
+        // after update+optin: 1+1+3 = 5.
+        assert_eq!(area.y, 5);
+        let tall = session_inline_picker_area(Rect::new(0, 0, 80, 24), 4, 1, 3);
+        assert_eq!(tall.y, 24 - 1 - 1 - COMPOSER_ROWS - 4);
+    }
+
+    #[test]
+    fn painted_permission_rows_match_click_zones_with_banners() {
+        use crate::app::{AppState, UpdateStatus};
+        use crate::views::minimal_session::MinimalSessionView;
+        use cortex_core::widgets::Message;
+        use ratatui::widgets::Widget;
+
+        let mut app = AppState::new();
+        app.terminal_size = (80, 10);
+        app.opt_in_banner = true;
+        app.update_status = UpdateStatus::Available {
+            version: "1.0.0".into(),
+        };
+        app.add_message(Message::user("hi"));
+        app.enter_interactive_mode(build_permissions_picker(Some("smart")));
+        let screen = Rect::new(0, 0, 80, 10);
+        let mut buf = ratatui::buffer::Buffer::empty(screen);
+        MinimalSessionView::new(&app).render(screen, &mut buf);
+
+        let mut picker = app.get_interactive_state().expect("picker").clone();
+        let area = session_inline_picker_area(
+            screen,
+            picker_stack_height(&picker),
+            session_update_height(true),
+            session_optin_height(true, 10),
+        );
+        calculate_inline_click_zones(&mut picker, area);
+
+        let mut full_y = None;
+        for y in 0..10u16 {
+            let row: String = (0..80u16).map(|x| buf[(x, y)].symbol()).collect();
+            if row.contains("Full access") {
+                full_y = Some(y);
+                break;
+            }
+        }
+        let full_y = full_y.expect("painted Full access");
+        assert_eq!(hit(&picker, full_y), Some(2), "click row {full_y}");
     }
 }

@@ -108,7 +108,7 @@ pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool 
             state.add_message(Message::user("/init").with_timestamp("09:12 AM"));
             state.add_message(
                 Message::assistant(if narrow {
-                    "Set up AGENTS.md for this repo — accept the diff."
+                    "Set up AGENTS.md from the built-in template — accept the diff."
                 } else {
                     "Set up AGENTS.md from the built-in project template. Review the diff, then write it to the repo."
                 })
@@ -137,7 +137,11 @@ pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool 
                         } else {
                             "1 Write AGENTS.md to the repo"
                         },
-                        "accept the diff",
+                        if narrow {
+                            "built-in template"
+                        } else {
+                            "accept the diff"
+                        },
                     ),
                     ("cancel", "2 Cancel", "leave the file untouched"),
                 ],
@@ -345,13 +349,11 @@ mod tests {
                 "init copy must not claim a bundled skill:\n{}",
                 frame.plain
             );
-            if width > 40 {
-                assert!(
-                    frame.plain.contains("built-in project template"),
-                    "{}",
-                    frame.plain
-                );
-            }
+            assert!(
+                frame.plain.contains("built-in"),
+                "init copy must name the built-in template at {width}x{height}:\n{}",
+                frame.plain
+            );
         }
     }
 

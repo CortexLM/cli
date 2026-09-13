@@ -2,6 +2,30 @@
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+/// Lock-red system copy: API-down, offline, HTTP 429, quota, sandbox, and similar.
+pub(super) fn system_message_is_error(content: &str) -> bool {
+    content.starts_with("Error:")
+        || [
+            "Check your",
+            "temporarily unavailable",
+            "Access denied",
+            "timed out",
+            "failed",
+            "Invalid",
+            "You're offline",
+            "Rate limited",
+            "Stopped",
+            "quota exhausted",
+            "Sandbox denied",
+            "dropped",
+            "provider appears to be overloaded",
+            "internet connection",
+            "proxy is experiencing issues",
+        ]
+        .iter()
+        .any(|needle| content.contains(needle))
+}
+
 /// Wraps text to fit within a maximum width (measured in visual columns).
 ///
 /// This function performs word wrapping, breaking lines at word boundaries
@@ -138,5 +162,25 @@ fn split_long_word_returning_last(
         }
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::system_message_is_error;
+
+    #[test]
+    fn lock_red_system_copy_includes_offline_and_rate_limit() {
+        assert!(system_message_is_error("× You're offline"));
+        assert!(system_message_is_error("× Rate limited"));
+        assert!(system_message_is_error(
+            "The coding service is temporarily unavailable"
+        ));
+        assert!(!system_message_is_error(
+            "Reconnect when the network is back — your work is saved in this session."
+        ));
+        assert!(!system_message_is_error(
+            "Too many requests — try again in 2m (Retry-After: 120s). Follow-ups stay held until the rate limit resets."
+        ));
     }
 }

@@ -120,23 +120,7 @@ pub fn render_message_with_theme(
             }
         }
         MessageRole::System => {
-            // Detect error messages - show in error color
-            let is_error = msg.content.contains("Check your")
-                || msg.content.contains("temporarily unavailable")
-                || msg.content.contains("Access denied")
-                || msg.content.contains("timed out")
-                || msg.content.contains("failed")
-                || msg.content.contains("Invalid")
-                || msg.content.contains("You're offline")
-                || msg.content.contains("Rate limited")
-                || msg.content.contains("Stopped")
-                || msg.content.contains("quota exhausted")
-                || msg.content.contains("Sandbox denied")
-                || msg.content.contains("dropped")
-                || msg.content.starts_with("Error:")
-                || msg.content.contains("provider appears to be overloaded")
-                || msg.content.contains("internet connection")
-                || msg.content.contains("proxy is experiencing issues");
+            let is_error = super::text_utils::system_message_is_error(&msg.content);
 
             // Errors in lock red; other system copy stays dim gray.
             let text_color = if is_error {

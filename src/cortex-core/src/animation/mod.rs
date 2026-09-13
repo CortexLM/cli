@@ -123,8 +123,7 @@ mod tests {
     fn test_fade_in() {
         // Long duration so a loaded nextest worker cannot advance past mid-fade
         // between construction and the first progress() sample.
-        let mut fade = Fade::fade_in(60_000);
-        fade.reset();
+        let fade = Fade::fade_in(60_000);
         assert!(!fade.is_complete());
         assert_eq!(fade.direction(), FadeDirection::In);
 
@@ -137,8 +136,7 @@ mod tests {
 
     #[test]
     fn test_fade_out() {
-        let mut fade = Fade::fade_out(60_000);
-        fade.reset();
+        let fade = Fade::fade_out(60_000);
         assert_eq!(fade.direction(), FadeDirection::Out);
 
         let initial = fade.progress();

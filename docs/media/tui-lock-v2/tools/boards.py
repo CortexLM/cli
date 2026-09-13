@@ -1811,6 +1811,76 @@ def board_btw(s, c):
     footer(s, c, [("Esc", "interrupt"), ("Enter", "queue follow-up"), ("Ctrl+x", "shortcuts")])
 
 
+def board_consent_local_tools(s, c):
+    """COR-222 — consent card to run tools locally in the CWD / This PC.
+
+    Distinct from ``permission-prompt`` (no ``$`` command block) and
+    ``session-optin`` (no retain-coding-data privacy copy).
+    """
+    header(s, c)
+    top = composer(s, c, focused=False, caret=False, placeholder="Choose an option above")
+    f = Flow(s, c, y=1 if c.narrow else 2, limit=top if c.narrow else top - 1)
+    if not c.narrow:
+        f.user("fix the failing test in this repo", "10:18 AM")
+        f.thought("Thought for 0.6s")
+    f.line([("●", S_DIM), (" Run tools locally?", S)])
+    if c.narrow:
+        f.dim("This PC · current directory · Cloud is default")
+    else:
+        f.dim("Tools run on This PC against the current working directory. Cloud is the default when unset.")
+    yes = "Yes — run tools here" if c.narrow else "Yes — run tools in this directory"
+    always = "Always allow project" if c.narrow else "Always allow for this project"
+    no = "No — keep using Cloud"
+    f.options([yes, always, no], focused=0)
+    footer(
+        s,
+        c,
+        [("↑↓", "select"), ("Enter", "confirm"), ("Esc", "cancel")]
+        if not c.narrow
+        else [("Enter", "confirm"), ("Esc", "cancel")],
+    )
+
+
+def board_composer_file_chip(s, c):
+    """COR-223 — post-attach composer with an ``@file`` chip (picker closed)."""
+    header(s, c)
+    path = "@src/composer.rs" if c.narrow else "@src/cortex-tui/src/composer.rs"
+    top = composer(s, c, content=[("explain ", S), (path, S_ACC), (" ", S)])
+    if not c.narrow:
+        s.put(c.x0 + 2, top - 2, clip("@ attaches files  ·  ! enters Bash", c.inner_w - 4), S_DIM)
+    footer(
+        s,
+        c,
+        [("Enter", "send"), ("@", "files"), ("!", "bash")]
+        if not c.narrow
+        else [("Enter", "send"), ("@", "files")],
+    )
+
+
+def board_undo_sheet(s, c):
+    """COR-224 — ``/undo`` ``/redo`` ``/rewind`` sheet (not clear / resume)."""
+    header(s, c)
+    top = composer(s, c, content=[("/undo", S_ACC), (" ", S)])
+    if c.narrow:
+        f = Flow(s, c, y=1, limit=top)
+        f.line([("Undo", S)])
+        f.options(["Undo last turn", "Redo", "Rewind…"], focused=0)
+    else:
+        y = top - 6
+        backdrop_tail(s, c, y)
+        f = Flow(s, c, y=y, limit=top - 1)
+        f.line([("Undo", S)])
+        f.dim("Undo the last turn, redo it, or rewind this Cortex session to a checkpoint.")
+        f.options(["Undo last turn", "Redo", "Rewind to checkpoint"], focused=0)
+    footer(
+        s,
+        c,
+        [("↑↓", "select"), ("Enter", "confirm"), ("Esc", "close")]
+        if not c.narrow
+        else [("Enter", "confirm"), ("Esc", "close")],
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Registry — (id, painter, meta). ``narrow`` = also rendered at 40×12.
 # --------------------------------------------------------------------------- #
@@ -1914,6 +1984,9 @@ BOARDS_META = [
     ("sudo", board_sudo, False, "E", "Elevated Shell — password row on gray"),
     ("config-tree", board_config_tree, False, "E", "`/config` read-only key tree"),
     ("btw", board_btw, False, "E", "`/btw` side note during a running turn"),
+    ("consent-local-tools", board_consent_local_tools, True, "E", "Consent card — run tools locally in CWD / This PC"),
+    ("composer-file-chip", board_composer_file_chip, True, "E", "Composer with attached @file chip in prompt"),
+    ("undo-sheet", board_undo_sheet, True, "E", "/undo /redo /rewind sheet"),
 ]
 
 BOARDS = [(bid, fn, {"narrow": narrow, "section": sec, "desc": desc}) for bid, fn, narrow, sec, desc in BOARDS_META]

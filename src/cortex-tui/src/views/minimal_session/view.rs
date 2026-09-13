@@ -84,14 +84,13 @@ pub fn paint_composer_contents(
     let shown = crate::ui::text_utils::first_fitting_line(input, budget.saturating_sub(1));
     let chars: Vec<char> = shown.chars().collect();
     let caret = caret.min(chars.len());
-    let slash_end = if shown.starts_with('/') {
-        shown.find(' ').unwrap_or(shown.len())
-    } else {
-        0
-    };
     let mut col = col0;
     for (i, ch) in chars.iter().enumerate() {
-        let fg = if i < slash_end { ACCENT } else { TEXT };
+        let fg = if composer_char_accent(&chars, i) {
+            ACCENT
+        } else {
+            TEXT
+        };
         if caret_visible && i == caret {
             buf.set_string(
                 col,
@@ -802,6 +801,33 @@ impl<'a> MinimalSessionView<'a> {
 
 fn area_is_narrow(width: u16) -> bool {
     width < 80
+}
+
+/// Accent slash commands (`/undo`) and completed `@path` file chips.
+fn composer_char_accent(chars: &[char], index: usize) -> bool {
+    if chars.first() == Some(&'/') {
+        let end = chars.iter().position(|&c| c == ' ').unwrap_or(chars.len());
+        if index < end {
+            return true;
+        }
+    }
+    let mut i = 0;
+    while i < chars.len() {
+        let at_token = chars[i] == '@' && (i == 0 || chars[i - 1].is_whitespace());
+        if at_token {
+            let start = i;
+            i += 1;
+            while i < chars.len() && !chars[i].is_whitespace() {
+                i += 1;
+            }
+            if index >= start && index < i && i > start + 1 {
+                return true;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    false
 }
 
 fn composer_display_text(state: &AppState) -> String {

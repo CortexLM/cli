@@ -7,7 +7,7 @@ categorised rows + tip/nav footer, slash autocomplete above the composer, effort
 radios under `/model`, token counter top-right, footer shortcut strip) and
 re-skinned to the Cortex chrome. **No runtime code changes ship with this pack.**
 
-- Boards: [`index.md`](index.md) — 84 boards at 120×40, 38 of them also at 40×12 (122 PNGs).
+- Boards: [`index.md`](index.md) — 87 boards at 120×40, 41 of them also at 40×12 (128 PNGs).
 - Grids: `txt/<size>/<board>.txt` — the exact character grid of every board (diff a
   `MockTerminal` capture against these).
 - Renderer: `tools/render_lock_v2.py` + `tools/boards.py` (Python 3 + Pillow, IBM Plex Mono
@@ -419,13 +419,15 @@ Narrow: no bars, `used / total  pct%`.
 | login / first-run | `login`, `login-waiting`, `login-success`, `login-error`, `first-run-tips` |
 | compact chat (ref 5) | `compact-chat` |
 | other product surfaces (not in the brief, kept complete) | `shortcuts-overlay`, `resume-picker`, `clear-confirm`, `plan-confirm`, `queue`, `files-picker`, `jobs`, `skills`, `todos`, `question`, `sudo`, `config-tree`, `btw` |
+| local-tools consent · @file chip · undo/redo/rewind | `consent-local-tools`, `composer-file-chip`, `undo-sheet` |
 
 Narrow (40×12) set: `welcome-cortex`, `welcome-agent`, `first-run-tips`, `session-empty`, `session-user-bars`,
 `session-thinking-live`, `session-assistant`, `session-optin`, `composer-empty`, `composer-typing`, `composer-hover`,
 `tokens-topright`, `compact-chat`, `slash-palette`, `goal-chip-active`, `goal-chip-paused`, `goal-chip-done`,
 `goal-chip-budget`, `goal-chip-blocked`, `slash-model-typed`, `model-list`, `model-effort-high`,
 `settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-theme-submenu`, `mode-plan`, `mode-ask`,
-`permission-prompt`, `mcp-servers`, `usage`, `diagnostics`, `interrupt-stopped`, `offline`, `rate-limit`, `diff-hunk`, `login`, `shortcuts-overlay`.
+`permission-prompt`, `mcp-servers`, `usage`, `diagnostics`, `interrupt-stopped`, `offline`, `rate-limit`, `diff-hunk`, `login`, `shortcuts-overlay`,
+`consent-local-tools`, `composer-file-chip`, `undo-sheet`.
 
 ---
 

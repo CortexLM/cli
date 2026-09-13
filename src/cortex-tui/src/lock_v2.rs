@@ -33,10 +33,20 @@ struct ManifestFrame {
 }
 
 pub fn write_lock_v2_frames(width: u16, height: u16, output_dir: &Path) -> Result<PathBuf> {
+    write_lock_v2_id_frames(lock_v2_scene_ids(width), width, height, output_dir)
+}
+
+/// Write a subset of lock v2 scenes (used to recapture residual boards).
+pub fn write_lock_v2_id_frames(
+    ids: &[&str],
+    width: u16,
+    height: u16,
+    output_dir: &Path,
+) -> Result<PathBuf> {
     std::fs::create_dir_all(output_dir)
         .with_context(|| format!("create {}", output_dir.display()))?;
     let mut manifest_frames = Vec::new();
-    for id in lock_v2_scene_ids(width) {
+    for id in ids {
         let frame = render_lock_v2_scene(id, width, height)?;
         let file = format!("{}.ans", id);
         std::fs::write(output_dir.join(&file), &frame.ansi)
@@ -128,8 +138,8 @@ mod tests {
 
     #[test]
     fn lock_v2_wide_count_is_spec() {
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 84);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 38);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 87);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 41);
     }
 
     #[test]

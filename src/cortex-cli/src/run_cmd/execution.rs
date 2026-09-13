@@ -92,16 +92,14 @@ impl RunCli {
             self.system_prompt.clone(),
         )
         .await?;
-        crate::harness::enable_bash_edit_diff(self.bash_edit_diff);
-        if self.worktree.is_some() {
-            config.cwd = crate::harness::apply_worktree(&config.cwd, self.worktree.as_ref())?;
-        }
-        crate::harness::load_plugin_dirs(
+        crate::harness::apply_session_harness(
+            &mut config.cwd,
             &config.cortex_home,
-            Some(config.cwd.clone()),
+            self.bash_edit_diff,
+            self.worktree.as_ref(),
             &self.plugin_dir,
         )
-        .await;
+        .await?;
         if let Some(agent) = &self.agent {
             config.current_agent = Some(agent.clone());
         }

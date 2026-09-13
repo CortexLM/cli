@@ -117,4 +117,49 @@ mod tests {
         assert!(!job_is_running("waiting"));
         assert!(job_is_running("running"));
     }
+
+    #[test]
+    fn jobs_picker_uses_numbered_chevron_chrome_not_radios() {
+        use crate::interactive::renderer::InteractiveWidget;
+        use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
+
+        let rows = vec![
+            JobRow {
+                id: "cloud".into(),
+                kind: "cloud agent".into(),
+                title: "bc-4f2a".into(),
+                status: "running".into(),
+            },
+            JobRow {
+                id: "q".into(),
+                kind: "queued".into(),
+                title: "later".into(),
+                status: "waiting".into(),
+            },
+        ];
+        let state = build_jobs_picker(&rows);
+        let area = Rect::new(0, 0, 72, 10);
+        let mut buf = Buffer::empty(area);
+        InteractiveWidget::new(&state).render(area, &mut buf);
+        let mut text = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                text.push_str(buf[(x, y)].symbol());
+            }
+            text.push('\n');
+        }
+        assert!(
+            text.lines()
+                .any(|line| line.trim_start().starts_with('>') || line.starts_with("> ")),
+            "selected row must use `>` chrome, got {text}"
+        );
+        assert!(
+            text.contains("· "),
+            "unselected rows must use middot chrome, got {text}"
+        );
+        assert!(
+            !text.contains('●') && !text.contains('○'),
+            "jobs picker must not use radio glyphs, got {text}"
+        );
+    }
 }

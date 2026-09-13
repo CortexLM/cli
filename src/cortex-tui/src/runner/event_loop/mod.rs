@@ -34,6 +34,7 @@ mod input;
 mod local_workflows;
 mod me;
 mod modal;
+mod modal_jobs;
 mod mouse;
 mod rendering;
 mod sessions;

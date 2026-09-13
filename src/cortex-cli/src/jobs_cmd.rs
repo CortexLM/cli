@@ -3,10 +3,9 @@
 use anyhow::{Result, bail};
 use clap::Parser;
 
-use crate::attach_cmd::AttachCli;
-use cortex_engine::client::{AUTH_REQUIRED, CodeAgentClient};
+use crate::attach_cmd::{AttachCli, load_attach_token};
+use cortex_engine::client::{CodeAgentClient, CodeSession};
 use cortex_engine::session_attach::parse_attach_target;
-use cortex_login::load_auth_with_fallback;
 
 /// Manage background / remote Code agents.
 #[derive(Debug, Parser)]
@@ -51,25 +50,22 @@ impl JobsCli {
 }
 
 async fn client() -> Result<CodeAgentClient> {
-    let cortex_home = crate::utils::paths::get_cortex_home();
-    let token = std::env::var("CORTEX_AUTH_TOKEN")
-        .ok()
-        .filter(|t| !t.is_empty())
-        .or_else(|| {
-            std::env::var("CORTEX_API_KEY")
-                .ok()
-                .filter(|t| !t.is_empty())
-        })
-        .or_else(|| {
-            load_auth_with_fallback(&cortex_home)
-                .ok()
-                .flatten()
-                .and_then(|auth| auth.get_token().map(str::to_string))
-        });
-    let Some(token) = token else {
-        bail!("{AUTH_REQUIRED}");
-    };
+    let token = load_attach_token()?;
     Ok(CodeAgentClient::new(None, Some(token)))
+}
+
+pub(crate) fn format_job_line(session: &CodeSession) -> String {
+    format!(
+        "{}\t{}\t{}\t{}",
+        session.id,
+        if session.state.is_empty() {
+            "live"
+        } else {
+            session.state.as_str()
+        },
+        session.runtime,
+        session.title
+    )
 }
 
 async fn list_jobs(args: JobsListArgs) -> Result<()> {
@@ -84,17 +80,7 @@ async fn list_jobs(args: JobsListArgs) -> Result<()> {
         return Ok(());
     }
     for session in sessions {
-        println!(
-            "{}\t{}\t{}\t{}",
-            session.id,
-            if session.state.is_empty() {
-                "live"
-            } else {
-                session.state.as_str()
-            },
-            session.runtime,
-            session.title
-        );
+        println!("{}", format_job_line(&session));
     }
     Ok(())
 }
@@ -123,12 +109,85 @@ async fn stop_job(args: JobsIdArgs) -> Result<()> {
 mod tests {
     use super::*;
     use clap::Parser;
+    use cortex_engine::client::AUTH_REQUIRED;
+    use serial_test::serial;
 
     #[test]
     fn jobs_subcommands_parse() {
         assert!(JobsCli::try_parse_from(["jobs", "list"]).is_ok());
+        assert!(JobsCli::try_parse_from(["jobs", "list", "--json"]).is_ok());
         assert!(JobsCli::try_parse_from(["jobs", "logs", "sess-1"]).is_ok());
         assert!(JobsCli::try_parse_from(["jobs", "stop", "sess-1"]).is_ok());
         assert!(JobsCli::try_parse_from(["jobs", "attach", "sess-1"]).is_ok());
+        assert!(JobsCli::try_parse_from(["jobs", "ls"]).is_ok());
+    }
+
+    #[test]
+    fn format_job_line_uses_live_when_state_empty() {
+        let session = CodeSession {
+            id: "sess-1".into(),
+            runtime: "cloud".into(),
+            kind: String::new(),
+            host_status: String::new(),
+            state: String::new(),
+            model_slug: String::new(),
+            model_ref: String::new(),
+            title: "rate limiter".into(),
+            created_at: String::new(),
+            host_id: String::new(),
+            stream: None,
+        };
+        let line = format_job_line(&session);
+        assert_eq!(line, "sess-1\tlive\tcloud\trate limiter");
+        let mut busy = session.clone();
+        busy.state = "running".into();
+        assert!(format_job_line(&busy).contains("running"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn jobs_list_requires_auth() {
+        let home = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::remove_var("CORTEX_AUTH_TOKEN");
+            std::env::remove_var("CORTEX_API_KEY");
+            std::env::set_var("CORTEX_HOME", home.path());
+        }
+        let err = JobsCli::try_parse_from(["jobs", "list"])
+            .unwrap()
+            .run()
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Not signed in"), "{err}");
+        assert!(err.to_string().contains(AUTH_REQUIRED));
+        unsafe {
+            std::env::remove_var("CORTEX_HOME");
+        }
+    }
+
+    #[tokio::test]
+    async fn jobs_logs_rejects_url() {
+        let err = JobsCli::try_parse_from(["jobs", "logs", "https://example.com/x"])
+            .unwrap()
+            .run()
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No local session was started"),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn jobs_stop_rejects_url() {
+        let err = JobsCli::try_parse_from(["jobs", "stop", "http://127.0.0.1/s"])
+            .unwrap()
+            .run()
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No local session was started"),
+            "{err}"
+        );
     }
 }

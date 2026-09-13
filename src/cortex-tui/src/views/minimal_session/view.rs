@@ -12,8 +12,8 @@ use super::rendering::{
 use crate::app::AppState;
 use crate::commands::PALETTE_HOME_LIMIT;
 use crate::ui::chrome::{
-    FooterSet, composer_caret_style, composer_inner, fill_inky, model_chip, paint_composer_box,
-    paint_footer, paint_token_counter,
+    FooterSet, composer_caret_style, composer_inner, fill_inky, format_token_counter, model_chip,
+    paint_composer_box, paint_footer, paint_status_marker, paint_token_counter,
 };
 use crate::ui::colors::AdaptiveColors;
 use cortex_core::style::{ACCENT, TEXT, TEXT_BRIGHT, TEXT_DIM};
@@ -605,6 +605,18 @@ impl<'a> Widget for MinimalSessionView<'a> {
             self.app_state.context_window,
             warn_tokens,
         );
+        if self.app_state.share_link.is_some() {
+            let label = if area_is_narrow(area.width) {
+                crate::ui::consts::SHARE_MARKER_NARROW
+            } else {
+                crate::ui::consts::SHARE_MARKER
+            };
+            let counter_cols =
+                format_token_counter(self.app_state.tokens_used, self.app_state.context_window)
+                    .chars()
+                    .count() as u16;
+            paint_status_marker(area, area.y, buf, label, counter_cols);
+        }
 
         let autocomplete_visible = self.app_state.autocomplete.visible;
         let palette_cap = if area.height >= 20 {

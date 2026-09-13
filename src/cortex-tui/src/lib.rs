@@ -112,6 +112,7 @@ mod lock_v2_ids;
 mod lock_v2_network;
 mod lock_v2_parity;
 mod lock_v2_scenes;
+mod lock_v2_share;
 pub mod readme_hero;
 pub mod readme_hero_boards;
 pub mod splash_chrome;

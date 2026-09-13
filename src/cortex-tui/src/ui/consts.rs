@@ -66,6 +66,12 @@ pub const PLACEHOLDER_DISCONNECTED: &str = "Connect a host — or unset CORTEX_C
 /// Narrow (40-column) form of the disconnected placeholder.
 pub const PLACEHOLDER_DISCONNECTED_NARROW: &str = "Connect a host — or unset for Cloud";
 
+/// Status-line marker shown while a read-only `/share` link is live. Dim status
+/// chrome, never accent — `/unshare` clears it.
+pub const SHARE_MARKER: &str = "Shared · read-only";
+/// Narrow (40-column) form of the share marker. Keeps the word `Shared`.
+pub const SHARE_MARKER_NARROW: &str = "Shared";
+
 /// Sandbox deny title painted in error red.
 pub const SANDBOX_DENIED_TITLE: &str = "Sandbox denied";
 

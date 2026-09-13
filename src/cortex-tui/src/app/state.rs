@@ -210,6 +210,8 @@ pub struct AppState {
     pub computer_held: bool,
     /// Welcome info card should lock-paint Computer · Cloud as the shipped default.
     pub show_computer_default: bool,
+    /// Live read-only share link minted by `/share`; `None` once `/unshare` clears it.
+    pub share_link: Option<String>,
     /// Launched via the `agent` binary / alias.
     pub agent_entrypoint: bool,
     /// Token counter used / window.
@@ -354,6 +356,7 @@ impl AppState {
             rate_limit_held: false,
             computer_held: false,
             show_computer_default: false,
+            share_link: None,
             agent_entrypoint: false,
             tokens_used: 0,
             context_window: 500_000,

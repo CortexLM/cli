@@ -210,7 +210,7 @@ pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool 
                         "end",
                         "session_end",
                         if narrow {
-                            "session close"
+                            "never consent"
                         } else {
                             "lifecycle event — never consent"
                         },

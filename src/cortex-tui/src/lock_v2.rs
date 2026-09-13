@@ -17,8 +17,9 @@ use crate::app::{
 };
 use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_LIMIT};
 use crate::interactive::builders::{
-    SkillListItem, build_clear_confirm, build_mcp_selector, build_model_selector,
-    build_permissions_picker, build_plan_confirm, build_question_prompt, build_sandbox_deny_prompt,
+    JobRow, SkillListItem, build_clear_confirm, build_jobs_picker, build_mcp_selector,
+    build_model_selector, build_permissions_picker, build_plan_confirm, build_question_prompt,
+    build_sandbox_deny_prompt,
 };
 use crate::interactive::state::{InteractiveAction, InteractiveItem, InteractiveState};
 use crate::lock_proof::{LOCK_SPLASH_VERSION, LockFrame};
@@ -1014,16 +1015,26 @@ Tell me what you'd like to do.",
         "jobs" => {
             resumed(&mut state);
             state.input.set_text("/jobs");
-            state.enter_interactive_mode(radios(
-                "Jobs",
-                &[
-                    ("cloud", "cloud agent · bc-4f2a", "running"),
-                    ("sub", "subagent · rate-limiter", "running"),
-                    ("q", "queued · recapture PNGs", "waiting"),
-                ],
-                0,
-                None,
-            ));
+            state.enter_interactive_mode(build_jobs_picker(&[
+                JobRow {
+                    id: "cloud".into(),
+                    kind: "cloud agent".into(),
+                    title: "bc-4f2a".into(),
+                    status: "running".into(),
+                },
+                JobRow {
+                    id: "sub".into(),
+                    kind: "subagent".into(),
+                    title: "rate-limiter".into(),
+                    status: "running".into(),
+                },
+                JobRow {
+                    id: "q".into(),
+                    kind: "queued".into(),
+                    title: "recapture PNGs".into(),
+                    status: "waiting".into(),
+                },
+            ]));
         }
         "skills" => {
             resumed(&mut state);

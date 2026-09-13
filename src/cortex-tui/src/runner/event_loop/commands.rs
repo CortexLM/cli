@@ -351,10 +351,15 @@ impl EventLoop {
                 let interactive = self.build_skills_picker().await;
                 self.app_state.enter_interactive_mode(interactive);
             }
-            _ => {
-                self.app_state
-                    .toasts
-                    .error(format!("Not implemented: {:?}", modal_type));
+            ModalType::Tasks => {
+                let rows: Vec<_> = self
+                    .app_state
+                    .active_subagents
+                    .iter()
+                    .map(crate::interactive::builders::JobRow::from_subagent)
+                    .collect();
+                let interactive = crate::interactive::builders::build_jobs_picker(&rows);
+                self.app_state.enter_interactive_mode(interactive);
             }
         }
     }

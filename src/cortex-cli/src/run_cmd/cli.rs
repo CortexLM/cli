@@ -140,6 +140,18 @@ pub struct RunCli {
     #[arg(long = "cwd", value_name = "DIR")]
     pub cwd: Option<PathBuf>,
 
+    /// Isolated git worktree for this run (`--worktree` or `--worktree DIR`).
+    #[arg(long = "worktree", value_name = "DIR", num_args = 0..=1, default_missing_value = "")]
+    pub worktree: Option<PathBuf>,
+
+    /// Extra plugin folder (folder-of-plugins or a single plugin). Repeatable.
+    #[arg(long = "plugin-dir", value_name = "DIR", action = clap::ArgAction::Append)]
+    pub plugin_dir: Vec<PathBuf>,
+
+    /// Attach unified diffs of files Execute/Bash changed.
+    #[arg(long = "bash-edit-diff", default_value_t = false)]
+    pub bash_edit_diff: bool,
+
     /// Additional directories that should be writable.
     /// Can be specified multiple times to add multiple directories.
     #[arg(long = "add-dir", value_name = "DIR", action = clap::ArgAction::Append)]

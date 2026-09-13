@@ -17,6 +17,8 @@ fn test_development_commands_remain_available_without_admin_commands() {
         "export",
         "import",
         "delete",
+        "attach",
+        "jobs",
         "login",
         "logout",
         "whoami",

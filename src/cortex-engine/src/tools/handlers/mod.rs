@@ -1,6 +1,7 @@
 //! Tool handlers.
 
 pub mod apply_patch;
+mod bash_edit_diff;
 pub mod batch;
 mod create_agent;
 mod edit_file;

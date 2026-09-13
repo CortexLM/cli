@@ -540,6 +540,28 @@ impl CodeAgentClient {
         Ok(())
     }
 
+    /// Allow or deny a paused tool call on an attached session.
+    pub async fn approve_invocation(
+        &self,
+        session_id: &str,
+        invocation_id: &str,
+        approved: bool,
+    ) -> Result<()> {
+        self.ensure_auth().await?;
+        if session_id.is_empty() || invocation_id.is_empty() {
+            return Err(CortexError::InvalidInput(
+                "Session id and invocation id are required.".into(),
+            ));
+        }
+        let url = format!("{}/v1/code/sessions/{session_id}/approvals", self.base_url);
+        let body = serde_json::json!({
+            "invocation_id": invocation_id,
+            "approved": approved,
+        });
+        let _ = self.authed_post(&url, &body).await?;
+        Ok(())
+    }
+
     /// Transcript for a Code session (server-side persistence).
     pub async fn list_messages(&self, session_id: &str) -> Result<Vec<CodeMessage>> {
         self.ensure_auth().await?;

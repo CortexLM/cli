@@ -200,6 +200,33 @@ pub struct InteractiveArgs {
     #[arg(long = "add-dir", value_name = "DIR", help_heading = "Workspace")]
     pub add_dir: Vec<PathBuf>,
 
+    /// Isolated git worktree for this session (`--worktree` or `--worktree DIR`).
+    #[arg(
+        long = "worktree",
+        value_name = "DIR",
+        num_args = 0..=1,
+        default_missing_value = "",
+        help_heading = "Workspace"
+    )]
+    pub worktree: Option<PathBuf>,
+
+    /// Extra plugin folder (folder-of-plugins or a single plugin). Repeatable.
+    #[arg(
+        long = "plugin-dir",
+        value_name = "DIR",
+        action = clap::ArgAction::Append,
+        help_heading = "Features"
+    )]
+    pub plugin_dir: Vec<PathBuf>,
+
+    /// Attach unified diffs of files Execute/Bash changed (also `CORTEX_BASH_EDIT_DIFF=1`).
+    #[arg(
+        long = "bash-edit-diff",
+        default_value_t = false,
+        help_heading = "Features"
+    )]
+    pub bash_edit_diff: bool,
+
     /// Image files to attach to the initial prompt
     #[arg(long = "image", short = 'i', value_delimiter = ',', num_args = 1.., help_heading = "Workspace")]
     pub images: Vec<PathBuf>,
@@ -331,6 +358,16 @@ pub enum Commands {
     #[command(display_order = 14)]
     #[command(next_help_heading = categories::SESSION)]
     Delete(DeleteCommand),
+
+    /// Attach this terminal to a live Code session (session keeps running on detach)
+    #[command(display_order = 15)]
+    #[command(next_help_heading = categories::SESSION)]
+    Attach(crate::attach_cmd::AttachCli),
+
+    /// List, follow, or stop background Code agents
+    #[command(display_order = 16)]
+    #[command(next_help_heading = categories::SESSION)]
+    Jobs(crate::jobs_cmd::JobsCli),
 
     // ========================================================================
     // 🔐 Authentication (order 20-29)
@@ -1260,6 +1297,32 @@ mod tests {
         let cli = Cli::try_parse_from(["cortex", "create", "--", "test", "--with", "options"])
             .expect("should parse prompt with hyphens");
         assert!(!cli.interactive.prompt.is_empty());
+    }
+
+    #[test]
+    fn test_cli_harness_flags_and_attach_jobs() {
+        let cli = Cli::try_parse_from([
+            "cortex",
+            "--plugin-dir",
+            "/tmp/plugins",
+            "--bash-edit-diff",
+            "--worktree",
+        ])
+        .expect("should parse harness flags");
+        assert_eq!(
+            cli.interactive.plugin_dir,
+            vec![std::path::PathBuf::from("/tmp/plugins")]
+        );
+        assert!(cli.interactive.bash_edit_diff);
+        assert_eq!(
+            cli.interactive.worktree.as_deref(),
+            Some(std::path::Path::new(""))
+        );
+
+        let cli = Cli::try_parse_from(["cortex", "attach", "sess-9"]).expect("attach");
+        assert!(matches!(cli.command, Some(Commands::Attach(_))));
+        let cli = Cli::try_parse_from(["cortex", "jobs", "list"]).expect("jobs");
+        assert!(matches!(cli.command, Some(Commands::Jobs(_))));
     }
 
     // ==========================================================================

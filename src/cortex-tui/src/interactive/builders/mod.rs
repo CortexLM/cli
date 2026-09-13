@@ -8,6 +8,7 @@ pub mod approval;
 pub mod billing;
 pub mod export;
 pub mod files;
+pub mod jobs;
 pub mod login;
 pub mod mcp;
 pub mod model;
@@ -37,6 +38,7 @@ pub use approval::{
 pub use billing::{BillingFlowState, BillingStatus, build_billing_selector};
 pub use export::build_export_selector;
 pub use files::{build_context_list, build_context_remove, build_file_browser};
+pub use jobs::{JobRow, build_jobs_picker};
 pub use login::{
     LoginFlowState, LoginStatus, build_already_logged_in_selector, build_login_selector,
 };

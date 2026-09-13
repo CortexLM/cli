@@ -8,13 +8,59 @@ use std::collections::HashMap;
 ///
 /// Returns an `InteractiveResult` indicating what action to take.
 pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> InteractiveResult {
-    // If inline form is active, handle form input
     if state.is_form_active() {
         return handle_form_key(state, key);
     }
-
+    if let Some(result) = handle_interactive_nav(state, key) {
+        return result;
+    }
     match key.code {
-        // Navigation
+        KeyCode::Enter => handle_interactive_enter(state),
+        KeyCode::Char(' ') if state.multi_select => {
+            state.toggle_check();
+            state.select_next();
+            InteractiveResult::Continue
+        }
+        KeyCode::Esc => InteractiveResult::Cancelled,
+        KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
+            InteractiveResult::Cancelled
+        }
+        KeyCode::Char('q') if key.modifiers == KeyModifiers::CONTROL => {
+            InteractiveResult::Cancelled
+        }
+        KeyCode::Char(c) if state.searchable && key.modifiers.is_empty() => {
+            if state.search_query.is_empty() {
+                if let Some(result) = try_resume_picker_key(state, c) {
+                    return result;
+                }
+            }
+            if !state.search_query.is_empty() || !is_shortcut(state, c) {
+                state.push_search_char(c);
+            } else if let Some(result) = try_shortcut(state, c) {
+                return result;
+            }
+            InteractiveResult::Continue
+        }
+        KeyCode::Char(c) if !state.searchable && key.modifiers.is_empty() => {
+            handle_non_search_char(state, c)
+        }
+        KeyCode::Backspace if state.searchable && !state.search_query.is_empty() => {
+            state.pop_search_char();
+            InteractiveResult::Continue
+        }
+        KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL && state.searchable => {
+            state.update_search("");
+            InteractiveResult::Continue
+        }
+        _ => InteractiveResult::Continue,
+    }
+}
+
+fn handle_interactive_nav(
+    state: &mut InteractiveState,
+    key: KeyEvent,
+) -> Option<InteractiveResult> {
+    match key.code {
         KeyCode::Up | KeyCode::Char('k')
             if key.modifiers.is_empty() || key.modifiers == KeyModifiers::NONE =>
         {
@@ -23,7 +69,7 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
             } else {
                 state.select_prev();
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
         KeyCode::Down | KeyCode::Char('j')
             if key.modifiers.is_empty() || key.modifiers == KeyModifiers::NONE =>
@@ -33,38 +79,32 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
             } else {
                 state.select_next();
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
-
-        // Ctrl+P / Ctrl+N for navigation (like emacs)
         KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
             state.select_prev();
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
         KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
             state.select_next();
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
-
-        // Page navigation
         KeyCode::PageUp => {
             for _ in 0..state.max_visible {
                 state.select_prev();
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
         KeyCode::PageDown => {
             for _ in 0..state.max_visible {
                 state.select_next();
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
-
-        // Home/End
         KeyCode::Home => {
             state.selected = 0;
             state.scroll_offset = 0;
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
         KeyCode::End => {
             if !state.filtered_indices.is_empty() {
@@ -73,99 +113,45 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
                     state.scroll_offset = state.selected - state.max_visible + 1;
                 }
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
-
-        // Tab navigation (Left/Right)
-        KeyCode::Left if !state.tabs.is_empty() => InteractiveResult::SwitchTab { direction: -1 },
-        KeyCode::Right if !state.tabs.is_empty() => InteractiveResult::SwitchTab { direction: 1 },
-
-        // `/model` Effort radios: Tab jumps between the model list and the effort pane.
+        KeyCode::Left if !state.tabs.is_empty() => {
+            Some(InteractiveResult::SwitchTab { direction: -1 })
+        }
+        KeyCode::Right if !state.tabs.is_empty() => {
+            Some(InteractiveResult::SwitchTab { direction: 1 })
+        }
         KeyCode::Tab if state.effort.is_some() => {
             state.toggle_effort_focus();
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
+        _ => None,
+    }
+}
 
-        // Selection
-        KeyCode::Enter => {
-            if state.effort.is_some() && !state.effort_focused {
-                state.effort_focused = true;
-                return InteractiveResult::Continue;
-            }
-            if let Some(item) = state.selected_item() {
-                if item.disabled {
-                    InteractiveResult::Continue
-                } else if state.multi_select && !state.checked.is_empty() {
-                    // Return all checked items
-                    let item_ids: Vec<String> =
-                        state.checked_items().iter().map(|i| i.id.clone()).collect();
-                    InteractiveResult::Selected {
-                        action: state.action.clone(),
-                        item_id: item_ids.first().cloned().unwrap_or_default(),
-                        item_ids,
-                    }
-                } else {
-                    InteractiveResult::Selected {
-                        action: state.action.clone(),
-                        item_id: item.id.clone(),
-                        item_ids: vec![item.id.clone()],
-                    }
-                }
-            } else {
-                InteractiveResult::Continue
-            }
-        }
-
-        // Toggle (multi-select)
-        KeyCode::Char(' ') if state.multi_select => {
-            state.toggle_check();
-            state.select_next(); // Move to next after toggle
-            InteractiveResult::Continue
-        }
-
-        // Cancel (Esc, Ctrl+C, Ctrl+Q)
-        KeyCode::Esc => InteractiveResult::Cancelled,
-        KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
-            InteractiveResult::Cancelled
-        }
-        KeyCode::Char('q') if key.modifiers == KeyModifiers::CONTROL => {
-            InteractiveResult::Cancelled
-        }
-
-        // Search input (when searchable)
-        KeyCode::Char(c) if state.searchable && key.modifiers.is_empty() => {
-            if state.search_query.is_empty() {
-                if let Some(result) = try_resume_picker_key(state, c) {
-                    return result;
-                }
-            }
-            // Check for shortcuts first
-            if !state.search_query.is_empty() || !is_shortcut(state, c) {
-                state.push_search_char(c);
-            } else if let Some(result) = try_shortcut(state, c) {
-                return result;
-            }
-            InteractiveResult::Continue
-        }
-
-        // Shortcuts (when not searching)
-        KeyCode::Char(c) if !state.searchable && key.modifiers.is_empty() => {
-            handle_non_search_char(state, c)
-        }
-
-        // Backspace (search)
-        KeyCode::Backspace if state.searchable && !state.search_query.is_empty() => {
-            state.pop_search_char();
-            InteractiveResult::Continue
-        }
-
-        // Clear search
-        KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL && state.searchable => {
-            state.update_search("");
-            InteractiveResult::Continue
-        }
-
-        _ => InteractiveResult::Continue,
+fn handle_interactive_enter(state: &mut InteractiveState) -> InteractiveResult {
+    if state.effort.is_some() && !state.effort_focused {
+        state.effort_focused = true;
+        return InteractiveResult::Continue;
+    }
+    let Some(item) = state.selected_item() else {
+        return InteractiveResult::Continue;
+    };
+    if item.disabled {
+        return InteractiveResult::Continue;
+    }
+    if state.multi_select && !state.checked.is_empty() {
+        let item_ids: Vec<String> = state.checked_items().iter().map(|i| i.id.clone()).collect();
+        return InteractiveResult::Selected {
+            action: state.action.clone(),
+            item_id: item_ids.first().cloned().unwrap_or_default(),
+            item_ids,
+        };
+    }
+    InteractiveResult::Selected {
+        action: state.action.clone(),
+        item_id: item.id.clone(),
+        item_ids: vec![item.id.clone()],
     }
 }
 

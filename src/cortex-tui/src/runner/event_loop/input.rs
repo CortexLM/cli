@@ -155,52 +155,111 @@ impl EventLoop {
         key_event: crossterm::event::KeyEvent,
         terminal: &mut CortexTerminal,
     ) -> Result<bool> {
+        if self.try_modal_stack_key(key_event, terminal).await? {
+            return Ok(true);
+        }
+        if self.try_settings_modal_key(key_event, terminal)? {
+            return Ok(true);
+        }
+        if self.try_shortcuts_sheet_key(key_event, terminal)? {
+            return Ok(true);
+        }
+        if self.try_chrome_toggle_key(key_event, terminal)? {
+            return Ok(true);
+        }
+        if self.app_state.is_interactive_mode() {
+            self.handle_interactive_mode_key(key_event).await?;
+            self.render(terminal)?;
+            return Ok(true);
+        }
+        if self.card_handler.is_active() && self.card_handler.handle_key(key_event) {
+            self.process_card_actions();
+            self.render(terminal)?;
+            return Ok(true);
+        }
+        if self.app_state.has_modal() && self.handle_modal_key(key_event).await? {
+            self.render(terminal)?;
+            return Ok(true);
+        }
+        if self.app_state.view == AppView::Questions && self.handle_question_key(key_event).await? {
+            self.render(terminal)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    async fn try_modal_stack_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
+        if !self.modal_stack.is_active() {
+            return Ok(false);
+        }
+        match self.modal_stack.handle_key(key_event) {
+            ModalResult::Action(action) | ModalResult::ActionContinue(action) => {
+                self.process_modal_action(action).await;
+            }
+            _ => {}
+        }
+        self.render(terminal)?;
+        Ok(true)
+    }
+
+    fn try_settings_modal_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
+        let Some(mut modal) = self.app_state.settings_modal.take() else {
+            return Ok(false);
+        };
+        match modal.handle_key(key_event) {
+            crate::widgets::SettingsAction::Close => {
+                self.app_state.apply_settings_values(&modal.values);
+                self.app_state.settings_modal = None;
+            }
+            crate::widgets::SettingsAction::Changed(_) => {
+                self.app_state.apply_settings_values(&modal.values);
+                self.app_state.settings_modal = Some(modal);
+            }
+            crate::widgets::SettingsAction::Continue => {
+                self.app_state.settings_modal = Some(modal);
+            }
+        }
+        self.render(terminal)?;
+        Ok(true)
+    }
+
+    fn try_shortcuts_sheet_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
         use crossterm::event::{KeyCode, KeyModifiers};
-
-        if self.modal_stack.is_active() {
-            match self.modal_stack.handle_key(key_event) {
-                ModalResult::Action(action) | ModalResult::ActionContinue(action) => {
-                    self.process_modal_action(action).await;
-                }
-                _ => {}
-            }
-            self.render(terminal)?;
-            return Ok(true);
+        if !self.app_state.shortcuts_open {
+            return Ok(false);
         }
-
-        if let Some(mut modal) = self.app_state.settings_modal.take() {
-            match modal.handle_key(key_event) {
-                crate::widgets::SettingsAction::Close => {
-                    self.app_state.apply_settings_values(&modal.values);
-                    self.app_state.settings_modal = None;
-                }
-                crate::widgets::SettingsAction::Changed(_) => {
-                    self.app_state.apply_settings_values(&modal.values);
-                    self.app_state.settings_modal = Some(modal);
-                }
-                crate::widgets::SettingsAction::Continue => {
-                    self.app_state.settings_modal = Some(modal);
-                }
-            }
-            self.render(terminal)?;
-            return Ok(true);
+        let close = matches!(key_event.code, KeyCode::Esc | KeyCode::F(2))
+            || (key_event.code == KeyCode::Char('x')
+                && key_event.modifiers.contains(KeyModifiers::CONTROL));
+        if close {
+            self.app_state.close_shortcuts_sheet();
+        } else if matches!(key_event.code, KeyCode::Down | KeyCode::Char('j')) {
+            self.app_state.shortcuts_move(1);
+        } else if matches!(key_event.code, KeyCode::Up | KeyCode::Char('k')) {
+            self.app_state.shortcuts_move(-1);
         }
+        self.render(terminal)?;
+        Ok(true)
+    }
 
-        if self.app_state.shortcuts_open {
-            let close = matches!(key_event.code, KeyCode::Esc | KeyCode::F(2))
-                || (key_event.code == KeyCode::Char('x')
-                    && key_event.modifiers.contains(KeyModifiers::CONTROL));
-            if close {
-                self.app_state.close_shortcuts_sheet();
-            } else if matches!(key_event.code, KeyCode::Down | KeyCode::Char('j')) {
-                self.app_state.shortcuts_move(1);
-            } else if matches!(key_event.code, KeyCode::Up | KeyCode::Char('k')) {
-                self.app_state.shortcuts_move(-1);
-            }
-            self.render(terminal)?;
-            return Ok(true);
-        }
-
+    fn try_chrome_toggle_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
+        use crossterm::event::{KeyCode, KeyModifiers};
         if key_event.code == KeyCode::F(2) {
             self.app_state.open_settings_modal();
             self.render(terminal)?;
@@ -213,29 +272,6 @@ impl EventLoop {
             self.render(terminal)?;
             return Ok(true);
         }
-
-        if self.app_state.is_interactive_mode() {
-            self.handle_interactive_mode_key(key_event).await?;
-            self.render(terminal)?;
-            return Ok(true);
-        }
-
-        if self.card_handler.is_active() && self.card_handler.handle_key(key_event) {
-            self.process_card_actions();
-            self.render(terminal)?;
-            return Ok(true);
-        }
-
-        if self.app_state.has_modal() && self.handle_modal_key(key_event).await? {
-            self.render(terminal)?;
-            return Ok(true);
-        }
-
-        if self.app_state.view == AppView::Questions && self.handle_question_key(key_event).await? {
-            self.render(terminal)?;
-            return Ok(true);
-        }
-
         Ok(false)
     }
 

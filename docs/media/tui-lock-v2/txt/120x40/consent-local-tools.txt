@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > fix the failing test in this repo                                                                        10:18 AM
+
+   ♦ Thought for 0.6s
+
+   ● Run tools locally?
+   Tools run on This PC against the current working directory. Cloud is the default when unset.
+   > 1 Yes — run tools in this directory
+     2 Always allow for this project
+     3 No — keep using Cloud
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Choose an option above                                                                                           │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ ↑↓:select  |  Enter:confirm  |  Esc:cancel

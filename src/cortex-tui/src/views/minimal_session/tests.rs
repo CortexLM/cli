@@ -212,6 +212,57 @@ mod harness_snapshots {
     }
 
     #[test]
+    fn ordinary_at_text_keeps_typed_footer() {
+        let mut email = AppState::default();
+        email.input.set_text("contact me@example.com");
+        let email_text = render(&email, 120, 40);
+        assert!(
+            email_text.contains("Alt+Enter") || email_text.contains("newline"),
+            "email must keep typed composer hints:\n{email_text}"
+        );
+        assert!(
+            !email_text.contains("@:files") && !email_text.contains("@: files"),
+            "email must not open file-chip footer:\n{email_text}"
+        );
+
+        let mut ada = AppState::default();
+        ada.input.set_text("ada@example.com");
+        let ada_text = render(&ada, 120, 40);
+        assert!(
+            !ada_text.contains("@:files"),
+            "solo email must not open file-chip footer:\n{ada_text}"
+        );
+
+        let mut bare = AppState::default();
+        bare.input.set_text("please inspect @");
+        let bare_text = render(&bare, 120, 40);
+        assert!(
+            bare_text.contains("Alt+Enter") || bare_text.contains("newline"),
+            "incomplete @ must keep typed composer hints:\n{bare_text}"
+        );
+        assert!(
+            !bare_text.contains("@:files"),
+            "incomplete @ must not open file-chip footer:\n{bare_text}"
+        );
+
+        let mut unfinished = AppState::default();
+        unfinished.input.set_text("please inspect @src/");
+        let unfinished_text = render(&unfinished, 120, 40);
+        assert!(
+            !unfinished_text.contains("@:files"),
+            "trailing-slash mention must not open file-chip footer:\n{unfinished_text}"
+        );
+
+        let mut chip = AppState::default();
+        chip.input.set_text("explain @src/composer.rs ");
+        let chip_text = render(&chip, 120, 40);
+        assert!(
+            chip_text.contains("@:files"),
+            "completed @path must use file-chip footer:\n{chip_text}"
+        );
+    }
+
+    #[test]
     fn autocomplete_selected_row_is_banner_green_on_the_gray_bar() {
         use cortex_core::style::{ACCENT, SELECTION_BG, TEXT, TEXT_DIM};
 

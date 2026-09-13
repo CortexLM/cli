@@ -1,0 +1,12 @@
+                             14K / 500K
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────╮
+ │ > explain @src/composer.rs         │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:send | @:files

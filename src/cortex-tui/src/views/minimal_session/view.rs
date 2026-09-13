@@ -84,14 +84,13 @@ pub fn paint_composer_contents(
     let shown = crate::ui::text_utils::first_fitting_line(input, budget.saturating_sub(1));
     let chars: Vec<char> = shown.chars().collect();
     let caret = caret.min(chars.len());
-    let slash_end = if shown.starts_with('/') {
-        shown.find(' ').unwrap_or(shown.len())
-    } else {
-        0
-    };
     let mut col = col0;
     for (i, ch) in chars.iter().enumerate() {
-        let fg = if i < slash_end { ACCENT } else { TEXT };
+        let fg = if composer_char_accent(&chars, i) {
+            ACCENT
+        } else {
+            TEXT
+        };
         if caret_visible && i == caret {
             buf.set_string(
                 col,
@@ -752,6 +751,12 @@ impl<'a> MinimalSessionView<'a> {
             if title.contains("plugin") {
                 return FooterSet::Plugins;
             }
+            if title.contains("run tools") || title.contains("locally") {
+                return FooterSet::Prompt;
+            }
+            if title == "undo" || title.starts_with("undo") {
+                return FooterSet::UndoSheet;
+            }
             if title.contains("resume") || title.contains("session") {
                 return FooterSet::Resume;
             }
@@ -771,7 +776,11 @@ impl<'a> MinimalSessionView<'a> {
         if self.app_state.autocomplete.visible {
             return FooterSet::Palette;
         }
-        if !self.app_state.input.text().is_empty() {
+        let typed = self.app_state.input.text();
+        if composer_has_completed_file_chip(&typed) && !self.app_state.is_interactive_mode() {
+            return FooterSet::FileChip;
+        }
+        if !typed.is_empty() {
             if area_is_narrow(width) {
                 return FooterSet::TypedNarrow;
             }
@@ -804,6 +813,56 @@ fn area_is_narrow(width: u16) -> bool {
     width < 80
 }
 
+/// Accent slash commands (`/undo`) and completed `@path` file chips.
+fn composer_char_accent(chars: &[char], index: usize) -> bool {
+    if chars.first() == Some(&'/') {
+        let end = chars.iter().position(|&c| c == ' ').unwrap_or(chars.len());
+        if index < end {
+            return true;
+        }
+    }
+    let mut i = 0;
+    while i < chars.len() {
+        let at_token = chars[i] == '@' && (i == 0 || chars[i - 1].is_whitespace());
+        if at_token {
+            let start = i;
+            i += 1;
+            while i < chars.len() && !chars[i].is_whitespace() {
+                i += 1;
+            }
+            if index >= start && index < i && i > start + 1 {
+                return true;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    false
+}
+
+/// True when the composer holds a completed `@path` chip, not an email, a
+/// bare `@`, or an unfinished mention that still ends in `/`.
+fn composer_has_completed_file_chip(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let at_token = chars[i] == '@' && (i == 0 || chars[i - 1].is_whitespace());
+        if at_token {
+            let start = i;
+            i += 1;
+            while i < chars.len() && !chars[i].is_whitespace() {
+                i += 1;
+            }
+            if i > start + 1 && chars[i - 1] != '/' {
+                return true;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    false
+}
+
 fn composer_display_text(state: &AppState) -> String {
     if let Some(istate) = state.get_interactive_state() {
         let title = istate.title.to_ascii_lowercase();
@@ -819,4 +878,30 @@ fn composer_display_text(state: &AppState) -> String {
         }
     }
     state.input.text()
+}
+
+#[cfg(test)]
+mod file_chip_footer_tests {
+    use super::*;
+
+    #[test]
+    fn completed_at_path_is_a_file_chip() {
+        assert!(composer_has_completed_file_chip(
+            "explain @src/cortex-tui/src/composer.rs "
+        ));
+        assert!(composer_has_completed_file_chip(
+            "explain @src/composer.rs "
+        ));
+        assert!(composer_has_completed_file_chip("@src/foo.rs"));
+    }
+
+    #[test]
+    fn email_and_bare_at_are_not_file_chips() {
+        assert!(!composer_has_completed_file_chip("contact me@example.com"));
+        assert!(!composer_has_completed_file_chip("ada@example.com"));
+        assert!(!composer_has_completed_file_chip("please inspect @"));
+        assert!(!composer_has_completed_file_chip("please inspect @src/"));
+        assert!(!composer_has_completed_file_chip("@"));
+        assert!(!composer_has_completed_file_chip("hello world"));
+    }
 }

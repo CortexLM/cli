@@ -114,5 +114,8 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `sudo` | Elevated Shell — password row on gray | [120x40](120x40/sudo.png) | — |
 | `config-tree` | `/config` read-only key tree | [120x40](120x40/config-tree.png) | — |
 | `btw` | `/btw` side note during a running turn | [120x40](120x40/btw.png) | — |
+| `consent-local-tools` | Consent card — run tools locally in CWD / This PC | [120x40](120x40/consent-local-tools.png) | [40x12](40x12/consent-local-tools.png) |
+| `composer-file-chip` | Composer with attached @file chip in prompt | [120x40](120x40/composer-file-chip.png) | [40x12](40x12/composer-file-chip.png) |
+| `undo-sheet` | /undo /redo /rewind sheet | [120x40](120x40/undo-sheet.png) | [40x12](40x12/undo-sheet.png) |
 
-**84** boards at 120x40 · **38** at 40x12 · 122 PNGs.
+**87** boards at 120x40 · **41** at 40x12 · 128 PNGs.

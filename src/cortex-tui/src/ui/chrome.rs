@@ -252,6 +252,12 @@ pub enum FooterSet {
     Unavailable,
     RateLimit,
     Palette,
+    /// Consent / question radios — confirm or cancel (not Typed, not exec Approval).
+    Prompt,
+    /// `/undo` `/redo` `/rewind` sheet.
+    UndoSheet,
+    /// Composer with an attached `@file` chip.
+    FileChip,
 }
 
 impl FooterSet {
@@ -483,6 +489,88 @@ impl FooterSet {
                     label: "shortcuts",
                 },
             ],
+            Self::Prompt => &[
+                FooterHint {
+                    key: "↑↓",
+                    label: "select",
+                },
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "cancel",
+                },
+            ],
+            Self::UndoSheet => &[
+                FooterHint {
+                    key: "↑↓",
+                    label: "select",
+                },
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "cancel",
+                },
+            ],
+            Self::FileChip => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "send",
+                },
+                FooterHint {
+                    key: "@",
+                    label: "files",
+                },
+                FooterHint {
+                    key: "!",
+                    label: "bash",
+                },
+            ],
+        }
+    }
+
+    /// Narrow strips drop ↑↓ / `!` so 40×12 matches designer lock footers.
+    pub fn hints_for(self, width: u16) -> &'static [FooterHint] {
+        if width >= 80 {
+            return self.hints();
+        }
+        match self {
+            Self::Prompt => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "cancel",
+                },
+            ],
+            Self::UndoSheet => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "cancel",
+                },
+            ],
+            Self::FileChip => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "send",
+                },
+                FooterHint {
+                    key: "@",
+                    label: "files",
+                },
+            ],
+            _ => self.hints(),
         }
     }
 }
@@ -494,7 +582,7 @@ pub fn paint_footer(area: Rect, buf: &mut Buffer, set: FooterSet, hovered: Optio
     }
     let wide = area.width >= 80;
     let sep = if wide { "  |  " } else { " | " };
-    let hints = set.hints();
+    let hints = set.hints_for(area.width);
     let mut x = area.x + 1;
     let y = area.y;
     for (i, hint) in hints.iter().enumerate() {
@@ -721,5 +809,48 @@ mod tests {
             Some(ACCENT),
             "goal chip uses designer accent"
         );
+    }
+
+    #[test]
+    fn consent_and_undo_footers_are_confirm_cancel_not_typed_or_approval() {
+        for set in [FooterSet::Prompt, FooterSet::UndoSheet] {
+            for width in [120u16, 40u16] {
+                let hints = set.hints_for(width);
+                assert!(
+                    hints
+                        .iter()
+                        .any(|h| h.key == "Enter" && h.label == "confirm"),
+                    "{set:?} at {width} missing Enter:confirm"
+                );
+                assert!(
+                    hints.iter().any(|h| h.key == "Esc" && h.label == "cancel"),
+                    "{set:?} at {width} missing Esc:cancel"
+                );
+                assert!(
+                    !hints.iter().any(|h| h.label == "send"
+                        || h.label == "newline"
+                        || h.label == "edit command"
+                        || h.label == "mode"),
+                    "{set:?} at {width} leaked Typed/Approval hints: {hints:?}"
+                );
+            }
+            assert_eq!(
+                set.hints_for(40).len(),
+                2,
+                "narrow {set:?} is Enter+Esc only"
+            );
+        }
+    }
+
+    #[test]
+    fn file_chip_footer_is_not_typed_strip() {
+        let wide = FooterSet::FileChip.hints_for(120);
+        assert!(wide.iter().any(|h| h.key == "Enter" && h.label == "send"));
+        assert!(wide.iter().any(|h| h.key == "@" && h.label == "files"));
+        assert!(wide.iter().any(|h| h.key == "!" && h.label == "bash"));
+        assert!(!wide.iter().any(|h| h.key == "Alt+Enter"));
+        let narrow = FooterSet::FileChip.hints_for(40);
+        assert!(!narrow.iter().any(|h| h.key == "!"));
+        assert!(!narrow.iter().any(|h| h.key == "Alt+Enter"));
     }
 }

@@ -1,7 +1,7 @@
 //! Lock v2 scene id lists. Split out of [`crate::lock_v2`] so adding `/goal`
 //! boards does not grow that file past the source-policy line-count baseline.
 
-/// Narrow (40×12) SPEC §7 set — 38 boards.
+/// Narrow (40×12) SPEC §7 set — 41 boards.
 pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "welcome-cortex",
     "welcome-agent",
@@ -41,9 +41,12 @@ pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "diff-hunk",
     "login",
     "shortcuts-overlay",
+    "consent-local-tools",
+    "composer-file-chip",
+    "undo-sheet",
 ];
 
-/// Wide (120×40) SPEC §7 set — 84 boards.
+/// Wide (120×40) SPEC §7 set — 87 boards.
 pub const LOCK_V2_WIDE_IDS: &[&str] = &[
     "welcome-cortex",
     "welcome-agent",
@@ -129,6 +132,9 @@ pub const LOCK_V2_WIDE_IDS: &[&str] = &[
     "sudo",
     "config-tree",
     "btw",
+    "consent-local-tools",
+    "composer-file-chip",
+    "undo-sheet",
 ];
 
 /// Boards captured at both sizes. Narrow (40×12) is a subset.
@@ -137,5 +143,29 @@ pub fn lock_v2_scene_ids(width: u16) -> &'static [&'static str] {
         LOCK_V2_NARROW_IDS
     } else {
         LOCK_V2_WIDE_IDS
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn lock_v2_id_counts_and_unique() {
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 87);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 41);
+        let mut wide = HashSet::new();
+        for id in LOCK_V2_WIDE_IDS {
+            assert!(wide.insert(*id), "duplicate wide id {id}");
+        }
+        let mut narrow = HashSet::new();
+        for id in LOCK_V2_NARROW_IDS {
+            assert!(narrow.insert(*id), "duplicate narrow id {id}");
+            assert!(
+                wide.contains(id),
+                "narrow id {id} is not in LOCK_V2_WIDE_IDS"
+            );
+        }
     }
 }

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process;
 
 use cortex_tui::lock_proof::write_lock_frames;
-use cortex_tui::lock_v2::write_lock_v2_frames;
+use cortex_tui::lock_v2::{validate_lock_v2_only_ids, write_lock_v2_frames};
 
 fn print_help() {
     println!(
@@ -25,6 +25,7 @@ OPTIONS:
     -w, --width <WIDTH>   Terminal width (default: 120)
     -h, --height <HEIGHT> Terminal height (default: 40)
     --v2                  Capture lock v2 scenes (real session chrome)
+    --only <IDS>          Comma-separated lock v2 scene ids (with --v2)
     --help                Show this help
 "
     );
@@ -36,6 +37,8 @@ fn main() {
     let mut width: u16 = 120;
     let mut height: u16 = 40;
     let mut v2 = false;
+    let mut only_flag = false;
+    let mut only: Vec<String> = Vec::new();
 
     let mut i = 1;
     while i < args.len() {
@@ -68,6 +71,20 @@ fn main() {
             "--v2" => {
                 v2 = true;
             }
+            "--only" => {
+                only_flag = true;
+                i += 1;
+                let raw = args.get(i).cloned().unwrap_or_else(|| {
+                    eprintln!("Missing value for --only");
+                    process::exit(1);
+                });
+                only = raw
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect();
+            }
             other => {
                 eprintln!("Unknown argument: {other}");
                 print_help();
@@ -77,8 +94,22 @@ fn main() {
         i += 1;
     }
 
+    if only_flag && !v2 {
+        eprintln!("--only requires --v2");
+        process::exit(1);
+    }
+
     let result = if v2 {
-        write_lock_v2_frames(width, height, &output)
+        if only_flag {
+            let ids: Vec<&str> = only.iter().map(String::as_str).collect();
+            if let Err(err) = validate_lock_v2_only_ids(&ids, width) {
+                eprintln!("{err:#}");
+                process::exit(1);
+            }
+            cortex_tui::lock_v2::write_lock_v2_id_frames(&ids, width, height, &output)
+        } else {
+            write_lock_v2_frames(width, height, &output)
+        }
     } else {
         write_lock_frames(width, height, &output)
     };

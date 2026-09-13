@@ -1,0 +1,12 @@
+                             14K / 500K
+   ● Run tools locally?
+   This PC · current directory · Clou…
+   > 1 Yes — run tools here
+     2 Always allow project
+     3 No — keep using Cloud
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Choose an option above           │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:confirm | Esc:cancel

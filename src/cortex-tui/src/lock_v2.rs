@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use cortex_tui_capture::{CaptureConfig, MockTerminal, StyleRendering};
 use ratatui::widgets::Clear;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::lock_proof::{LOCK_SPLASH_VERSION, LockFrame};
@@ -33,10 +34,39 @@ struct ManifestFrame {
 }
 
 pub fn write_lock_v2_frames(width: u16, height: u16, output_dir: &Path) -> Result<PathBuf> {
+    write_lock_v2_id_frames(lock_v2_scene_ids(width), width, height, output_dir)
+}
+
+/// Reject empty, unknown, or repeated `--only` scene ids before any writes.
+pub fn validate_lock_v2_only_ids(ids: &[&str], width: u16) -> Result<()> {
+    if ids.is_empty() {
+        anyhow::bail!("--only requires at least one scene id");
+    }
+    let known = lock_v2_scene_ids(width);
+    let mut seen = HashSet::new();
+    for id in ids {
+        if !known.contains(id) {
+            anyhow::bail!("unknown lock v2 scene id `{id}`");
+        }
+        if !seen.insert(*id) {
+            anyhow::bail!("repeated lock v2 scene id `{id}`");
+        }
+    }
+    Ok(())
+}
+
+/// Write a subset of lock v2 scenes (used to recapture residual boards).
+pub fn write_lock_v2_id_frames(
+    ids: &[&str],
+    width: u16,
+    height: u16,
+    output_dir: &Path,
+) -> Result<PathBuf> {
+    validate_lock_v2_only_ids(ids, width)?;
     std::fs::create_dir_all(output_dir)
         .with_context(|| format!("create {}", output_dir.display()))?;
     let mut manifest_frames = Vec::new();
-    for id in lock_v2_scene_ids(width) {
+    for id in ids {
         let frame = render_lock_v2_scene(id, width, height)?;
         let file = format!("{}.ans", id);
         std::fs::write(output_dir.join(&file), &frame.ansi)
@@ -128,8 +158,41 @@ mod tests {
 
     #[test]
     fn lock_v2_wide_count_is_spec() {
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 84);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 38);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 87);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 41);
+    }
+
+    #[test]
+    fn only_ids_reject_unknown_repeated_and_empty() {
+        assert!(validate_lock_v2_only_ids(&["welcome-cortex"], 120).is_ok());
+        let unknown = validate_lock_v2_only_ids(&["welcome-cortex", "unknown-scene"], 120)
+            .expect_err("unknown");
+        assert!(unknown.to_string().contains("unknown"), "{unknown}");
+        let repeated = validate_lock_v2_only_ids(&["welcome-cortex", "welcome-cortex"], 120)
+            .expect_err("repeated");
+        assert!(repeated.to_string().contains("repeated"), "{repeated}");
+        let empty = validate_lock_v2_only_ids(&[], 120).expect_err("empty");
+        assert!(empty.to_string().contains("at least one"), "{empty}");
+        let wide_only_at_narrow =
+            validate_lock_v2_only_ids(&["session-thought"], 40).expect_err("wide-only at 40");
+        assert!(
+            wide_only_at_narrow.to_string().contains("unknown"),
+            "{wide_only_at_narrow}"
+        );
+    }
+
+    #[test]
+    fn write_lock_v2_id_frames_does_not_write_on_invalid_ids() {
+        let dir = std::env::temp_dir().join(format!("cortex-lock-only-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let err = write_lock_v2_id_frames(&["welcome-cortex", "unknown-scene"], 120, 40, &dir)
+            .expect_err("invalid ids");
+        assert!(err.to_string().contains("unknown"), "{err}");
+        assert!(
+            !dir.join("welcome-cortex.ans").exists(),
+            "must not write a partial capture set"
+        );
+        assert!(!dir.join("manifest.json").exists());
     }
 
     #[test]

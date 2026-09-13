@@ -1,0 +1,12 @@
+                             14K / 500K
+   Undo
+   > 1 Undo last turn
+     2 Redo
+     3 Rewind…
+
+
+ ╭─ Agent ────────────────────────────╮
+ │ > /undo                            │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:confirm | Esc:close

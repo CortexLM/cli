@@ -16,6 +16,7 @@ use crate::interactive::builders::{
 use crate::lock_v2::PRODUCT_ERROR;
 use crate::lock_v2_goal::{apply_goal_chip_scene, show_goal_in_narrow_palette};
 use crate::lock_v2_network::apply_offline_rate_limit_scene;
+use crate::lock_v2_parity::apply_parity_scene;
 use crate::lock_v2_scenes::*;
 use crate::modal::mcp_manager::{McpServerInfo, McpStatus};
 use crate::session::SessionSummary;
@@ -808,6 +809,7 @@ Tell me what you'd like to do.",
             );
         }
         id if apply_offline_rate_limit_scene(id, &mut state) => {}
+        id if apply_parity_scene(id, &mut state, width) => {}
         id if apply_goal_chip_scene(id, &mut state) => {}
         other => panic!("unknown lock v2 scene {other}"),
     }

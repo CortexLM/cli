@@ -38,10 +38,7 @@ impl EventLoop {
         if matches!(tool_name.as_str(), "TodoWrite" | "todo_write")
             && let Some(todos) = todo_pairs_from_write_args(&args)
         {
-            let _ = self.tool_event_tx.try_send(ToolEvent::TodoUpdated {
-                session_id: String::new(),
-                todos,
-            });
+            self.handle_todo_updated(String::new(), todos);
         }
         let mcp_manager = self.mcp_manager.clone();
         // Every caller reaches here only after the permission manager passed
@@ -240,6 +237,9 @@ impl EventLoop {
                 success,
                 duration,
             } => {
+                if success {
+                    self.apply_todo_write_output(&name, &output);
+                }
                 self.handle_tool_completed(id, name, output, success, duration)
                     .await;
             }
@@ -508,6 +508,14 @@ impl EventLoop {
         }
     }
 
+    fn apply_todo_write_output(&mut self, name: &str, output: &str) {
+        if matches!(name, "TodoWrite" | "todo_write")
+            && let Some(todos) = todo_pairs_from_write_output(output)
+        {
+            self.handle_todo_updated(String::new(), todos);
+        }
+    }
+
     /// Handle todo updated event
     fn handle_todo_updated(&mut self, session_id: String, todos: Vec<(String, String)>) {
         use crate::app::{SubagentTodoItem, SubagentTodoStatus};
@@ -706,9 +714,30 @@ fn todo_pairs_from_write_args(args: &serde_json::Value) -> Option<Vec<(String, S
     (!pairs.is_empty()).then_some(pairs)
 }
 
+fn todo_pairs_from_write_output(output: &str) -> Option<Vec<(String, String)>> {
+    let mut pairs = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        let (status, rest) = if let Some(rest) = line.strip_prefix("[x] ") {
+            ("completed", rest)
+        } else if let Some(rest) = line.strip_prefix("[~] ") {
+            ("in_progress", rest)
+        } else if let Some(rest) = line.strip_prefix("[ ] ") {
+            ("pending", rest)
+        } else {
+            continue;
+        };
+        let content = rest.split_once(": ").map(|(_, c)| c).unwrap_or(rest);
+        if !content.is_empty() {
+            pairs.push((content.to_string(), status.to_string()));
+        }
+    }
+    (!pairs.is_empty()).then_some(pairs)
+}
+
 #[cfg(test)]
 mod todo_write_live_tests {
-    use super::todo_pairs_from_write_args;
+    use super::{todo_pairs_from_write_args, todo_pairs_from_write_output};
 
     #[test]
     fn todo_write_args_become_checklist_pairs() {
@@ -722,6 +751,20 @@ mod todo_write_live_tests {
         assert_eq!(pairs.len(), 2);
         assert_eq!(pairs[0].1, "completed");
         assert_eq!(pairs[1].0, "Move the chip");
+    }
+
+    #[test]
+    fn todo_write_completion_output_restores_checklist() {
+        let output = "TODO List Updated\n\n[x] !! 1: Read composer.rs\n[~] !! 2: Move the chip\n[ ] ! 3: Run tests\n";
+        let pairs = todo_pairs_from_write_output(output).expect("pairs");
+        assert_eq!(
+            pairs,
+            vec![
+                ("Read composer.rs".into(), "completed".into()),
+                ("Move the chip".into(), "in_progress".into()),
+                ("Run tests".into(), "pending".into()),
+            ]
+        );
     }
 }
 

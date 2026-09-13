@@ -158,7 +158,10 @@ pub fn tool_tile_label(name: &str) -> String {
 pub fn format_tool_summary(name: &str, args: &Value) -> String {
     match name.to_lowercase().as_str() {
         "read" | "edit" | "write" | "delete" => {
-            if let Some(path) = args.get("file_path").or_else(|| args.get("filePath"))
+            if let Some(path) = args
+                .get("file_path")
+                .or_else(|| args.get("filePath"))
+                .or_else(|| args.get("path"))
                 && let Some(path_str) = path.as_str()
             {
                 return shorten_path(path_str);

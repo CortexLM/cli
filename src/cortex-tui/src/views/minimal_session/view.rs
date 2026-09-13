@@ -11,6 +11,8 @@ use super::rendering::{
 };
 use crate::app::AppState;
 use crate::commands::PALETTE_HOME_LIMIT;
+use crate::interactive::InteractiveAction;
+use crate::interactive::builders::PERMISSION_PROMPT_ACTION;
 use crate::ui::chrome::{
     FooterSet, composer_caret_style, composer_inner, fill_inky, format_token_counter, model_chip,
     paint_composer_box, paint_footer, paint_status_marker, paint_token_counter,
@@ -32,8 +34,9 @@ pub const PLACEHOLDER_IDLE: &str = "Plan, search, build anything";
 /// Composer placeholder while a run is live — stdin stays alive and a
 /// submitted follow-up is queued.
 pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up — Enter to queue";
-/// Composer placeholder while a SPEC §3.10 prompt owns focus.
 pub const PLACEHOLDER_PROMPT: &str = crate::interactive::builders::PERMISSION_PROMPT_PLACEHOLDER;
+/// Composer placeholder after Esc / Ctrl+c interrupt.
+pub const PLACEHOLDER_STOPPED: &str = "Reply, or ↑ to edit your last message";
 
 /// Paint the composer input row (after `> `) to the lock:
 /// empty = block cursor at input col 0, dim placeholder after that cell;
@@ -329,6 +332,8 @@ impl<'a> MinimalSessionView<'a> {
                 } else {
                     crate::ui::consts::PLACEHOLDER_DISCONNECTED
                 }
+            } else if self.app_state.last_turn_stopped {
+                PLACEHOLDER_STOPPED
             } else if self.is_task_running() {
                 PLACEHOLDER_RUNNING
             } else if self.app_state.agent_entrypoint {
@@ -652,23 +657,9 @@ impl<'a> Widget for MinimalSessionView<'a> {
         };
 
         let interactive = self.app_state.is_interactive_mode();
-        let effort_focused = self
-            .app_state
-            .get_interactive_state()
-            .map(|s| s.effort_focused)
-            .unwrap_or(false);
         let picker_height: u16 = if interactive {
             if let Some(state) = self.app_state.get_interactive_state() {
-                if effort_focused {
-                    3
-                } else {
-                    let n = if state.filtered_indices.is_empty() {
-                        1
-                    } else {
-                        state.filtered_indices.len().min(state.max_visible).min(8)
-                    };
-                    n as u16
-                }
+                crate::interactive::picker_layout::picker_stack_height(state)
             } else {
                 0
             }
@@ -679,13 +670,11 @@ impl<'a> Widget for MinimalSessionView<'a> {
         };
 
         let show_optin = self.app_state.opt_in_banner && !self.app_state.messages.is_empty();
-        let optin_height: u16 = if show_optin {
-            if area.height >= 20 { 5 } else { 3 }
-        } else {
-            0
-        };
+        let optin_height =
+            crate::interactive::picker_layout::session_optin_height(show_optin, area.height);
         let show_update_banner = self.app_state.should_show_update_banner();
-        let update_banner_height: u16 = if show_update_banner { 1 } else { 0 };
+        let update_banner_height =
+            crate::interactive::picker_layout::session_update_height(show_update_banner);
 
         let stack_below_transcript = picker_height + optin_height + update_banner_height;
         let transcript_bottom = composer_y.saturating_sub(stack_below_transcript);
@@ -719,7 +708,12 @@ impl<'a> Widget for MinimalSessionView<'a> {
         }
 
         if picker_height > 0 {
-            let picker_area = Rect::new(area.x, next_y, area.width, picker_height);
+            let picker_area = crate::interactive::picker_layout::session_inline_picker_area(
+                area,
+                picker_height,
+                update_banner_height,
+                optin_height,
+            );
             if interactive {
                 if let Some(state) = self.app_state.get_interactive_state() {
                     crate::interactive::InteractiveWidget::new(state)
@@ -739,6 +733,10 @@ impl<'a> Widget for MinimalSessionView<'a> {
         }
         if self.app_state.shortcuts_open {
             crate::widgets::ShortcutsOverlay::new(self.app_state.cli_version.clone())
+                .with_selection(
+                    self.app_state.shortcuts_selected,
+                    self.app_state.shortcuts_hovered,
+                )
                 .render(area, buf);
         }
 
@@ -762,15 +760,36 @@ impl<'a> MinimalSessionView<'a> {
         }
         if let Some(state) = self.app_state.get_interactive_state() {
             if state.effort_focused {
-                return FooterSet::Effort;
+                return if area_is_narrow(width) {
+                    FooterSet::EffortNarrow
+                } else {
+                    FooterSet::Effort
+                };
+            }
+            match &state.action {
+                InteractiveAction::SetModel => {
+                    return if area_is_narrow(width) {
+                        FooterSet::ModelListNarrow
+                    } else {
+                        FooterSet::ModelList
+                    };
+                }
+                InteractiveAction::McpServerAction => {
+                    return if area_is_narrow(width) {
+                        FooterSet::McpNarrow
+                    } else {
+                        FooterSet::Mcp
+                    };
+                }
+                InteractiveAction::ResumeSession => return FooterSet::Resume,
+                InteractiveAction::Custom(id) => {
+                    if let Some(set) = custom_interactive_footer(id) {
+                        return set;
+                    }
+                }
+                _ => {}
             }
             let title = state.title.to_ascii_lowercase();
-            if title.contains("model") {
-                return FooterSet::ModelList;
-            }
-            if title.contains("mcp") {
-                return FooterSet::Mcp;
-            }
             if title.contains("plugin") {
                 return FooterSet::Plugins;
             }
@@ -779,12 +798,6 @@ impl<'a> MinimalSessionView<'a> {
             }
             if title == "undo" || title.starts_with("undo") {
                 return FooterSet::UndoSheet;
-            }
-            if title.contains("resume") || title.contains("session") {
-                return FooterSet::Resume;
-            }
-            if title.contains("permission") || title.contains("approv") {
-                return FooterSet::Approval;
             }
         }
         if self.app_state.agent_mode_label == "Bash" {
@@ -834,6 +847,18 @@ impl<'a> MinimalSessionView<'a> {
 
 fn area_is_narrow(width: u16) -> bool {
     width < 80
+}
+
+fn custom_interactive_footer(id: &str) -> Option<FooterSet> {
+    Some(match id {
+        PERMISSION_PROMPT_ACTION => FooterSet::Approval,
+        "sandbox-deny" => FooterSet::SelectConfirm,
+        "plan-confirm" => FooterSet::PlanKeep,
+        "permissions-picker" => FooterSet::PermissionsApply,
+        "clear-confirm" => FooterSet::Confirm,
+        "plugins" => FooterSet::Plugins,
+        _ => return None,
+    })
 }
 
 /// Accent slash commands (`/undo`) and completed `@path` file chips.

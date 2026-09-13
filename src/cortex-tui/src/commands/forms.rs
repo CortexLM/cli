@@ -241,7 +241,7 @@ impl FormRegistry {
                 vec![
                     FormField::text("provider", "Provider Name")
                         .required()
-                        .with_placeholder("anthropic, openai, groq..."),
+                        .with_placeholder("cortex, custom..."),
                 ],
             )),
 
@@ -251,7 +251,7 @@ impl FormRegistry {
                 vec![
                     FormField::text("model", "Model Name")
                         .required()
-                        .with_placeholder("claude-sonnet-4-20250514, gpt-4..."),
+                        .with_placeholder("Cortex Mini 1, Cortex 1, Cortex Max 1"),
                 ],
             )),
 

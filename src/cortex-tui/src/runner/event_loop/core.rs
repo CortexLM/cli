@@ -633,6 +633,7 @@ impl EventLoop {
         if already {
             return;
         }
+        self.app_state.last_turn_stopped = true;
         let secs = self.app_state.streaming.prompt_elapsed_seconds();
         self.add_system_message(&format!(
             "{} {}",
@@ -640,74 +641,6 @@ impl EventLoop {
             crate::ui::consts::STOPPED_TITLE
         ));
         self.add_system_message(&format!("{secs}s · ctrl+c"));
-    }
-
-    /// Apply an MCP lifecycle event to the session list and transcript.
-    pub(super) fn handle_mcp_event(&mut self, event: cortex_engine::mcp::McpLifecycleEvent) {
-        use crate::modal::mcp_manager::McpStatus;
-        use cortex_engine::mcp::McpLifecycleEvent;
-        match event {
-            McpLifecycleEvent::ServerAdded { name } => {
-                if !self.app_state.mcp_servers.iter().any(|s| s.name == name) {
-                    self.app_state
-                        .mcp_servers
-                        .push(crate::modal::mcp_manager::McpServerInfo {
-                            name,
-                            status: McpStatus::Stopped,
-                            tool_count: 0,
-                            error: None,
-                            requires_auth: false,
-                        });
-                }
-            }
-            McpLifecycleEvent::ServerConnected {
-                name, tool_count, ..
-            } => {
-                if let Some(server) = self
-                    .app_state
-                    .mcp_servers
-                    .iter_mut()
-                    .find(|s| s.name == name)
-                {
-                    server.status = McpStatus::Running;
-                    server.tool_count = tool_count;
-                    server.error = None;
-                }
-            }
-            McpLifecycleEvent::ServerDisconnected { name } => {
-                let user_stop = self.mcp_stopping.remove(&name);
-                if let Some(server) = self
-                    .app_state
-                    .mcp_servers
-                    .iter_mut()
-                    .find(|s| s.name == name)
-                {
-                    if user_stop {
-                        server.status = McpStatus::Stopped;
-                        server.error = None;
-                    } else {
-                        server.status = McpStatus::Error;
-                        server.error = Some("connection lost".into());
-                        self.add_system_message(&format!("x {name} dropped"));
-                    }
-                }
-            }
-            McpLifecycleEvent::ServerRemoved { name } => {
-                self.app_state.mcp_servers.retain(|s| s.name != name);
-            }
-            McpLifecycleEvent::ConnectionFailed { name, error } => {
-                if let Some(server) = self
-                    .app_state
-                    .mcp_servers
-                    .iter_mut()
-                    .find(|s| s.name == name)
-                {
-                    server.status = McpStatus::Error;
-                    server.error = Some(error.clone());
-                }
-                self.add_system_message(&format!("x {name} failed"));
-            }
-        }
     }
 
     /// Returns the current action context based on app state.

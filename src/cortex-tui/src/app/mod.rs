@@ -4,8 +4,10 @@
 
 mod approval;
 mod autocomplete;
+mod checklist;
 mod methods;
 mod session;
+mod sheet;
 mod state;
 mod streaming;
 mod subagent;
@@ -15,6 +17,7 @@ mod update_status;
 // Re-export all public types
 pub use approval::{ApprovalState, PendingToolResult};
 pub use autocomplete::{AutocompleteItem, AutocompleteState};
+pub use checklist::WorkingChecklist;
 pub use session::{ActiveModal, SessionSummary};
 pub use state::AppState;
 pub use streaming::StreamingState;

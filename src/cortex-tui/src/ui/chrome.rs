@@ -266,9 +266,16 @@ pub enum FooterSet {
     Running,
     Queue,
     ModelList,
+    ModelListNarrow,
     Effort,
+    EffortNarrow,
     Approval,
+    SelectConfirm,
+    Confirm,
+    PlanKeep,
+    PermissionsApply,
     Mcp,
+    McpNarrow,
     Plugins,
     Resume,
     Bash,
@@ -374,6 +381,20 @@ impl FooterSet {
                     label: "close",
                 },
             ],
+            Self::ModelListNarrow => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "choose",
+                },
+                FooterHint {
+                    key: "Tab",
+                    label: "effort",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "close",
+                },
+            ],
             Self::Effort => &[
                 FooterHint {
                     key: "Enter",
@@ -382,6 +403,16 @@ impl FooterSet {
                 FooterHint {
                     key: "Tab",
                     label: "back to models",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "close",
+                },
+            ],
+            Self::EffortNarrow => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "apply",
                 },
                 FooterHint {
                     key: "Esc",
@@ -406,6 +437,50 @@ impl FooterSet {
                     label: "cancel",
                 },
             ],
+            Self::SelectConfirm => &[
+                FooterHint {
+                    key: "↑↓",
+                    label: "select",
+                },
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "cancel",
+                },
+            ],
+            Self::Confirm => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "cancel",
+                },
+            ],
+            Self::PlanKeep => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "keep planning",
+                },
+            ],
+            Self::PermissionsApply => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "apply",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "close",
+                },
+            ],
             Self::Mcp => &[
                 FooterHint {
                     key: "Enter",
@@ -418,6 +493,16 @@ impl FooterSet {
                 FooterHint {
                     key: "a",
                     label: "add server",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "close",
+                },
+            ],
+            Self::McpNarrow => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "details",
                 },
                 FooterHint {
                     key: "Esc",
@@ -805,6 +890,19 @@ mod tests {
         assert!(bot.contains('╰'), "{bot}");
         assert!(bot.contains("Cortex Mini 1 (medium)"), "{bot}");
         assert_eq!(buf[(1, 0)].style().fg, Some(HAIRLINE));
+    }
+
+    #[test]
+    fn composer_hover_uses_focus_hairline() {
+        let area = Rect::new(0, 0, 40, 3);
+        let mut idle = Buffer::empty(area);
+        fill_inky(area, &mut idle);
+        paint_composer_box(area, &mut idle, "Agent", "Cortex Mini 1", false, true, None);
+        let mut hover = Buffer::empty(area);
+        fill_inky(area, &mut hover);
+        paint_composer_box(area, &mut hover, "Agent", "Cortex Mini 1", true, true, None);
+        assert_eq!(idle[(1, 0)].style().fg, Some(HAIRLINE));
+        assert_eq!(hover[(1, 0)].style().fg, Some(BORDER_FOCUS));
     }
 
     #[test]

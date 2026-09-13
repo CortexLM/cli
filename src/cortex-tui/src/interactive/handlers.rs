@@ -8,13 +8,59 @@ use std::collections::HashMap;
 ///
 /// Returns an `InteractiveResult` indicating what action to take.
 pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> InteractiveResult {
-    // If inline form is active, handle form input
     if state.is_form_active() {
         return handle_form_key(state, key);
     }
-
+    if let Some(result) = handle_interactive_nav(state, key) {
+        return result;
+    }
     match key.code {
-        // Navigation
+        KeyCode::Enter => handle_interactive_enter(state),
+        KeyCode::Char(' ') if state.multi_select => {
+            state.toggle_check();
+            state.select_next();
+            InteractiveResult::Continue
+        }
+        KeyCode::Esc => InteractiveResult::Cancelled,
+        KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
+            InteractiveResult::Cancelled
+        }
+        KeyCode::Char('q') if key.modifiers == KeyModifiers::CONTROL => {
+            InteractiveResult::Cancelled
+        }
+        KeyCode::Char(c) if state.searchable && key.modifiers.is_empty() => {
+            if state.search_query.is_empty() {
+                if let Some(result) = try_resume_picker_key(state, c) {
+                    return result;
+                }
+            }
+            if !state.search_query.is_empty() || !is_shortcut(state, c) {
+                state.push_search_char(c);
+            } else if let Some(result) = try_shortcut(state, c) {
+                return result;
+            }
+            InteractiveResult::Continue
+        }
+        KeyCode::Char(c) if !state.searchable && key.modifiers.is_empty() => {
+            handle_non_search_char(state, c)
+        }
+        KeyCode::Backspace if state.searchable && !state.search_query.is_empty() => {
+            state.pop_search_char();
+            InteractiveResult::Continue
+        }
+        KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL && state.searchable => {
+            state.update_search("");
+            InteractiveResult::Continue
+        }
+        _ => InteractiveResult::Continue,
+    }
+}
+
+fn handle_interactive_nav(
+    state: &mut InteractiveState,
+    key: KeyEvent,
+) -> Option<InteractiveResult> {
+    match key.code {
         KeyCode::Up | KeyCode::Char('k')
             if key.modifiers.is_empty() || key.modifiers == KeyModifiers::NONE =>
         {
@@ -23,7 +69,7 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
             } else {
                 state.select_prev();
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
         KeyCode::Down | KeyCode::Char('j')
             if key.modifiers.is_empty() || key.modifiers == KeyModifiers::NONE =>
@@ -33,38 +79,32 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
             } else {
                 state.select_next();
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
-
-        // Ctrl+P / Ctrl+N for navigation (like emacs)
         KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
             state.select_prev();
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
         KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
             state.select_next();
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
-
-        // Page navigation
         KeyCode::PageUp => {
             for _ in 0..state.max_visible {
                 state.select_prev();
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
         KeyCode::PageDown => {
             for _ in 0..state.max_visible {
                 state.select_next();
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
-
-        // Home/End
         KeyCode::Home => {
             state.selected = 0;
             state.scroll_offset = 0;
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
         KeyCode::End => {
             if !state.filtered_indices.is_empty() {
@@ -73,90 +113,45 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
                     state.scroll_offset = state.selected - state.max_visible + 1;
                 }
             }
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
-
-        // Tab navigation (Left/Right)
-        KeyCode::Left if !state.tabs.is_empty() => InteractiveResult::SwitchTab { direction: -1 },
-        KeyCode::Right if !state.tabs.is_empty() => InteractiveResult::SwitchTab { direction: 1 },
-
-        // `/model` Effort radios: Tab jumps between the model list and the effort pane.
+        KeyCode::Left if !state.tabs.is_empty() => {
+            Some(InteractiveResult::SwitchTab { direction: -1 })
+        }
+        KeyCode::Right if !state.tabs.is_empty() => {
+            Some(InteractiveResult::SwitchTab { direction: 1 })
+        }
         KeyCode::Tab if state.effort.is_some() => {
             state.toggle_effort_focus();
-            InteractiveResult::Continue
+            Some(InteractiveResult::Continue)
         }
+        _ => None,
+    }
+}
 
-        // Selection
-        KeyCode::Enter => {
-            if let Some(item) = state.selected_item() {
-                if item.disabled {
-                    InteractiveResult::Continue
-                } else if state.multi_select && !state.checked.is_empty() {
-                    // Return all checked items
-                    let item_ids: Vec<String> =
-                        state.checked_items().iter().map(|i| i.id.clone()).collect();
-                    InteractiveResult::Selected {
-                        action: state.action.clone(),
-                        item_id: item_ids.first().cloned().unwrap_or_default(),
-                        item_ids,
-                    }
-                } else {
-                    InteractiveResult::Selected {
-                        action: state.action.clone(),
-                        item_id: item.id.clone(),
-                        item_ids: vec![item.id.clone()],
-                    }
-                }
-            } else {
-                InteractiveResult::Continue
-            }
-        }
-
-        // Toggle (multi-select)
-        KeyCode::Char(' ') if state.multi_select => {
-            state.toggle_check();
-            state.select_next(); // Move to next after toggle
-            InteractiveResult::Continue
-        }
-
-        // Cancel (Esc, Ctrl+C, Ctrl+Q)
-        KeyCode::Esc => InteractiveResult::Cancelled,
-        KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
-            InteractiveResult::Cancelled
-        }
-        KeyCode::Char('q') if key.modifiers == KeyModifiers::CONTROL => {
-            InteractiveResult::Cancelled
-        }
-
-        // Search input (when searchable)
-        KeyCode::Char(c) if state.searchable && key.modifiers.is_empty() => {
-            // Check for shortcuts first
-            if !state.search_query.is_empty() || !is_shortcut(state, c) {
-                state.push_search_char(c);
-            } else if let Some(result) = try_shortcut(state, c) {
-                return result;
-            }
-            InteractiveResult::Continue
-        }
-
-        // Shortcuts (when not searching)
-        KeyCode::Char(c) if !state.searchable && key.modifiers.is_empty() => {
-            handle_non_search_char(state, c)
-        }
-
-        // Backspace (search)
-        KeyCode::Backspace if state.searchable && !state.search_query.is_empty() => {
-            state.pop_search_char();
-            InteractiveResult::Continue
-        }
-
-        // Clear search
-        KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL && state.searchable => {
-            state.update_search("");
-            InteractiveResult::Continue
-        }
-
-        _ => InteractiveResult::Continue,
+fn handle_interactive_enter(state: &mut InteractiveState) -> InteractiveResult {
+    if state.effort.is_some() && !state.effort_focused {
+        state.effort_focused = true;
+        return InteractiveResult::Continue;
+    }
+    let Some(item) = state.selected_item() else {
+        return InteractiveResult::Continue;
+    };
+    if item.disabled {
+        return InteractiveResult::Continue;
+    }
+    if state.multi_select && !state.checked.is_empty() {
+        let item_ids: Vec<String> = state.checked_items().iter().map(|i| i.id.clone()).collect();
+        return InteractiveResult::Selected {
+            action: state.action.clone(),
+            item_id: item_ids.first().cloned().unwrap_or_default(),
+            item_ids,
+        };
+    }
+    InteractiveResult::Selected {
+        action: state.action.clone(),
+        item_id: item.id.clone(),
+        item_ids: vec![item.id.clone()],
     }
 }
 
@@ -239,10 +234,55 @@ fn handle_non_search_char(state: &mut InteractiveState, c: char) -> InteractiveR
     if let Some(result) = try_jobs_picker_key(state, c) {
         return result;
     }
+    if let Some(result) = try_mcp_picker_key(state, c) {
+        return result;
+    }
     if let Some(result) = try_shortcut(state, c) {
         return result;
     }
     InteractiveResult::Continue
+}
+
+fn try_mcp_picker_key(state: &InteractiveState, c: char) -> Option<InteractiveResult> {
+    if !matches!(state.action, InteractiveAction::McpServerAction) {
+        return None;
+    }
+    let item_id = match c {
+        'a' => "__add__".to_string(),
+        'r' => {
+            let item = state.selected_item()?;
+            if item.disabled || item.id.starts_with("__") {
+                return None;
+            }
+            format!("__reconnect__:{}", item.id)
+        }
+        _ => return None,
+    };
+    Some(InteractiveResult::Selected {
+        action: state.action.clone(),
+        item_id: item_id.clone(),
+        item_ids: vec![item_id],
+    })
+}
+
+fn try_resume_picker_key(state: &InteractiveState, c: char) -> Option<InteractiveResult> {
+    if !matches!(state.action, InteractiveAction::ResumeSession) {
+        return None;
+    }
+    let item = state.selected_item()?;
+    if item.disabled || item.id.starts_with("__") {
+        return None;
+    }
+    let action_id = match c {
+        'f' => "resume-favorite",
+        'd' => "resume-delete",
+        _ => return None,
+    };
+    Some(InteractiveResult::Selected {
+        action: InteractiveAction::Custom(action_id.into()),
+        item_id: item.id.clone(),
+        item_ids: vec![item.id.clone()],
+    })
 }
 
 fn try_jobs_picker_key(state: &mut InteractiveState, c: char) -> Option<InteractiveResult> {
@@ -291,20 +331,6 @@ fn try_permission_prompt_edit(state: &mut InteractiveState, c: char) -> Option<I
 
 /// Try to select an item by its shortcut.
 fn try_shortcut(state: &mut InteractiveState, c: char) -> Option<InteractiveResult> {
-    // Special handling for Resume Picker: 'f' = Fork current selection
-    if c == 'f'
-        && matches!(state.action, InteractiveAction::ResumeSession)
-        && let Some(item) = state.selected_item()
-        && !item.disabled
-        && !item.id.starts_with("__")
-    {
-        return Some(InteractiveResult::Selected {
-            action: InteractiveAction::ForkSession,
-            item_id: item.id.clone(),
-            item_ids: vec![item.id.clone()],
-        });
-    }
-
     for (idx, item) in state.items.iter().enumerate() {
         if item.shortcut == Some(c) && !item.disabled {
             // Find the filtered index
@@ -451,6 +477,24 @@ mod tests {
     }
 
     #[test]
+    fn enter_on_model_list_opens_effort_then_applies() {
+        let items = vec![InteractiveItem::new("mini", "Cortex Mini 1")];
+        let mut state = InteractiveState::new("Model", items, InteractiveAction::SetModel)
+            .with_effort(crate::interactive::EffortLevel::Medium);
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let first = handle_interactive_key(&mut state, enter);
+        assert!(matches!(first, InteractiveResult::Continue));
+        assert!(state.effort_focused);
+        state.effort_down();
+        let apply = handle_interactive_key(&mut state, enter);
+        assert!(matches!(
+            apply,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "mini"
+        ));
+        assert_eq!(state.effort, Some(crate::interactive::EffortLevel::Low));
+    }
+
+    #[test]
     fn tab_is_a_no_op_without_effort_radios() {
         let mut state = create_test_state();
         let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
@@ -483,6 +527,67 @@ mod tests {
         assert!(matches!(
             stop,
             InteractiveResult::Selected { ref item_id, .. } if item_id == "stop:sess-1"
+        ));
+    }
+
+    #[test]
+    fn mcp_a_adds_and_r_reconnects_selected() {
+        let servers = vec![crate::modal::mcp_manager::McpServerInfo {
+            name: "sentry".into(),
+            status: crate::modal::mcp_manager::McpStatus::Error,
+            tool_count: 0,
+            error: Some("token expired".into()),
+            requires_auth: true,
+        }];
+        let mut state = crate::interactive::builders::build_mcp_selector(&servers);
+        let add = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            add,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "__add__"
+        ));
+        let reconnect = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            reconnect,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "__reconnect__:sentry"
+        ));
+    }
+
+    #[test]
+    fn resume_f_favorites_and_d_deletes() {
+        let sessions = vec![crate::session::SessionSummary {
+            id: "sess-1".into(),
+            title: "fix login redirect".into(),
+            model: "cortex/fix-login-redirect".into(),
+            provider: "cortex".into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            message_count: 14,
+            archived: false,
+        }];
+        let mut state = crate::interactive::builders::build_resume_picker(&sessions, false);
+        let fav = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            fav,
+            InteractiveResult::Selected { ref item_id, ref action, .. }
+                if item_id == "sess-1" && matches!(action, InteractiveAction::Custom(id) if id == "resume-favorite")
+        ));
+        let del = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            del,
+            InteractiveResult::Selected { ref item_id, ref action, .. }
+                if item_id == "sess-1" && matches!(action, InteractiveAction::Custom(id) if id == "resume-delete")
         ));
     }
 }

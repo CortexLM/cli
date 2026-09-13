@@ -60,6 +60,33 @@ impl EventLoop {
         Ok(())
     }
 
+    pub(super) fn toggle_listed_favorite(&mut self, id: &str) -> Result<bool> {
+        let storage = self.session_storage()?;
+        let mut session = CortexSession::load_with_storage(id, storage)?;
+        let favorite = !session.meta.favorite;
+        let mut meta = session.meta.clone();
+        meta.favorite = favorite;
+        session.persist_metadata(meta)?;
+        Ok(favorite)
+    }
+
+    pub(super) fn open_resume_picker(&mut self) {
+        match self
+            .session_storage()
+            .and_then(|storage| storage.list_recent_sessions(15))
+        {
+            Ok(sessions) => {
+                self.app_state.input.set_text("/resume");
+                let interactive =
+                    crate::interactive::builders::build_resume_picker(&sessions, false);
+                self.app_state.enter_interactive_mode(interactive);
+            }
+            Err(e) => {
+                self.add_system_message(&format!("Failed to list sessions: {e}"));
+            }
+        }
+    }
+
     pub(super) fn new_local_session(&mut self) -> Result<()> {
         self.ensure_session_idle()?;
         self.flush_session_before_switch()?;

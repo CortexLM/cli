@@ -579,29 +579,14 @@ impl ProviderManager {
             .next_back()
             .unwrap_or(&self.current_model);
         match model_name {
-            n if n.contains("claude-opus-4") => "Opus 4".to_string(),
-            n if n.contains("claude-sonnet-4") => "Sonnet 4".to_string(),
-            n if n.contains("claude-3.5-sonnet") => "Sonnet 3.5".to_string(),
-            n if n.contains("claude-3.5-haiku") => "Haiku 3.5".to_string(),
-            n if n.contains("gpt-4o-mini") => "GPT-4o Mini".to_string(),
-            n if n.contains("gpt-4o") => "GPT-4o".to_string(),
-            n if n.contains("o3-mini") => "O3 Mini".to_string(),
-            n if n.contains("o3") => "O3".to_string(),
-            n if n.contains("o1-mini") => "O1 Mini".to_string(),
-            n if n.contains("o1") => "O1".to_string(),
-            n if n.contains("gemini-2.5-pro") => "Gemini 2.5".to_string(),
-            n if n.contains("gemini-2.0-flash") => "Gemini 2.0".to_string(),
-            n if n.contains("deepseek-r1") => "R1".to_string(),
-            n if n.contains("deepseek-chat") => "DeepSeek V3".to_string(),
-            n if n.contains("llama-3.3") => "Llama 3.3".to_string(),
-            n if n.contains("llama-3.1") => "Llama 3.1".to_string(),
-            _ => {
-                if model_name.len() > 15 {
-                    format!("{}...", &model_name[..12])
-                } else {
-                    model_name.to_string()
-                }
+            n if n.contains("cortex-1-mini") || n.eq_ignore_ascii_case("cortex mini 1") => {
+                "Cortex Mini 1".to_string()
             }
+            n if n.contains("cortex-1-max") || n.eq_ignore_ascii_case("cortex max 1") => {
+                "Cortex Max 1".to_string()
+            }
+            n if n == "cortex-1" || n.eq_ignore_ascii_case("cortex 1") => "Cortex 1".to_string(),
+            _ => crate::ui::text_utils::model_display_name(&self.current_model),
         }
     }
 }
@@ -629,7 +614,7 @@ mod tests {
     fn test_format_short_model() {
         let config = CortexConfig::default();
         let mut manager = ProviderManager::new(config);
-        manager.current_model = "anthropic/claude-opus-4-20250514".to_string();
-        assert_eq!(manager.format_short_model(), "Opus 4");
+        manager.current_model = "cortex/cortex-1-mini".to_string();
+        assert_eq!(manager.format_short_model(), "Cortex Mini 1");
     }
 }

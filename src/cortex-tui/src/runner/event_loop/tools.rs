@@ -35,6 +35,11 @@ impl EventLoop {
         let tool_tx = self.tool_event_tx.clone();
         let id = tool_call_id.clone();
         let name = tool_name.clone();
+        if matches!(tool_name.as_str(), "TodoWrite" | "todo_write")
+            && let Some(todos) = todo_pairs_from_write_args(&args)
+        {
+            self.handle_todo_updated(String::new(), todos);
+        }
         let mcp_manager = self.mcp_manager.clone();
         // Every caller reaches here only after the permission manager passed
         // the call or the user approved it in the modal.
@@ -232,6 +237,9 @@ impl EventLoop {
                 success,
                 duration,
             } => {
+                if success {
+                    self.apply_todo_write_output(&name, &output);
+                }
                 self.handle_tool_completed(id, name, output, success, duration)
                     .await;
             }
@@ -500,6 +508,14 @@ impl EventLoop {
         }
     }
 
+    fn apply_todo_write_output(&mut self, name: &str, output: &str) {
+        if matches!(name, "TodoWrite" | "todo_write")
+            && let Some(todos) = todo_pairs_from_write_output(output)
+        {
+            self.handle_todo_updated(String::new(), todos);
+        }
+    }
+
     /// Handle todo updated event
     fn handle_todo_updated(&mut self, session_id: String, todos: Vec<(String, String)>) {
         use crate::app::{SubagentTodoItem, SubagentTodoStatus};
@@ -510,31 +526,45 @@ impl EventLoop {
             todos.len()
         );
 
-        self.app_state.update_subagent(&session_id, |task| {
-            task.todos = todos
-                .iter()
-                .map(|(content, status)| {
-                    let status = match status.as_str() {
-                        "in_progress" => SubagentTodoStatus::InProgress,
-                        "completed" => SubagentTodoStatus::Completed,
-                        _ => SubagentTodoStatus::Pending,
-                    };
-                    SubagentTodoItem {
-                        content: content.clone(),
-                        status,
-                    }
-                })
-                .collect();
+        let items: Vec<crate::app::SubagentTodoItem> = todos
+            .iter()
+            .map(|(content, status)| {
+                let status = match status.as_str() {
+                    "in_progress" => SubagentTodoStatus::InProgress,
+                    "completed" => SubagentTodoStatus::Completed,
+                    _ => SubagentTodoStatus::Pending,
+                };
+                SubagentTodoItem {
+                    content: content.clone(),
+                    status,
+                }
+            })
+            .collect();
 
-            // Update activity based on in-progress item
-            if let Some(in_progress) = task
-                .todos
-                .iter()
-                .find(|t| matches!(t.status, SubagentTodoStatus::InProgress))
-            {
-                task.current_activity = in_progress.content.clone();
-            }
-        });
+        let matched = self
+            .app_state
+            .active_subagents
+            .iter()
+            .any(|t| t.session_id == session_id);
+        if matched {
+            self.app_state.update_subagent(&session_id, |task| {
+                task.todos = items.clone();
+                if let Some(in_progress) = task
+                    .todos
+                    .iter()
+                    .find(|t| matches!(t.status, SubagentTodoStatus::InProgress))
+                {
+                    task.current_activity = in_progress.content.clone();
+                }
+            });
+        } else {
+            let elapsed = self.app_state.streaming.prompt_elapsed_seconds().max(1) as u32;
+            self.app_state.working_checklist = Some(crate::app::WorkingChecklist::new(
+                items,
+                elapsed,
+                self.app_state.tokens_used,
+            ));
+        }
     }
 
     /// Checks for crashed background tool tasks (panics or cancelled).
@@ -665,6 +695,77 @@ where
         }
     });
     futures::future::join_all(futures).await
+}
+
+fn todo_pairs_from_write_args(args: &serde_json::Value) -> Option<Vec<(String, String)>> {
+    let todos = args.get("todos")?.as_array()?;
+    let pairs: Vec<(String, String)> = todos
+        .iter()
+        .filter_map(|item| {
+            let content = item.get("content")?.as_str()?.to_string();
+            let status = item
+                .get("status")?
+                .as_str()
+                .unwrap_or("pending")
+                .to_string();
+            Some((content, status))
+        })
+        .collect();
+    (!pairs.is_empty()).then_some(pairs)
+}
+
+fn todo_pairs_from_write_output(output: &str) -> Option<Vec<(String, String)>> {
+    let mut pairs = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        let (status, rest) = if let Some(rest) = line.strip_prefix("[x] ") {
+            ("completed", rest)
+        } else if let Some(rest) = line.strip_prefix("[~] ") {
+            ("in_progress", rest)
+        } else if let Some(rest) = line.strip_prefix("[ ] ") {
+            ("pending", rest)
+        } else {
+            continue;
+        };
+        let content = rest.split_once(": ").map(|(_, c)| c).unwrap_or(rest);
+        if !content.is_empty() {
+            pairs.push((content.to_string(), status.to_string()));
+        }
+    }
+    (!pairs.is_empty()).then_some(pairs)
+}
+
+#[cfg(test)]
+mod todo_write_live_tests {
+    use super::{todo_pairs_from_write_args, todo_pairs_from_write_output};
+
+    #[test]
+    fn todo_write_args_become_checklist_pairs() {
+        let args = serde_json::json!({
+            "todos": [
+                {"id": "1", "content": "Read composer.rs", "status": "completed"},
+                {"id": "2", "content": "Move the chip", "status": "in_progress"},
+            ]
+        });
+        let pairs = todo_pairs_from_write_args(&args).expect("pairs");
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].1, "completed");
+        assert_eq!(pairs[1].0, "Move the chip");
+    }
+
+    #[test]
+    fn todo_write_completion_output_restores_checklist() {
+        let output = "TODO List Updated\n\n[x] !! 1: Read composer.rs\n[~] !! 2: Move the chip\n[ ] ! 3: Run tests\n";
+        let pairs = todo_pairs_from_write_output(output).expect("pairs");
+        assert_eq!(
+            pairs,
+            vec![
+                ("Read composer.rs".into(), "completed".into()),
+                ("Move the chip".into(), "in_progress".into()),
+                ("Run tests".into(), "pending".into()),
+            ]
+        );
+    }
 }
 
 #[cfg(test)]

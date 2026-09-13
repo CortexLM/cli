@@ -50,18 +50,25 @@ pub fn build_approval_selector(current: Option<&str>) -> InteractiveState {
 /// `/permissions` picker — lock `permissions-picker` copy (SPEC §3.9 radios).
 pub fn build_permissions_picker(current: Option<&str>) -> InteractiveState {
     let current = current.unwrap_or("smart").to_ascii_lowercase();
+    let is_smart = current == "smart" || current == "medium";
+    let is_ro = current == "ro" || current == "ask";
+    let is_full = current == "full" || current == "auto" || current == "yolo";
     let items = vec![
+        InteractiveItem::new("smart", "Smart")
+            .with_description(if is_smart {
+                "auto-approve safe reads · ask before edits · current"
+            } else {
+                "auto-approve safe reads · ask before edits"
+            })
+            .with_current(is_smart)
+            .with_shortcut('1'),
         InteractiveItem::new("ro", "Read-only")
             .with_description("never edit files or run commands")
-            .with_current(current == "ro" || current == "ask")
-            .with_shortcut('1'),
-        InteractiveItem::new("smart", "Smart")
-            .with_description("ask before leaving the sandbox")
-            .with_current(current == "smart" || current == "medium")
+            .with_current(is_ro)
             .with_shortcut('2'),
         InteractiveItem::new("full", "Full access")
             .with_description("only ask when leaving the sandbox")
-            .with_current(current == "full" || current == "auto" || current == "yolo")
+            .with_current(is_full)
             .with_shortcut('3'),
     ];
     InteractiveState::new(
@@ -69,6 +76,7 @@ pub fn build_permissions_picker(current: Option<&str>) -> InteractiveState {
         items,
         InteractiveAction::Custom("permissions-picker".into()),
     )
+    .with_banner("Permissions · how Cortex asks before acting")
 }
 
 /// Command string shown on the gray `$` row and used for “always allow …”.
@@ -143,21 +151,22 @@ pub fn build_permission_prompt(approval: &ApprovalState) -> InteractiveState {
     .with_prompt_focus()
 }
 
-/// Sandbox deny radios (lock `sandbox-deny`).
+/// Sandbox deny radios (lock `sandbox-deny`). Aligns with permission radios;
+/// does not change the exec permission-prompt (COR-8).
 pub fn build_sandbox_deny_prompt() -> InteractiveState {
     let items = vec![
-        InteractiveItem::new("retry", "1 Retry inside the sandbox")
-            .with_description("stay in workspace")
+        InteractiveItem::new("keep", "1 Keep blocked")
+            .with_description("stay blocked")
             .with_shortcut('1'),
-        InteractiveItem::new("allow", "2 Allow this domain")
-            .with_description("ask next time")
+        InteractiveItem::new("once", "2 Allow once")
+            .with_description("this command only")
             .with_shortcut('2'),
-        InteractiveItem::new("cancel", "3 Cancel")
-            .with_description("do not run")
+        InteractiveItem::new("session", "3 Allow for this session")
+            .with_description("remember until Cortex exits")
             .with_shortcut('3'),
     ];
     InteractiveState::new(
-        "Sandbox blocked",
+        "Sandbox denied",
         items,
         InteractiveAction::Custom("sandbox-deny".into()),
     )
@@ -194,10 +203,10 @@ pub fn build_question_prompt(
 /// Plan-mode confirm (lock `plan-confirm`).
 pub fn build_plan_confirm() -> InteractiveState {
     let items = vec![
-        InteractiveItem::new("yes", "1 Yes, implement")
+        InteractiveItem::new("yes", "1 Yes, switch to Agent mode and implement")
             .with_description("switch to Agent and execute")
             .with_shortcut('1'),
-        InteractiveItem::new("no", "2 Not yet")
+        InteractiveItem::new("no", "2 No, keep planning — tell Cortex what to change")
             .with_description("stay in Plan")
             .with_shortcut('2'),
     ];
@@ -206,25 +215,27 @@ pub fn build_plan_confirm() -> InteractiveState {
         items,
         InteractiveAction::Custom("plan-confirm".into()),
     )
+    .with_banner("Implement this plan?")
     .with_prompt_focus()
 }
 
-/// `/clear` confirm (lock `clear-confirm`).
+/// `/clear` confirm (lock `clear-confirm`). Composer keeps `/clear`.
 pub fn build_clear_confirm() -> InteractiveState {
     let items = vec![
-        InteractiveItem::new("yes", "1 Clear")
-            .with_description("wipe this thread, keep the workspace")
+        InteractiveItem::new("yes", "1 Yes, clear")
+            .with_description("drop the transcript")
             .with_shortcut('1'),
-        InteractiveItem::new("no", "2 Keep")
+        InteractiveItem::new("no", "2 No, keep it")
             .with_description("leave messages in place")
             .with_shortcut('2'),
     ];
     InteractiveState::new(
-        "Clear conversation?",
+        "Clear this conversation?",
         items,
         InteractiveAction::Custom("clear-confirm".into()),
     )
-    .with_prompt_focus()
+    .with_banner("Clear this conversation?")
+    .with_banner_sub("The transcript is dropped. Git, files and config stay as they are.")
 }
 
 /// `/handoff` confirm (lock `handoff-confirm`). Chat · Code · Bot; CLI stays.
@@ -337,15 +348,29 @@ mod tests {
     #[test]
     fn permissions_picker_marks_smart() {
         let state = build_permissions_picker(Some("smart"));
-        assert!(state.items[1].is_current);
+        assert_eq!(state.items[0].id, "smart");
+        assert!(state.items[0].is_current);
+        assert!(
+            state.items[0]
+                .description
+                .as_deref()
+                .unwrap_or("")
+                .contains("current")
+        );
         assert!(!state.prompt_owns_focus);
+        assert_eq!(
+            state.banner.as_deref(),
+            Some("Permissions · how Cortex asks before acting")
+        );
     }
 
     #[test]
     fn related_prompts_own_composer() {
         assert!(build_sandbox_deny_prompt().prompt_owns_focus);
+        assert_eq!(build_sandbox_deny_prompt().items[0].label, "1 Keep blocked");
         assert!(build_plan_confirm().prompt_owns_focus);
-        assert!(build_clear_confirm().prompt_owns_focus);
+        assert!(!build_clear_confirm().prompt_owns_focus);
+        assert_eq!(build_clear_confirm().items[0].label, "1 Yes, clear");
         let handoff = build_handoff_confirm(false);
         assert!(handoff.prompt_owns_focus);
         assert_eq!(handoff.title, "Handoff");

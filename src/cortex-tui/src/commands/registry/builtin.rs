@@ -58,6 +58,15 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     ));
 
     registry.register(CommandDef::new(
+        "shortcuts",
+        &["keys"],
+        "Open the shortcuts sheet",
+        "/shortcuts",
+        CommandCategory::General,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
         "mode",
         &[],
         "Switch between Agent, Plan and Ask",

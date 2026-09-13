@@ -311,6 +311,19 @@ fn test_goal_commands() {
 }
 
 #[test]
+fn test_shortcuts_command() {
+    let executor = CommandExecutor::new();
+    assert!(matches!(
+        executor.execute_str("/shortcuts"),
+        CommandResult::Toggle(ref s) if s == "shortcuts"
+    ));
+    assert!(matches!(
+        executor.execute_str("/keys"),
+        CommandResult::Toggle(ref s) if s == "shortcuts"
+    ));
+}
+
+#[test]
 fn test_add_command() {
     let executor = CommandExecutor::new();
 
@@ -570,13 +583,9 @@ fn effort_opens_model_picker_not_a_star_picker() {
     let executor = CommandExecutor::new();
     let result = executor.execute_str("/effort");
     assert!(
-        matches!(result, CommandResult::OpenModal(ModalType::ModelPicker)),
-        "expected /effort to open /model radios, got {result:?}"
+        matches!(result, CommandResult::OpenModal(ModalType::Effort)),
+        "expected /effort to open /model effort radios, got {result:?}"
     );
-    assert!(!matches!(
-        result,
-        CommandResult::OpenModal(ModalType::Effort)
-    ));
 }
 
 #[test]

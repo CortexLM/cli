@@ -254,9 +254,19 @@ impl Goal {
         )
     }
 
-    /// Pause / resume / set acknowledgement that repeats the chip.
+    /// Pause / resume / set acknowledgement that repeats the chip and next step.
     pub fn action_text(&self, action: &str) -> String {
-        format!("{action} {}", self.chip())
+        format!("{action} {}\n  next: {}", self.chip(), self.next_step())
+    }
+
+    /// Compact TUI card for `/goal` and `/goal status`.
+    pub fn status_card(&self) -> String {
+        format!(
+            "{}\n  {}\n  next: {}\n  /goal pause · /goal resume · /goal clear",
+            self.chip(),
+            self.objective,
+            self.next_step()
+        )
     }
 
     pub fn turns_remaining(&self) -> u32 {
@@ -325,6 +335,18 @@ mod tests {
         assert!(text.starts_with("Goal · 7/8"), "{text}");
         assert!(text.contains("wrap-up"), "{text}");
         assert!(text.contains("write out.txt"), "{text}");
+        let card = goal.status_card();
+        assert!(card.contains("Goal · 7/8"), "{card}");
+        assert!(card.contains("/goal pause"), "{card}");
+        assert!(card.contains("/goal resume"), "{card}");
+        assert!(card.contains("/goal clear"), "{card}");
+        let paused = {
+            let mut g = goal.clone();
+            g.state = GoalState::Paused;
+            g.action_text("Goal paused.")
+        };
+        assert!(paused.contains("Goal · paused"), "{paused}");
+        assert!(paused.contains("next:"), "{paused}");
     }
 
     #[test]

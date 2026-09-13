@@ -32,6 +32,7 @@ impl EventLoop {
             }
 
             CommandResult::Clear => {
+                self.app_state.input.set_text("/clear");
                 self.app_state
                     .enter_interactive_mode(crate::interactive::builders::build_clear_confirm());
             }
@@ -98,8 +99,11 @@ impl EventLoop {
             }
             "compact" => {
                 self.app_state.toggle_compact();
+                if self.app_state.compact_mode {
+                    self.app_state.timestamps_enabled = false;
+                }
                 let state = if self.app_state.compact_mode {
-                    "on"
+                    "on — edge-to-edge bars, no timestamps"
                 } else {
                     "off"
                 };
@@ -137,6 +141,9 @@ impl EventLoop {
                     .toasts
                     .info(format!("Sandbox mode: {}", state));
             }
+            "shortcuts" => {
+                self.app_state.toggle_shortcuts_sheet();
+            }
             "auto" => {
                 let is_yolo = matches!(
                     self.app_state.permission_mode,
@@ -169,7 +176,8 @@ impl EventLoop {
             ModalType::Settings => {
                 self.app_state.open_settings_modal();
             }
-            ModalType::ModelPicker | ModalType::Effort => {
+            kind @ (ModalType::ModelPicker | ModalType::Effort) => {
+                let focus_effort = matches!(kind, ModalType::Effort);
                 let (models, current_model) = if let Some(ref pm) = self.provider_manager {
                     if let Ok(manager) = pm.try_read() {
                         let models = manager.available_models();
@@ -197,11 +205,14 @@ impl EventLoop {
                     );
                 }
 
-                let interactive = crate::interactive::builders::build_model_selector(
+                let mut interactive = crate::interactive::builders::build_model_selector(
                     models,
                     current_model.as_deref(),
                     self.app_state.thinking_budget.as_deref(),
                 );
+                if focus_effort {
+                    interactive.effort_focused = true;
+                }
                 self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::CommandPalette => {
@@ -213,6 +224,7 @@ impl EventLoop {
             }
             ModalType::McpManager => {
                 use crate::interactive::builders::build_mcp_selector;
+                self.app_state.input.set_text("/mcp");
                 let servers = self.app_state.mcp_servers.clone();
                 let interactive = build_mcp_selector(&servers);
                 self.app_state.enter_interactive_mode(interactive);
@@ -264,6 +276,7 @@ impl EventLoop {
                 };
                 let interactive =
                     crate::interactive::builders::build_permissions_picker(Some(current));
+                self.app_state.input.set_text("/permissions");
                 self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::LogLevelPicker => {
@@ -799,7 +812,7 @@ impl EventLoop {
                 match command {
                     GoalCommand::Status => {
                         if let Some(goal) = &self.app_state.goal {
-                            self.add_system_message(&goal.status_text());
+                            self.add_system_message(&goal.status_card());
                         } else {
                             self.add_system_message("No goal. Set one with /goal <objective>.");
                         }
@@ -813,13 +826,13 @@ impl EventLoop {
                     }
                     GoalCommand::Resume => {
                         if let Some(goal) = &self.app_state.goal {
-                            self.add_system_message(
-                                &goal.action_text(&format!("Goal is {}.", goal.state)),
-                            );
+                            self.add_system_message(&goal.action_text("Goal resumed."));
                         }
                     }
                     GoalCommand::Clear => {
-                        self.add_system_message("Goal cleared.");
+                        self.add_system_message(
+                            "Goal cleared. Set a new one with /goal <objective>.",
+                        );
                     }
                     GoalCommand::Set { objective } => {
                         if let Some(goal) = &self.app_state.goal {

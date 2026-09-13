@@ -288,6 +288,12 @@ mod tests {
         let low = frame.plain.find("Low Effort").expect("low");
         assert!(high < med && med < low, "{}", frame.plain);
         assert!(frame.plain.contains("Tab"), "{}", frame.plain);
+        assert!(frame.plain.contains("Deepest reasoning"), "{}", frame.plain);
+        assert!(
+            frame.plain.contains("Cortex Mini 1 (medium)"),
+            "{}",
+            frame.plain
+        );
     }
 
     #[test]

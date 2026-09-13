@@ -307,11 +307,48 @@ pub fn stop(state: &mut VerifyState, args: &Value) -> Result<Value> {
 }
 
 fn apply_key(session: &mut TuiSession, name: &str) -> Result<()> {
+    if name.eq_ignore_ascii_case("Ctrl+x") {
+        session.app_state.toggle_shortcuts_sheet();
+        return Ok(());
+    }
+    if session.app_state.shortcuts_open {
+        if name.eq_ignore_ascii_case("Esc") || name.eq_ignore_ascii_case("F2") {
+            session.app_state.close_shortcuts_sheet();
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("Down") {
+            session.app_state.shortcuts_move(1);
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("Up") {
+            session.app_state.shortcuts_move(-1);
+            return Ok(());
+        }
+    }
+    if session.app_state.autocomplete.visible {
+        if name.eq_ignore_ascii_case("Down") {
+            session.app_state.autocomplete.select_next();
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("Up") {
+            session.app_state.autocomplete.select_prev();
+            return Ok(());
+        }
+    }
     let event = parse_key_string(name).ok_or_else(|| anyhow::anyhow!("unknown key {name}"))?;
     let action = session.mapper.get_action(event, ActionContext::Input);
     match action {
         KeyAction::Clear => session.app_state.input.set_text(""),
         KeyAction::NewLine => session.app_state.input.insert_str("\n"),
+        KeyAction::CyclePermissionMode => session.app_state.cycle_agent_mode(),
+        KeyAction::ToggleSettings => session.app_state.open_settings_modal(),
+        KeyAction::Cancel => {
+            if session.app_state.streaming.is_streaming {
+                session.app_state.stop_streaming();
+            } else if session.app_state.is_interactive_mode() {
+                session.app_state.exit_interactive_mode();
+            }
+        }
         _ if name.eq_ignore_ascii_case("Backspace") => {
             let text = session.app_state.input.text();
             let mut chars: Vec<char> = text.chars().collect();
@@ -428,6 +465,63 @@ mod tests {
         let stopped = stop(&mut state, &json!({"session_id": id})).expect("stop");
         assert_eq!(stopped["stopped"], true);
         assert!(state.sessions.is_empty());
+    }
+
+    #[test]
+    fn keyboard_map_ctrl_x_shift_tab_palette_and_cancel() {
+        let (mut state, id) = started("cortex");
+        key(&mut state, &json!({"session_id": id, "keys": ["Ctrl+x"]})).expect("open sheet");
+        assert!(session_ref(&state, &id).unwrap().app_state.shortcuts_open);
+        key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["Down", "Up", "F2"]}),
+        )
+        .expect("sheet nav");
+        assert!(!session_ref(&state, &id).unwrap().app_state.shortcuts_open);
+
+        key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["Ctrl+x", "Esc"]}),
+        )
+        .expect("esc sheet");
+        assert!(!session_ref(&state, &id).unwrap().app_state.shortcuts_open);
+
+        slash(&mut state, &json!({"session_id": id, "query": "/"})).expect("slash");
+        assert!(
+            session_ref(&state, &id)
+                .unwrap()
+                .app_state
+                .autocomplete
+                .visible
+        );
+        key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["Down", "Up"]}),
+        )
+        .expect("palette");
+
+        key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["Shift+Tab", "F2"]}),
+        )
+        .expect("mode and settings");
+        assert!(
+            session_ref(&state, &id)
+                .unwrap()
+                .app_state
+                .settings_modal
+                .is_some()
+        );
+
+        let session = session_mut(&mut state, &id).unwrap();
+        session.app_state.start_streaming(None, true);
+        apply_key(session, "Esc").expect("interrupt");
+        assert!(!session.app_state.streaming.is_streaming);
+
+        let picker = cortex_tui::interactive::builders::build_clear_confirm();
+        session.app_state.enter_interactive_mode(picker);
+        apply_key(session, "Esc").expect("close picker");
+        assert!(!session.app_state.is_interactive_mode());
     }
 
     #[test]

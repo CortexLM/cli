@@ -428,6 +428,9 @@ pub fn model_display_name(id: &str) -> String {
 
     let slug = id.rsplit('/').next().unwrap_or(id).trim();
     if slug.is_empty() || !slug.contains('-') {
+        if contains_foreign_brand(id) || contains_foreign_brand(slug) {
+            return "Custom model".to_string();
+        }
         return slug.to_string();
     }
     let parts: Vec<&str> = slug.split('-').filter(|p| !p.is_empty()).collect();
@@ -443,11 +446,37 @@ pub fn model_display_name(id: &str) -> String {
             format!("Cortex {} {generation}", variants.join(" "))
         };
     }
-    parts
+    let pretty = parts
         .iter()
         .map(|p| capitalize(p))
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" ");
+    if contains_foreign_brand(id) || contains_foreign_brand(&pretty) {
+        "Custom model".to_string()
+    } else {
+        pretty
+    }
+}
+
+/// True when copy names a third-party catalog we do not show in Cortex chrome.
+pub fn contains_foreign_brand(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    [
+        "anthropic",
+        "openai",
+        "claude",
+        "gpt-4",
+        "gpt-3",
+        "gpt4",
+        "gemini",
+        "llama",
+        "mistral",
+        "deepseek",
+        "sonnet",
+        "haiku",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
 }
 
 #[cfg(test)]
@@ -822,5 +851,9 @@ mod tests {
         // No hyphenated slug ever reaches the screen.
         assert_eq!(model_display_name("some-other-model"), "Some Other Model");
         assert!(!model_display_name("cortex-1-mini").contains('-'));
+        assert_eq!(
+            model_display_name("anthropic/claude-opus-4"),
+            "Custom model"
+        );
     }
 }

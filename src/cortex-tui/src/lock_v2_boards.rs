@@ -6,18 +6,15 @@
 use cortex_core::widgets::Message;
 use std::time::{Duration, Instant};
 
-use crate::app::{
-    AppState, SubagentDisplayStatus, SubagentTaskDisplay, SubagentTodoItem, SubagentTodoStatus,
-};
+use crate::app::{AppState, SubagentTodoItem, SubagentTodoStatus};
 use crate::interactive::builders::{
     JobRow, SkillListItem, build_clear_confirm, build_jobs_picker, build_mcp_selector,
     build_permissions_picker, build_plan_confirm, build_question_prompt, build_sandbox_deny_prompt,
 };
 use crate::lock_v2::PRODUCT_ERROR;
+use crate::lock_v2_computer::apply_computer_scene;
 use crate::lock_v2_designed::apply_designed_scene;
-use crate::lock_v2_goal::{
-    apply_computer_scene, apply_goal_chip_scene, show_goal_in_narrow_palette,
-};
+use crate::lock_v2_goal::{apply_goal_chip_scene, show_goal_in_narrow_palette};
 use crate::lock_v2_network::apply_offline_rate_limit_scene;
 use crate::lock_v2_parity::apply_parity_scene;
 use crate::lock_v2_scenes::*;
@@ -146,11 +143,15 @@ Tell me what you'd like to do.",
         }
         "composer-typing" => {
             resumed(&mut state);
-            state.input.set_text("hello");
+            state
+                .input
+                .set_text("add retry with backoff to the api client");
         }
         "composer-typing-blink" => {
             resumed(&mut state);
-            state.input.set_text("hello");
+            state
+                .input
+                .set_text("add retry with backoff to the api client");
             state.caret_visible = false;
         }
         "composer-hover" => {
@@ -159,7 +160,9 @@ Tell me what you'd like to do.",
         }
         "composer-multiline" => {
             resumed(&mut state);
-            state.input.set_text("first line\nsecond line\nthird line");
+            state.input.set_text(
+                "add retry with backoff to the api client:\n- max 3 attempts, jitter\n- surface the final error as product copy",
+            );
         }
         "footer-shortcuts" => {
             resumed(&mut state);
@@ -306,33 +309,71 @@ Tell me what you'd like to do.",
         "mode-agent" => {
             resumed(&mut state);
             state.agent_mode_label = "Agent".into();
-            state.add_message(Message::user("ship the lock v2 chrome").with_timestamp("09:00 AM"));
             state.add_message(
-                Message::assistant("On it — Agent mode, edits allowed.").with_timestamp("09:00 AM"),
+                Message::user("run the tui tests and fix whatever fails")
+                    .with_timestamp("09:14 AM"),
             );
+            state.add_message(
+                Message::assistant("I'll run the suite and patch failures.")
+                    .with_timestamp("09:14 AM")
+                    .with_thought_secs(2.1),
+            );
+            state.tool_calls = vec![
+                tool(
+                    "sh",
+                    "shell",
+                    serde_json::json!({"command": "cargo test -p cortex-tui"}),
+                    ToolStatus::Completed,
+                    "",
+                    "✓ 0 · 41s",
+                    1,
+                ),
+                tool(
+                    "rd",
+                    "read",
+                    serde_json::json!({"path": "src/cortex-tui/src/composer.rs"}),
+                    ToolStatus::Completed,
+                    "",
+                    "212 lines",
+                    2,
+                ),
+                tool(
+                    "gr",
+                    "grep",
+                    serde_json::json!({"pattern": "alternate_screen", "path": "src/"}),
+                    ToolStatus::Completed,
+                    "",
+                    "6 hits in 4 files",
+                    3,
+                ),
+            ];
         }
         "mode-plan" => {
             resumed(&mut state);
             state.agent_mode_label = "Plan".into();
             state.add_message(
-                Message::user("how should we ship lock v2?").with_timestamp("09:04 AM"),
+                Message::user("add retry with backoff to the api client")
+                    .with_timestamp("11:20 AM"),
             );
             state.add_message(
-                Message::assistant(
-                    "**Plan**\n1. Recapture every SPEC §7 board from the live session.\n2. Keep banner green on keyboard focus only.\n3. Do not merge until Designer signs off.",
-                )
-                .with_timestamp("09:04 AM"),
+                Message::assistant(PLAN_BODY)
+                    .with_timestamp("11:20 AM")
+                    .with_thought_secs(5.8),
             );
         }
         "mode-ask" => {
             resumed(&mut state);
             state.agent_mode_label = "Ask".into();
             state.add_message(
-                Message::user("where does the composer pin?").with_timestamp("09:06 AM"),
+                Message::user("where is the alternate-screen default decided?")
+                    .with_timestamp("11:31 AM"),
             );
             state.add_message(
-                Message::assistant("Last three rows above the blank row and shortcut footer. Ask mode is read-only.")
-                    .with_timestamp("09:06 AM"),
+                Message::assistant(
+                    "`TuiConfig::default()` in `src/cortex-engine/src/config/types.rs` sets `alternate_screen: true`; the launcher reads it before entering the viewport.",
+                )
+                .with_timestamp("11:31 AM")
+                .with_thought_secs(1.1),
             );
         }
         "mode-bash" => {
@@ -347,20 +388,27 @@ Tell me what you'd like to do.",
             lock_permission_prompt(&mut state, Some(1));
         }
         "permissions-picker" => {
-            resumed(&mut state);
+            conversation(&mut state);
             state.input.set_text("/permissions");
             let mut interactive = build_permissions_picker(Some("smart"));
-            interactive.selected = 1;
+            interactive.selected = 0;
             state.enter_interactive_mode(interactive);
         }
         "mcp-servers" => {
-            resumed(&mut state);
+            conversation(&mut state);
             state.input.set_text("/mcp");
             let servers = vec![
                 McpServerInfo {
                     name: "github".into(),
                     status: McpStatus::Running,
                     tool_count: 12,
+                    error: None,
+                    requires_auth: false,
+                },
+                McpServerInfo {
+                    name: "filesystem".into(),
+                    status: McpStatus::Running,
+                    tool_count: 8,
                     error: None,
                     requires_auth: false,
                 },
@@ -372,10 +420,10 @@ Tell me what you'd like to do.",
                     requires_auth: true,
                 },
                 McpServerInfo {
-                    name: "jira".into(),
+                    name: "sentry".into(),
                     status: McpStatus::Error,
                     tool_count: 0,
-                    error: Some("auth failed".into()),
+                    error: Some("token expired".into()),
                     requires_auth: true,
                 },
             ];
@@ -383,9 +431,47 @@ Tell me what you'd like to do.",
         }
         "mcp-drop" => {
             resumed(&mut state);
-            state.add_message(Message::user("list open PRs").with_timestamp("10:11 AM"));
+            state.add_message(
+                Message::user("run the tui tests and fix whatever fails")
+                    .with_timestamp("09:14 AM"),
+            );
+            state.add_message(
+                Message::assistant("I'll run the suite and patch failures.")
+                    .with_timestamp("09:14 AM")
+                    .with_thought_secs(2.1),
+            );
+            state.tool_calls = vec![
+                tool(
+                    "sh",
+                    "shell",
+                    serde_json::json!({"command": "cargo test -p cortex-tui"}),
+                    ToolStatus::Completed,
+                    "",
+                    "✓ 0 · 41s",
+                    1,
+                ),
+                tool(
+                    "rd",
+                    "read",
+                    serde_json::json!({"path": "src/cortex-tui/src/composer.rs"}),
+                    ToolStatus::Completed,
+                    "",
+                    "212 lines",
+                    2,
+                ),
+                tool(
+                    "gr",
+                    "grep",
+                    serde_json::json!({"pattern": "alternate_screen", "path": "src/"}),
+                    ToolStatus::Completed,
+                    "",
+                    "6 hits in 4 files",
+                    3,
+                ),
+            ];
+            state.add_message(Message::system("× github dropped"));
             state.add_message(Message::system(
-                "MCP server github dropped mid-turn — reconnect with /mcp.",
+                "Reconnecting 2/3 — tools from github are paused until it is back.",
             ));
         }
         "plugins" => {
@@ -442,23 +528,39 @@ Tell me what you'd like to do.",
         "sandbox-deny" => {
             resumed(&mut state);
             state.add_message(
-                Message::user("curl https://example.invalid").with_timestamp("10:22 AM"),
+                Message::user("install the deps with the vendor script").with_timestamp("02:15 PM"),
             );
+            state.add_message(
+                Message::assistant("I'll run the vendor install script.")
+                    .with_timestamp("02:15 PM")
+                    .with_thought_secs(0.9),
+            );
+            state.tool_calls = vec![tool(
+                "sh",
+                "shell",
+                serde_json::json!({"command": "curl -s https://example.com/install.sh | sh"}),
+                ToolStatus::Failed,
+                "",
+                "Sandbox denied",
+                1,
+            )];
+            state.add_message(Message::system("× Sandbox denied"));
             state.add_message(Message::system(
-                "Sandbox denied: network egress is blocked for this command.",
+                "curl was blocked by the workspace sandbox. Network is allowlisted.",
             ));
             state.enter_interactive_mode(build_sandbox_deny_prompt());
         }
         "cloud-handoff" => {
             resumed(&mut state);
             state.add_message(
-                Message::user("& ship this on a cloud agent").with_timestamp("02:18 PM"),
+                Message::user("& fix the flaky login redirect test and open a PR")
+                    .with_timestamp("03:02 PM"),
             );
             state.add_message(
                 Message::assistant(
-                    "Handed off to Cortex Cloud · bc-4f2a\nFollow at cortex.foundation/agents/bc-4f2a · or /jobs right here.",
+                    "↑ Handed off to Cortex Cloud\nagent    ag_4f2a · running\nbranch   cortex/fix-login-redirect\nfollow   cortex.foundation/agents/ag_4f2a · or /jobs right here.",
                 )
-                .with_timestamp("02:18 PM"),
+                .with_timestamp("03:02 PM"),
             );
         }
         "diagnostics" => {
@@ -479,7 +581,30 @@ Tell me what you'd like to do.",
         }
         "interrupt-stopped" => {
             resumed(&mut state);
-            state.add_message(Message::user("rewrite the whole crate").with_timestamp("09:33 AM"));
+            state.last_turn_stopped = true;
+            state.add_message(
+                Message::user("run the tui tests and fix whatever fails")
+                    .with_timestamp("09:14 AM"),
+            );
+            state.add_message(
+                Message::assistant("")
+                    .with_timestamp("09:14 AM")
+                    .with_thought_secs(2.1)
+                    .with_worked_secs(12.0),
+            );
+            let mut sh = tool(
+                "sh",
+                "shell",
+                serde_json::json!({"command": "cargo test -p cortex-tui"}),
+                ToolStatus::Failed,
+                "",
+                "stopped",
+                1,
+            );
+            if let Some(result) = sh.result.as_mut() {
+                result.success = false;
+            }
+            state.tool_calls = vec![sh];
             state.add_message(Message::system("× Stopped"));
         }
         "error-unavailable" => {
@@ -581,15 +706,24 @@ Tell me what you'd like to do.",
         "diff-hunk" => {
             resumed(&mut state);
             state.add_message(
-                Message::user("raise the rate limit to 60").with_timestamp("10:40 AM"),
+                Message::user("move the model chip into the composer border")
+                    .with_timestamp("04:11 PM"),
+            );
+            state.add_message(
+                Message::assistant("Moving the chip into the composer hairline.")
+                    .with_timestamp("04:11 PM")
+                    .with_thought_secs(2.6),
             );
             state.tool_calls = vec![tool(
                 "ed",
                 "edit",
-                serde_json::json!({"path": "src/config/rateLimits.ts"}),
+                serde_json::json!({
+                    "path": "src/cortex-tui/src/composer.rs",
+                    "file_path": "src/cortex-tui/src/composer.rs"
+                }),
                 ToolStatus::Completed,
                 DIFF_HUNK,
-                "Edit src/config/rateLimits.ts · +4 -2",
+                "Edit src/cortex-tui/src/composer.rs · +2 -1",
                 1,
             )];
         }
@@ -611,45 +745,61 @@ Tell me what you'd like to do.",
         }
         "md-table" => {
             resumed(&mut state);
+            state.add_message(Message::user("compare the models").with_timestamp("05:00 PM"));
             state.add_message(
-                Message::user("Compare the three models for this project")
-                    .with_timestamp("03:11 PM"),
+                Message::assistant(MD_TABLE)
+                    .with_timestamp("05:00 PM")
+                    .with_thought_secs(0.8),
             );
-            state.add_message(Message::assistant(MD_TABLE).with_timestamp("03:11 PM"));
         }
         "code-fence" => {
             resumed(&mut state);
             state.add_message(
-                Message::user("Show me the middleware you wrote").with_timestamp("03:12 PM"),
+                Message::user("show me a minimal retry helper").with_timestamp("05:12 PM"),
             );
-            state.add_message(Message::assistant(MD_FENCE).with_timestamp("03:12 PM"));
+            state.add_message(
+                Message::assistant(MD_FENCE)
+                    .with_timestamp("05:12 PM")
+                    .with_thought_secs(1.0),
+            );
         }
         "shortcuts-overlay" => {
             resumed(&mut state);
             state.shortcuts_open = true;
         }
         "resume-picker" => {
-            resumed(&mut state);
+            conversation(&mut state);
+            state.input.set_text("/resume");
             let now = chrono::Utc::now();
             let sessions = vec![
                 SessionSummary {
-                    id: "sess-lock-v2".into(),
-                    title: "lock v2 runtime chrome".into(),
-                    model: "cortex-1-mini".into(),
+                    id: "sess-login".into(),
+                    title: "fix login redirect".into(),
+                    model: "cortex/fix-login-redirect".into(),
                     provider: "cortex".into(),
-                    created_at: now - chrono::Duration::hours(2),
-                    updated_at: now - chrono::Duration::minutes(12),
-                    message_count: 18,
+                    created_at: now - chrono::Duration::hours(3),
+                    updated_at: now - chrono::Duration::hours(2),
+                    message_count: 14,
                     archived: false,
                 },
                 SessionSummary {
-                    id: "sess-rate-limit".into(),
-                    title: "rate limiter redis window".into(),
-                    model: "cortex-1".into(),
+                    id: "sess-chip".into(),
+                    title: "composer chip design".into(),
+                    model: "cortex-1-mini".into(),
                     provider: "cortex".into(),
                     created_at: now - chrono::Duration::days(1),
-                    updated_at: now - chrono::Duration::hours(5),
-                    message_count: 42,
+                    updated_at: now - chrono::Duration::hours(26),
+                    message_count: 31,
+                    archived: false,
+                },
+                SessionSummary {
+                    id: "sess-bump".into(),
+                    title: "bump version to 0.1.7".into(),
+                    model: "cortex-1-mini".into(),
+                    provider: "cortex".into(),
+                    created_at: now - chrono::Duration::days(4),
+                    updated_at: now - chrono::Duration::days(3),
+                    message_count: 6,
                     archived: false,
                 },
             ];
@@ -658,18 +808,21 @@ Tell me what you'd like to do.",
             ));
         }
         "clear-confirm" => {
-            resumed(&mut state);
             conversation(&mut state);
+            state.input.set_text("/clear");
             state.enter_interactive_mode(build_clear_confirm());
         }
         "plan-confirm" => {
             resumed(&mut state);
             state.agent_mode_label = "Plan".into();
             state.add_message(
-                Message::assistant(
-                    "**Plan**\nRecapture every SPEC §7 board, then wait for Designer.",
-                )
-                .with_timestamp("09:05 AM"),
+                Message::user("add retry with backoff to the api client")
+                    .with_timestamp("11:20 AM"),
+            );
+            state.add_message(
+                Message::assistant(PLAN_BODY)
+                    .with_timestamp("11:21 AM")
+                    .with_thought_secs(5.8),
             );
             state.enter_interactive_mode(build_plan_confirm());
         }
@@ -739,36 +892,65 @@ Tell me what you'd like to do.",
         "todos" => {
             resumed(&mut state);
             state.add_message(
-                Message::user("work through the capture checklist").with_timestamp("09:41 AM"),
+                Message::user("move the model chip into the composer border")
+                    .with_timestamp("04:11 PM"),
             );
-            let mut task = SubagentTaskDisplay::new("sub-1", "tool-1", "lock v2 captures", "code");
-            task.status = SubagentDisplayStatus::ExecutingTool("edit".into());
-            task.todos = vec![
-                SubagentTodoItem::new("Expand lock_v2 scene ids", SubagentTodoStatus::Completed),
-                SubagentTodoItem::new(
-                    "Make every frame a unique state",
-                    SubagentTodoStatus::Completed,
-                ),
-                SubagentTodoItem::new("Recapture 120×40 and 40×12", SubagentTodoStatus::InProgress),
-                SubagentTodoItem::new("Verify sha256 uniqueness", SubagentTodoStatus::Pending),
-                SubagentTodoItem::new("Keep the PR drafted", SubagentTodoStatus::Pending),
-            ];
-            state.active_subagents = vec![task];
+            state.add_message(
+                Message::assistant("")
+                    .with_timestamp("04:11 PM")
+                    .with_thought_secs(2.6),
+            );
+            state.start_streaming(None, true);
+            state.streaming.thinking = false;
+            state.streaming.prompt_started_at = Some(Instant::now() - Duration::from_secs(38));
+            state.tokens_used = 6_100;
+            state.working_checklist = Some(crate::app::WorkingChecklist::new(
+                vec![
+                    SubagentTodoItem::new(
+                        "Read composer.rs and footer.rs",
+                        SubagentTodoStatus::Completed,
+                    ),
+                    SubagentTodoItem::new("Locate the chip painter", SubagentTodoStatus::Completed),
+                    SubagentTodoItem::new(
+                        "Move the chip into the bottom hairline",
+                        SubagentTodoStatus::InProgress,
+                    ),
+                    SubagentTodoItem::new(
+                        "Drop the model from the footer",
+                        SubagentTodoStatus::Pending,
+                    ),
+                    SubagentTodoItem::new(
+                        "Run the TUI snapshot tests",
+                        SubagentTodoStatus::Pending,
+                    ),
+                ],
+                38,
+                6_100,
+            ));
         }
         "question" => {
             resumed(&mut state);
             state.add_message(
-                Message::assistant("Which capture size should we lock first?")
-                    .with_timestamp("09:44 AM"),
+                Message::user("add retry with backoff to the api client")
+                    .with_timestamp("11:20 AM"),
+            );
+            state.add_message(
+                Message::assistant("Which failures should be retried?")
+                    .with_timestamp("11:20 AM")
+                    .with_thought_secs(1.9),
             );
             state.enter_interactive_mode(build_question_prompt(
-                "Question",
+                "Which failures should be retried?",
                 &[
-                    ("wide", "1 120×40 first", "wide boards"),
-                    ("narrow", "2 40×12 first", "narrow boards"),
-                    ("both", "3 Both together", "full SPEC §7 set"),
+                    (
+                        "5xx",
+                        "1 Timeouts and 5xx only (recommended)",
+                        "recommended",
+                    ),
+                    ("all", "2 Every network error", "every error"),
+                    ("site", "3 Let me decide per call site", "per call site"),
                 ],
-                2,
+                0,
             ));
         }
         "sudo" => {
@@ -802,27 +984,13 @@ Tell me what you'd like to do.",
                 None,
             ));
         }
-        "btw" => {
-            resumed(&mut state);
-            state.add_message(Message::user("keep rewriting chrome.rs").with_timestamp("09:50 AM"));
-            state.start_streaming(None, true);
-            state.streaming.thinking = false;
-            state.streaming.is_actively_streaming = true;
-            state.add_message(
-                Message::user("/btw keep the composer dual-hairline").with_timestamp("09:51 AM"),
-            );
-        }
+        id if apply_btw_scene(id, &mut state) => {}
         id if apply_offline_rate_limit_scene(id, &mut state) => {}
         id if apply_parity_scene(id, &mut state, width) => {}
         id if apply_designed_scene(id, &mut state, width) => {}
         id if apply_share_scene(id, &mut state) => {}
         id if apply_goal_chip_scene(id, &mut state) => {}
-        "computer-disconnected" | "computer-cloud-default" => {
-            assert!(
-                apply_computer_scene(id, &mut state, width),
-                "computer lock scene {id}"
-            );
-        }
+        id if apply_computer_scene(id, &mut state, width) => {}
         other => panic!("unknown lock v2 scene {other}"),
     }
     state

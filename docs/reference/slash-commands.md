@@ -44,6 +44,7 @@ ordinary message.
 | `/install-github-app` | | Install the Cortex GitHub App |
 | `/bug` | | `/bug [description]` |
 | `/goal` | | `/goal [objective\|status\|pause\|resume\|clear]` — persisted long-horizon objective |
+| `/shortcuts` | `keys` | Open the shortcuts sheet (also `Ctrl+x`) |
 
 ## Authentication and billing
 

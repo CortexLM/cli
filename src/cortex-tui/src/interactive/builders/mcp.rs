@@ -6,74 +6,66 @@ use crate::interactive::state::{
 use crate::modal::mcp_manager::{McpServerInfo, McpStatus};
 
 /// Build an interactive state for MCP server management.
+///
+/// Lock `/mcp`: servers only, status glyphs, `a` add / `r` reconnect in the
+/// footer (not as list rows).
 pub fn build_mcp_selector(servers: &[McpServerInfo]) -> InteractiveState {
-    let mut items: Vec<InteractiveItem> = Vec::new();
+    let items: Vec<InteractiveItem> = servers.iter().map(mcp_server_item).collect();
 
-    // Add global actions first (separated from servers)
-    items.push(
-        InteractiveItem::new("__add__", "Add MCP Server")
-            .with_description("Configure a new server (stdio, HTTP, or from registry)")
-            .with_shortcut('a'),
-    );
+    let connected = servers
+        .iter()
+        .filter(|s| matches!(s.status, McpStatus::Running))
+        .count();
+    let banner = format!("MCP servers · {} of {} connected", connected, servers.len());
 
-    items.push(
-        InteractiveItem::new("__tools__", "View All Tools")
-            .with_description("List tools from all running servers")
-            .with_shortcut('t'),
-    );
-
-    items.push(
-        InteractiveItem::new("__reload__", "Reload All Servers")
-            .with_description("Restart all MCP servers")
-            .with_shortcut('r'),
-    );
-
-    // Add separator if there are servers
-    if !servers.is_empty() {
-        items.push(
-            InteractiveItem::new("__sep_servers__", "--- Configured Servers ---").as_separator(),
-        );
-    }
-
-    // Add server entries
-    for server in servers {
-        let status_text = match server.status {
-            McpStatus::Running => "running",
-            McpStatus::Starting => "starting",
-            McpStatus::Stopped => "stopped",
-            McpStatus::Error => "error",
-        };
-
-        let description = format!("{} - {} tools", status_text, server.tool_count);
-
-        let mut item =
-            InteractiveItem::new(&server.name, &server.name).with_description(description);
-
-        if server.requires_auth {
-            item = item.with_metadata("requires_auth".to_string());
-        }
-
-        items.push(item);
-    }
-
-    let title = if servers.is_empty() {
-        "MCP Servers".to_string()
-    } else {
-        let running = servers
-            .iter()
-            .filter(|s| matches!(s.status, McpStatus::Running))
-            .count();
-        format!("MCP Servers ({}/{})", running, servers.len())
-    };
-
-    InteractiveState::new(title, items, InteractiveAction::McpServerAction)
-        .with_search()
+    InteractiveState::new("MCP Servers", items, InteractiveAction::McpServerAction)
+        .with_banner(banner)
         .with_hints(vec![
-            ("Up/Down".to_string(), "navigate".to_string()),
-            ("Enter".to_string(), "select".to_string()),
-            ("/".to_string(), "search".to_string()),
+            ("Enter".to_string(), "details".to_string()),
+            ("r".to_string(), "reconnect".to_string()),
+            ("a".to_string(), "add server".to_string()),
             ("Esc".to_string(), "close".to_string()),
         ])
+}
+
+fn mcp_server_item(server: &McpServerInfo) -> InteractiveItem {
+    let (icon, description) = match server.status {
+        McpStatus::Running => ('✓', format!("{} tools · connected", server.tool_count)),
+        McpStatus::Starting => (
+            '⠇',
+            if server.requires_auth {
+                "authenticating…".to_string()
+            } else {
+                "starting…".to_string()
+            },
+        ),
+        McpStatus::Error => {
+            let reason = server
+                .error
+                .as_deref()
+                .map(trim_error)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("connection lost");
+            ('×', format!("failed — {reason} · r to reconnect"))
+        }
+        McpStatus::Stopped => ('○', "stopped · r to reconnect".to_string()),
+    };
+
+    let mut item = InteractiveItem::new(&server.name, &server.name)
+        .with_icon(icon)
+        .with_description(description);
+    if server.requires_auth {
+        item = item.with_metadata("requires_auth".to_string());
+    }
+    item
+}
+
+fn trim_error(error: &str) -> &str {
+    error
+        .strip_prefix("failed — ")
+        .or_else(|| error.strip_prefix("failed: "))
+        .unwrap_or(error)
+        .trim()
 }
 
 /// Build a selector for choosing MCP server source (Custom or Registry).
@@ -227,11 +219,12 @@ mod tests {
     #[test]
     fn test_build_mcp_selector_empty() {
         let state = build_mcp_selector(&[]);
-        // Should have global actions: Add, Tools, Reload (no separator when empty)
-        assert_eq!(state.items.len(), 3);
-        assert_eq!(state.items[0].id, "__add__");
-        assert_eq!(state.items[1].id, "__tools__");
-        assert_eq!(state.items[2].id, "__reload__");
+        assert!(state.items.is_empty());
+        assert_eq!(
+            state.banner.as_deref(),
+            Some("MCP servers · 0 of 0 connected")
+        );
+        assert!(!state.searchable);
     }
 
     #[test]
@@ -241,8 +234,36 @@ mod tests {
             create_test_server("test2", McpStatus::Stopped),
         ];
         let state = build_mcp_selector(&servers);
-        // 3 global actions + 1 separator + 2 servers = 6 items
-        assert_eq!(state.items.len(), 6);
+        assert_eq!(state.items.len(), 2);
+        assert_eq!(state.items[0].id, "test1");
+        assert_eq!(state.items[0].icon, Some('✓'));
+        assert!(
+            state.items[0]
+                .description
+                .as_deref()
+                .unwrap_or("")
+                .contains("connected")
+        );
+        assert_eq!(state.items[1].icon, Some('○'));
+        assert_eq!(
+            state.banner.as_deref(),
+            Some("MCP servers · 1 of 2 connected")
+        );
+    }
+
+    #[test]
+    fn error_row_offers_reconnect() {
+        let mut server = create_test_server("sentry", McpStatus::Error);
+        server.error = Some("token expired".into());
+        let state = build_mcp_selector(&[server]);
+        assert_eq!(state.items[0].icon, Some('×'));
+        assert!(
+            state.items[0]
+                .description
+                .as_deref()
+                .unwrap_or("")
+                .contains("failed — token expired · r to reconnect")
+        );
     }
 
     #[test]

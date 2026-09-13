@@ -267,21 +267,18 @@ async fn ux_contract_picker_export_selector_and_limitations_render() {
         .change_session_metadata("session_name", "picker-session")
         .unwrap();
     runner
+        .change_session_metadata("session_name", "picker-session")
+        .unwrap();
+    runner
         .process_modal_action(ModalAction::ExecuteCommand("sessions".into()))
         .await;
-    assert_eq!(runner.modal_stack.len(), 1);
-    for (width, height) in [(40, 12), (120, 40)] {
-        let area = Rect::new(0, 0, width, height);
-        let mut buffer = Buffer::empty(area);
-        runner
-            .modal_stack
-            .current()
-            .unwrap()
-            .render(area, &mut buffer);
-        let text: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
-        assert!(text.contains("picker-session"), "{text}");
-    }
-    runner.modal_stack.clear();
+    assert!(
+        runner.app_state.get_interactive_state().is_some(),
+        "sessions opens the inline resume picker"
+    );
+    assert_eq!(runner.modal_stack.len(), 0);
+    assert_views(&mut runner, "picker-session");
+    runner.app_state.exit_interactive_mode();
     runner.handle_open_modal(ModalType::Export(None)).await;
     assert!(runner.app_state.get_interactive_state().is_some());
     runner

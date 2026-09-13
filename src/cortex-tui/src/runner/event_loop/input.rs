@@ -143,179 +143,244 @@ impl EventLoop {
         key_event: crossterm::event::KeyEvent,
         terminal: &mut CortexTerminal,
     ) -> Result<()> {
-        use crossterm::event::KeyCode;
-
-        // Check modal stack first (new unified modal system)
-        if self.modal_stack.is_active() {
-            let result = self.modal_stack.handle_key(key_event);
-            match result {
-                ModalResult::Action(action) => {
-                    // Action closes the modal
-                    self.process_modal_action(action).await;
-                }
-                ModalResult::ActionContinue(action) => {
-                    // Action keeps the modal open (for live preview)
-                    self.process_modal_action(action).await;
-                }
-                _ => {}
-            }
-            self.render(terminal)?;
+        if self.consume_layer_key(key_event, terminal).await? {
             return Ok(());
         }
+        self.dispatch_session_key(key_event, terminal).await
+    }
 
-        // Settings modal (F2 / `/settings`) owns keys while open.
-        if let Some(mut modal) = self.app_state.settings_modal.take() {
-            let action = modal.handle_key(key_event);
-            match action {
-                crate::widgets::SettingsAction::Close => {
-                    self.app_state.apply_settings_values(&modal.values);
-                    self.app_state.settings_modal = None;
-                }
-                crate::widgets::SettingsAction::Changed(_) => {
-                    self.app_state.apply_settings_values(&modal.values);
-                    self.app_state.settings_modal = Some(modal);
-                }
-                crate::widgets::SettingsAction::Continue => {
-                    self.app_state.settings_modal = Some(modal);
-                }
-            }
-            self.render(terminal)?;
-            return Ok(());
+    /// Modal stack, settings, shortcuts, F2, Ctrl+x, pickers, cards, questions.
+    async fn consume_layer_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
+        if self.try_modal_stack_key(key_event, terminal).await? {
+            return Ok(true);
         }
-
-        if self.app_state.shortcuts_open {
-            use crossterm::event::{KeyCode, KeyModifiers};
-            let close = matches!(key_event.code, KeyCode::Esc | KeyCode::F(2))
-                || (key_event.code == KeyCode::Char('x')
-                    && key_event.modifiers.contains(KeyModifiers::CONTROL));
-            if close {
-                self.app_state.shortcuts_open = false;
-            }
-            self.render(terminal)?;
-            return Ok(());
+        if self.try_settings_modal_key(key_event, terminal)? {
+            return Ok(true);
         }
-
-        {
-            use crossterm::event::{KeyCode, KeyModifiers};
-            if key_event.code == KeyCode::F(2) {
-                self.app_state.open_settings_modal();
-                self.render(terminal)?;
-                return Ok(());
-            }
-            if key_event.code == KeyCode::Char('x')
-                && key_event.modifiers.contains(KeyModifiers::CONTROL)
-            {
-                self.app_state.shortcuts_open = true;
-                self.render(terminal)?;
-                return Ok(());
-            }
+        if self.try_shortcuts_sheet_key(key_event, terminal)? {
+            return Ok(true);
         }
-
-        // Check if in interactive mode and handle its input first
+        if self.try_chrome_toggle_key(key_event, terminal)? {
+            return Ok(true);
+        }
         if self.app_state.is_interactive_mode() {
-            if let Some(state) = self.app_state.get_interactive_state_mut() {
-                let result = crate::interactive::handle_interactive_key(state, key_event);
-                match result {
-                    crate::interactive::InteractiveResult::Selected {
-                        action,
-                        item_id,
-                        item_ids,
-                    } => {
-                        let keep_open = self
-                            .handle_interactive_selection(action, item_id, item_ids)
-                            .await;
-                        if !keep_open {
-                            self.app_state.exit_interactive_mode();
-                        }
-                    }
-                    crate::interactive::InteractiveResult::FormSubmitted { action_id, values } => {
-                        // Handle inline form submission
-                        // Returns true if we should stay in interactive mode
-                        let stay_open = self.handle_inline_form_submission(&action_id, values);
-                        if !stay_open {
-                            self.app_state.exit_interactive_mode();
-                        }
-                    }
-                    crate::interactive::InteractiveResult::Cancelled => {
-                        self.reject_pending_approval_and_exit_interactive();
-                    }
-                    crate::interactive::InteractiveResult::Continue => {
-                        // Just re-render
-                    }
-                    crate::interactive::InteractiveResult::SwitchTab { direction } => {
-                        // Rebuild settings with new tab
-                        if let Some(state) = self.app_state.get_interactive_state()
-                            && !state.tabs.is_empty()
-                        {
-                            let current_tab = state.active_tab;
-                            let num_tabs = state.tabs.len();
-                            let new_tab = if direction < 0 {
-                                if current_tab == 0 {
-                                    num_tabs - 1
-                                } else {
-                                    current_tab - 1
-                                }
-                            } else {
-                                (current_tab + 1) % num_tabs
-                            };
-                            // Rebuild settings with new tab using current snapshot
-                            let snapshot = crate::interactive::builders::SettingsSnapshot {
-                                compact_mode: self.app_state.compact_mode,
-                                sandbox_mode: self.app_state.sandbox_mode,
-                                streaming_enabled: self.app_state.streaming_enabled,
-                                sound: self.app_state.sound_enabled,
-                                thinking_enabled: self.app_state.thinking_budget.is_some(),
-                                debug_mode: self.app_state.debug_mode,
-                                ..Default::default()
-                            };
-                            let new_state =
-                                crate::interactive::builders::build_settings_selector_with_tab(
-                                    snapshot, None, new_tab,
-                                );
-                            self.app_state.enter_interactive_mode(new_state);
-                        }
-                    }
-                }
-            }
+            self.handle_interactive_mode_key(key_event).await?;
             self.render(terminal)?;
-            return Ok(());
+            return Ok(true);
         }
-
-        // Check if a card is active and handle its input first
         if self.card_handler.is_active() && self.card_handler.handle_key(key_event) {
-            // Process any pending card actions
             self.process_card_actions();
             self.render(terminal)?;
-            return Ok(());
+            return Ok(true);
         }
-
-        // Check if a modal is open and handle its input first
         if self.app_state.has_modal() && self.handle_modal_key(key_event).await? {
             self.render(terminal)?;
-            return Ok(());
+            return Ok(true);
         }
-
-        // Handle Questions view input
         if self.app_state.view == AppView::Questions && self.handle_question_key(key_event).await? {
             self.render(terminal)?;
-            return Ok(());
+            return Ok(true);
         }
+        Ok(false)
+    }
 
-        // Handle Ctrl+C with contextual behavior
+    async fn try_modal_stack_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
+        if !self.modal_stack.is_active() {
+            return Ok(false);
+        }
+        match self.modal_stack.handle_key(key_event) {
+            ModalResult::Action(action) | ModalResult::ActionContinue(action) => {
+                self.process_modal_action(action).await;
+            }
+            _ => {}
+        }
+        self.render(terminal)?;
+        Ok(true)
+    }
+
+    fn try_settings_modal_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
+        let Some(mut modal) = self.app_state.settings_modal.take() else {
+            return Ok(false);
+        };
+        match modal.handle_key(key_event) {
+            crate::widgets::SettingsAction::Close => {
+                self.app_state.apply_settings_values(&modal.values);
+                self.app_state.settings_modal = None;
+            }
+            crate::widgets::SettingsAction::Changed(_) => {
+                self.app_state.apply_settings_values(&modal.values);
+                self.app_state.settings_modal = Some(modal);
+            }
+            crate::widgets::SettingsAction::Continue => {
+                self.app_state.settings_modal = Some(modal);
+            }
+        }
+        self.render(terminal)?;
+        Ok(true)
+    }
+
+    fn try_shortcuts_sheet_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        if !self.app_state.shortcuts_open {
+            return Ok(false);
+        }
+        let close = matches!(key_event.code, KeyCode::Esc | KeyCode::F(2))
+            || (key_event.code == KeyCode::Char('x')
+                && key_event.modifiers.contains(KeyModifiers::CONTROL));
+        if close {
+            self.app_state.close_shortcuts_sheet();
+        } else if matches!(key_event.code, KeyCode::Down | KeyCode::Char('j')) {
+            self.app_state.shortcuts_move(1);
+        } else if matches!(key_event.code, KeyCode::Up | KeyCode::Char('k')) {
+            self.app_state.shortcuts_move(-1);
+        }
+        self.render(terminal)?;
+        Ok(true)
+    }
+
+    fn try_chrome_toggle_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<bool> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        if key_event.code == KeyCode::F(2) {
+            self.app_state.open_settings_modal();
+            self.render(terminal)?;
+            return Ok(true);
+        }
+        if key_event.code == KeyCode::Char('x')
+            && key_event.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            if self.shortcuts_toggle_blocked() {
+                return Ok(false);
+            }
+            self.app_state.toggle_shortcuts_sheet();
+            self.render(terminal)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn shortcuts_toggle_blocked(&self) -> bool {
+        self.app_state.is_interactive_mode()
+            || self.card_handler.is_active()
+            || self.app_state.has_modal()
+            || self.modal_stack.is_active()
+            || self.app_state.view == AppView::Questions
+            || self.app_state.get_question_state().is_some()
+    }
+
+    async fn handle_interactive_mode_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+    ) -> Result<()> {
+        let Some(state) = self.app_state.get_interactive_state_mut() else {
+            return Ok(());
+        };
+        let result = crate::interactive::handle_interactive_key(state, key_event);
+        match result {
+            crate::interactive::InteractiveResult::Selected {
+                action,
+                item_id,
+                item_ids,
+            } => {
+                let keep_open = self
+                    .handle_interactive_selection(action, item_id, item_ids)
+                    .await;
+                if !keep_open {
+                    self.app_state.exit_interactive_mode();
+                }
+            }
+            crate::interactive::InteractiveResult::FormSubmitted { action_id, values } => {
+                let stay_open = self.handle_inline_form_submission(&action_id, values);
+                if !stay_open {
+                    self.app_state.exit_interactive_mode();
+                }
+            }
+            crate::interactive::InteractiveResult::Cancelled => {
+                self.reject_pending_approval_and_exit_interactive();
+            }
+            crate::interactive::InteractiveResult::Continue => {}
+            crate::interactive::InteractiveResult::SwitchTab { direction } => {
+                self.switch_settings_tab(direction);
+            }
+        }
+        Ok(())
+    }
+
+    fn switch_settings_tab(&mut self, direction: i32) {
+        let Some(state) = self.app_state.get_interactive_state() else {
+            return;
+        };
+        if state.tabs.is_empty() {
+            return;
+        }
+        let current_tab = state.active_tab;
+        let num_tabs = state.tabs.len();
+        let new_tab = if direction < 0 {
+            if current_tab == 0 {
+                num_tabs - 1
+            } else {
+                current_tab - 1
+            }
+        } else {
+            (current_tab + 1) % num_tabs
+        };
+        let snapshot = crate::interactive::builders::SettingsSnapshot {
+            compact_mode: self.app_state.compact_mode,
+            sandbox_mode: self.app_state.sandbox_mode,
+            streaming_enabled: self.app_state.streaming_enabled,
+            sound: self.app_state.sound_enabled,
+            thinking_enabled: self.app_state.thinking_budget.is_some(),
+            debug_mode: self.app_state.debug_mode,
+            ..Default::default()
+        };
+        let new_state =
+            crate::interactive::builders::build_settings_selector_with_tab(snapshot, None, new_tab);
+        self.app_state.enter_interactive_mode(new_state);
+    }
+
+    async fn dispatch_session_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+        terminal: &mut CortexTerminal,
+    ) -> Result<()> {
+        use crossterm::event::KeyCode;
+
         if key_event.code == KeyCode::Char('c')
             && key_event
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
+            if self.app_state.streaming.is_streaming {
+                self.cancel_streaming();
+                self.render(terminal)?;
+                return Ok(());
+            }
             return self.handle_ctrl_c(terminal);
         }
 
-        // Handle ESC with double-tap to quit when idle
         if key_event.code == KeyCode::Esc {
             return self.handle_esc(terminal);
         }
 
-        // Reset Ctrl+C and ESC timers on other key presses
         if key_event.code != KeyCode::Esc {
             self.app_state.reset_esc();
         }
@@ -324,15 +389,12 @@ impl EventLoop {
         let context = self.get_action_context();
         let action = self.action_mapper.get_action(key_event, context);
 
-        // Check if autocomplete is visible and handle its navigation
         if self.app_state.autocomplete.visible
             && self.handle_autocomplete_key(key_event, terminal).await?
         {
             return Ok(());
         }
 
-        // Handle Copy action specially since it needs terminal access
-        // This handles both Ctrl+C (when text selected) and Ctrl+Shift+C
         if action == KeyAction::Copy {
             if self.app_state.text_selection.has_selection() {
                 self.copy_selection_to_clipboard(terminal)?;
@@ -342,14 +404,11 @@ impl EventLoop {
             return Ok(());
         }
 
-        // Handle '?' key specially: only show help when input is empty
-        // Otherwise, type '?' into the input
         if action == KeyAction::Help
             && key_event.code == KeyCode::Char('?')
             && context == ActionContext::Input
             && !self.app_state.input.is_empty()
         {
-            // Type '?' into the input instead of opening help
             self.app_state.text_selection.clear();
             self.app_state.input.handle_key(key_event);
             self.update_autocomplete();
@@ -357,22 +416,14 @@ impl EventLoop {
             return Ok(());
         }
 
-        // Forward key events to input widget when focused and no action mapped
-        // This allows character input, backspace, delete, etc. to work
         if context == ActionContext::Input && action == KeyAction::None {
-            // Clear selection when typing
             self.app_state.text_selection.clear();
-
             self.app_state.input.handle_key(key_event);
-            // Update autocomplete based on new input
             self.update_autocomplete();
         }
 
         self.handle_action(action).await?;
-
-        // Always render after key input for responsiveness
         self.render(terminal)?;
-
         Ok(())
     }
 

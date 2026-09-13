@@ -124,7 +124,6 @@ pub(crate) fn effort_picker(
     if hover_low {
         interactive.hovered = Some(1000 + 2);
     }
-    state.thinking_budget = Some(effort.as_str().to_ascii_lowercase());
     state.enter_interactive_mode(interactive);
 }
 
@@ -203,36 +202,55 @@ pub(crate) fn tool(
     call
 }
 
-pub(crate) const DIFF_HUNK: &str = r#"@@ -20,6 +20,10 @@
- import Redis from "ioredis";
- import type { FastifyRequest } from "fastify";
--const limit = 30;
-+const limit = 60;
-+const windowSec = 60;
-
- export function rateLimit(opts: RateLimitOpts) {
--  const redis = new Redis();
-+  const redis = new Redis(process.env.REDIS_URL);
+pub(crate) const DIFF_HUNK: &str = r#"@@ -41,7 +41,8 @@
+     let chip = model_chip(state);
+-    footer.push(chip);
++    border.push_right(chip);
++    footer.push(hints);
+     Ok(())
 "#;
+
+pub(crate) const PLAN_BODY: &str = "Plan — no files change until you approve.\n\n\
+1. Wrap `ApiClient::send` in a retry loop: 3 attempts, exponential backoff with jitter.\n\
+2. Retry only on timeouts and 5xx; never on 4xx.\n\
+3. Surface the final failure as product copy: 'The coding service is temporarily unavailable'.\n\
+4. Unit tests for the backoff schedule and the give-up path.";
 
 pub(crate) const MD_TABLE: &str = r#"Here is how the three models compare:
 
-| Model | Effort | Billing |
-|---|---|---|
-| Mini 1 | Medium | per request |
-| Cortex 1 | High | per request |
-| Max 1 | MAX | per token |
+| Model | Default effort | Context | Billing |
+|---|---|---|---|
+| Cortex Mini 1 | Medium | 500K | per request |
+| Cortex 1 | High | 500K | per request |
+| Cortex Max 1 | High | 1M | per token |
+"#;
 
-Mini 1 is the default; switch with /model when a change needs deeper reasoning."#;
-
-pub(crate) const MD_FENCE: &str = r#"The limiter is a sliding window over a Redis sorted set:
-
-```ts
-export async function rateLimit(key: string, limit = 60) {
-  const now = Date.now();
-  await redis.zadd(key, now, String(now));
-  return count <= limit;
+pub(crate) fn apply_btw_scene(id: &str, state: &mut AppState) -> bool {
+    if id != "btw" {
+        return false;
+    }
+    resumed(state);
+    state.add_message(Message::user("keep rewriting chrome.rs").with_timestamp("09:50 AM"));
+    state.start_streaming(None, true);
+    state.streaming.thinking = false;
+    state.streaming.is_actively_streaming = true;
+    state.add_message(
+        Message::user("/btw keep the composer dual-hairline").with_timestamp("09:51 AM"),
+    );
+    true
 }
-```
 
-It fails open when Redis is unreachable."#;
+pub(crate) const MD_FENCE: &str = r#"```rust
+pub async fn with_retry<F, T>(mut op: F) -> Result<T>
+where F: FnMut() -> Fut<Result<T>>,
+{
+    for attempt in 0..3 {
+        match op().await {
+            Ok(v) => return Ok(v),
+            Err(e) if attempt == 2 => return Err(e),
+            Err(_) => sleep(backoff(attempt)).await,
+        }
+    }
+    unreachable!()
+}
+```"#;

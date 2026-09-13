@@ -741,9 +741,7 @@ pub const PALETTE_FOOTER_HINT_SHORT: &str = "Enter:send | Ctrl+x:shortcuts";
 
 impl<'a> MinimalSessionView<'a> {
     fn footer_set(&self, is_task_running: bool, width: u16) -> FooterSet {
-        if self.app_state.offline_held
-            || self.app_state.quota_held
-            || self.app_state.computer_held
+        if self.app_state.offline_held || self.app_state.quota_held || self.app_state.computer_held
         {
             return FooterSet::Unavailable;
         }

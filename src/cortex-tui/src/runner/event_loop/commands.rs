@@ -460,6 +460,18 @@ impl EventLoop {
         Ok(())
     }
 
+    /// `/handoff` confirm: stay on this CLI, or follow Cortex Cloud via `/jobs`.
+    pub(super) async fn handle_handoff_confirm_choice(&mut self, item_id: &str) -> bool {
+        if item_id != "cloud" {
+            return false;
+        }
+        self.add_system_message(
+            "This CLI session stays here (Chat · Code · Bot). Follow Cortex Cloud agents with /jobs.",
+        );
+        self.handle_open_modal(ModalType::Tasks).await;
+        true
+    }
+
     /// Handle export command
     pub(super) async fn handle_export(&mut self, format: ExportFormat) -> Result<()> {
         let Some(session) = &self.cortex_session else {

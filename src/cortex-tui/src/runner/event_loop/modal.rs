@@ -752,15 +752,7 @@ impl EventLoop {
                         return false;
                     }
                     "handoff-confirm" => {
-                        if item_id == "cloud" {
-                            self.add_system_message(
-                                "This CLI session stays here (Chat · Code · Bot). Follow Cortex Cloud agents with /jobs.",
-                            );
-                            self.handle_open_modal(crate::commands::ModalType::Tasks)
-                                .await;
-                            return true;
-                        }
-                        return false;
+                        return self.handle_handoff_confirm_choice(&item_id).await;
                     }
                     "clear-confirm" => {
                         if item_id == "yes" {

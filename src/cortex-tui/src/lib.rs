@@ -106,6 +106,7 @@ pub mod lock_proof;
 pub mod lock_v2;
 mod lock_v2_goal;
 mod lock_v2_ids;
+mod lock_v2_network;
 pub mod readme_hero;
 pub mod readme_hero_boards;
 pub mod splash_chrome;

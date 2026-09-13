@@ -88,6 +88,8 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `diagnostics` | Diagnostics tile — error red, warn amber | [120x40](120x40/diagnostics.png) | [40x12](40x12/diagnostics.png) |
 | `interrupt-stopped` | Esc / Ctrl+c — `× Stopped` | [120x40](120x40/interrupt-stopped.png) | [40x12](40x12/interrupt-stopped.png) |
 | `error-unavailable` | API down — product-facing error | [120x40](120x40/error-unavailable.png) | — |
+| `offline` | Network unreachable — held composer, distinct from API-down | [120x40](120x40/offline.png) | [40x12](40x12/offline.png) |
+| `rate-limit` | HTTP 429 rate limited — retry-after, distinct from quota | [120x40](120x40/rate-limit.png) | [40x12](40x12/rate-limit.png) |
 | `tool-tiles` | Grouped tool calls expanded — Read / Grep / Shell | [120x40](120x40/tool-tiles.png) | — |
 | `tool-tiles-collapsed` | Grouped tool calls collapsed | [120x40](120x40/tool-tiles-collapsed.png) | — |
 | `shell-running` | Live Shell tile with output | [120x40](120x40/shell-running.png) | — |
@@ -113,4 +115,4 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `config-tree` | `/config` read-only key tree | [120x40](120x40/config-tree.png) | — |
 | `btw` | `/btw` side note during a running turn | [120x40](120x40/btw.png) | — |
 
-**82** boards at 120x40 · **36** at 40x12 · 118 PNGs.
+**84** boards at 120x40 · **38** at 40x12 · 122 PNGs.

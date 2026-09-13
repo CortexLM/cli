@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   > keep going on this Cortex session
+
+   × You're offline
+     Reconnect — your work is saved.
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Waiting for network              │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:retry | Ctrl+x:shortcuts

@@ -32,6 +32,7 @@ use crate::widgets::SettingsModalState;
 use crate::widgets::settings_modal::SettingsRowKind;
 
 use crate::lock_v2_goal::{apply_goal_chip_scene, show_goal_in_narrow_palette};
+use crate::lock_v2_network::apply_offline_rate_limit_scene;
 
 pub use crate::lock_v2_ids::{LOCK_V2_NARROW_IDS, LOCK_V2_WIDE_IDS, lock_v2_scene_ids};
 
@@ -803,6 +804,7 @@ Tell me what you'd like to do.",
             state.add_message(Message::system(PRODUCT_ERROR));
             state.add_message(Message::system(SERVICE_UNAVAILABLE_NEXT_STEP));
         }
+        id if apply_offline_rate_limit_scene(id, &mut state) => {}
         "tool-tiles" => {
             resumed(&mut state);
             state.group_tool_calls = true;
@@ -1148,8 +1150,8 @@ mod tests {
 
     #[test]
     fn lock_v2_wide_count_is_spec() {
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 82);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 36);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 84);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 38);
     }
 
     #[test]

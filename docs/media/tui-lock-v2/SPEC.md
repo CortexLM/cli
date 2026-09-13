@@ -7,7 +7,7 @@ categorised rows + tip/nav footer, slash autocomplete above the composer, effort
 radios under `/model`, token counter top-right, footer shortcut strip) and
 re-skinned to the Cortex chrome. **No runtime code changes ship with this pack.**
 
-- Boards: [`index.md`](index.md) — 82 boards at 120×40, 36 of them also at 40×12 (118 PNGs).
+- Boards: [`index.md`](index.md) — 84 boards at 120×40, 38 of them also at 40×12 (122 PNGs).
 - Grids: `txt/<size>/<board>.txt` — the exact character grid of every board (diff a
   `MockTerminal` capture against these).
 - Renderer: `tools/render_lock_v2.py` + `tools/boards.py` (Python 3 + Pillow, IBM Plex Mono
@@ -414,7 +414,7 @@ Narrow: no bars, `used / total  pct%`.
 | settings-appearance / mouse / row-hover / search / theme-submenu | `settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-search`, `settings-theme-submenu` |
 | mode chips (Shift+Tab) | `mode-agent`, `mode-plan`, `mode-ask`, `mode-bash` |
 | permissions / mcp / plugins / usage-quota / sandbox / cloud | `permission-prompt`, `permission-prompt-hover`, `permissions-picker`, `mcp-servers`, `mcp-drop`, `plugins`, `usage`, `quota-exhausted`, `sandbox`, `sandbox-deny`, `cloud-handoff` |
-| diagnostics red/amber · interrupt/stopped | `diagnostics`, `interrupt-stopped`, `error-unavailable` |
+| diagnostics red/amber · interrupt/stopped | `diagnostics`, `interrupt-stopped`, `error-unavailable`, `offline`, `rate-limit` |
 | markdown table · diff hunk · code fence | `md-table`, `diff-hunk`, `edit-collapsed`, `code-fence`, `tool-tiles`, `tool-tiles-collapsed`, `shell-running` |
 | login / first-run | `login`, `login-waiting`, `login-success`, `login-error`, `first-run-tips` |
 | compact chat (ref 5) | `compact-chat` |
@@ -425,7 +425,7 @@ Narrow (40×12) set: `welcome-cortex`, `welcome-agent`, `first-run-tips`, `sessi
 `tokens-topright`, `compact-chat`, `slash-palette`, `goal-chip-active`, `goal-chip-paused`, `goal-chip-done`,
 `goal-chip-budget`, `goal-chip-blocked`, `slash-model-typed`, `model-list`, `model-effort-high`,
 `settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-theme-submenu`, `mode-plan`, `mode-ask`,
-`permission-prompt`, `mcp-servers`, `usage`, `diagnostics`, `interrupt-stopped`, `diff-hunk`, `login`, `shortcuts-overlay`.
+`permission-prompt`, `mcp-servers`, `usage`, `diagnostics`, `interrupt-stopped`, `offline`, `rate-limit`, `diff-hunk`, `login`, `shortcuts-overlay`.
 
 ---
 

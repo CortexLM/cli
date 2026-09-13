@@ -128,8 +128,8 @@ mod tests {
     #[test]
     fn disconnected_uses_engine_copy_and_fail_closed() {
         for (width, height) in SIZES {
-            let frame =
-                render_lock_v2_scene("computer-disconnected", width, height).expect(id_at(width));
+            let frame = render_lock_v2_scene("computer-disconnected", width, height)
+                .expect("computer-disconnected");
             let plain = &frame.plain;
             let squeezed = squeezed_plain(plain);
             assert!(
@@ -191,14 +191,6 @@ mod tests {
                     "narrow placeholder:\n{plain}"
                 );
             }
-        }
-    }
-
-    fn id_at(width: u16) -> &'static str {
-        if width <= 40 {
-            "computer-disconnected-narrow"
-        } else {
-            "computer-disconnected-wide"
         }
     }
 

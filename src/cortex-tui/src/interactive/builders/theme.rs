@@ -10,30 +10,40 @@ struct ThemeDef {
 
 const THEMES: &[ThemeDef] = &[
     ThemeDef {
-        id: "ocean",
-        label: "Ocean",
-        description: "Deep blue theme - default",
+        id: "dark",
+        label: "Cortex Night",
+        description: "Default inky chrome · banner green on focus only",
     },
     ThemeDef {
-        id: "midnight",
-        label: "Midnight",
-        description: "Dark purple theme",
+        id: "light",
+        label: "Cortex Day",
+        description: "Light chrome for bright rooms",
     },
     ThemeDef {
-        id: "forest",
-        label: "Forest",
-        description: "Dark green theme",
+        id: "ocean_dark",
+        label: "Ocean Dark",
+        description: "Deep blue and cyan accents",
     },
     ThemeDef {
-        id: "monochrome",
-        label: "Monochrome",
-        description: "Black and white",
+        id: "monokai",
+        label: "Monokai",
+        description: "Classic code-editor colors",
     },
 ];
 
+fn canonical_theme_id(current: Option<&str>) -> &'static str {
+    match current.unwrap_or("dark") {
+        "dark" | "cortex-night" | "cortex_night" => "dark",
+        "light" | "cortex-day" | "cortex_day" => "light",
+        "ocean_dark" | "ocean" => "ocean_dark",
+        "monokai" => "monokai",
+        _ => "dark",
+    }
+}
+
 /// Build an interactive state for theme selection.
 pub fn build_theme_selector(current: Option<&str>) -> InteractiveState {
-    let current_theme = current.unwrap_or("ocean");
+    let current_theme = canonical_theme_id(current);
 
     let items: Vec<InteractiveItem> = THEMES
         .iter()
@@ -61,6 +71,8 @@ mod tests {
 
         let current = state.items.iter().find(|i| i.is_current);
         assert!(current.is_some());
-        assert_eq!(current.unwrap().id, "ocean");
+        assert_eq!(current.unwrap().id, "ocean_dark");
+        assert_eq!(state.items[0].label, "Cortex Night");
+        assert_eq!(state.items[1].label, "Cortex Day");
     }
 }

@@ -8,8 +8,10 @@ is banner green `#1F4945`; historical violet `#A78BFA` is not the lock.
 Designer boards (pixel target) live in `docs/media/tui-lock-v2/{40x12,120x40}/`.
 These runtime frames are what Designer cli signs off against.
 
-SPEC §7: **89** boards at 120×40 and **43** at 40×12. Each filename is one
+SPEC §7: **95** boards at 120×40 and **48** at 40×12. Each filename is one
 distinct live state — no two PNGs share a sha256. Includes `/goal` composer
 chips (`goal-chip-*`), distinct `offline` and `rate-limit` diagnostics,
 Computer lock boards (`computer-disconnected`, `computer-cloud-default`),
-local-tools consent, composer `@file` chip, and `/undo` `/redo` `/rewind` sheet.
+local-tools consent, composer `@file` chip, `/undo` `/redo` `/rewind` sheet,
+and runtime-only COR-18/225/227/228 scenes (`theme-picker`, `handoff-confirm`,
+`session-fork`, `init-agents`, `custom-commands`, `hooks-lifecycle`).

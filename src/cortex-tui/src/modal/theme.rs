@@ -32,23 +32,23 @@ struct ThemeDef {
 const THEMES: &[ThemeDef] = &[
     ThemeDef {
         id: "dark",
-        label: "Dark",
-        description: "Default dark theme with green accents",
+        label: "Cortex Night",
+        description: "Default inky chrome · banner green on focus only",
     },
     ThemeDef {
         id: "light",
-        label: "Light",
-        description: "Light theme with dark text",
+        label: "Cortex Day",
+        description: "Light chrome for bright rooms",
     },
     ThemeDef {
         id: "ocean_dark",
         label: "Ocean Dark",
-        description: "Deep blue/cyan aesthetic",
+        description: "Deep blue and cyan accents",
     },
     ThemeDef {
         id: "monokai",
         label: "Monokai",
-        description: "Classic code editor colors",
+        description: "Classic code-editor colors",
     },
 ];
 

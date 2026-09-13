@@ -225,6 +225,14 @@ mod harness_snapshots {
             "email must not open file-chip footer:\n{email_text}"
         );
 
+        let mut ada = AppState::default();
+        ada.input.set_text("ada@example.com");
+        let ada_text = render(&ada, 120, 40);
+        assert!(
+            !ada_text.contains("@:files"),
+            "solo email must not open file-chip footer:\n{ada_text}"
+        );
+
         let mut bare = AppState::default();
         bare.input.set_text("please inspect @");
         let bare_text = render(&bare, 120, 40);
@@ -235,6 +243,14 @@ mod harness_snapshots {
         assert!(
             !bare_text.contains("@:files"),
             "incomplete @ must not open file-chip footer:\n{bare_text}"
+        );
+
+        let mut unfinished = AppState::default();
+        unfinished.input.set_text("please inspect @src/");
+        let unfinished_text = render(&unfinished, 120, 40);
+        assert!(
+            !unfinished_text.contains("@:files"),
+            "trailing-slash mention must not open file-chip footer:\n{unfinished_text}"
         );
 
         let mut chip = AppState::default();

@@ -840,13 +840,27 @@ fn composer_char_accent(chars: &[char], index: usize) -> bool {
     false
 }
 
-/// True when the composer holds a completed `@path` chip, not an email or a bare `@`.
+/// True when the composer holds a completed `@path` chip, not an email, a
+/// bare `@`, or an unfinished mention that still ends in `/`.
 fn composer_has_completed_file_chip(text: &str) -> bool {
     let chars: Vec<char> = text.chars().collect();
-    chars
-        .iter()
-        .enumerate()
-        .any(|(i, ch)| *ch == '@' && composer_char_accent(&chars, i))
+    let mut i = 0;
+    while i < chars.len() {
+        let at_token = chars[i] == '@' && (i == 0 || chars[i - 1].is_whitespace());
+        if at_token {
+            let start = i;
+            i += 1;
+            while i < chars.len() && !chars[i].is_whitespace() {
+                i += 1;
+            }
+            if i > start + 1 && chars[i - 1] != '/' {
+                return true;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    false
 }
 
 fn composer_display_text(state: &AppState) -> String {
@@ -884,7 +898,9 @@ mod file_chip_footer_tests {
     #[test]
     fn email_and_bare_at_are_not_file_chips() {
         assert!(!composer_has_completed_file_chip("contact me@example.com"));
+        assert!(!composer_has_completed_file_chip("ada@example.com"));
         assert!(!composer_has_completed_file_chip("please inspect @"));
+        assert!(!composer_has_completed_file_chip("please inspect @src/"));
         assert!(!composer_has_completed_file_chip("@"));
         assert!(!composer_has_completed_file_chip("hello world"));
     }

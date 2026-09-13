@@ -5,12 +5,12 @@ Design-only deliverable for the full TUI redesign. Layout language is taken
 composer with the model chip in the bottom border, Settings modal with search +
 categorised rows + tip/nav footer, slash autocomplete above the composer, effort
 radios under `/model`, token counter top-right, footer shortcut strip) and
-re-skinned to the Cortex chrome. Designer boards stay design-only; runtime
-captures use `MinimalSessionView` plus lock flags (`computer_held`,
-`show_computer_default`, `offline_held`, `rate_limit_held`) so MockTerminal
-matches live chrome.
+re-skinned to the Cortex chrome. Designer boards are the pixel target; matching
+runtime chrome ships in `cortex-tui` (`lock_v2_*` scenes plus production paints
+and lock flags: `computer_held`, `show_computer_default`, `offline_held`,
+`rate_limit_held`, `share_link`) so MockTerminal captures can lock the live UI.
 
-- Boards: [`index.md`](index.md) — **95** runtime boards at 120×40, 49 of them also at 40×12. Designer PNG files under `{40x12,120x40}/` from other PRs are not rewritten; new scenes are captured with `generate_tui_lock_screenshots --v2 --only`.
+- Boards: [`index.md`](index.md) — **96** runtime boards at 120×40, 50 of them also at 40×12. Designer PNG files under `{40x12,120x40}/` from other PRs are not rewritten; new scenes are captured with `generate_tui_lock_screenshots --v2 --only`.
 - Grids: `txt/<size>/<board>.txt` — the exact character grid of every board (diff a
   `MockTerminal` capture against these).
 - Renderer: `tools/render_lock_v2.py` + `tools/boards.py` (Python 3 + Pillow, IBM Plex Mono
@@ -98,7 +98,8 @@ Board geometry used by the renderer (documentation only — the product renders 
 ```
 
 Header-left is intentionally empty on launch. It never paints a shell echo
-(`~/…`, `> cortex`). Optional: the session name after `/rename`, dim.
+(`~/…`, `> cortex`). Optional, dim: the session name after `/rename`, or the
+`Shared · read-only` marker while a `/share` link is live (`Shared` at 40 cols).
 
 ---
 
@@ -115,6 +116,13 @@ Legend for recipes: `T` text `#F5F5F5` · `D` dim `#6B7280` · `M` muted `#4B556
 - Format `{used} / {window}` with K/M suffixes. `0 / 500K` on welcome.
 - ≥ 90 % of the window: counter turns `A` and the transcript gets one line
   `Context is 92% full — /compact summarizes the thread to free room.` (`A` + `T` + `D`).
+
+```
+ Shared · read-only                                                  14K / 500K   ← marker D, left margin col 1
+```
+- Persistent status chrome while a read-only `/share` link is live — `D`, never
+  accent, never a wash. Clipped before the counter; `Shared` alone at 40 cols.
+- `/unshare` clears the marker; the link line stays in the transcript as history.
 
 ### 3.2 User prompt bar
 
@@ -409,6 +417,7 @@ Narrow: no bars, `used / total  pct%`.
 |---|---|
 | welcome-cortex / welcome-agent / session-empty | `welcome-cortex`, `welcome-agent`, `session-empty` (+ `first-run-tips`) |
 | session-user-bars / thought / assistant / worked / optin | `session-user-bars`, `session-thought`, `session-thought-expanded`, `session-thinking-live`, `session-assistant`, `session-worked`, `session-optin`, `session-optin-hover` |
+| `/share` link live (status-line marker) · `/unshare` clears it | `session-shared` |
 | composer-empty / typing (+blink) / hover | `composer-empty`, `composer-typing`, `composer-typing-blink`, `composer-hover`, `composer-multiline` |
 | footer-shortcuts / tokens-topright | `footer-shortcuts`, `footer-hover`, `tokens-topright`, `tokens-topright-warn` |
 | slash-palette / slash-model-typed | `slash-palette` (`/goal` after `/plan`), `slash-model-typed` |
@@ -426,7 +435,8 @@ Narrow: no bars, `used / total  pct%`.
 | local-tools consent · @file chip · undo/redo/rewind | `consent-local-tools`, `composer-file-chip`, `undo-sheet` |
 
 Narrow (40×12) set: `welcome-cortex`, `welcome-agent`, `first-run-tips`, `session-empty`, `session-user-bars`,
-`session-thinking-live`, `session-assistant`, `session-optin`, `composer-empty`, `composer-typing`, `composer-hover`,
+`session-thinking-live`, `session-assistant`, `session-optin`, `session-shared`, `composer-empty`, `composer-typing`,
+`composer-hover`,
 `tokens-topright`, `compact-chat`, `slash-palette`, `goal-chip-active`, `goal-chip-paused`, `goal-chip-done`,
 `goal-chip-budget`, `goal-chip-blocked`, `slash-model-typed`, `model-list`, `model-effort-high`,
 `settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-theme-submenu`, `theme-picker`, `session-fork`, `init-agents`, `custom-commands`, `hooks-lifecycle`, `handoff-confirm`, `mode-plan`, `mode-ask`,

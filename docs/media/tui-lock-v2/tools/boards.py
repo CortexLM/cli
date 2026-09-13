@@ -57,6 +57,15 @@ MODEL_CHIP = "Cortex Mini 1 (medium)"
 PLACEHOLDER = "Plan, search, build anything"
 TOKENS = "14K / 500K"
 
+# `/share` chrome — the marker is dim status chrome and stays up until `/unshare`.
+SHARE_MARKER = "Shared · read-only"
+SHARE_MARKER_NARROW = "Shared"
+SHARE_TITLE = "Shared this session — read-only link is live."
+SHARE_TITLE_NARROW = "Shared — read-only link is live."
+SHARE_LINK = "cortex.foundation/share/9f4c2a71 · copied to your clipboard"
+SHARE_LINK_NARROW = "cortex.foundation/share/9f4c2a71"
+SHARE_SCOPE = "Anyone with the link can read this session. /unshare turns it off."
+
 
 @dataclass
 class Ctx:
@@ -771,6 +780,19 @@ def board_session_optin_hover(s, c):
     f.reply(["Hey — what do you want to work on?"], "12:49 AM")
     f.worked("Worked for 1.8s")
     optin_banner(s, c, banner_y, hover="in")
+    footer(s, c)
+
+
+def board_session_shared(s, c):
+    """`/share` is live — dim `Shared` marker in the status line, idle session chrome."""
+    header(s, c, left=SHARE_MARKER_NARROW if c.narrow else SHARE_MARKER)
+    top = composer(s, c)
+    f = Flow(s, c, limit=top - 1)
+    f.user("/share", "04:41 PM")
+    f.dim(SHARE_TITLE_NARROW if c.narrow else SHARE_TITLE)
+    f.dim(SHARE_LINK_NARROW if c.narrow else SHARE_LINK, indent=2)
+    if not c.narrow:
+        f.dim(SHARE_SCOPE, indent=2)
     footer(s, c)
 
 
@@ -2016,6 +2038,7 @@ BOARDS_META = [
     ("session-worked", board_session_worked, False, "B", "`Worked for Xs` after a reply"),
     ("session-optin", board_session_optin, True, "B", "`Help improve Cortex` banner — Opt out | Opt in"),
     ("session-optin-hover", board_session_optin_hover, False, "B", "Banner with the mouse over `[Opt in]`"),
+    ("session-shared", board_session_shared, True, "B", "`/share` link live — dim `Shared` marker in the status line"),
     ("composer-empty", board_composer_empty, True, "B", "Empty composer — caret before the placeholder, banner green `>`"),
     ("composer-typing", board_composer_typing, True, "B", "Mid-type, caret on"),
     ("composer-typing-blink", board_composer_typing_blink, False, "B", "Mid-type, caret off (blink phase)"),

@@ -1,0 +1,12 @@
+ Shared                      14K / 500K
+
+   > /share
+
+   Shared — read-only link is live.
+     cortex.foundation/share/9f4c2a71
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Shift+Tab:mode | Ctrl+x:shortcuts

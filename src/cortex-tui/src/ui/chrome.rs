@@ -74,6 +74,29 @@ pub fn paint_token_counter(
     buf.set_string(x, y, &text, style);
 }
 
+/// Dim status marker on the header row, left margin, clipped so it never runs
+/// into the token counter. Status chrome only — never accent.
+pub fn paint_status_marker(area: Rect, y: u16, buf: &mut Buffer, label: &str, reserved: u16) {
+    if area.width == 0 || y >= area.bottom() || label.is_empty() {
+        return;
+    }
+    let gutter = content_gutter(false, area.width);
+    let room = area
+        .width
+        .saturating_sub(gutter)
+        .saturating_sub(reserved.saturating_add(2));
+    if room == 0 {
+        return;
+    }
+    let text: String = label.chars().take(room as usize).collect();
+    buf.set_string(
+        area.x.saturating_add(gutter),
+        y,
+        text,
+        Style::default().fg(TEXT_DIM),
+    );
+}
+
 /// 12-hour `h:mm AM` clock.
 pub fn format_clock_12h(hour: u32, minute: u32) -> String {
     use chrono::Timelike;

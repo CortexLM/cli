@@ -27,6 +27,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `session-worked` | `Worked for Xs` after a reply | [120x40](120x40/session-worked.png) | — |
 | `session-optin` | `Help improve Cortex` banner — Opt out | Opt in | [120x40](120x40/session-optin.png) | [40x12](40x12/session-optin.png) |
 | `session-optin-hover` | Banner with the mouse over `[Opt in]` | [120x40](120x40/session-optin-hover.png) | — |
+| `session-shared` | `/share` link live — dim `Shared` marker in the status line | [120x40](120x40/session-shared.png) | [40x12](40x12/session-shared.png) |
 | `composer-empty` | Empty composer — caret before the placeholder, banner green `>` | [120x40](120x40/composer-empty.png) | [40x12](40x12/composer-empty.png) |
 | `composer-typing` | Mid-type, caret on | [120x40](120x40/composer-typing.png) | [40x12](40x12/composer-typing.png) |
 | `composer-typing-blink` | Mid-type, caret off (blink phase) | [120x40](120x40/composer-typing-blink.png) | — |
@@ -126,4 +127,6 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `composer-file-chip` | Composer with attached @file chip in prompt | [120x40](120x40/composer-file-chip.png) | [40x12](40x12/composer-file-chip.png) |
 | `undo-sheet` | /undo /redo /rewind sheet | [120x40](120x40/undo-sheet.png) | [40x12](40x12/undo-sheet.png) |
 
-**95** runtime boards at 120x40 · **49** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack.
+**96** runtime boards at 120x40 · **50** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack. `session-shared` (COR-226) is at both sizes.
+
+Runtime MockTerminal pack (same ids): [`runtime/120x40`](runtime/120x40/) (96) · [`runtime/40x12`](runtime/40x12/) (50).

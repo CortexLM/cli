@@ -246,8 +246,8 @@ mod tests {
         }
         assert!(!LOCK_V2_WIDE_IDS.contains(&"share-link"));
         assert!(!LOCK_V2_WIDE_IDS.contains(&"unshare"));
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 95);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 49);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 96);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 50);
     }
 
     #[test]

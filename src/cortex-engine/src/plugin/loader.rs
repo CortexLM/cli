@@ -42,6 +42,8 @@ pub struct PluginLoader {
     discovered: Vec<DiscoveredPlugin>,
     /// Plugin configurations from config file.
     plugin_configs: HashMap<String, PluginConfig>,
+    /// Extra `--plugin-dir` folders (folder-of-plugins or a single plugin).
+    extra_dirs: Vec<PathBuf>,
 }
 
 impl PluginLoader {
@@ -52,12 +54,19 @@ impl PluginLoader {
             project_root: None,
             discovered: Vec::new(),
             plugin_configs: HashMap::new(),
+            extra_dirs: Vec::new(),
         }
     }
 
     /// Set project root for project-specific plugins.
     pub fn with_project_root(mut self, project_root: impl Into<PathBuf>) -> Self {
         self.project_root = Some(project_root.into());
+        self
+    }
+
+    /// Add a `--plugin-dir` folder (contained; children with manifests load).
+    pub fn with_plugin_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.extra_dirs.push(dir.into());
         self
     }
 
@@ -93,6 +102,16 @@ impl PluginLoader {
             }
         }
 
+        for extra in &self.extra_dirs {
+            match super::plugin_dir::contain_plugin_dir(extra) {
+                Ok(path) => dirs.push(PluginDir {
+                    path,
+                    source: PluginSource::External,
+                }),
+                Err(e) => warn!("Skipping plugin-dir {}: {}", extra.display(), e),
+            }
+        }
+
         dirs
     }
 
@@ -102,6 +121,17 @@ impl PluginLoader {
 
         for dir in self.plugin_dirs() {
             debug!("Scanning plugin directory: {}", dir.path.display());
+
+            if dir.source == PluginSource::External
+                && super::plugin_dir::has_plugin_manifest(&dir.path)
+            {
+                match self.discover_plugin(&dir.path, dir.source).await {
+                    Ok(Some(plugin)) => plugins.push(plugin),
+                    Ok(None) => {}
+                    Err(e) => warn!("Failed to discover plugin at {}: {}", dir.path.display(), e),
+                }
+                continue;
+            }
 
             let entries = match std::fs::read_dir(&dir.path) {
                 Ok(entries) => entries,
@@ -125,6 +155,16 @@ impl PluginLoader {
                 };
 
                 let path = entry.path();
+                if entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(true) {
+                    continue;
+                }
+                if path.is_dir() {
+                    if let Ok(canonical) = std::fs::canonicalize(&path) {
+                        if !canonical.starts_with(&dir.path) {
+                            continue;
+                        }
+                    }
+                }
 
                 // Try to discover plugin
                 match self.discover_plugin(&path, dir.source).await {

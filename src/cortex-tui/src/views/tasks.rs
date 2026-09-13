@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 
 use cortex_agents::background::{AgentStatus, RunningAgentInfo};
 use cortex_common::{format_duration, truncate_first_line, truncate_id_default};
+use cortex_core::style::{ACCENT, ERROR, HAIRLINE, SUCCESS, TEXT, TEXT_DIM, WARNING};
 
 /// View for displaying background tasks/agents.
 pub struct TasksView {
@@ -85,18 +86,18 @@ impl TasksView {
 
         // Create outer block
         let block = Block::default()
-            .title(" Background Tasks ")
-            .title_style(Style::default().fg(Color::Cyan).bold())
+            .title(" Agents & jobs ")
+            .title_style(Style::default().fg(ACCENT).bold())
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
+            .border_style(Style::default().fg(HAIRLINE));
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
         if self.agents.is_empty() {
             // Show empty state
-            let empty_text = Paragraph::new("No background tasks running.\n\nPress Ctrl+B to run the current prompt in background.")
-                .style(Style::default().fg(Color::DarkGray))
+            let empty_text = Paragraph::new("No background tasks running.\n\nCtrl+B runs the current prompt in the background. /jobs lists live agents.")
+                .style(Style::default().fg(TEXT_DIM))
                 .alignment(Alignment::Center);
 
             // Center vertically
@@ -126,11 +127,11 @@ impl TasksView {
 
         // Create table header
         let header = Row::new(vec![
-            Cell::from("ID").style(Style::default().fg(Color::Yellow).bold()),
-            Cell::from("Status").style(Style::default().fg(Color::Yellow).bold()),
-            Cell::from("Task").style(Style::default().fg(Color::Yellow).bold()),
-            Cell::from("Duration").style(Style::default().fg(Color::Yellow).bold()),
-            Cell::from("Tokens").style(Style::default().fg(Color::Yellow).bold()),
+            Cell::from("ID").style(Style::default().fg(TEXT).bold()),
+            Cell::from("Status").style(Style::default().fg(TEXT).bold()),
+            Cell::from("Task").style(Style::default().fg(TEXT).bold()),
+            Cell::from("Duration").style(Style::default().fg(TEXT).bold()),
+            Cell::from("Tokens").style(Style::default().fg(TEXT).bold()),
         ])
         .height(1)
         .bottom_margin(1);
@@ -145,9 +146,9 @@ impl TasksView {
             .map(|(idx, agent)| {
                 let is_selected = idx == self.selected;
                 let style = if is_selected {
-                    Style::default().bg(Color::DarkGray)
+                    Style::default().bg(HAIRLINE).fg(TEXT)
                 } else {
-                    Style::default()
+                    Style::default().fg(TEXT)
                 };
 
                 Row::new(vec![
@@ -184,9 +185,10 @@ impl TasksView {
             height: 1,
         };
 
-        let help_text = Paragraph::new("↑↓ Navigate  Enter: Details  c: Cancel  Esc: Close")
-            .style(Style::default().fg(Color::DarkGray))
-            .alignment(Alignment::Center);
+        let help_text =
+            Paragraph::new("↑↓ Navigate  Enter: open  a: attach  x: cancel  Esc: close")
+                .style(Style::default().fg(TEXT_DIM))
+                .alignment(Alignment::Center);
         frame.render_widget(help_text, help_area);
     }
 }
@@ -194,12 +196,12 @@ impl TasksView {
 /// Formats a status as a styled badge.
 fn status_badge(status: &AgentStatus) -> Span<'static> {
     match status {
-        AgentStatus::Initializing => Span::styled("○ Init", Style::default().fg(Color::Gray)),
-        AgentStatus::Running => Span::styled("● Running", Style::default().fg(Color::Yellow)),
-        AgentStatus::Completed => Span::styled("✓ Done", Style::default().fg(Color::Green)),
-        AgentStatus::Failed => Span::styled("✗ Failed", Style::default().fg(Color::Red)),
-        AgentStatus::Cancelled => Span::styled("○ Cancelled", Style::default().fg(Color::DarkGray)),
-        AgentStatus::TimedOut => Span::styled("⏱ Timeout", Style::default().fg(Color::Magenta)),
+        AgentStatus::Initializing => Span::styled("Init", Style::default().fg(TEXT_DIM)),
+        AgentStatus::Running => Span::styled("Running", Style::default().fg(WARNING)),
+        AgentStatus::Completed => Span::styled("Done", Style::default().fg(SUCCESS)),
+        AgentStatus::Failed => Span::styled("Failed", Style::default().fg(ERROR)),
+        AgentStatus::Cancelled => Span::styled("Cancelled", Style::default().fg(TEXT_DIM)),
+        AgentStatus::TimedOut => Span::styled("Timeout", Style::default().fg(WARNING)),
     }
 }
 
@@ -308,5 +310,48 @@ mod tests {
         assert_eq!(truncate_first_line("line1\nline2", 20).as_ref(), "line1");
 
         assert_eq!(truncate_id_default("bg-1").as_ref(), "bg-1");
+    }
+
+    fn render_tasks(view: &TasksView, w: u16, h: u16) -> String {
+        let backend = ratatui::backend::TestBackend::new(w, h);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| view.render(frame, frame.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        let mut out = String::new();
+        for y in 0..h {
+            for x in 0..w {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn tasks_view_snapshots_narrow_and_wide() {
+        let mut view = TasksView::new();
+        view.set_agents(vec![
+            make_test_agent("bg-1", "rate-limiter", AgentStatus::Running),
+            make_test_agent("bc-4f2a", "cloud agent", AgentStatus::Running),
+        ]);
+        for (w, h) in [(40, 12), (120, 40)] {
+            let text = render_tasks(&view, w, h);
+            assert!(
+                text.contains("Agents & jobs"),
+                "missing title at {w}x{h}:\n{text}"
+            );
+            assert!(
+                text.contains("Running"),
+                "missing status at {w}x{h}:\n{text}"
+            );
+            assert!(
+                !text.contains('●') && !text.contains('○'),
+                "jobs table must not use radio glyphs at {w}x{h}:\n{text}"
+            );
+        }
+        let empty = render_tasks(&TasksView::new(), 40, 12);
+        assert!(empty.contains("No background tasks running"));
     }
 }

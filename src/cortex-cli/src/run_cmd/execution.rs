@@ -92,6 +92,14 @@ impl RunCli {
             self.system_prompt.clone(),
         )
         .await?;
+        crate::harness::apply_session_harness(
+            &mut config.cwd,
+            &config.cortex_home,
+            self.bash_edit_diff,
+            self.worktree.as_ref(),
+            &self.plugin_dir,
+        )
+        .await?;
         if let Some(agent) = &self.agent {
             config.current_agent = Some(agent.clone());
         }
@@ -125,64 +133,7 @@ impl RunCli {
             None => Session::new(config.clone())?,
         };
         let session_id = handle.conversation_id.to_string();
-
-        // Build user input parts
-        let mut input_parts = Vec::new();
-
-        // Add file attachments
-        for attachment in attachments {
-            // Read file content
-            let content = std::fs::read_to_string(&attachment.path)
-                .with_context(|| format!("Failed to read file: {}", attachment.path.display()))?;
-
-            input_parts.push(UserInput::Text {
-                text: format!(
-                    "--- File: {} ---\n{}\n--- End of {} ---",
-                    attachment.filename, content, attachment.filename
-                ),
-            });
-        }
-
-        // Add the main message
-        if !message.is_empty() {
-            input_parts.push(UserInput::Text {
-                text: message.to_string(),
-            });
-        }
-
-        // If using a command, try to expand it from custom commands registry
-        let final_input = if let Some(ref cmd) = self.command {
-            // Try to get the custom command registry
-            if let Some(registry) = cortex_engine::try_custom_command_registry() {
-                // Try to execute the custom command
-                let ctx = cortex_engine::TemplateContext::new(message.to_string())
-                    .with_cwd(config.cwd.to_string_lossy().to_string());
-
-                // Use blocking runtime to get the command
-                let prompt = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(async { registry.execute(cmd, &ctx).await })
-                });
-
-                if let Some(result) = prompt {
-                    vec![UserInput::Text {
-                        text: result.prompt,
-                    }]
-                } else {
-                    // Fallback to simple format if command not found
-                    vec![UserInput::Text {
-                        text: format!("Execute command: {} with arguments: {}", cmd, message),
-                    }]
-                }
-            } else {
-                // No registry, use simple format
-                vec![UserInput::Text {
-                    text: format!("Execute command: {} with arguments: {}", cmd, message),
-                }]
-            }
-        } else {
-            input_parts
-        };
+        let final_input = build_user_input(self, message, attachments, &config.cwd)?;
 
         let session_task = tokio::spawn(async move { session.run().await });
 
@@ -634,4 +585,49 @@ impl RunCli {
 
         Ok(())
     }
+}
+
+fn build_user_input(
+    cli: &RunCli,
+    message: &str,
+    attachments: &[FileAttachment],
+    cwd: &std::path::Path,
+) -> Result<Vec<UserInput>> {
+    let mut input_parts = Vec::new();
+    for attachment in attachments {
+        let content = std::fs::read_to_string(&attachment.path)
+            .with_context(|| format!("Failed to read file: {}", attachment.path.display()))?;
+        input_parts.push(UserInput::Text {
+            text: format!(
+                "--- File: {} ---\n{}\n--- End of {} ---",
+                attachment.filename, content, attachment.filename
+            ),
+        });
+    }
+    if !message.is_empty() {
+        input_parts.push(UserInput::Text {
+            text: message.to_string(),
+        });
+    }
+    let Some(cmd) = cli.command.as_ref() else {
+        return Ok(input_parts);
+    };
+    let fallback = vec![UserInput::Text {
+        text: format!("Execute command: {} with arguments: {}", cmd, message),
+    }];
+    let Some(registry) = cortex_engine::try_custom_command_registry() else {
+        return Ok(fallback);
+    };
+    let ctx = cortex_engine::TemplateContext::new(message.to_string())
+        .with_cwd(cwd.to_string_lossy().to_string());
+    let prompt = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async { registry.execute(cmd, &ctx).await })
+    });
+    Ok(if let Some(result) = prompt {
+        vec![UserInput::Text {
+            text: result.prompt,
+        }]
+    } else {
+        fallback
+    })
 }

@@ -115,8 +115,8 @@ mod tests {
             assert!(LOCK_V2_WIDE_IDS.contains(id), "{id} missing from wide");
             assert!(LOCK_V2_NARROW_IDS.contains(id), "{id} missing from narrow");
         }
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 89);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 43);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 95);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 49);
         let mut seen = std::collections::HashSet::new();
         for id in LOCK_V2_WIDE_IDS.iter().chain(LOCK_V2_NARROW_IDS) {
             seen.insert(*id);

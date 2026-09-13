@@ -6,6 +6,7 @@ use crate::modal::ModalAction;
 use crate::session::{CortexSession, SessionStorage, StoredMessage};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
+use serial_test::serial;
 
 fn fixture() -> (tempfile::TempDir, EventLoop) {
     let temp = tempfile::tempdir().unwrap();
@@ -513,4 +514,88 @@ async fn ux_contract_permission_prompt_numbered_radios() {
     }
     runner.app_state.reject();
     assert!(!runner.app_state.has_pending_approval());
+}
+
+#[tokio::test]
+#[serial]
+async fn ux_contract_handoff_opens_confirm_instead_of_unsupported() {
+    let previous_url = std::env::var("CORTEX_API_URL").ok();
+    unsafe {
+        std::env::remove_var("CORTEX_AUTH_TOKEN");
+        std::env::remove_var("CORTEX_API_KEY");
+        std::env::set_var("CORTEX_API_URL", "http://127.0.0.1:9");
+    }
+    let (_temp, mut runner) = fixture();
+    runner
+        .handle_command_result(CommandResult::Async("handoff".into()))
+        .await
+        .unwrap();
+    let state = runner
+        .app_state
+        .get_interactive_state()
+        .expect("/handoff must open the confirm picker");
+    assert_eq!(state.title, "Handoff");
+    assert!(
+        state.items.iter().any(|i| i.id == "cloud"),
+        "missing Cortex Cloud option"
+    );
+    assert!(
+        state.items.iter().any(|i| i.id == "stay"),
+        "missing stay option"
+    );
+    assert_views(&mut runner, "Cortex Cloud");
+    runner
+        .handle_interactive_selection(
+            crate::interactive::InteractiveAction::Custom("handoff-confirm".into()),
+            "stay".into(),
+            vec![],
+        )
+        .await;
+    runner.app_state.exit_interactive_mode();
+    runner
+        .handle_command_result(CommandResult::Async("handoff".into()))
+        .await
+        .unwrap();
+    runner
+        .handle_interactive_selection(
+            crate::interactive::InteractiveAction::Custom("handoff-confirm".into()),
+            "cloud".into(),
+            vec![],
+        )
+        .await;
+    assert_views(&mut runner, "Chat");
+    if let Some(jobs) = runner.app_state.get_interactive_state() {
+        assert!(
+            !jobs.title.contains("none running"),
+            "Cloud must not open the empty local jobs picker: {}",
+            jobs.title
+        );
+        assert!(
+            jobs.items
+                .iter()
+                .all(|item| item.id != "empty" && !item.disabled),
+            "Cloud rows must be live Code session ids, got {:?}",
+            jobs.items.iter().map(|i| &i.id).collect::<Vec<_>>()
+        );
+        assert_eq!(runner.app_state.active_subagents.len(), 0);
+    } else {
+        let last = runner
+            .app_state
+            .messages
+            .last()
+            .expect("Cloud without sessions must explain the failure")
+            .content
+            .clone();
+        assert!(
+            last.contains("Not signed in")
+                || last.contains("temporarily unavailable")
+                || last.contains("cortex login"),
+            "{last}"
+        );
+        assert!(!last.to_ascii_lowercase().contains("reqwest"), "{last}");
+    }
+    match previous_url {
+        Some(url) => unsafe { std::env::set_var("CORTEX_API_URL", url) },
+        None => unsafe { std::env::remove_var("CORTEX_API_URL") },
+    }
 }

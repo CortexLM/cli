@@ -111,6 +111,10 @@ fn main() {
             write_lock_v2_frames(width, height, &output)
         }
     } else {
+        if only_flag {
+            eprintln!("--only requires --v2");
+            process::exit(1);
+        }
         write_lock_frames(width, height, &output)
     };
     match result {

@@ -227,6 +227,35 @@ pub fn build_clear_confirm() -> InteractiveState {
     .with_prompt_focus()
 }
 
+/// `/handoff` confirm (lock `handoff-confirm`). Chat · Code · Bot; CLI stays.
+pub fn build_handoff_confirm(narrow: bool) -> InteractiveState {
+    let items = vec![
+        InteractiveItem::new("cloud", "1 Cortex Cloud")
+            .with_description(if narrow {
+                "Chat · Code · Bot"
+            } else {
+                "Chat · Code · Bot — this CLI session stays here"
+            })
+            .with_shortcut('1'),
+        InteractiveItem::new(
+            "stay",
+            if narrow {
+                "2 Stay on CLI"
+            } else {
+                "2 Stay on this CLI session"
+            },
+        )
+        .with_description("keep running locally")
+        .with_shortcut('2'),
+    ];
+    InteractiveState::new(
+        "Handoff",
+        items,
+        InteractiveAction::Custom("handoff-confirm".into()),
+    )
+    .with_prompt_focus()
+}
+
 /// Build an interactive state for log level selection.
 pub fn build_log_level_selector(current: Option<&str>) -> InteractiveState {
     let items = vec![
@@ -317,6 +346,11 @@ mod tests {
         assert!(build_sandbox_deny_prompt().prompt_owns_focus);
         assert!(build_plan_confirm().prompt_owns_focus);
         assert!(build_clear_confirm().prompt_owns_focus);
+        let handoff = build_handoff_confirm(false);
+        assert!(handoff.prompt_owns_focus);
+        assert_eq!(handoff.title, "Handoff");
+        assert_eq!(handoff.items[0].id, "cloud");
+        assert_eq!(handoff.items[1].id, "stay");
         let q = build_question_prompt(
             "Question",
             &[

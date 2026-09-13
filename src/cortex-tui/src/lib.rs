@@ -106,6 +106,7 @@ pub mod lock_proof;
 pub mod lock_v2;
 mod lock_v2_boards;
 mod lock_v2_computer;
+mod lock_v2_designed;
 mod lock_v2_goal;
 mod lock_v2_ids;
 mod lock_v2_network;

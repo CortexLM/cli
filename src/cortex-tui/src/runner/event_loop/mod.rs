@@ -30,6 +30,7 @@ mod actions;
 mod auth;
 mod commands;
 mod core;
+mod handoff;
 mod input;
 mod local_workflows;
 mod me;

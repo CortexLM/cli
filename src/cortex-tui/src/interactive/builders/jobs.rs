@@ -1,5 +1,7 @@
 //! `/jobs` picker — background agents and subagents (lock `jobs`).
 
+use cortex_engine::client::CodeSession;
+
 use crate::app::SubagentTaskDisplay;
 use crate::interactive::state::{InteractiveAction, InteractiveItem, InteractiveState};
 
@@ -23,6 +25,30 @@ impl JobRow {
             },
             title: task.description.clone(),
             status: task.status.description(),
+        }
+    }
+
+    pub fn from_code_session(session: &CodeSession) -> Self {
+        let title = if session.title.is_empty() {
+            session.id.clone()
+        } else {
+            session.title.clone()
+        };
+        let kind = if session.runtime.is_empty() {
+            "cloud".into()
+        } else {
+            session.runtime.clone()
+        };
+        let status = if session.state.is_empty() {
+            "live".into()
+        } else {
+            session.state.clone()
+        };
+        Self {
+            id: session.id.clone(),
+            kind,
+            title,
+            status,
         }
     }
 }
@@ -91,6 +117,28 @@ mod tests {
             state.action,
             InteractiveAction::Custom(ref id) if id == "jobs-picker"
         ));
+    }
+
+    #[test]
+    fn jobs_from_code_sessions_keep_api_ids() {
+        let session = CodeSession {
+            id: "sess-lock-1".into(),
+            runtime: "cloud".into(),
+            kind: String::new(),
+            host_status: String::new(),
+            state: String::new(),
+            model_slug: String::new(),
+            model_ref: String::new(),
+            title: "rate limiter".into(),
+            created_at: String::new(),
+            host_id: String::new(),
+            stream: None,
+        };
+        let row = JobRow::from_code_session(&session);
+        assert_eq!(row.id, "sess-lock-1");
+        assert_eq!(row.kind, "cloud");
+        assert_eq!(row.title, "rate limiter");
+        assert_eq!(row.status, "live");
     }
 
     #[test]

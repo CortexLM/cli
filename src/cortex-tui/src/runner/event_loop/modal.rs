@@ -751,6 +751,9 @@ impl EventLoop {
                         self.app_state.toasts.info(format!("Permissions: {label}"));
                         return false;
                     }
+                    "handoff-confirm" => {
+                        return self.handle_handoff_confirm_choice(&item_id).await;
+                    }
                     "clear-confirm" => {
                         if item_id == "yes" {
                             self.app_state.clear_messages();

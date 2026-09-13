@@ -370,6 +370,12 @@ impl EventLoop {
 
         match cmd {
             "sessions:list" => self.open_sessions_modal(),
+            "handoff" => {
+                let narrow = self.app_state.terminal_size.0 <= 40;
+                self.app_state.enter_interactive_mode(
+                    crate::interactive::builders::build_handoff_confirm(narrow),
+                );
+            }
             "undo" => {
                 let result = self.rewind_conversation(1);
                 self.report_local_result(result, "");

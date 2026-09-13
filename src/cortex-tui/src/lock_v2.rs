@@ -46,7 +46,7 @@ pub fn validate_lock_v2_only_ids(ids: &[&str], width: u16) -> Result<()> {
     let mut seen = HashSet::new();
     for id in ids {
         if !known.contains(id) {
-            anyhow::bail!("unknown lock v2 scene id `{id}`");
+            anyhow::bail!("unknown lock v2 scene id `{id}` at width {width}");
         }
         if !seen.insert(*id) {
             anyhow::bail!("repeated lock v2 scene id `{id}`");
@@ -68,12 +68,12 @@ pub fn write_lock_v2_id_frames(
     let mut manifest_frames = Vec::new();
     for id in ids {
         let frame = render_lock_v2_scene(id, width, height)?;
-        let file = format!("{}.ans", id);
+        let file = format!("{id}.ans");
         std::fs::write(output_dir.join(&file), &frame.ansi)
             .with_context(|| format!("write {file}"))?;
         manifest_frames.push(ManifestFrame {
             file,
-            label: id.to_string(),
+            label: (*id).to_string(),
             hold: 1,
         });
     }
@@ -158,8 +158,8 @@ mod tests {
 
     #[test]
     fn lock_v2_wide_count_is_spec() {
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 89);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 43);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 95);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 49);
     }
 
     #[test]

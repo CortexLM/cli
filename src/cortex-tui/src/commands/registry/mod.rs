@@ -163,6 +163,7 @@ mod tests {
         assert!(registry.exists("resume"));
         assert!(registry.exists("sessions"));
         assert!(registry.exists("fork"));
+        assert!(registry.exists("handoff"));
         assert!(registry.exists("rename"));
         assert!(registry.exists("favorite"));
         assert!(registry.exists("unfavorite"));

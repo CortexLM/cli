@@ -1,0 +1,12 @@
+                             14K / 500K
+   ● Edit  AGENTS.md · +12
+     + # Cortex CLI
+     + Chat | Code | Bot
+   > 1 Write AGENTS.md   built-in tem…
+     2 Cancel   leave the file untouc…
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Plan, search, build anything     │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:confirm | Esc:cancel

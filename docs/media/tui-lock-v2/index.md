@@ -49,6 +49,11 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `goal-chip-budget` | Composer goal chip — `Goal · budget` (budget_limited), text-only | [120x40](120x40/goal-chip-budget.png) | [40x12](40x12/goal-chip-budget.png) |
 | `goal-chip-blocked` | Composer goal chip — `Goal · blocked`, text-only | [120x40](120x40/goal-chip-blocked.png) | [40x12](40x12/goal-chip-blocked.png) |
 | `slash-model-typed` | `/mod` typed — banner green matched chars, ghost completion | [120x40](120x40/slash-model-typed.png) | [40x12](40x12/slash-model-typed.png) |
+| `theme-picker` | `/theme` — Cortex Night / Cortex Day / Ocean Dark / Monokai | [runtime 120x40](runtime/120x40/theme-picker.png) | [runtime 40x12](runtime/40x12/theme-picker.png) |
+| `session-fork` | `/fork` — fork this session or stay | [runtime 120x40](runtime/120x40/session-fork.png) | [runtime 40x12](runtime/40x12/session-fork.png) |
+| `init-agents` | `/init` — AGENTS.md from the built-in project template | [120x40](120x40/init-agents.png) · [runtime](runtime/120x40/init-agents.png) | [40x12](40x12/init-agents.png) · [runtime](runtime/40x12/init-agents.png) |
+| `custom-commands` | `.cortex/commands` + repo `SKILL.md` | [runtime 120x40](runtime/120x40/custom-commands.png) | [runtime 40x12](runtime/40x12/custom-commands.png) |
+| `hooks-lifecycle` | `/hooks` — pre_tool_use / post_tool_use / stop / session_end | [120x40](120x40/hooks-lifecycle.png) · [runtime](runtime/120x40/hooks-lifecycle.png) | [40x12](40x12/hooks-lifecycle.png) · [runtime](runtime/40x12/hooks-lifecycle.png) |
 | `model-list` | `/model` — Cortex Mini 1 · Cortex 1 · Cortex Max 1 | [120x40](120x40/model-list.png) | [40x12](40x12/model-list.png) |
 | `model-list-hover` | Model list with mouse over row 3 | [120x40](120x40/model-list-hover.png) | — |
 | `model-effort-high` | Effort radios — High focused | [120x40](120x40/model-effort-high.png) | [40x12](40x12/model-effort-high.png) |
@@ -85,6 +90,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `sandbox` | `/sandbox` — filesystem / network / escalation | [120x40](120x40/sandbox.png) | — |
 | `sandbox-deny` | Sandbox blocked a command — red title, radios | [120x40](120x40/sandbox-deny.png) | — |
 | `cloud-handoff` | `&` handoff to Cortex Cloud | [120x40](120x40/cloud-handoff.png) | — |
+| `handoff-confirm` | `/handoff` — Cortex Cloud vs stay on this CLI (Chat · Code · Bot) | [runtime 120x40](runtime/120x40/handoff-confirm.png) | [runtime 40x12](runtime/40x12/handoff-confirm.png) |
 | `diagnostics` | Diagnostics tile — error red, warn amber | [120x40](120x40/diagnostics.png) | [40x12](40x12/diagnostics.png) |
 | `interrupt-stopped` | Esc / Ctrl+c — `× Stopped` | [120x40](120x40/interrupt-stopped.png) | [40x12](40x12/interrupt-stopped.png) |
 | `error-unavailable` | API down — product-facing error | [120x40](120x40/error-unavailable.png) | — |
@@ -120,6 +126,4 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `composer-file-chip` | Composer with attached @file chip in prompt | [120x40](120x40/composer-file-chip.png) | [40x12](40x12/composer-file-chip.png) |
 | `undo-sheet` | /undo /redo /rewind sheet | [120x40](120x40/undo-sheet.png) | [40x12](40x12/undo-sheet.png) |
 
-**89** boards at 120x40 · **43** at 40x12 · 132 PNGs.
-
-Runtime MockTerminal pack (same ids): [`runtime/120x40`](runtime/120x40/) (89) · [`runtime/40x12`](runtime/40x12/) (43).
+**95** runtime boards at 120x40 · **49** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack.

@@ -1,7 +1,7 @@
 //! Lock v2 scene id lists. Split out of [`crate::lock_v2`] so adding `/goal`
 //! boards does not grow that file past the source-policy line-count baseline.
 
-/// Narrow (40×12) SPEC §7 set — 43 boards.
+/// Narrow (40×12) SPEC §7 set — 49 boards.
 pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "welcome-cortex",
     "welcome-agent",
@@ -29,6 +29,12 @@ pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "settings-mouse",
     "settings-row-hover",
     "settings-theme-submenu",
+    "theme-picker",
+    "session-fork",
+    "init-agents",
+    "custom-commands",
+    "hooks-lifecycle",
+    "handoff-confirm",
     "mode-plan",
     "mode-ask",
     "permission-prompt",
@@ -48,7 +54,7 @@ pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "undo-sheet",
 ];
 
-/// Wide (120×40) SPEC §7 set — 89 boards.
+/// Wide (120×40) SPEC §7 set — 95 boards.
 pub const LOCK_V2_WIDE_IDS: &[&str] = &[
     "welcome-cortex",
     "welcome-agent",
@@ -105,6 +111,12 @@ pub const LOCK_V2_WIDE_IDS: &[&str] = &[
     "sandbox",
     "sandbox-deny",
     "cloud-handoff",
+    "handoff-confirm",
+    "theme-picker",
+    "session-fork",
+    "init-agents",
+    "custom-commands",
+    "hooks-lifecycle",
     "diagnostics",
     "interrupt-stopped",
     "error-unavailable",
@@ -157,8 +169,8 @@ mod tests {
 
     #[test]
     fn lock_v2_id_counts_and_unique() {
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 89);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 43);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 95);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 49);
         let mut wide = HashSet::new();
         for id in LOCK_V2_WIDE_IDS {
             assert!(wide.insert(*id), "duplicate wide id {id}");

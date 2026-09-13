@@ -31,7 +31,7 @@ pub use agents::{
 pub use approval::{
     PERMISSION_EDIT_LABEL, PERMISSION_NO_LABEL, PERMISSION_ONCE_LABEL, PERMISSION_PROMPT_ACTION,
     PERMISSION_PROMPT_PLACEHOLDER, PERMISSION_PROMPT_TITLE, always_allow_snippet,
-    build_approval_selector, build_clear_confirm, build_log_level_selector,
+    build_approval_selector, build_clear_confirm, build_handoff_confirm, build_log_level_selector,
     build_permission_prompt, build_permissions_picker, build_plan_confirm, build_question_prompt,
     build_sandbox_deny_prompt, permission_always_label, permission_command_line,
 };

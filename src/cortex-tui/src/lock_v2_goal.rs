@@ -8,6 +8,8 @@ use cortex_engine::goal::{Goal, GoalState};
 
 use crate::app::AppState;
 
+pub use crate::lock_v2_computer::apply_computer_scene;
+
 /// Composer chip lock boards. Each filename is one live state.
 pub const GOAL_CHIP_IDS: &[&str] = &[
     "goal-chip-active",

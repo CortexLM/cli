@@ -206,6 +206,10 @@ pub struct AppState {
     pub offline_held: bool,
     /// HTTP 429 rate limit — follow-ups stay in the composer until Retry-After.
     pub rate_limit_held: bool,
+    /// This PC / SSH fail-closed — no host session; composer held, no Cloud substitute.
+    pub computer_held: bool,
+    /// Welcome info card should lock-paint Computer · Cloud as the shipped default.
+    pub show_computer_default: bool,
     /// Launched via the `agent` binary / alias.
     pub agent_entrypoint: bool,
     /// Token counter used / window.
@@ -348,6 +352,8 @@ impl AppState {
             quota_held: false,
             offline_held: false,
             rate_limit_held: false,
+            computer_held: false,
+            show_computer_default: false,
             agent_entrypoint: false,
             tokens_used: 0,
             context_window: 500_000,

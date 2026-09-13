@@ -14,6 +14,7 @@ pub(super) fn system_message_is_error(content: &str) -> bool {
             "Invalid",
             "You're offline",
             "Rate limited",
+            "This PC disconnected",
             "context limit",
             "Stopped",
             "quota exhausted",
@@ -174,6 +175,7 @@ mod tests {
     fn lock_red_system_copy_includes_offline_and_rate_limit() {
         assert!(system_message_is_error("× You're offline"));
         assert!(system_message_is_error("× Rate limited"));
+        assert!(system_message_is_error("× This PC disconnected"));
         assert!(system_message_is_error(
             "The coding service is temporarily unavailable"
         ));

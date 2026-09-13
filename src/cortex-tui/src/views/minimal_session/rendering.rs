@@ -1051,7 +1051,6 @@ pub fn render_update_banner(
     let x = area.x + 2;
     let y = area.y;
 
-    // Ensure we don't overflow
     if x + banner_width > area.right() {
         return;
     }

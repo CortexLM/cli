@@ -3,7 +3,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
 use super::rendering::{
@@ -162,6 +162,9 @@ impl<'a> MinimalSessionView<'a> {
         let mut all_lines: Vec<Line<'static>> = Vec::new();
 
         all_lines.extend(generate_welcome_lines(width, &self.colors, self.app_state));
+        if self.app_state.show_computer_default {
+            all_lines.extend(computer_default_info_lines(width, &self.colors));
+        }
 
         let message_lines = generate_message_lines(width, &self.colors, self.app_state);
         if !message_lines.is_empty() {
@@ -261,7 +264,8 @@ impl<'a> MinimalSessionView<'a> {
             || self.app_state.has_pending_approval();
         let focused = self.app_state.settings_modal.is_none()
             && !self.app_state.shortcuts_open
-            && !prompt_owns_focus;
+            && !prompt_owns_focus
+            && !self.app_state.computer_held;
         let effort = self
             .app_state
             .thinking_budget
@@ -319,6 +323,12 @@ impl<'a> MinimalSessionView<'a> {
                 }
             } else if self.app_state.quota_held {
                 crate::ui::consts::PLACEHOLDER_QUOTA
+            } else if self.app_state.computer_held {
+                if area.width < 80 {
+                    crate::ui::consts::PLACEHOLDER_DISCONNECTED_NARROW
+                } else {
+                    crate::ui::consts::PLACEHOLDER_DISCONNECTED
+                }
             } else if self.is_task_running() {
                 PLACEHOLDER_RUNNING
             } else if self.app_state.agent_entrypoint {
@@ -731,7 +741,10 @@ pub const PALETTE_FOOTER_HINT_SHORT: &str = "Enter:send | Ctrl+x:shortcuts";
 
 impl<'a> MinimalSessionView<'a> {
     fn footer_set(&self, is_task_running: bool, width: u16) -> FooterSet {
-        if self.app_state.offline_held || self.app_state.quota_held {
+        if self.app_state.offline_held
+            || self.app_state.quota_held
+            || self.app_state.computer_held
+        {
             return FooterSet::Unavailable;
         }
         if self.app_state.rate_limit_held {
@@ -861,6 +874,30 @@ fn composer_has_completed_file_chip(text: &str) -> bool {
         }
     }
     false
+}
+
+/// Welcome info-card rows that make Computer · Cloud lock-evident.
+fn computer_default_info_lines(width: u16, colors: &AdaptiveColors) -> Vec<Line<'static>> {
+    let dim = Style::default().fg(colors.text_dim);
+    let text = Style::default().fg(colors.text);
+    let indent = if width < 20 { 0 } else { 3 };
+    let pad = " ".repeat(indent as usize);
+    let row = |label: &str, value: &str| {
+        Line::from(vec![
+            Span::raw(pad.clone()),
+            Span::styled(format!("{label:<10}"), dim),
+            Span::styled(value.to_string(), text),
+        ])
+    };
+    let cloud = cortex_engine::client::ComputerKind::Cloud.label();
+    let mut lines = vec![Line::from("")];
+    if width >= 80 {
+        lines.push(row("Directory", "~/cortex"));
+        lines.push(row("Org", "Personal"));
+        lines.push(row("Plan", "Pro"));
+    }
+    lines.push(row("Computer", cloud));
+    lines
 }
 
 fn composer_display_text(state: &AppState) -> String {

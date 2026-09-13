@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > run the local cargo tests                                                                                09:18 AM
+
+   × This PC disconnected
+     This PC and SSH Code execution require an already connected Code session. Connect a host and resume that session,
+     or leave CORTEX_COMPUTER unset to use Cloud. No runtime was substituted.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Connect a host — or unset CORTEX_COMPUTER for Cloud                                                              │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:retry  |  Ctrl+x:shortcuts

@@ -14,7 +14,9 @@ use crate::interactive::builders::{
     build_permissions_picker, build_plan_confirm, build_question_prompt, build_sandbox_deny_prompt,
 };
 use crate::lock_v2::PRODUCT_ERROR;
-use crate::lock_v2_goal::{apply_goal_chip_scene, show_goal_in_narrow_palette};
+use crate::lock_v2_goal::{
+    apply_computer_scene, apply_goal_chip_scene, show_goal_in_narrow_palette,
+};
 use crate::lock_v2_network::apply_offline_rate_limit_scene;
 use crate::lock_v2_parity::apply_parity_scene;
 use crate::lock_v2_scenes::*;
@@ -811,6 +813,12 @@ Tell me what you'd like to do.",
         id if apply_offline_rate_limit_scene(id, &mut state) => {}
         id if apply_parity_scene(id, &mut state, width) => {}
         id if apply_goal_chip_scene(id, &mut state) => {}
+        "computer-disconnected" | "computer-cloud-default" => {
+            assert!(
+                apply_computer_scene(id, &mut state, width),
+                "computer lock scene {id}"
+            );
+        }
         other => panic!("unknown lock v2 scene {other}"),
     }
     state

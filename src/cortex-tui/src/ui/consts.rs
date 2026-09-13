@@ -59,6 +59,13 @@ pub const PLACEHOLDER_RATE_LIMIT: &str = "Add a follow-up — held until the rat
 /// Narrow (40-column) form of the rate-limit placeholder.
 pub const PLACEHOLDER_RATE_LIMIT_NARROW: &str = "Held until the rate limit resets";
 
+/// This PC / SSH fail-closed title painted in error red (`× This PC disconnected`).
+pub const DISCONNECTED_TITLE: &str = "This PC disconnected";
+/// Composer placeholder while This PC/SSH is fail-closed (no host session).
+pub const PLACEHOLDER_DISCONNECTED: &str = "Connect a host — or unset CORTEX_COMPUTER for Cloud";
+/// Narrow (40-column) form of the disconnected placeholder.
+pub const PLACEHOLDER_DISCONNECTED_NARROW: &str = "Connect a host — or unset for Cloud";
+
 /// Sandbox deny title painted in error red.
 pub const SANDBOX_DENIED_TITLE: &str = "Sandbox denied";
 

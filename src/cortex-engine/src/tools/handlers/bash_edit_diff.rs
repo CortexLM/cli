@@ -40,7 +40,7 @@ pub fn diff_snapshots(
     paths.dedup();
 
     let mut chunks = Vec::new();
-    for path in paths.into_iter().take(MAX_FILES) {
+    for path in paths {
         if should_redact_path(&path) {
             continue;
         }
@@ -62,6 +62,9 @@ pub fn diff_snapshots(
             rel.display(),
             unified
         ));
+        if chunks.len() >= MAX_FILES {
+            break;
+        }
     }
     chunks.join("\n")
 }
@@ -79,16 +82,10 @@ pub fn append_edit_diff(output: &str, diff_text: &str) -> String {
 }
 
 fn walk(dir: &Path, files: &mut HashMap<PathBuf, Vec<u8>>) {
-    if files.len() >= MAX_FILES {
-        return;
-    }
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
-        if files.len() >= MAX_FILES {
-            return;
-        }
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
@@ -187,5 +184,19 @@ mod tests {
         let after = snapshot_workspace(tmp.path());
         let text = diff_snapshots(tmp.path(), &before, &after);
         assert!(text.is_empty(), "{text}");
+    }
+
+    #[test]
+    fn snapshot_discovers_edits_past_display_cap() {
+        let tmp = TempDir::new().unwrap();
+        for i in 0..33 {
+            std::fs::write(tmp.path().join(format!("f{i:02}.txt")), "before\n").unwrap();
+        }
+        let before = snapshot_workspace(tmp.path());
+        assert_eq!(before.len(), 33);
+        std::fs::write(tmp.path().join("f32.txt"), "after\n").unwrap();
+        let after = snapshot_workspace(tmp.path());
+        let text = diff_snapshots(tmp.path(), &before, &after);
+        assert!(text.contains("f32.txt"), "{text}");
     }
 }

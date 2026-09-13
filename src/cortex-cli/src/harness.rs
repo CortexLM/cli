@@ -37,17 +37,19 @@ pub async fn load_plugin_dirs(
 ) {
     if let Err(e) = cortex_engine::plugin::init_with_project_and_dirs(
         cortex_home.to_path_buf(),
-        project_root,
+        project_root.clone(),
         extra.to_vec(),
     )
     .await
     {
         tracing::warn!("Plugin manager was not started: {e}");
-        return;
-    }
-    if let Err(e) = cortex_engine::plugin::discover_and_load().await {
+    } else if let Err(e) = cortex_engine::plugin::discover_and_load().await {
         tracing::warn!("Plugin directory was not loaded: {e}");
     }
+    // Metadata PluginManager is not the session tool runtime. Extra dirs must
+    // also reach the executable (WASM/Node) runtime so tools/hooks/commands load.
+    let cwd = project_root.unwrap_or_else(|| cortex_home.to_path_buf());
+    cortex_engine::plugin::start_executable_runtime(cwd, extra).await;
 }
 
 /// Apply `--bash-edit-diff`, `--worktree`, and `--plugin-dir` to a session cwd.
@@ -170,5 +172,13 @@ mod tests {
         )
         .await
         .unwrap();
+        let extra_path = extra.path().to_path_buf();
+        let config =
+            cortex_engine::plugin::plugin_config_with_extra_dirs(std::slice::from_ref(&extra_path));
+        assert!(
+            config.search_paths.iter().any(|path| path == &extra_path),
+            "{:?}",
+            config.search_paths
+        );
     }
 }

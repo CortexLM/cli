@@ -24,6 +24,7 @@ pub(crate) enum FollowupLine {
     Detach,
     Approve(String),
     Deny(String),
+    Invalid(String),
     Message(String),
 }
 
@@ -31,11 +32,28 @@ pub(crate) fn parse_followup_line(trimmed: &str) -> FollowupLine {
     if trimmed.is_empty() {
         return FollowupLine::Detach;
     }
+    if trimmed.eq_ignore_ascii_case("approve") || trimmed.eq_ignore_ascii_case("deny") {
+        return FollowupLine::Invalid(
+            "`approve <id>` / `deny <id>` need an invocation id. No turn was sent.".into(),
+        );
+    }
     if let Some(rest) = trimmed.strip_prefix("approve ") {
-        return FollowupLine::Approve(rest.trim().to_string());
+        let id = rest.trim();
+        if id.is_empty() {
+            return FollowupLine::Invalid(
+                "`approve <id>` needs an invocation id. No turn was sent.".into(),
+            );
+        }
+        return FollowupLine::Approve(id.to_string());
     }
     if let Some(rest) = trimmed.strip_prefix("deny ") {
-        return FollowupLine::Deny(rest.trim().to_string());
+        let id = rest.trim();
+        if id.is_empty() {
+            return FollowupLine::Invalid(
+                "`deny <id>` needs an invocation id. No turn was sent.".into(),
+            );
+        }
+        return FollowupLine::Deny(id.to_string());
     }
     FollowupLine::Message(trimmed.to_string())
 }
@@ -49,11 +67,8 @@ impl AttachCli {
         let session = client.get_session(&id).await?;
         println!("{}", attached_banner(&session));
 
-        for message in client.list_messages(&id).await? {
-            if let Some(line) = format_message_line(&message.role, &message.text) {
-                println!("{line}");
-            }
-        }
+        let mut seen = std::collections::HashSet::new();
+        print_unseen_messages(client.list_messages(&id).await?, &mut seen);
 
         if self.print_only || !io::stdin().is_terminal() {
             println!("Detached. Session {id} is still running.");
@@ -61,29 +76,85 @@ impl AttachCli {
         }
 
         println!(
-            "Send a follow-up and press Enter. `approve <id>` / `deny <id>` for paused tools. Empty line detaches."
+            "Send a follow-up and press Enter. `approve <id>` / `deny <id>` for paused tools. Empty line detaches. Remote output is followed while this terminal is attached."
         );
-        let stdin = io::stdin();
-        for line in stdin.lock().lines() {
-            let line = line?;
-            match parse_followup_line(line.trim()) {
-                FollowupLine::Detach => break,
-                FollowupLine::Approve(invocation) => {
-                    client.approve_invocation(&id, &invocation, true).await?;
-                    println!("Approved {invocation}");
-                }
-                FollowupLine::Deny(invocation) => {
-                    client.approve_invocation(&id, &invocation, false).await?;
-                    println!("Denied {invocation}");
-                }
-                FollowupLine::Message(text) => {
-                    stream_followup(&client, &text).await?;
-                }
-            }
-        }
+        follow_attached_session(&client, &id, seen).await?;
         println!("Detached. Session {id} is still running.");
         Ok(())
     }
+}
+
+fn print_unseen_messages(
+    messages: Vec<cortex_engine::client::CodeMessage>,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    for message in unseen_messages(messages, seen) {
+        if let Some(line) = format_message_line(&message.role, &message.text) {
+            println!("{line}");
+        }
+    }
+}
+
+pub(crate) fn unseen_messages(
+    messages: Vec<cortex_engine::client::CodeMessage>,
+    seen: &mut std::collections::HashSet<String>,
+) -> Vec<cortex_engine::client::CodeMessage> {
+    messages
+        .into_iter()
+        .filter(|message| {
+            let key = if message.id.is_empty() {
+                format!("{}:{}", message.created_at, message.text)
+            } else {
+                message.id.clone()
+            };
+            seen.insert(key)
+        })
+        .collect()
+}
+
+async fn follow_attached_session(
+    client: &CodeAgentClient,
+    id: &str,
+    mut seen: std::collections::HashSet<String>,
+) -> Result<()> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<std::io::Result<String>>(8);
+    std::thread::spawn(move || {
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            if tx.blocking_send(line).is_err() {
+                break;
+            }
+        }
+    });
+    loop {
+        tokio::select! {
+            line = rx.recv() => {
+                let Some(line) = line else { break; };
+                match parse_followup_line(line?.trim()) {
+                    FollowupLine::Detach => break,
+                    FollowupLine::Invalid(msg) => println!("{msg}"),
+                    FollowupLine::Approve(invocation) => {
+                        client.approve_invocation(id, &invocation, true).await?;
+                        println!("Approved {invocation}");
+                    }
+                    FollowupLine::Deny(invocation) => {
+                        client.approve_invocation(id, &invocation, false).await?;
+                        println!("Denied {invocation}");
+                    }
+                    FollowupLine::Message(text) => {
+                        stream_followup(client, &text).await?;
+                    }
+                }
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                match client.list_messages(id).await {
+                    Ok(messages) => print_unseen_messages(messages, &mut seen),
+                    Err(e) => eprintln!("{}", e.user_friendly_message()),
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn stream_followup(client: &CodeAgentClient, text: &str) -> Result<()> {
@@ -181,6 +252,35 @@ mod tests {
             parse_followup_line("keep going"),
             FollowupLine::Message("keep going".into())
         );
+        assert!(matches!(
+            parse_followup_line("approve"),
+            FollowupLine::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_followup_line("deny"),
+            FollowupLine::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_followup_line("approve "),
+            FollowupLine::Invalid(_)
+        ));
+        let mut seen = std::collections::HashSet::new();
+        let first = cortex_engine::client::CodeMessage {
+            id: "m1".into(),
+            role: "assistant".into(),
+            text: "hello".into(),
+            created_at: String::new(),
+        };
+        let again = first.clone();
+        let later = cortex_engine::client::CodeMessage {
+            id: "m2".into(),
+            role: "assistant".into(),
+            text: "later".into(),
+            created_at: String::new(),
+        };
+        assert_eq!(unseen_messages(vec![first], &mut seen).len(), 1);
+        assert!(unseen_messages(vec![again], &mut seen).is_empty());
+        assert_eq!(unseen_messages(vec![later], &mut seen).len(), 1);
         let session = cortex_engine::client::CodeSession {
             id: "sess-9".into(),
             runtime: "cloud".into(),

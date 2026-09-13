@@ -54,12 +54,7 @@ pub fn isolate_worktree(cwd: &Path, dest: Option<&Path>, id: &str) -> Result<Iso
                 "Worktree path exists and is not a directory".into(),
             ));
         }
-        return Ok(IsolatedWorktree {
-            path,
-            branch: current_branch(&repo).unwrap_or_else(|_| "HEAD".into()),
-            repo,
-            created: false,
-        });
+        return reuse_linked_worktree(&repo, &path);
     }
 
     if let Some(parent) = path.parent() {
@@ -115,6 +110,51 @@ pub fn cleanup_worktree(worktree: &IsolatedWorktree) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn reuse_linked_worktree(repo: &Path, path: &Path) -> Result<IsolatedWorktree> {
+    if same_dir(path, repo) {
+        return Err(CortexError::InvalidInput(
+            "Worktree path is the primary checkout, not a linked worktree".into(),
+        ));
+    }
+    let listed = git_worktree_paths(repo)?;
+    if !listed.iter().any(|listed_path| same_dir(listed_path, path)) {
+        return Err(CortexError::InvalidInput(
+            "Worktree path is not a linked worktree of this repository".into(),
+        ));
+    }
+    Ok(IsolatedWorktree {
+        path: path.to_path_buf(),
+        branch: current_branch(path).unwrap_or_else(|_| "HEAD".into()),
+        repo: repo.to_path_buf(),
+        created: false,
+    })
+}
+
+fn git_worktree_paths(repo: &Path) -> Result<Vec<PathBuf>> {
+    let output = Command::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(repo)
+        .output()
+        .map_err(|e| CortexError::Internal(format!("Could not list git worktrees: {e}")))?;
+    if !output.status.success() {
+        return Err(CortexError::InvalidInput(
+            "Could not list git worktrees for this repository".into(),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .collect())
+}
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => a == b,
+    }
 }
 
 fn default_worktree_path(repo: &Path, id: &str) -> PathBuf {
@@ -233,5 +273,41 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let err = isolate_worktree(tmp.path(), None, "x").unwrap_err();
         assert!(err.to_string().to_lowercase().contains("git"), "{}", err);
+    }
+
+    #[test]
+    fn existing_unrelated_directory_is_rejected() {
+        let repo = init_repo();
+        let other = TempDir::new().unwrap();
+        let err = isolate_worktree(repo.path(), Some(other.path()), "sess-other").unwrap_err();
+        assert!(err.to_string().contains("linked worktree"), "{err}");
+    }
+
+    #[test]
+    fn existing_linked_worktree_is_reused() {
+        let repo = init_repo();
+        let linked = repo.path().join("linked-wt");
+        git(
+            repo.path(),
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "cortex-reuse",
+                linked.to_str().unwrap(),
+                "HEAD",
+            ],
+        );
+        let isolated = isolate_worktree(repo.path(), Some(&linked), "sess-reuse").unwrap();
+        assert!(!isolated.created);
+        assert!(same_dir(&isolated.path, &linked));
+        assert_eq!(isolated.branch, "cortex-reuse");
+    }
+
+    #[test]
+    fn primary_checkout_is_not_a_linked_worktree() {
+        let repo = init_repo();
+        let err = isolate_worktree(repo.path(), Some(repo.path()), "sess-main").unwrap_err();
+        assert!(err.to_string().contains("primary checkout"), "{err}");
     }
 }

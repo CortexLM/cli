@@ -79,6 +79,9 @@ pub mod plugin_dir;
 pub mod types;
 /// Authoritative executable plugin runtime; the older manager is metadata-only.
 pub use cortex_plugins_ext as runtime;
+pub use executable::{
+    ExecutableSession, executable_session, plugin_config_with_extra_dirs, start_executable_runtime,
+};
 
 // Re-exports for convenience
 pub use config::{PluginConfigBuilder, PluginConfigEntry, PluginSettings, PluginsConfig};

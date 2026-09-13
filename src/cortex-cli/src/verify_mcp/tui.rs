@@ -468,6 +468,63 @@ mod tests {
     }
 
     #[test]
+    fn keyboard_map_ctrl_x_shift_tab_palette_and_cancel() {
+        let (mut state, id) = started("cortex");
+        key(&mut state, &json!({"session_id": id, "keys": ["Ctrl+x"]})).expect("open sheet");
+        assert!(session_ref(&state, &id).unwrap().app_state.shortcuts_open);
+        key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["Down", "Up", "F2"]}),
+        )
+        .expect("sheet nav");
+        assert!(!session_ref(&state, &id).unwrap().app_state.shortcuts_open);
+
+        key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["Ctrl+x", "Esc"]}),
+        )
+        .expect("esc sheet");
+        assert!(!session_ref(&state, &id).unwrap().app_state.shortcuts_open);
+
+        slash(&mut state, &json!({"session_id": id, "query": "/"})).expect("slash");
+        assert!(
+            session_ref(&state, &id)
+                .unwrap()
+                .app_state
+                .autocomplete
+                .visible
+        );
+        key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["Down", "Up"]}),
+        )
+        .expect("palette");
+
+        key(
+            &mut state,
+            &json!({"session_id": id, "keys": ["Shift+Tab", "F2"]}),
+        )
+        .expect("mode and settings");
+        assert!(
+            session_ref(&state, &id)
+                .unwrap()
+                .app_state
+                .settings_modal
+                .is_some()
+        );
+
+        let session = session_mut(&mut state, &id).unwrap();
+        session.app_state.start_streaming(None, true);
+        apply_key(session, "Esc").expect("interrupt");
+        assert!(!session.app_state.streaming.is_streaming);
+
+        let picker = cortex_tui::interactive::builders::build_clear_confirm();
+        session.app_state.enter_interactive_mode(picker);
+        apply_key(session, "Esc").expect("close picker");
+        assert!(!session.app_state.is_interactive_mode());
+    }
+
+    #[test]
     fn agent_entry_and_error_paths() {
         let (mut state, id) = started("agent");
         assert!(key(&mut state, &json!({"session_id": "missing", "keys": ["a"]})).is_err());

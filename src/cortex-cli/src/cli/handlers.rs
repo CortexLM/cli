@@ -40,6 +40,8 @@ pub async fn dispatch_command(cli: Cli) -> Result<()> {
         Some(Commands::Export(export_cli)) => export_cli.run().await,
         Some(Commands::Import(import_cli)) => import_cli.run().await,
         Some(Commands::Delete(delete_cli)) => run_delete(delete_cli).await,
+        Some(Commands::Attach(attach_cli)) => attach_cli.run().await,
+        Some(Commands::Jobs(jobs_cli)) => jobs_cli.run().await,
         Some(Commands::Config(config_cli)) => show_config(config_cli).await,
         Some(Commands::Features(features_cli)) => handle_features(features_cli).await,
         Some(Commands::Serve(serve_cli)) => run_serve(serve_cli).await,
@@ -148,6 +150,19 @@ async fn run_tui(args: InteractiveArgs) -> Result<()> {
         std::env::set_current_dir(&cwd_path)?;
         config.cwd = cwd_path;
     }
+
+    crate::harness::enable_bash_edit_diff(args.bash_edit_diff);
+    let cwd = std::env::current_dir()?;
+    if args.worktree.is_some() {
+        config.cwd = crate::harness::apply_worktree(&cwd, args.worktree.as_ref())?;
+    }
+
+    crate::harness::load_plugin_dirs(
+        &config.cortex_home,
+        Some(config.cwd.clone()),
+        &args.plugin_dir,
+    )
+    .await;
 
     // Initialize custom command registry
     let project_root = std::env::current_dir().ok();

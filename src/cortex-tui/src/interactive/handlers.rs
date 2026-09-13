@@ -236,10 +236,37 @@ fn handle_non_search_char(state: &mut InteractiveState, c: char) -> InteractiveR
     if let Some(result) = try_permission_prompt_edit(state, c) {
         return result;
     }
+    if let Some(result) = try_jobs_picker_key(state, c) {
+        return result;
+    }
     if let Some(result) = try_shortcut(state, c) {
         return result;
     }
     InteractiveResult::Continue
+}
+
+fn try_jobs_picker_key(state: &mut InteractiveState, c: char) -> Option<InteractiveResult> {
+    if !matches!(
+        &state.action,
+        InteractiveAction::Custom(id) if id == "jobs-picker"
+    ) {
+        return None;
+    }
+    let prefix = match c {
+        'a' => super::builders::jobs::JOBS_ATTACH_PREFIX,
+        'x' => super::builders::jobs::JOBS_STOP_PREFIX,
+        _ => return None,
+    };
+    let item = state.selected_item()?;
+    if item.disabled {
+        return None;
+    }
+    let item_id = format!("{prefix}{}", item.id);
+    Some(InteractiveResult::Selected {
+        action: state.action.clone(),
+        item_id: item_id.clone(),
+        item_ids: vec![item_id],
+    })
 }
 
 /// `e` selects Edit on the §3.10 permission prompt (in addition to digit `3`).
@@ -430,5 +457,32 @@ mod tests {
         let result = handle_interactive_key(&mut state, tab);
         assert!(matches!(result, InteractiveResult::Continue));
         assert!(state.effort.is_none());
+    }
+
+    #[test]
+    fn jobs_picker_a_and_x_are_attach_and_stop() {
+        let rows = vec![crate::interactive::builders::JobRow {
+            id: "sess-1".into(),
+            kind: "cloud".into(),
+            title: "agent".into(),
+            status: "running".into(),
+        }];
+        let mut state = crate::interactive::builders::build_jobs_picker(&rows);
+        let attach = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            attach,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "attach:sess-1"
+        ));
+        let stop = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            stop,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "stop:sess-1"
+        ));
     }
 }

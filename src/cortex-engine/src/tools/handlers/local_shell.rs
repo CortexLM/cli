@@ -76,13 +76,18 @@ impl ToolHandler for LocalShellHandler {
             ));
         }
 
-        // Build the command (handles shell metacharacters)
         let command = Self::build_command(&args);
+        let capture_edits = super::bash_edit_diff::bash_edit_diff_enabled(&context.env);
 
         // Resolve working directory
         let cwd = match context.resolve_and_validate_path(args.workdir.as_deref().unwrap_or(".")) {
             Ok(cwd) => cwd,
             Err(message) => return Ok(ToolResult::error(message)),
+        };
+        let before = if capture_edits {
+            Some(super::bash_edit_diff::snapshot_workspace(&cwd))
+        } else {
+            None
         };
 
         // Build execution options
@@ -92,7 +97,7 @@ impl ToolHandler for LocalShellHandler {
             .unwrap_or(Duration::from_secs(60));
 
         let options = ExecOptions {
-            cwd,
+            cwd: cwd.clone(),
             timeout,
             env: context.env.clone(),
             capture_output: true,
@@ -133,7 +138,23 @@ impl ToolHandler for LocalShellHandler {
 
         // Convert ExecOutput to ToolResult
         match result {
-            Ok(output) => Ok(exec_output_to_tool_result(output)),
+            Ok(output) => {
+                let mut tool = exec_output_to_tool_result(output);
+                if let Some(before) = before {
+                    let after = super::bash_edit_diff::snapshot_workspace(&cwd);
+                    let diff = super::bash_edit_diff::diff_snapshots(&cwd, &before, &after);
+                    if let Some(meta) = tool.metadata.as_mut() {
+                        let changed: Vec<String> = after
+                            .keys()
+                            .filter(|p| before.get(*p) != after.get(*p))
+                            .map(|p| p.display().to_string())
+                            .collect();
+                        meta.files_modified = changed;
+                    }
+                    tool.output = super::bash_edit_diff::append_edit_diff(&tool.output, &diff);
+                }
+                Ok(tool)
+            }
             Err(e) => Ok(ToolResult::error(format!("Execution failed: {e}"))),
         }
     }

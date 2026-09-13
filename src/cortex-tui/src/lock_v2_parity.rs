@@ -15,18 +15,21 @@ pub const PARITY_IDS: &[&str] = &["consent-local-tools", "composer-file-chip", "
 /// Attached `@file` token shown after the picker closes.
 pub const FILE_CHIP_TOKEN: &str = "@src/cortex-tui/src/composer.rs";
 
-/// Composer prompt with the attached file chip and a trailing space.
+/// Wide composer prompt with the attached file chip and a trailing space.
 pub const FILE_CHIP_PROMPT: &str = "explain @src/cortex-tui/src/composer.rs ";
 
 /// Apply a residual parity scene. Returns `false` when `id` is not one of ours.
-pub fn apply_parity_scene(id: &str, state: &mut AppState) -> bool {
+pub fn apply_parity_scene(id: &str, state: &mut AppState, width: u16) -> bool {
+    if !PARITY_IDS.contains(&id) {
+        return false;
+    }
     match id {
         "consent-local-tools" => {
             apply_consent_local_tools(state);
             true
         }
         "composer-file-chip" => {
-            apply_composer_file_chip(state);
+            apply_composer_file_chip(state, width);
             true
         }
         "undo-sheet" => {
@@ -70,9 +73,17 @@ fn apply_consent_local_tools(state: &mut AppState) {
     );
 }
 
-fn apply_composer_file_chip(state: &mut AppState) {
+/// Narrow composer cannot hold the full crate path after `> explain `.
+pub const FILE_CHIP_PROMPT_NARROW: &str = "explain @src/composer.rs ";
+
+fn apply_composer_file_chip(state: &mut AppState, width: u16) {
     resumed(state);
-    state.input.set_text(FILE_CHIP_PROMPT);
+    if width <= 40 {
+        state.input.set_text(FILE_CHIP_PROMPT_NARROW);
+    } else {
+        debug_assert!(FILE_CHIP_PROMPT.contains(FILE_CHIP_TOKEN));
+        state.input.set_text(FILE_CHIP_PROMPT);
+    }
 }
 
 fn apply_undo_sheet(state: &mut AppState) {

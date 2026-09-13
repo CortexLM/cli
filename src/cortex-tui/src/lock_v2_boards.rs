@@ -809,7 +809,7 @@ Tell me what you'd like to do.",
             );
         }
         id if apply_offline_rate_limit_scene(id, &mut state) => {}
-        id if apply_parity_scene(id, &mut state) => {}
+        id if apply_parity_scene(id, &mut state, width) => {}
         id if apply_goal_chip_scene(id, &mut state) => {}
         other => panic!("unknown lock v2 scene {other}"),
     }

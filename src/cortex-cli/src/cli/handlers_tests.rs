@@ -1,4 +1,3 @@
-
 use clap_complete::Shell;
 use std::io::{self, ErrorKind, Write};
 

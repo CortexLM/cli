@@ -913,5 +913,8 @@ pub struct HistoryClearArgs {
 }
 
 #[cfg(test)]
+#[path = "args_parse_command_tests.rs"]
+mod command_tests;
+#[cfg(test)]
 #[path = "args_parse_tests.rs"]
 mod tests;

@@ -93,6 +93,27 @@
       "short": null
     },
     {
+      "help": "Isolated git worktree for this session (`--worktree` or `--worktree DIR`)",
+      "id": "worktree",
+      "long": "worktree",
+      "required": false,
+      "short": null
+    },
+    {
+      "help": "Extra plugin folder (folder-of-plugins or a single plugin). Repeatable",
+      "id": "plugin_dir",
+      "long": "plugin-dir",
+      "required": false,
+      "short": null
+    },
+    {
+      "help": "Attach unified diffs of files Execute/Bash changed (also `CORTEX_BASH_EDIT_DIFF=1`)",
+      "id": "bash_edit_diff",
+      "long": "bash-edit-diff",
+      "required": false,
+      "short": null
+    },
+    {
       "help": "Image files to attach to the initial prompt",
       "id": "images",
       "long": "image",
@@ -354,6 +375,27 @@
           "help": "Working directory override",
           "id": "cwd",
           "long": "cwd",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Isolated git worktree for this run (`--worktree` or `--worktree DIR`)",
+          "id": "worktree",
+          "long": "worktree",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Extra plugin folder (folder-of-plugins or a single plugin). Repeatable",
+          "id": "plugin_dir",
+          "long": "plugin-dir",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Attach unified diffs of files Execute/Bash changed",
+          "id": "bash_edit_diff",
+          "long": "bash-edit-diff",
           "required": false,
           "short": null
         },
@@ -1130,6 +1172,303 @@
       ],
       "name": "delete",
       "subcommands": []
+    },
+    {
+      "about": "Attach this terminal to a live Code session (session keeps running on detach)",
+      "arguments": [
+        {
+          "help": "Code session id (not a URL)",
+          "id": "session_id",
+          "long": null,
+          "required": true,
+          "short": null
+        },
+        {
+          "help": "Print the transcript and pending prompts, then detach (session keeps running)",
+          "id": "print_only",
+          "long": "print-only",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Enable verbose output (same as --log-level debug)",
+          "id": "verbose",
+          "long": "verbose",
+          "required": false,
+          "short": "v"
+        },
+        {
+          "help": "Enable trace-level logging for debugging",
+          "id": "trace",
+          "long": "trace",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Control color output: auto (default), always, or never",
+          "id": "color",
+          "long": "color",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Print help (see more with '--help')",
+          "id": "help",
+          "long": "help",
+          "required": false,
+          "short": "h"
+        }
+      ],
+      "name": "attach",
+      "subcommands": []
+    },
+    {
+      "about": "List, follow, or stop background Code agents",
+      "arguments": [
+        {
+          "help": "Enable verbose output (same as --log-level debug)",
+          "id": "verbose",
+          "long": "verbose",
+          "required": false,
+          "short": "v"
+        },
+        {
+          "help": "Enable trace-level logging for debugging",
+          "id": "trace",
+          "long": "trace",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Control color output: auto (default), always, or never",
+          "id": "color",
+          "long": "color",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Print help (see more with '--help')",
+          "id": "help",
+          "long": "help",
+          "required": false,
+          "short": "h"
+        }
+      ],
+      "name": "jobs",
+      "subcommands": [
+        {
+          "about": "List live Code sessions (cloud + attached)",
+          "arguments": [
+            {
+              "help": null,
+              "id": "json",
+              "long": "json",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Enable verbose output (same as --log-level debug)",
+              "id": "verbose",
+              "long": "verbose",
+              "required": false,
+              "short": "v"
+            },
+            {
+              "help": "Enable trace-level logging for debugging",
+              "id": "trace",
+              "long": "trace",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Control color output: auto (default), always, or never",
+              "id": "color",
+              "long": "color",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print help (see more with '--help')",
+              "id": "help",
+              "long": "help",
+              "required": false,
+              "short": "h"
+            }
+          ],
+          "name": "list",
+          "subcommands": []
+        },
+        {
+          "about": "Print the transcript for a session",
+          "arguments": [
+            {
+              "help": null,
+              "id": "session_id",
+              "long": null,
+              "required": true,
+              "short": null
+            },
+            {
+              "help": "Enable verbose output (same as --log-level debug)",
+              "id": "verbose",
+              "long": "verbose",
+              "required": false,
+              "short": "v"
+            },
+            {
+              "help": "Enable trace-level logging for debugging",
+              "id": "trace",
+              "long": "trace",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Control color output: auto (default), always, or never",
+              "id": "color",
+              "long": "color",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print help (see more with '--help')",
+              "id": "help",
+              "long": "help",
+              "required": false,
+              "short": "h"
+            }
+          ],
+          "name": "logs",
+          "subcommands": []
+        },
+        {
+          "about": "Request stop; the session is not deleted",
+          "arguments": [
+            {
+              "help": null,
+              "id": "session_id",
+              "long": null,
+              "required": true,
+              "short": null
+            },
+            {
+              "help": "Enable verbose output (same as --log-level debug)",
+              "id": "verbose",
+              "long": "verbose",
+              "required": false,
+              "short": "v"
+            },
+            {
+              "help": "Enable trace-level logging for debugging",
+              "id": "trace",
+              "long": "trace",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Control color output: auto (default), always, or never",
+              "id": "color",
+              "long": "color",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print help (see more with '--help')",
+              "id": "help",
+              "long": "help",
+              "required": false,
+              "short": "h"
+            }
+          ],
+          "name": "stop",
+          "subcommands": []
+        },
+        {
+          "about": "Attach this terminal (same as `cortex attach`)",
+          "arguments": [
+            {
+              "help": "Code session id (not a URL)",
+              "id": "session_id",
+              "long": null,
+              "required": true,
+              "short": null
+            },
+            {
+              "help": "Print the transcript and pending prompts, then detach (session keeps running)",
+              "id": "print_only",
+              "long": "print-only",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Enable verbose output (same as --log-level debug)",
+              "id": "verbose",
+              "long": "verbose",
+              "required": false,
+              "short": "v"
+            },
+            {
+              "help": "Enable trace-level logging for debugging",
+              "id": "trace",
+              "long": "trace",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Control color output: auto (default), always, or never",
+              "id": "color",
+              "long": "color",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print help (see more with '--help')",
+              "id": "help",
+              "long": "help",
+              "required": false,
+              "short": "h"
+            }
+          ],
+          "name": "attach",
+          "subcommands": []
+        },
+        {
+          "about": "Print this message or the help of the given subcommand(s)",
+          "arguments": [],
+          "name": "help",
+          "subcommands": [
+            {
+              "about": "List live Code sessions (cloud + attached)",
+              "arguments": [],
+              "name": "list",
+              "subcommands": []
+            },
+            {
+              "about": "Print the transcript for a session",
+              "arguments": [],
+              "name": "logs",
+              "subcommands": []
+            },
+            {
+              "about": "Request stop; the session is not deleted",
+              "arguments": [],
+              "name": "stop",
+              "subcommands": []
+            },
+            {
+              "about": "Attach this terminal (same as `cortex attach`)",
+              "arguments": [],
+              "name": "attach",
+              "subcommands": []
+            },
+            {
+              "about": "Print this message or the help of the given subcommand(s)",
+              "arguments": [],
+              "name": "help",
+              "subcommands": []
+            }
+          ]
+        }
+      ]
     },
     {
       "about": "Authenticate with Cortex API",
@@ -9214,6 +9553,43 @@
           "arguments": [],
           "name": "delete",
           "subcommands": []
+        },
+        {
+          "about": "Attach this terminal to a live Code session (session keeps running on detach)",
+          "arguments": [],
+          "name": "attach",
+          "subcommands": []
+        },
+        {
+          "about": "List, follow, or stop background Code agents",
+          "arguments": [],
+          "name": "jobs",
+          "subcommands": [
+            {
+              "about": "List live Code sessions (cloud + attached)",
+              "arguments": [],
+              "name": "list",
+              "subcommands": []
+            },
+            {
+              "about": "Print the transcript for a session",
+              "arguments": [],
+              "name": "logs",
+              "subcommands": []
+            },
+            {
+              "about": "Request stop; the session is not deleted",
+              "arguments": [],
+              "name": "stop",
+              "subcommands": []
+            },
+            {
+              "about": "Attach this terminal (same as `cortex attach`)",
+              "arguments": [],
+              "name": "attach",
+              "subcommands": []
+            }
+          ]
         },
         {
           "about": "Authenticate with Cortex API",

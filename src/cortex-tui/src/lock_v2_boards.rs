@@ -4,28 +4,22 @@
 //! existing scene construction so `lock_v2.rs` stays under 1000 lines.
 
 use cortex_core::widgets::Message;
-use serde_json::json;
 use std::time::{Duration, Instant};
 
 use crate::app::{
-    AppState, AutocompleteItem, AutocompleteTrigger, SubagentDisplayStatus, SubagentTaskDisplay,
-    SubagentTodoItem, SubagentTodoStatus,
+    AppState, SubagentDisplayStatus, SubagentTaskDisplay, SubagentTodoItem, SubagentTodoStatus,
 };
-use crate::commands::{CommandRegistry, CompletionEngine, PALETTE_HOME_LIMIT};
 use crate::interactive::builders::{
     JobRow, SkillListItem, build_clear_confirm, build_jobs_picker, build_mcp_selector,
-    build_model_selector, build_permissions_picker, build_plan_confirm, build_question_prompt,
-    build_sandbox_deny_prompt,
+    build_permissions_picker, build_plan_confirm, build_question_prompt, build_sandbox_deny_prompt,
 };
-use crate::interactive::state::{InteractiveAction, InteractiveItem, InteractiveState};
 use crate::lock_v2::PRODUCT_ERROR;
 use crate::lock_v2_goal::{apply_goal_chip_scene, show_goal_in_narrow_palette};
 use crate::lock_v2_scenes::*;
 use crate::modal::mcp_manager::{McpServerInfo, McpStatus};
 use crate::session::SessionSummary;
 use crate::ui::consts::SERVICE_UNAVAILABLE_NEXT_STEP;
-use crate::views::tool_call::{ToolCallDisplay, ToolResultDisplay, ToolStatus};
-use crate::widgets::SettingsModalState;
+use crate::views::tool_call::ToolStatus;
 use crate::widgets::settings_modal::SettingsRowKind;
 
 pub(crate) fn scene_state(id: &str, width: u16, height: u16) -> AppState {

@@ -1,6 +1,6 @@
 //! Background agents: list, logs, stop, attach.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::Parser;
 
 use crate::attach_cmd::{AttachCli, load_attach_token};

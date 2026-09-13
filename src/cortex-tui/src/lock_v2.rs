@@ -105,7 +105,7 @@ pub fn render_lock_v2_scene(id: &str, width: u16, height: u16) -> Result<LockFra
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lock_v2_scenes::{lock_app, lock_permission_prompt};
+    use crate::lock_v2_scenes::*;
     use cortex_core::style::{ACCENT, BAR_HOVER, SELECTION_BG, VOID};
     use ratatui::widgets::Widget;
     use std::collections::HashMap;

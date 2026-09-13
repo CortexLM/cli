@@ -1412,6 +1412,55 @@ def board_rate_limit(s, c):
     footer(s, c, [("Enter", "retry"), ("/usage", "details")])
 
 
+# Exact engine constant (`src/cortex-engine/src/client/computer.rs`).
+DISCONNECTED_RUNTIME = (
+    "This PC and SSH Code execution require an already connected Code session. "
+    "Connect a host and resume that session, or leave CORTEX_COMPUTER unset to use Cloud. "
+    "No runtime was substituted."
+)
+DISCONNECTED_RUNTIME_NARROW = (
+    "This PC and SSH need a connected Code session. No runtime was substituted."
+)
+
+
+def board_computer_disconnected(s, c):
+    """This PC/SSH fail-closed — no connected Code session; no Cloud substitute."""
+    header(s, c)
+    placeholder = (
+        "Connect a host — or unset for Cloud"
+        if c.narrow
+        else "Connect a host — or unset CORTEX_COMPUTER for Cloud"
+    )
+    top = composer(s, c, placeholder=placeholder, focused=False, caret=False)
+    f = Flow(s, c, y=1 if c.narrow else 2, limit=top if c.narrow else top - 1)
+    f.user("run the local cargo tests" if not c.narrow else "run local tests", "09:18 AM")
+    f.line([("×", S_ERR), (" This PC disconnected", S_ERR)])
+    body = DISCONNECTED_RUNTIME_NARROW if c.narrow else DISCONNECTED_RUNTIME
+    width = max(8, f.x1 - 1 - f.tx - 2)
+    for line in textwrap.wrap(body, width=width):
+        f.dim(line, indent=2)
+    footer(s, c, [("Enter", "retry"), ("Ctrl+x", "shortcuts")])
+
+
+def board_computer_cloud_default(s, c):
+    """Welcome frame with Computer · Cloud as the shipped default (not a handoff)."""
+    header(s, c, "0 / 500K")
+    title = [("Welcome to ", S), ("Cortex", S_BOLD)] + (
+        [] if c.narrow else [(", the coding agent CLI", S_DIM)]
+    )
+    welcome_lines(s, c, title)
+    y = 4
+    if c.narrow:
+        s.spans(c.x0 + 2, y, [("Computer", S_DIM), ("  ", S), ("Cloud", S)], max_x=c.x1)
+    else:
+        s.spans(c.x0 + 2, y, [("Directory", S_DIM), ("  ", S), ("~/cortex", S)], max_x=c.x1)
+        s.spans(c.x0 + 2, y + 1, [("Org", S_DIM), ("        ", S), ("Personal", S)], max_x=c.x1)
+        s.spans(c.x0 + 2, y + 2, [("Plan", S_DIM), ("       ", S), ("Pro", S)], max_x=c.x1)
+        s.spans(c.x0 + 2, y + 3, [("Computer", S_DIM), ("  ", S), ("Cloud", S)], max_x=c.x1)
+    composer(s, c)
+    footer(s, c)
+
+
 def board_tool_tiles(s, c):
     header(s, c)
     top = composer(s, c)
@@ -1960,6 +2009,8 @@ BOARDS_META = [
     ("error-unavailable", board_error_unavailable, False, "E", "API down — product-facing error"),
     ("offline", board_offline, True, "E", "Network unreachable — held composer, distinct from API-down"),
     ("rate-limit", board_rate_limit, True, "E", "HTTP 429 rate limited — retry-after, distinct from quota"),
+    ("computer-disconnected", board_computer_disconnected, True, "E", "This PC/SSH fail-closed — no connected Code session"),
+    ("computer-cloud-default", board_computer_cloud_default, True, "E", "Computer · Cloud shipped default (welcome info card)"),
     ("tool-tiles", board_tool_tiles, False, "E", "Grouped tool calls expanded — Read / Grep / Shell"),
     ("tool-tiles-collapsed", board_tool_tiles_collapsed, False, "E", "Grouped tool calls collapsed"),
     ("shell-running", board_shell_running, False, "E", "Live Shell tile with output"),

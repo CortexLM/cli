@@ -23,7 +23,10 @@ name: CodeBuild CI
   workflow_dispatch:
 
 concurrency:
-  group: codebuild-${{ github.workflow }}-${{ github.ref }}
+  # pull_request and pull_request_target share github.ref (the PR). If they
+  # share a group, one cancels the other and the cancelled job shows up as
+  # `matrix.context` because the name expression never expands.
+  group: codebuild-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

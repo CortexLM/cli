@@ -5,9 +5,12 @@ Design-only deliverable for the full TUI redesign. Layout language is taken
 composer with the model chip in the bottom border, Settings modal with search +
 categorised rows + tip/nav footer, slash autocomplete above the composer, effort
 radios under `/model`, token counter top-right, footer shortcut strip) and
-re-skinned to the Cortex chrome. **No runtime code changes ship with this pack.**
+re-skinned to the Cortex chrome. Designer boards stay design-only; runtime
+captures use `MinimalSessionView` plus lock flags (`computer_held`,
+`show_computer_default`, `offline_held`, `rate_limit_held`) so MockTerminal
+matches live chrome.
 
-- Boards: [`index.md`](index.md) — 87 boards at 120×40, 41 of them also at 40×12 (128 PNGs).
+- Boards: [`index.md`](index.md) — 89 boards at 120×40, 43 of them also at 40×12 (132 PNGs).
 - Grids: `txt/<size>/<board>.txt` — the exact character grid of every board (diff a
   `MockTerminal` capture against these).
 - Renderer: `tools/render_lock_v2.py` + `tools/boards.py` (Python 3 + Pillow, IBM Plex Mono
@@ -413,7 +416,7 @@ Narrow: no bars, `used / total  pct%`.
 | model-effort-low·medium·high / model-list-hover | `model-list`, `model-list-hover`, `model-effort-high`, `model-effort-medium`, `model-effort-low`, `model-effort-hover` |
 | settings-appearance / mouse / row-hover / search / theme-submenu | `settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-search`, `settings-theme-submenu` |
 | mode chips (Shift+Tab) | `mode-agent`, `mode-plan`, `mode-ask`, `mode-bash` |
-| permissions / mcp / plugins / usage-quota / sandbox / cloud | `permission-prompt`, `permission-prompt-hover`, `permissions-picker`, `mcp-servers`, `mcp-drop`, `plugins`, `usage`, `quota-exhausted`, `sandbox`, `sandbox-deny`, `cloud-handoff` |
+| permissions / mcp / plugins / usage-quota / sandbox / cloud | `permission-prompt`, `permission-prompt-hover`, `permissions-picker`, `mcp-servers`, `mcp-drop`, `plugins`, `usage`, `quota-exhausted`, `sandbox`, `sandbox-deny`, `cloud-handoff`, `computer-disconnected`, `computer-cloud-default` |
 | diagnostics red/amber · interrupt/stopped | `diagnostics`, `interrupt-stopped`, `error-unavailable`, `offline`, `rate-limit` |
 | markdown table · diff hunk · code fence | `md-table`, `diff-hunk`, `edit-collapsed`, `code-fence`, `tool-tiles`, `tool-tiles-collapsed`, `shell-running` |
 | login / first-run | `login`, `login-waiting`, `login-success`, `login-error`, `first-run-tips` |
@@ -426,7 +429,7 @@ Narrow (40×12) set: `welcome-cortex`, `welcome-agent`, `first-run-tips`, `sessi
 `tokens-topright`, `compact-chat`, `slash-palette`, `goal-chip-active`, `goal-chip-paused`, `goal-chip-done`,
 `goal-chip-budget`, `goal-chip-blocked`, `slash-model-typed`, `model-list`, `model-effort-high`,
 `settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-theme-submenu`, `mode-plan`, `mode-ask`,
-`permission-prompt`, `mcp-servers`, `usage`, `diagnostics`, `interrupt-stopped`, `offline`, `rate-limit`, `diff-hunk`, `login`, `shortcuts-overlay`,
+`permission-prompt`, `mcp-servers`, `usage`, `diagnostics`, `interrupt-stopped`, `offline`, `rate-limit`, `computer-disconnected`, `computer-cloud-default`, `diff-hunk`, `login`, `shortcuts-overlay`,
 `consent-local-tools`, `composer-file-chip`, `undo-sheet`.
 
 ---

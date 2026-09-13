@@ -100,6 +100,9 @@ class CodeBuildPublicSafetyTests(unittest.TestCase):
         self.assertIn("github.event_name != 'pull_request'", text)
         self.assertIn("github.event_name == 'pull_request_target'", text)
         self.assertIn("github.event_name == 'push'", text)
+        group = self.workflow["concurrency"]["group"]
+        self.assertIn("github.event_name", group)
+        self.assertIn("github.ref", group)
         self.assertIn("logs-only", text)
 
     def test_start_build_is_skipped_without_role_variable(self):

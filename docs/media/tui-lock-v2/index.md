@@ -90,6 +90,8 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `error-unavailable` | API down — product-facing error | [120x40](120x40/error-unavailable.png) | — |
 | `offline` | Network unreachable — held composer, distinct from API-down | [120x40](120x40/offline.png) | [40x12](40x12/offline.png) |
 | `rate-limit` | HTTP 429 rate limited — retry-after, distinct from quota | [120x40](120x40/rate-limit.png) | [40x12](40x12/rate-limit.png) |
+| `computer-disconnected` | This PC/SSH fail-closed — no connected Code session | [120x40](120x40/computer-disconnected.png) · [runtime](runtime/120x40/computer-disconnected.png) | [40x12](40x12/computer-disconnected.png) · [runtime](runtime/40x12/computer-disconnected.png) |
+| `computer-cloud-default` | Computer · Cloud shipped default (welcome info card) | [120x40](120x40/computer-cloud-default.png) · [runtime](runtime/120x40/computer-cloud-default.png) | [40x12](40x12/computer-cloud-default.png) · [runtime](runtime/40x12/computer-cloud-default.png) |
 | `tool-tiles` | Grouped tool calls expanded — Read / Grep / Shell | [120x40](120x40/tool-tiles.png) | — |
 | `tool-tiles-collapsed` | Grouped tool calls collapsed | [120x40](120x40/tool-tiles-collapsed.png) | — |
 | `shell-running` | Live Shell tile with output | [120x40](120x40/shell-running.png) | — |
@@ -118,4 +120,6 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `composer-file-chip` | Composer with attached @file chip in prompt | [120x40](120x40/composer-file-chip.png) | [40x12](40x12/composer-file-chip.png) |
 | `undo-sheet` | /undo /redo /rewind sheet | [120x40](120x40/undo-sheet.png) | [40x12](40x12/undo-sheet.png) |
 
-**87** boards at 120x40 · **41** at 40x12 · 128 PNGs.
+**89** boards at 120x40 · **43** at 40x12 · 132 PNGs.
+
+Runtime MockTerminal pack (same ids): [`runtime/120x40`](runtime/120x40/) (89) · [`runtime/40x12`](runtime/40x12/) (43).

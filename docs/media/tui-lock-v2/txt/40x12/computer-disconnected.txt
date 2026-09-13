@@ -1,0 +1,12 @@
+                             14K / 500K
+   > run local tests
+
+   × This PC disconnected
+     This PC and SSH need a connected
+     Code session. No runtime was
+     substituted.
+ ╭─ Agent ────────────────────────────╮
+ │ > Connect a host — or unset for C… │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:retry | Ctrl+x:shortcuts

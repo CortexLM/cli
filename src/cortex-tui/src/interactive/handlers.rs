@@ -134,6 +134,11 @@ pub fn handle_interactive_key(state: &mut InteractiveState, key: KeyEvent) -> In
 
         // Search input (when searchable)
         KeyCode::Char(c) if state.searchable && key.modifiers.is_empty() => {
+            if state.search_query.is_empty() {
+                if let Some(result) = try_resume_picker_key(state, c) {
+                    return result;
+                }
+            }
             // Check for shortcuts first
             if !state.search_query.is_empty() || !is_shortcut(state, c) {
                 state.push_search_char(c);
@@ -243,10 +248,55 @@ fn handle_non_search_char(state: &mut InteractiveState, c: char) -> InteractiveR
     if let Some(result) = try_jobs_picker_key(state, c) {
         return result;
     }
+    if let Some(result) = try_mcp_picker_key(state, c) {
+        return result;
+    }
     if let Some(result) = try_shortcut(state, c) {
         return result;
     }
     InteractiveResult::Continue
+}
+
+fn try_mcp_picker_key(state: &InteractiveState, c: char) -> Option<InteractiveResult> {
+    if !matches!(state.action, InteractiveAction::McpServerAction) {
+        return None;
+    }
+    let item_id = match c {
+        'a' => "__add__".to_string(),
+        'r' => {
+            let item = state.selected_item()?;
+            if item.disabled || item.id.starts_with("__") {
+                return None;
+            }
+            format!("__reconnect__:{}", item.id)
+        }
+        _ => return None,
+    };
+    Some(InteractiveResult::Selected {
+        action: state.action.clone(),
+        item_id: item_id.clone(),
+        item_ids: vec![item_id],
+    })
+}
+
+fn try_resume_picker_key(state: &InteractiveState, c: char) -> Option<InteractiveResult> {
+    if !matches!(state.action, InteractiveAction::ResumeSession) {
+        return None;
+    }
+    let item = state.selected_item()?;
+    if item.disabled || item.id.starts_with("__") {
+        return None;
+    }
+    let action_id = match c {
+        'f' => "resume-favorite",
+        'd' => "resume-delete",
+        _ => return None,
+    };
+    Some(InteractiveResult::Selected {
+        action: InteractiveAction::Custom(action_id.into()),
+        item_id: item.id.clone(),
+        item_ids: vec![item.id.clone()],
+    })
 }
 
 fn try_jobs_picker_key(state: &mut InteractiveState, c: char) -> Option<InteractiveResult> {
@@ -295,20 +345,6 @@ fn try_permission_prompt_edit(state: &mut InteractiveState, c: char) -> Option<I
 
 /// Try to select an item by its shortcut.
 fn try_shortcut(state: &mut InteractiveState, c: char) -> Option<InteractiveResult> {
-    // Special handling for Resume Picker: 'f' = Fork current selection
-    if c == 'f'
-        && matches!(state.action, InteractiveAction::ResumeSession)
-        && let Some(item) = state.selected_item()
-        && !item.disabled
-        && !item.id.starts_with("__")
-    {
-        return Some(InteractiveResult::Selected {
-            action: InteractiveAction::ForkSession,
-            item_id: item.id.clone(),
-            item_ids: vec![item.id.clone()],
-        });
-    }
-
     for (idx, item) in state.items.iter().enumerate() {
         if item.shortcut == Some(c) && !item.disabled {
             // Find the filtered index
@@ -505,6 +541,67 @@ mod tests {
         assert!(matches!(
             stop,
             InteractiveResult::Selected { ref item_id, .. } if item_id == "stop:sess-1"
+        ));
+    }
+
+    #[test]
+    fn mcp_a_adds_and_r_reconnects_selected() {
+        let servers = vec![crate::modal::mcp_manager::McpServerInfo {
+            name: "sentry".into(),
+            status: crate::modal::mcp_manager::McpStatus::Error,
+            tool_count: 0,
+            error: Some("token expired".into()),
+            requires_auth: true,
+        }];
+        let mut state = crate::interactive::builders::build_mcp_selector(&servers);
+        let add = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            add,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "__add__"
+        ));
+        let reconnect = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            reconnect,
+            InteractiveResult::Selected { ref item_id, .. } if item_id == "__reconnect__:sentry"
+        ));
+    }
+
+    #[test]
+    fn resume_f_favorites_and_d_deletes() {
+        let sessions = vec![crate::session::SessionSummary {
+            id: "sess-1".into(),
+            title: "fix login redirect".into(),
+            model: "cortex/fix-login-redirect".into(),
+            provider: "cortex".into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            message_count: 14,
+            archived: false,
+        }];
+        let mut state = crate::interactive::builders::build_resume_picker(&sessions, false);
+        let fav = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            fav,
+            InteractiveResult::Selected { ref item_id, ref action, .. }
+                if item_id == "sess-1" && matches!(action, InteractiveAction::Custom(id) if id == "resume-favorite")
+        ));
+        let del = handle_interactive_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
+        );
+        assert!(matches!(
+            del,
+            InteractiveResult::Selected { ref item_id, ref action, .. }
+                if item_id == "sess-1" && matches!(action, InteractiveAction::Custom(id) if id == "resume-delete")
         ));
     }
 }

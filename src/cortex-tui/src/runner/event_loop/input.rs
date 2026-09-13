@@ -311,6 +311,11 @@ impl EventLoop {
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
+            if self.app_state.streaming.is_streaming {
+                self.cancel_streaming();
+                self.render(terminal)?;
+                return Ok(());
+            }
             return self.handle_ctrl_c(terminal);
         }
 

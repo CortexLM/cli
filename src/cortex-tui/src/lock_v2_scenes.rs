@@ -210,6 +210,12 @@ pub(crate) const DIFF_HUNK: &str = r#"@@ -41,7 +41,8 @@
      Ok(())
 "#;
 
+pub(crate) const PLAN_BODY: &str = "Plan — no files change until you approve.\n\n\
+1. Wrap `ApiClient::send` in a retry loop: 3 attempts, exponential backoff with jitter.\n\
+2. Retry only on timeouts and 5xx; never on 4xx.\n\
+3. Surface the final failure as product copy: 'The coding service is temporarily unavailable'.\n\
+4. Unit tests for the backoff schedule and the give-up path.";
+
 pub(crate) const MD_TABLE: &str = r#"Here is how the three models compare:
 
 | Model | Default effort | Context | Billing |

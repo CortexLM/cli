@@ -218,6 +218,10 @@ pub struct InteractiveState {
     /// SPEC §3.10 prompt: composer yields (`>` dim, placeholder
     /// `Choose an option above`). Slash pickers leave this false.
     pub prompt_owns_focus: bool,
+    /// One-line title above inline picker rows (MCP / permissions / resume).
+    pub banner: Option<String>,
+    /// Dim line under the banner (clear confirm body).
+    pub banner_sub: Option<String>,
 }
 
 /// Reasoning effort shown as `/model` radios: High → Medium → Low.
@@ -326,6 +330,8 @@ impl InteractiveState {
             effort: None,
             effort_focused: false,
             prompt_owns_focus: false,
+            banner: None,
+            banner_sub: None,
         }
     }
 
@@ -333,6 +339,38 @@ impl InteractiveState {
     pub fn with_prompt_focus(mut self) -> Self {
         self.prompt_owns_focus = true;
         self
+    }
+
+    /// One-line picker title above the rows (lock `/mcp`, `/permissions`).
+    pub fn with_banner(mut self, banner: impl Into<String>) -> Self {
+        self.banner = Some(banner.into());
+        self
+    }
+
+    /// Dim subtitle under the banner.
+    pub fn with_banner_sub(mut self, line: impl Into<String>) -> Self {
+        self.banner_sub = Some(line.into());
+        self
+    }
+
+    /// Extra inline rows above option items (banner, subtitle, resume search).
+    pub fn inline_chrome_rows(&self) -> u16 {
+        let mut n = 0u16;
+        if self.banner.is_some() {
+            n += 1;
+        }
+        if self.banner_sub.is_some() {
+            n += 1;
+        }
+        if self.inline_search() {
+            n += 2;
+        }
+        n
+    }
+
+    /// Resume picker paints a search hint + hairline above the rows.
+    pub fn inline_search(&self) -> bool {
+        self.searchable && matches!(self.action, InteractiveAction::ResumeSession)
     }
 
     /// Show High / Medium / Low effort radios and bind Tab to the effort pane.

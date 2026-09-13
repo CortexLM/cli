@@ -32,6 +32,7 @@ impl EventLoop {
             }
 
             CommandResult::Clear => {
+                self.app_state.input.set_text("/clear");
                 self.app_state
                     .enter_interactive_mode(crate::interactive::builders::build_clear_confirm());
             }
@@ -98,8 +99,11 @@ impl EventLoop {
             }
             "compact" => {
                 self.app_state.toggle_compact();
+                if self.app_state.compact_mode {
+                    self.app_state.timestamps_enabled = false;
+                }
                 let state = if self.app_state.compact_mode {
-                    "on"
+                    "on — edge-to-edge bars, no timestamps"
                 } else {
                     "off"
                 };
@@ -220,6 +224,7 @@ impl EventLoop {
             }
             ModalType::McpManager => {
                 use crate::interactive::builders::build_mcp_selector;
+                self.app_state.input.set_text("/mcp");
                 let servers = self.app_state.mcp_servers.clone();
                 let interactive = build_mcp_selector(&servers);
                 self.app_state.enter_interactive_mode(interactive);
@@ -271,6 +276,7 @@ impl EventLoop {
                 };
                 let interactive =
                     crate::interactive::builders::build_permissions_picker(Some(current));
+                self.app_state.input.set_text("/permissions");
                 self.app_state.enter_interactive_mode(interactive);
             }
             ModalType::LogLevelPicker => {

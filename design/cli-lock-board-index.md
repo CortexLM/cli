@@ -20,10 +20,10 @@ Verifier tools are the hidden `cortex mcp-server --verify` surface
 
 `tui.key` (`verify_mcp/tui.rs` `apply_key`) applies composer **Clear**,
 **NewLine** (`Shift+Enter` and `Alt+Enter`), **Backspace**, **single-character
-insert**, and **Ctrl+x** / **Esc** / **Up** / **Down** on the shortcuts sheet.
-`F2` and `Shift+Tab` still do not open Settings or cycle mode via `tui.key`.
-Cover those boards with `lock.render`, `cargo test -p cortex-tui`, or
-`tui.type` / `tui.slash`.
+insert**, **Ctrl+x** / **Esc** / **Up** / **Down** on the shortcuts sheet,
+**F2** (settings), **Shift+Tab** (Agent / Plan / Ask), and slash-palette
+**Up** / **Down**. Cover remaining boards with `lock.render` or
+`cargo test -p cortex-tui`.
 
 **Flow** in the tables is a named interactive scenario on that verify server
 (or the matching `cargo test -p cortex-tui` case), not a separate spec:

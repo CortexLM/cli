@@ -69,6 +69,21 @@ impl ActionMapper {
                 KeyAction::CyclePermissionMode,
                 "Cycle Agent / Plan / Ask",
             ),
+            KeyBinding::global(
+                KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT),
+                KeyAction::CyclePermissionMode,
+                "Cycle Agent / Plan / Ask",
+            ),
+            KeyBinding::global(
+                KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE),
+                KeyAction::CyclePermissionMode,
+                "Cycle Agent / Plan / Ask",
+            ),
+            KeyBinding::global(
+                KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE),
+                KeyAction::ToggleSettings,
+                "Open settings",
+            ),
             // Sidebar toggle (Ctrl+B only)
             KeyBinding::global(
                 KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
@@ -566,6 +581,16 @@ mod tests {
         assert_eq!(
             mapper.get_action(shift_enter, ActionContext::Input),
             KeyAction::NewLine
+        );
+        let shift_tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT);
+        assert_eq!(
+            mapper.get_action(shift_tab, ActionContext::Global),
+            KeyAction::CyclePermissionMode
+        );
+        let f2 = KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE);
+        assert_eq!(
+            mapper.get_action(f2, ActionContext::Global),
+            KeyAction::ToggleSettings
         );
 
         // Test global fallback

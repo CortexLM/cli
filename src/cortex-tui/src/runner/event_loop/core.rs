@@ -689,7 +689,10 @@ impl EventLoop {
                     } else {
                         server.status = McpStatus::Error;
                         server.error = Some("connection lost".into());
-                        self.add_system_message(&format!("x {name} dropped"));
+                        self.add_system_message(&format!("× {name} dropped"));
+                        self.add_system_message(&format!(
+                            "Reconnecting — tools from {name} are paused until it is back."
+                        ));
                     }
                 }
             }
@@ -706,7 +709,7 @@ impl EventLoop {
                     server.status = McpStatus::Error;
                     server.error = Some(error.clone());
                 }
-                self.add_system_message(&format!("x {name} failed"));
+                self.add_system_message(&format!("× {name} failed"));
             }
         }
     }

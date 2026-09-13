@@ -402,36 +402,9 @@ impl EventLoop {
             .push(Box::new(ModelsModal::new(models, Some(current))));
     }
 
-    /// Opens the sessions modal with recent sessions.
+    /// Opens `/resume` (lock resume picker).
     pub fn open_sessions_modal(&mut self) {
-        use crate::modal::{SessionInfo, SessionsModal};
-
-        match self
-            .session_storage()
-            .and_then(|storage| storage.list_recent_sessions(100))
-        {
-            Ok(sessions) => {
-                let session_infos: Vec<SessionInfo> = sessions
-                    .into_iter()
-                    .map(|s| SessionInfo {
-                        path: std::path::PathBuf::from(&s.id),
-                        name: if s.title.is_empty() {
-                            "Untitled".to_string()
-                        } else {
-                            s.title
-                        },
-                        model: s.model,
-                        created_at: s.created_at,
-                        message_count: s.message_count as usize,
-                    })
-                    .collect();
-                self.modal_stack
-                    .push(Box::new(SessionsModal::new(session_infos)));
-            }
-            Err(e) => {
-                self.add_system_message(&format!("Failed to list sessions: {}", e));
-            }
-        }
+        self.open_resume_picker();
     }
 
     /// Handles inline form submission from interactive mode.
@@ -688,6 +661,11 @@ impl EventLoop {
             InteractiveAction::McpServerAction => {
                 return self.handle_mcp_selector_item(&item_id).await;
             }
+            InteractiveAction::ResumeSession => {
+                let result = self.resume_local_session(&item_id);
+                self.report_local_result(result, "Session resumed");
+                return false;
+            }
             InteractiveAction::Custom(ref custom) => {
                 if let Some(server) = custom.strip_prefix("mcp:") {
                     return self.handle_mcp_server_action(server, &item_id).await;
@@ -731,6 +709,37 @@ impl EventLoop {
                     }
                     "jobs-picker" => {
                         return self.handle_jobs_picker_choice(&item_id);
+                    }
+                    "resume-favorite" => {
+                        let result = self.toggle_listed_favorite(&item_id);
+                        match result {
+                            Ok(true) => {
+                                self.app_state.toasts.info("Favorited");
+                            }
+                            Ok(false) => {
+                                self.app_state.toasts.info("Removed from favorites");
+                            }
+                            Err(error) => {
+                                self.add_system_message(&format!("Error: {error}"));
+                            }
+                        }
+                        return true;
+                    }
+                    "resume-delete" => {
+                        match self
+                            .session_storage()
+                            .and_then(|storage| storage.delete_session(&item_id))
+                        {
+                            Ok(()) => {
+                                self.app_state.toasts.info("Session deleted");
+                                self.open_resume_picker();
+                                return true;
+                            }
+                            Err(error) => {
+                                self.add_system_message(&format!("Error: {error}"));
+                                return false;
+                            }
+                        }
                     }
                     "permission-prompt" => {
                         return self.handle_permission_prompt_choice(&item_id).await;
@@ -873,6 +882,9 @@ impl EventLoop {
     }
 
     async fn handle_mcp_selector_item(&mut self, item_id: &str) -> bool {
+        if let Some(name) = item_id.strip_prefix("__reconnect__:") {
+            return self.handle_mcp_server_action(name, "restart").await;
+        }
         match item_id {
             "__add__" => {
                 let interactive = crate::interactive::builders::build_mcp_source_selector();

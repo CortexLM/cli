@@ -325,11 +325,30 @@ fn apply_key(session: &mut TuiSession, name: &str) -> Result<()> {
             return Ok(());
         }
     }
+    if session.app_state.autocomplete.visible {
+        if name.eq_ignore_ascii_case("Down") {
+            session.app_state.autocomplete.select_next();
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("Up") {
+            session.app_state.autocomplete.select_prev();
+            return Ok(());
+        }
+    }
     let event = parse_key_string(name).ok_or_else(|| anyhow::anyhow!("unknown key {name}"))?;
     let action = session.mapper.get_action(event, ActionContext::Input);
     match action {
         KeyAction::Clear => session.app_state.input.set_text(""),
         KeyAction::NewLine => session.app_state.input.insert_str("\n"),
+        KeyAction::CyclePermissionMode => session.app_state.cycle_agent_mode(),
+        KeyAction::ToggleSettings => session.app_state.open_settings_modal(),
+        KeyAction::Cancel => {
+            if session.app_state.streaming.is_streaming {
+                session.app_state.stop_streaming();
+            } else if session.app_state.is_interactive_mode() {
+                session.app_state.exit_interactive_mode();
+            }
+        }
         _ if name.eq_ignore_ascii_case("Backspace") => {
             let text = session.app_state.input.text();
             let mut chars: Vec<char> = text.chars().collect();

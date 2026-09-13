@@ -270,7 +270,12 @@ pub enum FooterSet {
     Effort,
     EffortNarrow,
     Approval,
+    SelectConfirm,
+    Confirm,
+    PlanKeep,
+    PermissionsApply,
     Mcp,
+    McpNarrow,
     Plugins,
     Resume,
     Bash,
@@ -432,6 +437,50 @@ impl FooterSet {
                     label: "cancel",
                 },
             ],
+            Self::SelectConfirm => &[
+                FooterHint {
+                    key: "↑↓",
+                    label: "select",
+                },
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "cancel",
+                },
+            ],
+            Self::Confirm => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "cancel",
+                },
+            ],
+            Self::PlanKeep => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "confirm",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "keep planning",
+                },
+            ],
+            Self::PermissionsApply => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "apply",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "close",
+                },
+            ],
             Self::Mcp => &[
                 FooterHint {
                     key: "Enter",
@@ -444,6 +493,16 @@ impl FooterSet {
                 FooterHint {
                     key: "a",
                     label: "add server",
+                },
+                FooterHint {
+                    key: "Esc",
+                    label: "close",
+                },
+            ],
+            Self::McpNarrow => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "details",
                 },
                 FooterHint {
                     key: "Esc",

@@ -11,6 +11,8 @@ use super::rendering::{
 };
 use crate::app::AppState;
 use crate::commands::PALETTE_HOME_LIMIT;
+use crate::interactive::InteractiveAction;
+use crate::interactive::builders::PERMISSION_PROMPT_ACTION;
 use crate::ui::chrome::{
     FooterSet, composer_caret_style, composer_inner, fill_inky, format_token_counter, model_chip,
     paint_composer_box, paint_footer, paint_status_marker, paint_token_counter,
@@ -670,7 +672,7 @@ impl<'a> Widget for MinimalSessionView<'a> {
                     } else {
                         state.filtered_indices.len().min(state.max_visible).min(8)
                     };
-                    n as u16
+                    (n as u16).saturating_add(state.inline_chrome_rows())
                 }
             } else {
                 0
@@ -775,17 +777,41 @@ impl<'a> MinimalSessionView<'a> {
                     FooterSet::Effort
                 };
             }
+            match &state.action {
+                InteractiveAction::SetModel => {
+                    return if area_is_narrow(width) {
+                        FooterSet::ModelListNarrow
+                    } else {
+                        FooterSet::ModelList
+                    };
+                }
+                InteractiveAction::McpServerAction => {
+                    return if area_is_narrow(width) {
+                        FooterSet::McpNarrow
+                    } else {
+                        FooterSet::Mcp
+                    };
+                }
+                InteractiveAction::ResumeSession => return FooterSet::Resume,
+                InteractiveAction::Custom(id) if id == PERMISSION_PROMPT_ACTION => {
+                    return FooterSet::Approval;
+                }
+                InteractiveAction::Custom(id) if id == "sandbox-deny" => {
+                    return FooterSet::SelectConfirm;
+                }
+                InteractiveAction::Custom(id) if id == "plan-confirm" => {
+                    return FooterSet::PlanKeep;
+                }
+                InteractiveAction::Custom(id) if id == "permissions-picker" => {
+                    return FooterSet::PermissionsApply;
+                }
+                InteractiveAction::Custom(id) if id == "clear-confirm" => {
+                    return FooterSet::Confirm;
+                }
+                InteractiveAction::Custom(id) if id == "plugins" => return FooterSet::Plugins,
+                _ => {}
+            }
             let title = state.title.to_ascii_lowercase();
-            if title.contains("model") {
-                return if area_is_narrow(width) {
-                    FooterSet::ModelListNarrow
-                } else {
-                    FooterSet::ModelList
-                };
-            }
-            if title.contains("mcp") {
-                return FooterSet::Mcp;
-            }
             if title.contains("plugin") {
                 return FooterSet::Plugins;
             }

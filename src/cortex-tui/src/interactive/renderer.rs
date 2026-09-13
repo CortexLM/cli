@@ -4,8 +4,8 @@ use super::state::{
     EffortLevel, InlineFormState, InteractiveAction, InteractiveItem, InteractiveState,
 };
 use cortex_core::style::{
-    ACCENT, BAR_HOVER, BORDER_FOCUS, HAIRLINE, SELECTION_BG, SUCCESS, SURFACE_1, TEXT, TEXT_DIM,
-    TEXT_MUTED,
+    ACCENT, BAR_HOVER, BORDER_FOCUS, ERROR, HAIRLINE, SELECTION_BG, SUCCESS, SURFACE_1, TEXT,
+    TEXT_DIM, TEXT_MUTED,
 };
 use ratatui::{
     buffer::Buffer,
@@ -62,7 +62,6 @@ impl<'a> InteractiveWidget<'a> {
         state.click_zones.clear();
         state.tab_click_zones.clear();
 
-        // Calculate tab click zones (on title line)
         if !state.tabs.is_empty() {
             let title = format!(" {} ", state.title);
             let title_y = area.y + 1;
@@ -77,13 +76,10 @@ impl<'a> InteractiveWidget<'a> {
             }
         }
 
-        // If inline form is active, no item click zones
         if state.is_form_active() {
             return;
         }
 
-        // Calculate the inner area (same logic as render)
-        // Inner area starts after top border (1) + title line (1) = 2
         let inner = Rect::new(
             area.x,
             area.y + 2,
@@ -95,7 +91,6 @@ impl<'a> InteractiveWidget<'a> {
             return;
         }
 
-        // Layout: search (optional, framed by hairlines) + items + hints
         let search_height = if state.searchable {
             SEARCH_FIELD_ROWS
         } else {
@@ -156,9 +151,9 @@ impl<'a> InteractiveWidget<'a> {
 
         if self.rows_only {
             if self.state.effort_focused {
-                return 3;
+                return 3 + self.state.inline_chrome_rows();
             }
-            return items_count as u16;
+            return items_count as u16 + self.state.inline_chrome_rows();
         }
 
         (items_count as u16) + header_height + search_height + hints_height + effort_height
@@ -168,10 +163,13 @@ impl<'a> InteractiveWidget<'a> {
 impl<'a> Widget for InteractiveWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if self.rows_only {
+            let mut y = area.y;
+            y += self.paint_inline_chrome(area, buf, y);
+            let rest = Rect::new(area.x, y, area.width, area.bottom().saturating_sub(y));
             if self.state.effort_focused {
-                self.render_effort_radios(area, buf);
+                self.render_effort_radios(rest, buf);
             } else {
-                self.render_items(area, buf);
+                self.render_items(rest, buf);
             }
             return;
         }
@@ -207,8 +205,6 @@ impl<'a> Widget for InteractiveWidget<'a> {
                 let is_active = i == self.state.active_tab;
                 let is_hovered = self.state.hovered_tab == Some(i);
                 let tab_text = format!(" {} ", tab.label);
-                // Active tab: the focused selection — banner green on the dark gray
-                // bar. Never inverted onto the accent.
                 let style = if is_active {
                     Style::default()
                         .fg(ACCENT)
@@ -385,7 +381,83 @@ impl<'a> InteractiveWidget<'a> {
 
     /// Render a single item.
     fn lock_menu(&self) -> bool {
-        matches!(self.state.action, InteractiveAction::SetModel) || self.state.effort.is_some()
+        matches!(
+            self.state.action,
+            InteractiveAction::SetModel
+                | InteractiveAction::McpServerAction
+                | InteractiveAction::ResumeSession
+                | InteractiveAction::SelectSession
+        ) || self.state.effort.is_some()
+            || matches!(
+                self.state.action,
+                InteractiveAction::Custom(ref id)
+                    if matches!(
+                        id.as_str(),
+                        "permissions-picker"
+                            | "sandbox-deny"
+                            | "clear-confirm"
+                            | "plan-confirm"
+                            | "mode"
+                    )
+            )
+    }
+
+    fn radio_leads(&self) -> bool {
+        matches!(
+            self.state.action,
+            InteractiveAction::Custom(ref id) if id == "permissions-picker"
+        )
+    }
+
+    fn status_leads(&self) -> bool {
+        matches!(self.state.action, InteractiveAction::McpServerAction)
+    }
+
+    fn paint_inline_chrome(&self, area: Rect, buf: &mut Buffer, y: u16) -> u16 {
+        let gutter = self.lock_gutter();
+        let mut used = 0u16;
+        if let Some(ref banner) = self.state.banner {
+            if y + used < area.bottom() {
+                let shown = crate::ui::text_utils::first_fitting_line(
+                    banner,
+                    area.width.saturating_sub(gutter + 1) as usize,
+                );
+                buf.set_string(area.x + gutter, y + used, &shown, Style::default().fg(TEXT));
+                used += 1;
+            }
+        }
+        if let Some(ref sub) = self.state.banner_sub {
+            if y + used < area.bottom() {
+                let shown = crate::ui::text_utils::first_fitting_line(
+                    sub,
+                    area.width.saturating_sub(gutter + 1) as usize,
+                );
+                buf.set_string(
+                    area.x + gutter,
+                    y + used,
+                    &shown,
+                    Style::default().fg(TEXT_DIM),
+                );
+                used += 1;
+            }
+        }
+        if self.state.inline_search() && y + used + 1 < area.bottom() {
+            let hint = "Type to search sessions";
+            let shown = crate::ui::text_utils::first_fitting_line(
+                hint,
+                area.width.saturating_sub(gutter + 1) as usize,
+            );
+            buf.set_string(
+                area.x + gutter,
+                y + used,
+                &shown,
+                Style::default().fg(TEXT_DIM),
+            );
+            used += 1;
+            hairline(area, y + used, buf);
+            used += 1;
+        }
+        used
     }
 
     fn lock_gutter(&self) -> u16 {
@@ -417,9 +489,6 @@ impl<'a> InteractiveWidget<'a> {
         is_checked: bool,
         name_w: usize,
     ) {
-        // Selected row: the dark gray bar with a banner green `>` and a banner green label —
-        // never inverted onto the accent. Unselected rows lead with a dim
-        // middot and keep white copy.
         let selected_bar = is_selected && !item.disabled && !item.is_separator;
         let (fg, bg) = if item.disabled {
             (TEXT_MUTED, Color::Reset)
@@ -464,9 +533,30 @@ impl<'a> InteractiveWidget<'a> {
         }
         x += 2;
 
-        // Checkbox (multi-select): a green check when on, dim brackets when
-        // off.
-        if self.state.multi_select {
+        if self.radio_leads() && !item.is_separator {
+            let mark = if item.is_current { "● " } else { "○ " };
+            let radio_style = if item.is_current {
+                Style::default().fg(TEXT).bg(if selected_bar {
+                    SELECTION_BG
+                } else {
+                    Color::Reset
+                })
+            } else {
+                Style::default().fg(TEXT_DIM)
+            };
+            buf.set_string(x, area.y, mark, radio_style);
+            x += 2;
+        } else if self.status_leads() && !item.is_separator {
+            let icon = item.icon.unwrap_or('○');
+            let icon_style = match icon {
+                '✓' => Style::default().fg(SUCCESS),
+                '×' => Style::default().fg(ERROR),
+                '⠇' => Style::default().fg(TEXT),
+                _ => Style::default().fg(TEXT_DIM),
+            };
+            buf.set_string(x, area.y, format!("{icon} "), icon_style);
+            x += 2;
+        } else if self.state.multi_select {
             let checkbox = if is_checked { "[✓]" } else { "[ ]" };
             let checkbox_style = if is_checked {
                 Style::default().fg(SUCCESS)
@@ -475,17 +565,13 @@ impl<'a> InteractiveWidget<'a> {
             };
             buf.set_string(x, area.y, checkbox, checkbox_style);
             x += 4;
-        }
-
-        // Icon
-        if let Some(icon) = item.icon {
+        } else if let Some(icon) = item.icon {
             buf.set_string(x, area.y, icon.to_string(), Style::default().fg(fg));
             x += 2;
         }
 
         // Shortcut - hidden (shortcuts still work via keyboard)
 
-        // Label - bold for separators (category headers)
         let label_style = if item.is_separator {
             Style::default().fg(TEXT_DIM).add_modifier(Modifier::BOLD)
         } else if selected_bar {

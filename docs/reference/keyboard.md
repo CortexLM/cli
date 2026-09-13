@@ -12,9 +12,10 @@ or `F1` at any time for the in-app version.
 | `Ctrl+Shift+C` | Copy the selection |
 | `Ctrl+Shift+V` | Paste |
 | `?` or `F1` | Help |
-| `Esc` | Cancel or close |
+| `Esc` | Cancel, close a sheet, or interrupt the running turn |
 | `Tab` | Focus the next element |
-| `Shift+Tab` | Cycle the autonomy level |
+| `Shift+Tab` | Cycle Agent / Plan / Ask |
+| `F2` | Open settings |
 | `Ctrl+K` or `Ctrl+P` | Command palette |
 | `Ctrl+I` | Focus the composer |
 | `Ctrl+B` | Toggle the sidebar |
@@ -31,7 +32,8 @@ or `F1` at any time for the in-app version.
 | `Enter` | Send |
 | `Shift+Enter` or `Alt+Enter` | Insert a newline |
 | `Ctrl+x` | Open or close the shortcuts sheet |
-| `Up` / `Down` | Previous / next prompt in history |
+| `Up` / `Down` | Previous / next prompt in history; move the slash-palette selection |
+| `Ctrl+U` or `Ctrl+L` | Clear the composer |
 | `Ctrl+U` or `Ctrl+L` | Clear the composer |
 | `Ctrl+V` | Paste |
 | `Ctrl+A` | Select all |
@@ -95,8 +97,9 @@ Shown at startup when there are sessions to resume.
 | Key | Action |
 |-----|--------|
 | `Enter` | Resume the selected session |
-| `F` | Fork from it |
-| `N` or `Esc` | Start a new session |
+| `f` | Favorite it |
+| `d` | Delete it |
+| `Esc` | Close |
 
 ## Modals
 
@@ -114,7 +117,8 @@ reverts to the one you started with.
 | Key | Action |
 |-----|--------|
 | `Esc` | Interrupt the turn |
-| `Ctrl+C` | Force quit |
+| `Ctrl+C` | Interrupt the turn. When idle: copy the selection, or press twice to quit |
+| `Ctrl+x` | Open or close the shortcuts sheet |
 
 ## See also
 

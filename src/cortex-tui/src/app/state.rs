@@ -223,8 +223,16 @@ pub struct AppState {
     pub footer_hover: Option<usize>,
     /// Settings modal (F2 / `/settings`).
     pub settings_modal: Option<crate::widgets::SettingsModalState>,
-    /// Ctrl+x shortcuts overlay.
+    /// Ctrl+x / `/shortcuts` overlay.
     pub shortcuts_open: bool,
+    /// Focused binding in the shortcuts sheet.
+    pub shortcuts_selected: usize,
+    /// Hovered binding in the shortcuts sheet.
+    pub shortcuts_hovered: Option<usize>,
+    /// Session working checklist (lock `todos`).
+    pub working_checklist: Option<crate::app::WorkingChecklist>,
+    /// Last turn was interrupted — composer uses the stopped placeholder.
+    pub last_turn_stopped: bool,
     /// Show the Help improve Cortex banner.
     pub opt_in_banner: bool,
     /// Hovered opt-in button: 0 = Opt out, 1 = Opt in.
@@ -364,6 +372,10 @@ impl AppState {
             footer_hover: None,
             settings_modal: None,
             shortcuts_open: false,
+            shortcuts_selected: 0,
+            shortcuts_hovered: None,
+            working_checklist: None,
+            last_turn_stopped: false,
             opt_in_banner: false,
             opt_in_hover: None,
             show_thinking_blocks: true,
@@ -526,6 +538,7 @@ impl AppState {
     pub fn add_message(&mut self, message: Message) {
         if message.role == cortex_core::widgets::MessageRole::User {
             self.show_launch_splash = false;
+            self.last_turn_stopped = false;
         }
         let mut message = message;
         if self.timestamps_enabled && message.timestamp.is_none() {
@@ -643,7 +656,7 @@ impl AppState {
         let mut modal = crate::widgets::SettingsModalState::default();
         modal.values = self.settings_values();
         self.settings_modal = Some(modal);
-        self.shortcuts_open = false;
+        self.close_shortcuts_sheet();
     }
 
     /// Copy modal values back onto the session.

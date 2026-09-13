@@ -19,6 +19,16 @@ impl EventLoop {
     ) -> Result<()> {
         match action {
             MouseAction::Click { x, y, button } => {
+                if self.app_state.shortcuts_open {
+                    if self.app_state.shortcuts_close_hit(x, y) {
+                        self.app_state.close_shortcuts_sheet();
+                    } else {
+                        let _ = self.app_state.shortcuts_select_at(x, y);
+                    }
+                    self.render(terminal)?;
+                    return Ok(());
+                }
+
                 // Handle interactive mode clicks
                 if self.app_state.is_interactive_mode()
                     && let Some((action, item_id, item_ids)) = self.handle_interactive_click(x, y)
@@ -98,6 +108,12 @@ impl EventLoop {
             }
 
             MouseAction::Move { x, y } => {
+                if self.app_state.shortcuts_open {
+                    self.app_state.shortcuts_hover_at(x, y);
+                    self.render(terminal)?;
+                    return Ok(());
+                }
+
                 // Handle hover effects for interactive mode
                 if self.app_state.is_interactive_mode()
                     && let Some(state) = self.app_state.get_interactive_state_mut()

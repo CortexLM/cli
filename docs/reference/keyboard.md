@@ -29,7 +29,8 @@ or `F1` at any time for the in-app version.
 | Key | Action |
 |-----|--------|
 | `Enter` | Send |
-| `Shift+Enter` | Insert a newline |
+| `Shift+Enter` or `Alt+Enter` | Insert a newline |
+| `Ctrl+x` | Open or close the shortcuts sheet |
 | `Up` / `Down` | Previous / next prompt in history |
 | `Ctrl+U` or `Ctrl+L` | Clear the composer |
 | `Ctrl+V` | Paste |

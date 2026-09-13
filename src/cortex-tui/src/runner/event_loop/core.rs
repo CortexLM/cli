@@ -633,6 +633,7 @@ impl EventLoop {
         if already {
             return;
         }
+        self.app_state.last_turn_stopped = true;
         let secs = self.app_state.streaming.prompt_elapsed_seconds();
         self.add_system_message(&format!(
             "{} {}",

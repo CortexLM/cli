@@ -311,6 +311,19 @@ fn test_goal_commands() {
 }
 
 #[test]
+fn test_shortcuts_command() {
+    let executor = CommandExecutor::new();
+    assert!(matches!(
+        executor.execute_str("/shortcuts"),
+        CommandResult::Toggle(ref s) if s == "shortcuts"
+    ));
+    assert!(matches!(
+        executor.execute_str("/keys"),
+        CommandResult::Toggle(ref s) if s == "shortcuts"
+    ));
+}
+
+#[test]
 fn test_add_command() {
     let executor = CommandExecutor::new();
 

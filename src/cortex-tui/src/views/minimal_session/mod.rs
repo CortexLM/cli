@@ -7,6 +7,7 @@
 //! - Simple input line with prompt
 //! - Contextual key hints at the bottom
 
+mod checklist;
 mod layout;
 mod rendering;
 mod text_utils;

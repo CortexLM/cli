@@ -137,6 +137,9 @@ impl EventLoop {
                     .toasts
                     .info(format!("Sandbox mode: {}", state));
             }
+            "shortcuts" => {
+                self.app_state.toggle_shortcuts_sheet();
+            }
             "auto" => {
                 let is_yolo = matches!(
                     self.app_state.permission_mode,
@@ -799,7 +802,7 @@ impl EventLoop {
                 match command {
                     GoalCommand::Status => {
                         if let Some(goal) = &self.app_state.goal {
-                            self.add_system_message(&goal.status_text());
+                            self.add_system_message(&goal.status_card());
                         } else {
                             self.add_system_message("No goal. Set one with /goal <objective>.");
                         }
@@ -813,13 +816,13 @@ impl EventLoop {
                     }
                     GoalCommand::Resume => {
                         if let Some(goal) = &self.app_state.goal {
-                            self.add_system_message(
-                                &goal.action_text(&format!("Goal is {}.", goal.state)),
-                            );
+                            self.add_system_message(&goal.action_text("Goal resumed."));
                         }
                     }
                     GoalCommand::Clear => {
-                        self.add_system_message("Goal cleared.");
+                        self.add_system_message(
+                            "Goal cleared. Set a new one with /goal <objective>.",
+                        );
                     }
                     GoalCommand::Set { objective } => {
                         if let Some(goal) = &self.app_state.goal {

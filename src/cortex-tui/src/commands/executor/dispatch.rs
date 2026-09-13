@@ -13,6 +13,7 @@ impl CommandExecutor {
             "version" | "v" => self.cmd_version(),
             "upgrade" | "update" => CommandResult::OpenModal(ModalType::Upgrade),
             "settings" | "prefs" => CommandResult::OpenModal(ModalType::Settings),
+            "shortcuts" | "keys" => CommandResult::Toggle("shortcuts".to_string()),
             "reload-config" | "reload" => CommandResult::Async("config:reload".to_string()),
             "theme" => self.cmd_theme(cmd),
             "compact" => CommandResult::Toggle("compact".to_string()),

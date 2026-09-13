@@ -20,6 +20,7 @@ use crate::ui::text_utils::wrap_or_drop;
 use crate::views::tool_call::{ContentSegment, ToolCallDisplay, ToolStatus};
 
 use super::VERSION;
+use super::checklist::render_working_checklist;
 use super::text_utils::wrap_text;
 
 /// Renders the "← Back to main conversation" hint when viewing a subagent.
@@ -746,6 +747,9 @@ pub fn generate_message_lines(
             markdown_theme,
         ));
     }
+
+    // Session working checklist (lock `todos`) — distinct from subagent tiles.
+    all_lines.extend(render_working_checklist(app_state, width, colors));
 
     // Render active subagents
     for task in &app_state.active_subagents {

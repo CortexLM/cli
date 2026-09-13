@@ -808,6 +808,19 @@ mod tests {
     }
 
     #[test]
+    fn composer_hover_uses_focus_hairline() {
+        let area = Rect::new(0, 0, 40, 3);
+        let mut idle = Buffer::empty(area);
+        fill_inky(area, &mut idle);
+        paint_composer_box(area, &mut idle, "Agent", "Cortex Mini 1", false, true, None);
+        let mut hover = Buffer::empty(area);
+        fill_inky(area, &mut hover);
+        paint_composer_box(area, &mut hover, "Agent", "Cortex Mini 1", true, true, None);
+        assert_eq!(idle[(1, 0)].style().fg, Some(HAIRLINE));
+        assert_eq!(hover[(1, 0)].style().fg, Some(BORDER_FOCUS));
+    }
+
+    #[test]
     fn composer_box_paints_goal_chip_in_accent() {
         let area = Rect::new(0, 0, 48, 3);
         let mut buf = Buffer::empty(area);

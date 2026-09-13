@@ -18,13 +18,12 @@ Verifier tools are the hidden `cortex mcp-server --verify` surface
 `lock.palette_audit`, `lock.diff_txt`, `tui.*`, `login.run`, `api.*`,
 `mcp.*`, `report.finish`. Guide: [Verification MCP](../docs/guides/development.md).
 
-`tui.key` (`verify_mcp/tui.rs` `apply_key`) only applies composer **Clear**,
-**NewLine** (`Shift+Enter` in the production mapper), **Backspace**, and
-**single-character insert**. `F2`, `Shift+Tab`, `Alt+Enter`, and `Ctrl+x`
-parse as keys and return success but are no-ops: they do not open Settings
-or Shortcuts, cycle mode, or insert a newline. Designer lock copy still
-shows those chords; cover those boards with `lock.render`,
-`cargo test -p cortex-tui`, or `tui.type` / `tui.slash`, not `tui.key`.
+`tui.key` (`verify_mcp/tui.rs` `apply_key`) applies composer **Clear**,
+**NewLine** (`Shift+Enter` and `Alt+Enter`), **Backspace**, **single-character
+insert**, and **Ctrl+x** / **Esc** / **Up** / **Down** on the shortcuts sheet.
+`F2` and `Shift+Tab` still do not open Settings or cycle mode via `tui.key`.
+Cover those boards with `lock.render`, `cargo test -p cortex-tui`, or
+`tui.type` / `tui.slash`.
 
 **Flow** in the tables is a named interactive scenario on that verify server
 (or the matching `cargo test -p cortex-tui` case), not a separate spec:

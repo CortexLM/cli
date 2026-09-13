@@ -159,9 +159,14 @@ impl ActionMapper {
                 KeyAction::Submit,
                 "Submit message",
             ),
-            // New line (Shift+Enter)
+            // New line (Shift+Enter or Alt+Enter — lock footer)
             KeyBinding::input(
                 KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
+                KeyAction::NewLine,
+                "Insert new line",
+            ),
+            KeyBinding::input(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
                 KeyAction::NewLine,
                 "Insert new line",
             ),
@@ -550,6 +555,17 @@ mod tests {
         assert_eq!(
             mapper.get_action(submit_key, ActionContext::Input),
             KeyAction::Submit
+        );
+
+        let alt_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT);
+        assert_eq!(
+            mapper.get_action(alt_enter, ActionContext::Input),
+            KeyAction::NewLine
+        );
+        let shift_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
+        assert_eq!(
+            mapper.get_action(shift_enter, ActionContext::Input),
+            KeyAction::NewLine
         );
 
         // Test global fallback

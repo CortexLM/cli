@@ -32,8 +32,9 @@ pub const PLACEHOLDER_IDLE: &str = "Plan, search, build anything";
 /// Composer placeholder while a run is live — stdin stays alive and a
 /// submitted follow-up is queued.
 pub const PLACEHOLDER_RUNNING: &str = "Add a follow-up — Enter to queue";
-/// Composer placeholder while a SPEC §3.10 prompt owns focus.
 pub const PLACEHOLDER_PROMPT: &str = crate::interactive::builders::PERMISSION_PROMPT_PLACEHOLDER;
+/// Composer placeholder after Esc / Ctrl+c interrupt.
+pub const PLACEHOLDER_STOPPED: &str = "Reply, or ↑ to edit your last message";
 
 /// Paint the composer input row (after `> `) to the lock:
 /// empty = block cursor at input col 0, dim placeholder after that cell;
@@ -329,6 +330,8 @@ impl<'a> MinimalSessionView<'a> {
                 } else {
                     crate::ui::consts::PLACEHOLDER_DISCONNECTED
                 }
+            } else if self.app_state.last_turn_stopped {
+                PLACEHOLDER_STOPPED
             } else if self.is_task_running() {
                 PLACEHOLDER_RUNNING
             } else if self.app_state.agent_entrypoint {
@@ -739,6 +742,10 @@ impl<'a> Widget for MinimalSessionView<'a> {
         }
         if self.app_state.shortcuts_open {
             crate::widgets::ShortcutsOverlay::new(self.app_state.cli_version.clone())
+                .with_selection(
+                    self.app_state.shortcuts_selected,
+                    self.app_state.shortcuts_hovered,
+                )
                 .render(area, buf);
         }
 

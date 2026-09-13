@@ -510,31 +510,45 @@ impl EventLoop {
             todos.len()
         );
 
-        self.app_state.update_subagent(&session_id, |task| {
-            task.todos = todos
-                .iter()
-                .map(|(content, status)| {
-                    let status = match status.as_str() {
-                        "in_progress" => SubagentTodoStatus::InProgress,
-                        "completed" => SubagentTodoStatus::Completed,
-                        _ => SubagentTodoStatus::Pending,
-                    };
-                    SubagentTodoItem {
-                        content: content.clone(),
-                        status,
-                    }
-                })
-                .collect();
+        let items: Vec<crate::app::SubagentTodoItem> = todos
+            .iter()
+            .map(|(content, status)| {
+                let status = match status.as_str() {
+                    "in_progress" => SubagentTodoStatus::InProgress,
+                    "completed" => SubagentTodoStatus::Completed,
+                    _ => SubagentTodoStatus::Pending,
+                };
+                SubagentTodoItem {
+                    content: content.clone(),
+                    status,
+                }
+            })
+            .collect();
 
-            // Update activity based on in-progress item
-            if let Some(in_progress) = task
-                .todos
-                .iter()
-                .find(|t| matches!(t.status, SubagentTodoStatus::InProgress))
-            {
-                task.current_activity = in_progress.content.clone();
-            }
-        });
+        let matched = self
+            .app_state
+            .active_subagents
+            .iter()
+            .any(|t| t.session_id == session_id);
+        if matched {
+            self.app_state.update_subagent(&session_id, |task| {
+                task.todos = items.clone();
+                if let Some(in_progress) = task
+                    .todos
+                    .iter()
+                    .find(|t| matches!(t.status, SubagentTodoStatus::InProgress))
+                {
+                    task.current_activity = in_progress.content.clone();
+                }
+            });
+        } else {
+            let elapsed = self.app_state.streaming.prompt_elapsed_seconds().max(1) as u32;
+            self.app_state.working_checklist = Some(crate::app::WorkingChecklist::new(
+                items,
+                elapsed,
+                self.app_state.tokens_used,
+            ));
+        }
     }
 
     /// Checks for crashed background tool tasks (panics or cancelled).

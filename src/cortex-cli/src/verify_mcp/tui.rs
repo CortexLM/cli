@@ -307,6 +307,24 @@ pub fn stop(state: &mut VerifyState, args: &Value) -> Result<Value> {
 }
 
 fn apply_key(session: &mut TuiSession, name: &str) -> Result<()> {
+    if name.eq_ignore_ascii_case("Ctrl+x") {
+        session.app_state.toggle_shortcuts_sheet();
+        return Ok(());
+    }
+    if session.app_state.shortcuts_open {
+        if name.eq_ignore_ascii_case("Esc") || name.eq_ignore_ascii_case("F2") {
+            session.app_state.close_shortcuts_sheet();
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("Down") {
+            session.app_state.shortcuts_move(1);
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("Up") {
+            session.app_state.shortcuts_move(-1);
+            return Ok(());
+        }
+    }
     let event = parse_key_string(name).ok_or_else(|| anyhow::anyhow!("unknown key {name}"))?;
     let action = session.mapper.get_action(event, ActionContext::Input);
     match action {

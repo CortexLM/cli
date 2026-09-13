@@ -189,7 +189,11 @@ impl EventLoop {
                 || (key_event.code == KeyCode::Char('x')
                     && key_event.modifiers.contains(KeyModifiers::CONTROL));
             if close {
-                self.app_state.shortcuts_open = false;
+                self.app_state.close_shortcuts_sheet();
+            } else if matches!(key_event.code, KeyCode::Down | KeyCode::Char('j')) {
+                self.app_state.shortcuts_move(1);
+            } else if matches!(key_event.code, KeyCode::Up | KeyCode::Char('k')) {
+                self.app_state.shortcuts_move(-1);
             }
             self.render(terminal)?;
             return Ok(());
@@ -205,7 +209,7 @@ impl EventLoop {
             if key_event.code == KeyCode::Char('x')
                 && key_event.modifiers.contains(KeyModifiers::CONTROL)
             {
-                self.app_state.shortcuts_open = true;
+                self.app_state.toggle_shortcuts_sheet();
                 self.render(terminal)?;
                 return Ok(());
             }

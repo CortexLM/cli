@@ -203,36 +203,34 @@ pub(crate) fn tool(
     call
 }
 
-pub(crate) const DIFF_HUNK: &str = r#"@@ -20,6 +20,10 @@
- import Redis from "ioredis";
- import type { FastifyRequest } from "fastify";
--const limit = 30;
-+const limit = 60;
-+const windowSec = 60;
-
- export function rateLimit(opts: RateLimitOpts) {
--  const redis = new Redis();
-+  const redis = new Redis(process.env.REDIS_URL);
+pub(crate) const DIFF_HUNK: &str = r#"@@ -41,7 +41,8 @@
+     let chip = model_chip(state);
+-    footer.push(chip);
++    border.push_right(chip);
++    footer.push(hints);
+     Ok(())
 "#;
 
 pub(crate) const MD_TABLE: &str = r#"Here is how the three models compare:
 
-| Model | Effort | Billing |
-|---|---|---|
-| Mini 1 | Medium | per request |
-| Cortex 1 | High | per request |
-| Max 1 | MAX | per token |
+| Model | Default effort | Context | Billing |
+|---|---|---|---|
+| Cortex Mini 1 | Medium | 500K | per request |
+| Cortex 1 | High | 500K | per request |
+| Cortex Max 1 | High | 1M | per token |
+"#;
 
-Mini 1 is the default; switch with /model when a change needs deeper reasoning."#;
-
-pub(crate) const MD_FENCE: &str = r#"The limiter is a sliding window over a Redis sorted set:
-
-```ts
-export async function rateLimit(key: string, limit = 60) {
-  const now = Date.now();
-  await redis.zadd(key, now, String(now));
-  return count <= limit;
+pub(crate) const MD_FENCE: &str = r#"```rust
+pub async fn with_retry<F, T>(mut op: F) -> Result<T>
+where F: FnMut() -> Fut<Result<T>>,
+{
+    for attempt in 0..3 {
+        match op().await {
+            Ok(v) => return Ok(v),
+            Err(e) if attempt == 2 => return Err(e),
+            Err(_) => sleep(backoff(attempt)).await,
+        }
+    }
+    unreachable!()
 }
-```
-
-It fails open when Redis is unreachable."#;
+```"#;

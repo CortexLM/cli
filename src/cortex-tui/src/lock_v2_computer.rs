@@ -4,10 +4,10 @@
 //! file past the source-policy line-count baseline.
 
 use cortex_core::widgets::Message;
-use cortex_engine::client::{ComputerKind, DISCONNECTED_RUNTIME};
+use cortex_engine::client::DISCONNECTED_RUNTIME;
 
 use crate::app::AppState;
-use crate::ui::consts::{DISCONNECTED_TITLE, PLACEHOLDER_DISCONNECTED};
+use crate::ui::consts::DISCONNECTED_TITLE;
 
 /// Computer lock boards. Each filename is one live state.
 pub const COMPUTER_SCENE_IDS: &[&str] = &["computer-disconnected", "computer-cloud-default"];
@@ -19,17 +19,15 @@ pub const DISCONNECTED_RUNTIME_NARROW: &str =
 
 /// Apply a Computer lock scene. Returns `false` when `id` is not one of these.
 pub fn apply_computer_scene(id: &str, state: &mut AppState, width: u16) -> bool {
-    match id {
-        "computer-disconnected" => {
-            seed_disconnected(state, width);
-            true
-        }
-        "computer-cloud-default" => {
-            seed_cloud_default(state);
-            true
-        }
-        _ => false,
+    if !COMPUTER_SCENE_IDS.contains(&id) {
+        return false;
     }
+    match id {
+        "computer-disconnected" => seed_disconnected(state, width),
+        "computer-cloud-default" => seed_cloud_default(state),
+        _ => return false,
+    }
+    true
 }
 
 fn seed_disconnected(state: &mut AppState, width: u16) {
@@ -61,7 +59,8 @@ fn seed_cloud_default(state: &mut AppState) {
 
 /// Squeezed transcript text so wrapped rows still match engine copy.
 /// Scrollbar and box-drawing cells become spaces before collapse.
-pub fn squeezed_plain(plain: &str) -> String {
+#[cfg(test)]
+fn squeezed_plain(plain: &str) -> String {
     plain
         .chars()
         .map(|c| {
@@ -82,7 +81,9 @@ mod tests {
     use super::*;
     use crate::lock_v2::render_lock_v2_scene;
     use crate::lock_v2_ids::{LOCK_V2_NARROW_IDS, LOCK_V2_WIDE_IDS};
+    use crate::ui::consts::PLACEHOLDER_DISCONNECTED;
     use cortex_core::style::{ERROR, TEXT_DIM};
+    use cortex_engine::client::ComputerKind;
 
     const SIZES: [(u16, u16); 2] = [(120, 40), (40, 12)];
 

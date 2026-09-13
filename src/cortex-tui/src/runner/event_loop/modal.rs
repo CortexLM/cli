@@ -729,6 +729,9 @@ impl EventLoop {
                             .await;
                         return false;
                     }
+                    "jobs-picker" => {
+                        return self.handle_jobs_picker_choice(&item_id);
+                    }
                     "permission-prompt" => {
                         return self.handle_permission_prompt_choice(&item_id).await;
                     }
@@ -987,14 +990,5 @@ impl EventLoop {
             _ => {}
         }
         false
-    }
-
-    /// Process pending actions from the card handler.
-    pub(super) fn process_card_actions(&mut self) {
-        let actions = self.card_handler.take_actions();
-        for _action in actions {
-            tracing::debug!("Card action received");
-            // Handle card actions - implementation in the main module
-        }
     }
 }

@@ -219,6 +219,7 @@ pub mod retry;
 pub mod review;
 pub mod search;
 pub mod secrets;
+pub mod session_attach;
 pub mod shell;
 pub mod streaming;
 pub mod tasks;
@@ -232,6 +233,7 @@ pub mod unified_exec;
 pub mod validation;
 pub mod version_utils;
 pub mod workspace;
+pub mod worktree;
 
 // Background terminal management (different from TUI terminal)
 pub mod terminal;

@@ -175,6 +175,7 @@ pub fn restore_terminal() {
 pub mod acp_cmd;
 pub mod agent_cmd;
 pub mod alias_cmd;
+pub mod attach_cmd;
 pub mod cache_cmd;
 pub mod compact_cmd;
 pub mod completion_setup;
@@ -185,7 +186,9 @@ pub mod exec_cmd;
 pub mod export_cmd;
 pub mod feedback_cmd;
 pub mod github_cmd;
+pub mod harness;
 pub mod import_cmd;
+pub mod jobs_cmd;
 pub mod lock_cmd;
 pub mod login;
 pub mod logs_cmd;

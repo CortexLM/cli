@@ -75,9 +75,13 @@ pub mod hooks;
 pub mod integration;
 pub mod loader;
 pub mod manager;
+pub mod plugin_dir;
 pub mod types;
 /// Authoritative executable plugin runtime; the older manager is metadata-only.
 pub use cortex_plugins_ext as runtime;
+pub use executable::{
+    ExecutableSession, executable_session, plugin_config_with_extra_dirs, start_executable_runtime,
+};
 
 // Re-exports for convenience
 pub use config::{PluginConfigBuilder, PluginConfigEntry, PluginSettings, PluginsConfig};
@@ -121,9 +125,23 @@ pub async fn init_with_project(
     cortex_home: impl Into<std::path::PathBuf>,
     project_root: impl Into<std::path::PathBuf>,
 ) -> crate::error::Result<()> {
-    let manager =
-        std::sync::Arc::new(PluginManager::new(cortex_home).with_project_root(project_root));
-    init_global_manager(manager)?;
+    init_with_project_and_dirs(cortex_home, Some(project_root.into()), Vec::new()).await
+}
+
+/// Initialize plugins, including extra `--plugin-dir` folders.
+pub async fn init_with_project_and_dirs(
+    cortex_home: impl Into<std::path::PathBuf>,
+    project_root: Option<std::path::PathBuf>,
+    extra_dirs: Vec<std::path::PathBuf>,
+) -> crate::error::Result<()> {
+    let mut manager = PluginManager::new(cortex_home);
+    if let Some(root) = project_root {
+        manager = manager.with_project_root(root);
+    }
+    for dir in extra_dirs {
+        manager = manager.with_plugin_dir(dir);
+    }
+    init_global_manager(std::sync::Arc::new(manager))?;
     Ok(())
 }
 

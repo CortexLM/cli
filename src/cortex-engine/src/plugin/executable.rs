@@ -3,12 +3,54 @@
 //! Callers must preserve this order: before-hook -> final schema/path validation
 //! -> existing approval/execpolicy/sandbox gate -> tool -> observer after-hook.
 //! This API does not authorize execution, grant capabilities or contact a service.
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 
 use cortex_plugins_ext::contract::{InvocationResult, Notification, ToolDeclaration};
 use cortex_plugins_ext::{HookType, PluginConfig, PluginContext, PluginError, PluginManager};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
+
+static EXECUTABLE_SESSION: OnceLock<Mutex<Option<Arc<ExecutableSession>>>> = OnceLock::new();
+
+fn executable_slot() -> &'static Mutex<Option<Arc<ExecutableSession>>> {
+    EXECUTABLE_SESSION.get_or_init(|| Mutex::new(None))
+}
+
+/// Build the executable runtime config, including `--plugin-dir` search paths.
+pub fn plugin_config_with_extra_dirs(extra: &[PathBuf]) -> PluginConfig {
+    let mut config = PluginConfig::default();
+    for dir in extra {
+        config.add_search_path(dir.clone());
+    }
+    config
+}
+
+/// Start the WASM/Node executable plugin runtime. Failures are warnings.
+pub async fn start_executable_runtime(cwd: PathBuf, extra: &[PathBuf]) {
+    let mut slot = executable_slot().lock().await;
+    if slot.is_some() {
+        tracing::warn!(
+            "Executable plugin runtime was already started; extra plugin-dir paths were not reloaded"
+        );
+        return;
+    }
+    let config = plugin_config_with_extra_dirs(extra);
+    let context = PluginContext::new(cwd);
+    match ExecutableSession::start(config, context).await {
+        Ok(session) => {
+            *slot = Some(Arc::new(session));
+        }
+        Err(error) => {
+            tracing::warn!("Executable plugin runtime was not started: {error}");
+        }
+    }
+}
+
+/// Session-owned executable plugin runtime, if start succeeded.
+pub async fn executable_session() -> Option<Arc<ExecutableSession>> {
+    executable_slot().lock().await.clone()
+}
 
 pub struct ExecutableSession {
     manager: Arc<PluginManager>,
@@ -177,5 +219,22 @@ impl ExecutableSession {
         let shutdown = self.manager.shutdown_all().await;
         event?;
         shutdown
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn extra_plugin_dirs_are_executable_search_paths() {
+        let extra = PathBuf::from("/tmp/cortex-extra-plugins");
+        let config = plugin_config_with_extra_dirs(std::slice::from_ref(&extra));
+        assert!(
+            config.search_paths.iter().any(|path| path == &extra),
+            "{:?}",
+            config.search_paths
+        );
     }
 }

@@ -14,6 +14,7 @@ pub const OFFLINE_BODY: &str =
 pub const OFFLINE_BODY_NARROW: &str = "Reconnect — your work is saved.";
 pub const RATE_LIMIT_TITLE: &str = "× Rate limited";
 pub const RATE_LIMIT_BODY: &str = "Too many requests — try again in 2m (Retry-After: 120s). Follow-ups stay held until the rate limit resets.";
+pub const RATE_LIMIT_BODY_NARROW: &str = "Too many requests — try again in 2m.";
 
 /// Apply an offline or rate-limit lock scene. Returns `false` when `id` is neither.
 pub fn apply_offline_rate_limit_scene(id: &str, state: &mut AppState) -> bool {
@@ -42,7 +43,11 @@ pub fn apply_offline_rate_limit_scene(id: &str, state: &mut AppState) -> bool {
                 Message::user("send another follow-up on Cortex Mini 1").with_timestamp("03:22 PM"),
             );
             state.add_message(Message::system(RATE_LIMIT_TITLE));
-            state.add_message(Message::system(RATE_LIMIT_BODY));
+            state.add_message(Message::system(if narrow {
+                RATE_LIMIT_BODY_NARROW
+            } else {
+                RATE_LIMIT_BODY
+            }));
             true
         }
         _ => false,
@@ -221,6 +226,21 @@ mod tests {
             rate_n.plain.contains(PLACEHOLDER_RATE_LIMIT_NARROW)
                 || rate_n.plain.contains("rate limit resets"),
             "narrow rate-limit placeholder:\n{}",
+            rate_n.plain
+        );
+        assert!(
+            rate_n.plain.contains("try again in 2m"),
+            "narrow rate-limit retry timing:\n{}",
+            rate_n.plain
+        );
+        assert!(
+            !rate_n.plain.contains("Retry-After"),
+            "narrow rate-limit must use the compact body:\n{}",
+            rate_n.plain
+        );
+        assert!(
+            rate_n.plain.contains("Enter:retry") && rate_n.plain.contains("/usage:details"),
+            "narrow rate-limit footer:\n{}",
             rate_n.plain
         );
     }

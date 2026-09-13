@@ -50,6 +50,7 @@ pub struct PluginManager {
     cortex_home: PathBuf,
     /// Project root directory.
     project_root: Option<PathBuf>,
+    extra_dirs: Vec<PathBuf>,
 }
 
 impl PluginManager {
@@ -63,12 +64,19 @@ impl PluginManager {
             configs: RwLock::new(HashMap::new()),
             cortex_home: cortex_home.into(),
             project_root: None,
+            extra_dirs: Vec::new(),
         }
     }
 
     /// Set project root for project-specific plugins.
     pub fn with_project_root(mut self, project_root: impl Into<PathBuf>) -> Self {
         self.project_root = Some(project_root.into());
+        self
+    }
+
+    /// Add a `--plugin-dir` folder of plugins (or a single plugin folder).
+    pub fn with_plugin_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.extra_dirs.push(dir.into());
         self
     }
 
@@ -339,6 +347,9 @@ impl PluginManager {
 
         if let Some(ref project_root) = self.project_root {
             loader = loader.with_project_root(project_root);
+        }
+        for dir in &self.extra_dirs {
+            loader = loader.with_plugin_dir(dir.clone());
         }
 
         // Discover plugins

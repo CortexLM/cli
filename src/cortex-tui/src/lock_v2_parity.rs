@@ -7,7 +7,7 @@ use cortex_core::widgets::Message;
 
 use crate::app::AppState;
 use crate::interactive::builders::build_question_prompt;
-use crate::lock_v2_scenes::{radios, resumed};
+use crate::lock_v2_scenes::{conversation, radios, resumed};
 
 /// Residual parity boards (wide + narrow).
 pub const PARITY_IDS: &[&str] = &["consent-local-tools", "composer-file-chip", "undo-sheet"];
@@ -25,7 +25,7 @@ pub fn apply_parity_scene(id: &str, state: &mut AppState, width: u16) -> bool {
     }
     match id {
         "consent-local-tools" => {
-            apply_consent_local_tools(state);
+            apply_consent_local_tools(state, width);
             true
         }
         "composer-file-chip" => {
@@ -33,43 +33,58 @@ pub fn apply_parity_scene(id: &str, state: &mut AppState, width: u16) -> bool {
             true
         }
         "undo-sheet" => {
-            apply_undo_sheet(state);
+            apply_undo_sheet(state, width);
             true
         }
         _ => false,
     }
 }
 
-fn apply_consent_local_tools(state: &mut AppState) {
+fn apply_consent_local_tools(state: &mut AppState, width: u16) {
     resumed(state);
-    state
-        .add_message(Message::user("fix the failing test in this repo").with_timestamp("10:18 AM"));
-    state.add_message(
-        Message::assistant(
-            "Run tools locally?\nTools run on This PC against the current working directory. Cloud is the default when unset.",
-        )
-        .with_timestamp("10:18 AM")
-        .with_thought_secs(0.6),
-    );
+    let narrow = width <= 40;
+    if !narrow {
+        state.add_message(
+            Message::user("fix the failing test in this repo").with_timestamp("10:18 AM"),
+        );
+        state.add_message(
+            Message::assistant(
+                "Run tools locally?\nTools run on This PC against the current working directory. Cloud is the default when unset.",
+            )
+            .with_timestamp("10:18 AM")
+            .with_thought_secs(0.6),
+        );
+    } else {
+        state.add_message(
+            Message::assistant(
+                "Run tools locally?\nThis PC · current directory · Cloud is default",
+            )
+            .with_timestamp("10:18 AM"),
+        );
+    }
+    let rows: &[(&str, &str, &str)] = if narrow {
+        &[
+            ("yes", "1 Yes — run tools here", ""),
+            ("always", "2 Always allow project", ""),
+            ("no", "3 No — keep using Cloud", ""),
+        ]
+    } else {
+        &[
+            (
+                "yes",
+                "1 Yes — run tools in this directory",
+                "This PC · current directory",
+            ),
+            (
+                "always",
+                "2 Always allow for this project",
+                "remember this workspace",
+            ),
+            ("no", "3 No — keep using Cloud", "Cloud stays the default"),
+        ]
+    };
     state.enter_interactive_mode(
-        build_question_prompt(
-            "Run tools locally?",
-            &[
-                (
-                    "yes",
-                    "1 Yes — run tools in this directory",
-                    "This PC · current directory",
-                ),
-                (
-                    "always",
-                    "2 Always allow for this project",
-                    "remember this workspace",
-                ),
-                ("no", "3 No — keep using Cloud", "Cloud stays the default"),
-            ],
-            0,
-        )
-        .with_prompt_focus(),
+        build_question_prompt("Run tools locally?", rows, 0).with_prompt_focus(),
     );
 }
 
@@ -82,21 +97,32 @@ fn apply_composer_file_chip(state: &mut AppState, width: u16) {
         state.input.set_text(FILE_CHIP_PROMPT_NARROW);
     } else {
         debug_assert!(FILE_CHIP_PROMPT.contains(FILE_CHIP_TOKEN));
+        state.add_message(Message::system("@ attaches files  ·  ! enters Bash"));
         state.input.set_text(FILE_CHIP_PROMPT);
     }
 }
 
-fn apply_undo_sheet(state: &mut AppState) {
-    resumed(state);
-    state.add_message(
-        Message::assistant(
-            "Undo\nUndo the last turn, redo it, or rewind this Cortex session to a checkpoint.",
-        )
-        .with_timestamp("10:22 AM"),
-    );
+fn apply_undo_sheet(state: &mut AppState, width: u16) {
+    if width > 40 {
+        conversation(state);
+        state.add_message(
+            Message::assistant(
+                "Undo\nUndo the last turn, redo it, or rewind this Cortex session to a checkpoint.",
+            )
+            .with_timestamp("10:22 AM"),
+        );
+    } else {
+        resumed(state);
+        state.add_message(Message::assistant("Undo").with_timestamp("10:22 AM"));
+    }
     state.input.set_text("/undo");
-    state.enter_interactive_mode(radios(
-        "Undo",
+    let rows: &[(&str, &str, &str)] = if width <= 40 {
+        &[
+            ("undo", "1 Undo last turn", ""),
+            ("redo", "2 Redo", ""),
+            ("rewind", "3 Rewind…", ""),
+        ]
+    } else {
         &[
             ("undo", "1 Undo last turn", "restore the last turn"),
             ("redo", "2 Redo", "re-apply the undone turn"),
@@ -105,10 +131,9 @@ fn apply_undo_sheet(state: &mut AppState) {
                 "3 Rewind to checkpoint",
                 "pick a Cortex session checkpoint",
             ),
-        ],
-        0,
-        None,
-    ));
+        ]
+    };
+    state.enter_interactive_mode(radios("Undo", rows, 0, None));
 }
 
 #[cfg(test)]
@@ -208,6 +233,29 @@ mod tests {
                 }
             }
             assert!(sel, "consent focused row must paint SELECTION_BG");
+            assert!(
+                frame.plain.contains("confirm") && frame.plain.contains("cancel"),
+                "consent footer must be confirm/cancel, not Typed, at {width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                !frame.plain.contains("Shift+Tab") && !frame.plain.contains("Alt+Enter"),
+                "consent footer must not be the Typed composer strip:\n{}",
+                frame.plain
+            );
+            if width <= 40 {
+                assert!(
+                    frame.plain.contains("run tools here")
+                        && !frame.plain.contains("in this directory"),
+                    "narrow consent must use shortened option copy:\n{}",
+                    frame.plain
+                );
+                assert!(
+                    !frame.plain.contains("current working directory"),
+                    "narrow consent must not use the wide body:\n{}",
+                    frame.plain
+                );
+            }
         }
     }
 
@@ -315,6 +363,24 @@ mod tests {
                 }
             }
             assert!(sel, "undo-sheet focused row must paint SELECTION_BG");
+            assert!(
+                frame.plain.contains("confirm") && frame.plain.contains("cancel"),
+                "undo-sheet footer must be confirm/cancel, not Typed, at {width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                !frame.plain.contains("Alt+Enter"),
+                "undo-sheet footer must not be the Typed composer strip:\n{}",
+                frame.plain
+            );
+            if width >= 80 {
+                assert!(
+                    frame.plain.contains("tell me about yourself")
+                        || frame.plain.contains("Worked for"),
+                    "wide undo-sheet must paint the conversation backdrop:\n{}",
+                    frame.plain
+                );
+            }
         }
     }
 

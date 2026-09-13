@@ -751,6 +751,12 @@ impl<'a> MinimalSessionView<'a> {
             if title.contains("plugin") {
                 return FooterSet::Plugins;
             }
+            if title.contains("run tools") || title.contains("locally") {
+                return FooterSet::Prompt;
+            }
+            if title == "undo" || title.starts_with("undo") {
+                return FooterSet::UndoSheet;
+            }
             if title.contains("resume") || title.contains("session") {
                 return FooterSet::Resume;
             }
@@ -770,7 +776,11 @@ impl<'a> MinimalSessionView<'a> {
         if self.app_state.autocomplete.visible {
             return FooterSet::Palette;
         }
-        if !self.app_state.input.text().is_empty() {
+        let typed = self.app_state.input.text();
+        if typed.contains('@') && !self.app_state.is_interactive_mode() {
+            return FooterSet::FileChip;
+        }
+        if !typed.is_empty() {
             if area_is_narrow(width) {
                 return FooterSet::TypedNarrow;
             }

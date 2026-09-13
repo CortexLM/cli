@@ -368,6 +368,15 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     ));
 
     registry.register(CommandDef::new(
+        "handoff",
+        &[],
+        "Hand off to Cortex Cloud",
+        "/handoff",
+        CommandCategory::Session,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
         "rename",
         &["mv"],
         "Rename current session",

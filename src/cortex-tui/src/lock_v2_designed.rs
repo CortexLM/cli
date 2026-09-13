@@ -110,7 +110,7 @@ pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool 
                 Message::assistant(if narrow {
                     "Set up AGENTS.md for this repo — accept the diff."
                 } else {
-                    "Set up AGENTS.md from the bundled skill. Review the diff, then write it to the repo. No separate CLI-side template."
+                    "Set up AGENTS.md from the built-in project template. Review the diff, then write it to the repo."
                 })
                 .with_timestamp("09:12 AM"),
             );
@@ -194,9 +194,9 @@ pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool 
             state.enter_interactive_mode(radios(
                 "Hooks",
                 &[
-                    ("pre", "pre_tool", "before a local tool"),
-                    ("post", "post_tool", "after a local tool"),
-                    ("stop", "on_stop", "when the turn stops"),
+                    ("pre", "pre_tool_use", "before a local tool"),
+                    ("post", "post_tool_use", "after a local tool"),
+                    ("stop", "stop", "when the turn stops"),
                     (
                         "start",
                         "session_start",
@@ -206,12 +206,11 @@ pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool 
                             "plugin · terminal notification"
                         },
                     ),
-                    ("turn", "turn_end", "status-line integrations"),
                     (
-                        "consent",
-                        "consent_requested",
+                        "end",
+                        "session_end",
                         if narrow {
-                            "not consent"
+                            "session close"
                         } else {
                             "lifecycle event — never consent"
                         },
@@ -275,6 +274,15 @@ mod tests {
     }
 
     #[test]
+    fn handoff_slash_command_is_registered() {
+        let registry = crate::commands::CommandRegistry::default();
+        assert!(
+            registry.exists("handoff"),
+            "/handoff must be a registered command"
+        );
+    }
+
+    #[test]
     fn handoff_confirm_is_cli_products_only() {
         for (width, height) in SIZES {
             let frame = render_lock_v2_scene("handoff-confirm", width, height).expect("handoff");
@@ -332,6 +340,18 @@ mod tests {
             );
             assert!(frame.plain.contains("Cancel"), "{}", frame.plain);
             assert!(!frame.plain.contains("share"), "{}", frame.plain);
+            assert!(
+                !frame.plain.contains("bundled skill"),
+                "init copy must not claim a bundled skill:\n{}",
+                frame.plain
+            );
+            if width > 40 {
+                assert!(
+                    frame.plain.contains("built-in project template"),
+                    "{}",
+                    frame.plain
+                );
+            }
         }
     }
 
@@ -357,8 +377,9 @@ mod tests {
     fn hooks_lifecycle_is_not_consent() {
         for (width, height) in SIZES {
             let frame = render_lock_v2_scene("hooks-lifecycle", width, height).expect("hooks");
-            assert!(frame.plain.contains("pre_tool"), "{}", frame.plain);
-            assert!(frame.plain.contains("consent_requested"), "{}", frame.plain);
+            assert!(frame.plain.contains("pre_tool_use"), "{}", frame.plain);
+            assert!(frame.plain.contains("post_tool_use"), "{}", frame.plain);
+            assert!(frame.plain.contains("session_start"), "{}", frame.plain);
             assert!(
                 frame.plain.contains("never consent") || frame.plain.contains("not consent"),
                 "{}",

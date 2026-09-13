@@ -16,6 +16,10 @@ impl CommandExecutor {
         CommandResult::OpenModal(ModalType::Fork)
     }
 
+    pub(super) fn cmd_handoff(&self) -> CommandResult {
+        CommandResult::Async("handoff".to_string())
+    }
+
     pub(super) fn cmd_rename(&self, cmd: &ParsedCommand) -> CommandResult {
         match cmd.first_arg() {
             Some(name) => CommandResult::SetValue("session_name".to_string(), name.to_string()),

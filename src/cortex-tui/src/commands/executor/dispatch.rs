@@ -59,6 +59,7 @@ impl CommandExecutor {
                 CommandResult::Async("sessions:list".to_string())
             }
             "fork" | "branch" => self.cmd_fork(cmd),
+            "handoff" => self.cmd_handoff(),
             "rename" | "mv" => self.cmd_rename(cmd),
             "favorite" | "fav" | "star" => CommandResult::Toggle("favorite".to_string()),
             "unfavorite" | "unfav" | "unstar" => {

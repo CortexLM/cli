@@ -533,6 +533,16 @@ fn test_agents_command() {
 }
 
 #[test]
+fn test_handoff_command() {
+    let executor = CommandExecutor::new();
+    let result = executor.execute_str("/handoff");
+    assert!(matches!(
+        result,
+        CommandResult::Async(ref s) if s == "handoff"
+    ));
+}
+
+#[test]
 fn test_share_command() {
     let executor = CommandExecutor::new();
 

@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > send another follow-up on Cortex Mini 1                                                                  03:22 PM
+
+   × Rate limited
+     Too many requests — try again in 2m (Retry-After: 120s). Follow-ups stay held until the rate limit resets.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Add a follow-up — held until the rate limit resets                                                               │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:retry  |  /usage:details

@@ -250,6 +250,7 @@ pub enum FooterSet {
     Resume,
     Bash,
     Unavailable,
+    RateLimit,
     Palette,
 }
 
@@ -452,6 +453,16 @@ impl FooterSet {
                 FooterHint {
                     key: "Ctrl+x",
                     label: "shortcuts",
+                },
+            ],
+            Self::RateLimit => &[
+                FooterHint {
+                    key: "Enter",
+                    label: "retry",
+                },
+                FooterHint {
+                    key: "/usage",
+                    label: "details",
                 },
             ],
             Self::Palette => &[

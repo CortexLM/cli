@@ -306,6 +306,18 @@ impl<'a> MinimalSessionView<'a> {
         let placeholder = if input_text.is_empty() {
             Some(if prompt_owns_focus {
                 PLACEHOLDER_PROMPT
+            } else if self.app_state.offline_held {
+                if area_is_narrow(self.app_state.terminal_size.0) {
+                    crate::ui::consts::PLACEHOLDER_OFFLINE_NARROW
+                } else {
+                    crate::ui::consts::PLACEHOLDER_OFFLINE
+                }
+            } else if self.app_state.rate_limit_held {
+                if area_is_narrow(self.app_state.terminal_size.0) {
+                    crate::ui::consts::PLACEHOLDER_RATE_LIMIT_NARROW
+                } else {
+                    crate::ui::consts::PLACEHOLDER_RATE_LIMIT
+                }
             } else if self.app_state.quota_held {
                 crate::ui::consts::PLACEHOLDER_QUOTA
             } else if self.is_task_running() {
@@ -720,8 +732,11 @@ pub const PALETTE_FOOTER_HINT_SHORT: &str = "Enter:send | Ctrl+x:shortcuts";
 
 impl<'a> MinimalSessionView<'a> {
     fn footer_set(&self, is_task_running: bool, width: u16) -> FooterSet {
-        if self.app_state.quota_held {
+        if self.app_state.offline_held || self.app_state.quota_held {
             return FooterSet::Unavailable;
+        }
+        if self.app_state.rate_limit_held {
+            return FooterSet::RateLimit;
         }
         if let Some(state) = self.app_state.get_interactive_state() {
             if state.effort_focused {

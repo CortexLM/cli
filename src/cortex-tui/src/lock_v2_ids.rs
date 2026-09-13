@@ -1,7 +1,7 @@
 //! Lock v2 scene id lists. Split out of [`crate::lock_v2`] so adding `/goal`
 //! boards does not grow that file past the source-policy line-count baseline.
 
-/// Narrow (40×12) SPEC §7 set — 36 boards.
+/// Narrow (40×12) SPEC §7 set — 38 boards.
 pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "welcome-cortex",
     "welcome-agent",
@@ -36,12 +36,14 @@ pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "usage",
     "diagnostics",
     "interrupt-stopped",
+    "offline",
+    "rate-limit",
     "diff-hunk",
     "login",
     "shortcuts-overlay",
 ];
 
-/// Wide (120×40) SPEC §7 set — 82 boards.
+/// Wide (120×40) SPEC §7 set — 84 boards.
 pub const LOCK_V2_WIDE_IDS: &[&str] = &[
     "welcome-cortex",
     "welcome-agent",
@@ -101,6 +103,8 @@ pub const LOCK_V2_WIDE_IDS: &[&str] = &[
     "diagnostics",
     "interrupt-stopped",
     "error-unavailable",
+    "offline",
+    "rate-limit",
     "tool-tiles",
     "tool-tiles-collapsed",
     "shell-running",

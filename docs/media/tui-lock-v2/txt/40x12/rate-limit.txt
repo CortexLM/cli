@@ -1,0 +1,12 @@
+                             14K / 500K
+
+   > send another follow-up on Cortex…
+
+   × Rate limited
+     Too many requests — try again in…
+
+ ╭─ Agent ────────────────────────────╮
+ │ > Held until the rate limit resets │
+ ╰─────────── Cortex Mini 1 (medium) ─╯
+
+ Enter:retry | /usage:details

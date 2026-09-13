@@ -202,6 +202,10 @@ pub struct AppState {
     pub update_info: Option<cortex_update::UpdateInfo>,
     /// Agent quota is exhausted — follow-ups stay in the composer until it resets.
     pub quota_held: bool,
+    /// Network is unreachable — follow-ups stay in the composer until reconnect.
+    pub offline_held: bool,
+    /// HTTP 429 rate limit — follow-ups stay in the composer until Retry-After.
+    pub rate_limit_held: bool,
     /// Launched via the `agent` binary / alias.
     pub agent_entrypoint: bool,
     /// Token counter used / window.
@@ -342,6 +346,8 @@ impl AppState {
             update_status: UpdateStatus::default(),
             update_info: None,
             quota_held: false,
+            offline_held: false,
+            rate_limit_held: false,
             agent_entrypoint: false,
             tokens_used: 0,
             context_window: 500_000,

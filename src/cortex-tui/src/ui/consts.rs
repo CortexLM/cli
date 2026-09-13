@@ -49,6 +49,16 @@ pub const PLACEHOLDER_QUOTA: &str = "Add a follow-up — held until quota resets
 /// Narrow (40-column) form of the quota placeholder.
 pub const PLACEHOLDER_QUOTA_NARROW: &str = "Follow-up — held until quota resets";
 
+/// Composer placeholder while the session is offline.
+pub const PLACEHOLDER_OFFLINE: &str = "Waiting for network — your work is saved";
+/// Narrow (40-column) form of the offline placeholder.
+pub const PLACEHOLDER_OFFLINE_NARROW: &str = "Waiting for network";
+
+/// Composer placeholder while HTTP 429 holds follow-ups.
+pub const PLACEHOLDER_RATE_LIMIT: &str = "Add a follow-up — held until the rate limit resets";
+/// Narrow (40-column) form of the rate-limit placeholder.
+pub const PLACEHOLDER_RATE_LIMIT_NARROW: &str = "Held until the rate limit resets";
+
 /// Sandbox deny title painted in error red.
 pub const SANDBOX_DENIED_TITLE: &str = "Sandbox denied";
 

@@ -1380,6 +1380,38 @@ def board_error_unavailable(s, c):
     footer(s, c, [("Enter", "retry"), ("Ctrl+x", "shortcuts")])
 
 
+def board_offline(s, c):
+    header(s, c)
+    hold = "Waiting for network" if c.narrow else "Waiting for network — your work is saved"
+    top = composer(s, c, placeholder=hold, focused=False, caret=False)
+    f = Flow(s, c, limit=top - 1)
+    f.user("keep going on this Cortex session", "03:18 PM")
+    f.line([("×", S_ERR), (" You're offline", S_ERR)])
+    body = (
+        "Reconnect — your work is saved."
+        if c.narrow
+        else "Reconnect when the network is back — your work is saved in this session."
+    )
+    f.dim(body, indent=2)
+    footer(s, c, [("Enter", "retry"), ("Ctrl+x", "shortcuts")])
+
+
+def board_rate_limit(s, c):
+    header(s, c)
+    hold = "Held until the rate limit resets" if c.narrow else "Add a follow-up — held until the rate limit resets"
+    top = composer(s, c, placeholder=hold, focused=False, caret=False)
+    f = Flow(s, c, limit=top - 1)
+    f.user("send another follow-up on Cortex Mini 1", "03:22 PM")
+    f.line([("×", S_ERR), (" Rate limited", S_ERR)])
+    body = (
+        "Too many requests — try again in 2m."
+        if c.narrow
+        else "Too many requests — try again in 2m (Retry-After: 120s). Follow-ups stay held until the rate limit resets."
+    )
+    f.dim(body, indent=2)
+    footer(s, c, [("Enter", "retry"), ("/usage", "details")])
+
+
 def board_tool_tiles(s, c):
     header(s, c)
     top = composer(s, c)
@@ -1856,6 +1888,8 @@ BOARDS_META = [
     ("diagnostics", board_diagnostics, True, "E", "Diagnostics tile — error red, warn amber"),
     ("interrupt-stopped", board_interrupt_stopped, True, "E", "Esc / Ctrl+c — `× Stopped`"),
     ("error-unavailable", board_error_unavailable, False, "E", "API down — product-facing error"),
+    ("offline", board_offline, True, "E", "Network unreachable — held composer, distinct from API-down"),
+    ("rate-limit", board_rate_limit, True, "E", "HTTP 429 rate limited — retry-after, distinct from quota"),
     ("tool-tiles", board_tool_tiles, False, "E", "Grouped tool calls expanded — Read / Grep / Shell"),
     ("tool-tiles-collapsed", board_tool_tiles_collapsed, False, "E", "Grouped tool calls collapsed"),
     ("shell-running", board_shell_running, False, "E", "Live Shell tile with output"),

@@ -90,7 +90,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `sandbox` | `/sandbox` — filesystem / network / escalation | [120x40](120x40/sandbox.png) | — |
 | `sandbox-deny` | Sandbox blocked a command — red title, radios | [120x40](120x40/sandbox-deny.png) | — |
 | `cloud-handoff` | `&` handoff to Cortex Cloud | [120x40](120x40/cloud-handoff.png) | — |
-| `handoff-confirm` | `/handoff` — Cortex Cloud vs stay on this CLI (Chat · Code · Bot) | [runtime 120x40](runtime/120x40/handoff-confirm.png) | — |
+| `handoff-confirm` | `/handoff` — Cortex Cloud vs stay on this CLI (Chat · Code · Bot) | [runtime 120x40](runtime/120x40/handoff-confirm.png) | [runtime 40x12](runtime/40x12/handoff-confirm.png) |
 | `diagnostics` | Diagnostics tile — error red, warn amber | [120x40](120x40/diagnostics.png) | [40x12](40x12/diagnostics.png) |
 | `interrupt-stopped` | Esc / Ctrl+c — `× Stopped` | [120x40](120x40/interrupt-stopped.png) | [40x12](40x12/interrupt-stopped.png) |
 | `error-unavailable` | API down — product-facing error | [120x40](120x40/error-unavailable.png) | — |
@@ -126,4 +126,4 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `composer-file-chip` | Composer with attached @file chip in prompt | [120x40](120x40/composer-file-chip.png) | [40x12](40x12/composer-file-chip.png) |
 | `undo-sheet` | /undo /redo /rewind sheet | [120x40](120x40/undo-sheet.png) | [40x12](40x12/undo-sheet.png) |
 
-**95** runtime boards at 120x40 · **48** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack.
+**95** runtime boards at 120x40 · **49** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack.

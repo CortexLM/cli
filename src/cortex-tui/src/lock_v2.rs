@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn lock_v2_wide_count_is_spec() {
         assert_eq!(LOCK_V2_WIDE_IDS.len(), 95);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 48);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 49);
     }
 
     #[test]

@@ -10,7 +10,7 @@ captures use `MinimalSessionView` plus lock flags (`computer_held`,
 `show_computer_default`, `offline_held`, `rate_limit_held`) so MockTerminal
 matches live chrome.
 
-- Boards: [`index.md`](index.md) — **95** runtime boards at 120×40, 48 of them also at 40×12. Designer PNG files under `{40x12,120x40}/` from other PRs are not rewritten; new scenes are captured with `generate_tui_lock_screenshots --v2 --only`.
+- Boards: [`index.md`](index.md) — **95** runtime boards at 120×40, 49 of them also at 40×12. Designer PNG files under `{40x12,120x40}/` from other PRs are not rewritten; new scenes are captured with `generate_tui_lock_screenshots --v2 --only`.
 - Grids: `txt/<size>/<board>.txt` — the exact character grid of every board (diff a
   `MockTerminal` capture against these).
 - Renderer: `tools/render_lock_v2.py` + `tools/boards.py` (Python 3 + Pillow, IBM Plex Mono
@@ -429,7 +429,7 @@ Narrow (40×12) set: `welcome-cortex`, `welcome-agent`, `first-run-tips`, `sessi
 `session-thinking-live`, `session-assistant`, `session-optin`, `composer-empty`, `composer-typing`, `composer-hover`,
 `tokens-topright`, `compact-chat`, `slash-palette`, `goal-chip-active`, `goal-chip-paused`, `goal-chip-done`,
 `goal-chip-budget`, `goal-chip-blocked`, `slash-model-typed`, `model-list`, `model-effort-high`,
-`settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-theme-submenu`, `theme-picker`, `session-fork`, `init-agents`, `custom-commands`, `hooks-lifecycle`, `mode-plan`, `mode-ask`,
+`settings-appearance`, `settings-mouse`, `settings-row-hover`, `settings-theme-submenu`, `theme-picker`, `session-fork`, `init-agents`, `custom-commands`, `hooks-lifecycle`, `handoff-confirm`, `mode-plan`, `mode-ask`,
 `permission-prompt`, `mcp-servers`, `usage`, `diagnostics`, `interrupt-stopped`, `offline`, `rate-limit`, `computer-disconnected`, `computer-cloud-default`, `diff-hunk`, `login`, `shortcuts-overlay`,
 `consent-local-tools`, `composer-file-chip`, `undo-sheet`.
 

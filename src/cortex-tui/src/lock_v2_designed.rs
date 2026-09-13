@@ -9,21 +9,19 @@ use crate::app::AppState;
 use crate::interactive::builders::build_theme_selector;
 use crate::lock_v2_scenes::*;
 
-/// Wide + narrow designed boards.
+/// Designed boards (all sizes). `handoff-confirm` is also at 40×12.
 pub const DESIGNED_NARROW_IDS: &[&str] = &[
     "theme-picker",
     "session-fork",
     "init-agents",
     "custom-commands",
     "hooks-lifecycle",
+    "handoff-confirm",
 ];
-
-/// Wide-only designed board (`&` result is already `cloud-handoff`).
-pub const DESIGNED_WIDE_ONLY_IDS: &[&str] = &["handoff-confirm"];
 
 /// Apply a designed lock scene. Returns `false` when `id` is not one of these.
 pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool {
-    if !(DESIGNED_NARROW_IDS.contains(&id) || DESIGNED_WIDE_ONLY_IDS.contains(&id)) {
+    if !DESIGNED_NARROW_IDS.contains(&id) {
         return false;
     }
     let narrow = width <= 40;
@@ -37,9 +35,12 @@ pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool 
         }
         "handoff-confirm" => {
             resumed(state);
-            state.add_message(
-                Message::user("& ship the lock boards on Cortex Cloud").with_timestamp("02:40 PM"),
-            );
+            if !narrow {
+                state.add_message(
+                    Message::user("& ship the lock boards on Cortex Cloud")
+                        .with_timestamp("02:40 PM"),
+                );
+            }
             state.input.set_text("/handoff");
             let mut interactive = radios(
                 "Handoff",
@@ -47,9 +48,21 @@ pub fn apply_designed_scene(id: &str, state: &mut AppState, width: u16) -> bool 
                     (
                         "cloud",
                         "1 Cortex Cloud",
-                        "Chat · Code · Bot — this CLI session stays here",
+                        if narrow {
+                            "Chat · Code · Bot"
+                        } else {
+                            "Chat · Code · Bot — this CLI session stays here"
+                        },
                     ),
-                    ("stay", "2 Stay on this CLI session", "keep running locally"),
+                    (
+                        "stay",
+                        if narrow {
+                            "2 Stay on CLI"
+                        } else {
+                            "2 Stay on this CLI session"
+                        },
+                        "keep running locally",
+                    ),
                 ],
                 0,
                 None,
@@ -228,17 +241,10 @@ mod tests {
             assert!(LOCK_V2_WIDE_IDS.contains(id), "{id} missing from wide");
             assert!(LOCK_V2_NARROW_IDS.contains(id), "{id} missing from narrow");
         }
-        for id in DESIGNED_WIDE_ONLY_IDS {
-            assert!(LOCK_V2_WIDE_IDS.contains(id), "{id} missing from wide");
-            assert!(
-                !LOCK_V2_NARROW_IDS.contains(id),
-                "{id} should stay wide-only"
-            );
-        }
         assert!(!LOCK_V2_WIDE_IDS.contains(&"share-link"));
         assert!(!LOCK_V2_WIDE_IDS.contains(&"unshare"));
         assert_eq!(LOCK_V2_WIDE_IDS.len(), 95);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 48);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 49);
     }
 
     #[test]
@@ -270,13 +276,31 @@ mod tests {
 
     #[test]
     fn handoff_confirm_is_cli_products_only() {
-        let frame = render_lock_v2_scene("handoff-confirm", 120, 40).expect("handoff");
-        assert!(frame.plain.contains("Cortex Cloud"), "{}", frame.plain);
-        assert!(frame.plain.contains("Chat"), "{}", frame.plain);
-        assert!(frame.plain.contains("Stay on this CLI"), "{}", frame.plain);
-        assert!(!frame.plain.contains("Handed off to Cortex Cloud"),);
-        assert!(!frame.plain.contains("ag_4f2a"), "{}", frame.plain);
-        assert!(!frame.plain.contains("Arcade"), "{}", frame.plain);
+        for (width, height) in SIZES {
+            let frame = render_lock_v2_scene("handoff-confirm", width, height).expect("handoff");
+            assert!(
+                frame.plain.contains("Cortex Cloud"),
+                "{width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("Chat"),
+                "{width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("Stay on") && frame.plain.contains("CLI"),
+                "{width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                !frame.plain.contains("Handed off to Cortex Cloud"),
+                "{width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(!frame.plain.contains("ag_4f2a"), "{}", frame.plain);
+            assert!(!frame.plain.contains("Arcade"), "{}", frame.plain);
+        }
     }
 
     #[test]

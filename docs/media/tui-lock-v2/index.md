@@ -51,9 +51,9 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `slash-model-typed` | `/mod` typed — banner green matched chars, ghost completion | [120x40](120x40/slash-model-typed.png) | [40x12](40x12/slash-model-typed.png) |
 | `theme-picker` | `/theme` — Cortex Night / Cortex Day / Ocean Dark / Monokai | [runtime 120x40](runtime/120x40/theme-picker.png) | [runtime 40x12](runtime/40x12/theme-picker.png) |
 | `session-fork` | `/fork` — fork this session or stay | [runtime 120x40](runtime/120x40/session-fork.png) | [runtime 40x12](runtime/40x12/session-fork.png) |
-| `init-agents` | `/init` — AGENTS.md diff to accept | [runtime 120x40](runtime/120x40/init-agents.png) | [runtime 40x12](runtime/40x12/init-agents.png) |
+| `init-agents` | `/init` — AGENTS.md from the built-in project template | [120x40](120x40/init-agents.png) · [runtime](runtime/120x40/init-agents.png) | [40x12](40x12/init-agents.png) · [runtime](runtime/40x12/init-agents.png) |
 | `custom-commands` | `.cortex/commands` + repo `SKILL.md` | [runtime 120x40](runtime/120x40/custom-commands.png) | [runtime 40x12](runtime/40x12/custom-commands.png) |
-| `hooks-lifecycle` | `/hooks` — pre_tool_use / post_tool_use / stop / session events | [runtime 120x40](runtime/120x40/hooks-lifecycle.png) | [runtime 40x12](runtime/40x12/hooks-lifecycle.png) |
+| `hooks-lifecycle` | `/hooks` — pre_tool_use / post_tool_use / stop / session_end | [120x40](120x40/hooks-lifecycle.png) · [runtime](runtime/120x40/hooks-lifecycle.png) | [40x12](40x12/hooks-lifecycle.png) · [runtime](runtime/40x12/hooks-lifecycle.png) |
 | `model-list` | `/model` — Cortex Mini 1 · Cortex 1 · Cortex Max 1 | [120x40](120x40/model-list.png) | [40x12](40x12/model-list.png) |
 | `model-list-hover` | Model list with mouse over row 3 | [120x40](120x40/model-list-hover.png) | — |
 | `model-effort-high` | Effort radios — High focused | [120x40](120x40/model-effort-high.png) | [40x12](40x12/model-effort-high.png) |

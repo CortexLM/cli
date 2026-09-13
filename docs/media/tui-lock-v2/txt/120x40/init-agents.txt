@@ -1,0 +1,40 @@
+                                                                                                             14K / 500K
+
+   > /init                                                                                                    09:12 AM
+
+   Set up AGENTS.md from the built-in project template. Review the diff, then write it to the repo.           09:12 AM
+
+   ● Edit  AGENTS.md · +12
+     + # Cortex CLI / Cortex Code
+     + Chat | Code | Bot in this repository.
+   > 1 Write AGENTS.md to the repo
+     2 Cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─ Agent ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Plan, search, build anything                                                                                     │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────── Cortex Mini 1 (medium) ─╯
+
+ ↑↓:select  |  Enter:confirm  |  Esc:cancel

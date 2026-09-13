@@ -929,6 +929,64 @@ def board_slash_model_typed(s, c):
     footer(s, c, FOOTER_TYPED_NARROW if c.narrow else FOOTER_TYPED)
 
 
+def board_init_agents(s, c):
+    header(s, c)
+    top = composer(s, c, focused=False, caret=False)
+    f = Flow(s, c, y=1 if c.narrow else 2, limit=top if c.narrow else top - 1)
+    if not c.narrow:
+        f.user("/init", "09:12 AM")
+        f.reply(
+            [
+                "Set up AGENTS.md from the built-in project template. Review the diff, then write it to the repo."
+            ],
+            "09:12 AM",
+        )
+    f.tile("Edit", "AGENTS.md", meta_parts=[("+12", S_OK)])
+    if c.narrow:
+        f.line([("+ # Cortex CLI", S_OK)], indent=2)
+        f.line([("+ Chat | Code | Bot", S_OK)], indent=2)
+        f.options(["Write AGENTS.md   built-in template", "Cancel   leave the file untouched"], focused=0)
+    else:
+        f.line([("+ # Cortex CLI / Cortex Code", S_OK)], indent=2)
+        f.line([("+ Chat | Code | Bot in this repository.", S_OK)], indent=2)
+        f.options(["Write AGENTS.md to the repo", "Cancel"], focused=0)
+    footer(
+        s,
+        c,
+        [("Enter", "confirm"), ("Esc", "cancel")] if c.narrow else [("↑↓", "select"), ("Enter", "confirm"), ("Esc", "cancel")],
+    )
+
+
+def board_hooks_lifecycle(s, c):
+    header(s, c)
+    top = composer(s, c, content=[("/hooks", S_ACC), (" ", S)])
+    if c.narrow:
+        rows = [
+            ([("pre_tool_use", S)], "before a local tool"),
+            ([("post_tool_use", S)], "after a local tool"),
+            ([("stop", S)], "when the turn stops"),
+            ([("session_start", S)], "plugin event"),
+            ([("session_end", S)], "never consent"),
+        ]
+    else:
+        rows = [
+            ([("pre_tool_use", S)], "before a local tool"),
+            ([("post_tool_use", S)], "after a local tool"),
+            ([("stop", S)], "when the turn stops"),
+            ([("session_start", S)], "plugin · terminal notification"),
+            ([("session_end", S)], "lifecycle event — never consent"),
+        ]
+    menu_top = menu(s, c, top, rows, focused=0, name_w=16)
+    banner = (
+        "A hook is never consent. Output is capped and redacted."
+        if c.narrow
+        else "`.cortex/hooks.json` — a hook is never consent. Output is capped and redacted."
+    )
+    s.put(c.x0 + 2, max(1, menu_top - 2), clip(banner, c.inner_w - 2), S_DIM)
+    backdrop_tail(s, c, menu_top - 2)
+    footer(s, c, [("Enter", "select"), ("Esc", "close")] if c.narrow else [("↑↓", "select"), ("Enter", "select"), ("Esc", "close")])
+
+
 def model_rows():
     rows = []
     for name, desc, meta in MODELS:
@@ -1976,6 +2034,8 @@ BOARDS_META = [
     ("goal-chip-budget", board_goal_chip_budget, True, "C", "Composer goal chip — `Goal · budget` (budget_limited), text-only"),
     ("goal-chip-blocked", board_goal_chip_blocked, True, "C", "Composer goal chip — `Goal · blocked`, text-only"),
     ("slash-model-typed", board_slash_model_typed, True, "C", "`/mod` typed — banner green matched chars, ghost completion"),
+    ("init-agents", board_init_agents, True, "C", "`/init` — AGENTS.md from the built-in project template"),
+    ("hooks-lifecycle", board_hooks_lifecycle, True, "C", "`/hooks` — pre_tool_use / post_tool_use / stop / session_end"),
     ("model-list", board_model_list, True, "C", "`/model` — Cortex Mini 1 · Cortex 1 · Cortex Max 1"),
     ("model-list-hover", board_model_list_hover, False, "C", "Model list with mouse over row 3"),
     ("model-effort-high", board_model_effort_high, True, "C", "Effort radios — High focused"),

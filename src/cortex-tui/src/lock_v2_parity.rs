@@ -308,7 +308,7 @@ mod tests {
                 }
             }
             assert!(
-                accent_at || frame.plain.contains(FILE_CHIP_TOKEN) || frame.plain.contains('@'),
+                accent_at,
                 "file-chip should paint accent on the @ token at {width}x{height}"
             );
         }

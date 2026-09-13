@@ -470,45 +470,7 @@ impl<'a> InteractiveWidget<'a> {
             buf.set_string(x, area.y, "  ", Style::default());
         }
         x += 2;
-
-        if self.radio_leads() && !item.is_separator {
-            let mark = if item.is_current { "● " } else { "○ " };
-            let radio_style = if item.is_current {
-                Style::default().fg(TEXT).bg(if selected_bar {
-                    SELECTION_BG
-                } else {
-                    Color::Reset
-                })
-            } else {
-                Style::default().fg(TEXT_DIM)
-            };
-            buf.set_string(x, area.y, mark, radio_style);
-            x += 2;
-        } else if self.status_leads() && !item.is_separator {
-            let icon = item.icon.unwrap_or('○');
-            let icon_style = match icon {
-                '✓' => Style::default().fg(SUCCESS),
-                '×' => Style::default().fg(ERROR),
-                '⠇' => Style::default().fg(TEXT),
-                _ => Style::default().fg(TEXT_DIM),
-            };
-            buf.set_string(x, area.y, format!("{icon} "), icon_style);
-            x += 2;
-        } else if self.state.multi_select {
-            let checkbox = if is_checked { "[✓]" } else { "[ ]" };
-            let checkbox_style = if is_checked {
-                Style::default().fg(SUCCESS)
-            } else {
-                Style::default().fg(TEXT_DIM)
-            };
-            buf.set_string(x, area.y, checkbox, checkbox_style);
-            x += 4;
-        } else if let Some(icon) = item.icon {
-            buf.set_string(x, area.y, icon.to_string(), Style::default().fg(fg));
-            x += 2;
-        }
-
-        // Shortcut - hidden (shortcuts still work via keyboard)
+        x += self.paint_item_leads(area, buf, item, is_checked, selected_bar, fg, x);
 
         let label_style = if item.is_separator {
             Style::default().fg(TEXT_DIM).add_modifier(Modifier::BOLD)
@@ -525,35 +487,100 @@ impl<'a> InteractiveWidget<'a> {
         let label = crate::ui::text_utils::first_fitting_line(&item.label, max_label_len);
         buf.set_string(x, area.y, &label, label_style);
         x += label.chars().count() as u16;
+        self.paint_item_description(area, buf, item, selected_bar, x, name_w);
+    }
 
-        if let Some(ref desc) = item.description {
-            let desc_style = if selected_bar {
-                Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
+    fn paint_item_leads(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        item: &InteractiveItem,
+        is_checked: bool,
+        selected_bar: bool,
+        fg: Color,
+        x: u16,
+    ) -> u16 {
+        if self.radio_leads() && !item.is_separator {
+            let mark = if item.is_current { "● " } else { "○ " };
+            let radio_style = if item.is_current {
+                Style::default().fg(TEXT).bg(if selected_bar {
+                    SELECTION_BG
+                } else {
+                    Color::Reset
+                })
             } else {
                 Style::default().fg(TEXT_DIM)
             };
-            if self.lock_menu() {
-                let desc_x = area.x + self.lock_gutter() + 2 + name_w as u16;
-                if desc_x + 2 < area.right() {
-                    let shown = crate::ui::text_utils::first_fitting_line(
-                        desc,
-                        area.right().saturating_sub(desc_x + 1) as usize,
-                    );
-                    if !shown.is_empty() {
-                        buf.set_string(desc_x, area.y, &shown, desc_style);
-                    }
-                }
+            buf.set_string(x, area.y, mark, radio_style);
+            return 2;
+        }
+        if self.status_leads() && !item.is_separator {
+            let icon = item.icon.unwrap_or('○');
+            let icon_style = match icon {
+                '✓' => Style::default().fg(SUCCESS),
+                '×' => Style::default().fg(ERROR),
+                '⠇' => Style::default().fg(TEXT),
+                _ => Style::default().fg(TEXT_DIM),
+            };
+            buf.set_string(x, area.y, format!("{icon} "), icon_style);
+            return 2;
+        }
+        if self.state.multi_select {
+            let checkbox = if is_checked { "[✓]" } else { "[ ]" };
+            let checkbox_style = if is_checked {
+                Style::default().fg(SUCCESS)
             } else {
-                let remaining = (area.x + area.width).saturating_sub(x + 2) as usize;
-                let desc_text = crate::ui::text_utils::first_fitting_line(desc, remaining);
-                if !desc_text.is_empty() {
-                    let desc_w = desc_text.chars().count() as u16;
-                    let desc_x = area.x + area.width.saturating_sub(desc_w + 1);
-                    if desc_x > x + 1 {
-                        buf.set_string(desc_x, area.y, &desc_text, desc_style);
-                    }
+                Style::default().fg(TEXT_DIM)
+            };
+            buf.set_string(x, area.y, checkbox, checkbox_style);
+            return 4;
+        }
+        if let Some(icon) = item.icon {
+            buf.set_string(x, area.y, icon.to_string(), Style::default().fg(fg));
+            return 2;
+        }
+        0
+    }
+
+    fn paint_item_description(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        item: &InteractiveItem,
+        selected_bar: bool,
+        x: u16,
+        name_w: usize,
+    ) {
+        let Some(ref desc) = item.description else {
+            return;
+        };
+        let desc_style = if selected_bar {
+            Style::default().fg(TEXT_DIM).bg(SELECTION_BG)
+        } else {
+            Style::default().fg(TEXT_DIM)
+        };
+        if self.lock_menu() {
+            let desc_x = area.x + self.lock_gutter() + 2 + name_w as u16;
+            if desc_x + 2 < area.right() {
+                let shown = crate::ui::text_utils::first_fitting_line(
+                    desc,
+                    area.right().saturating_sub(desc_x + 1) as usize,
+                );
+                if !shown.is_empty() {
+                    buf.set_string(desc_x, area.y, &shown, desc_style);
                 }
             }
+            return;
+        }
+        let remaining = (area.x + area.width).saturating_sub(x + 2) as usize;
+        let desc_text = crate::ui::text_utils::first_fitting_line(desc, remaining);
+        if desc_text.is_empty() {
+            return;
+        }
+        let desc_w = desc_text.chars().count() as u16;
+        let desc_x = area.x + area.width.saturating_sub(desc_w + 1);
+        if desc_x > x + 1 {
+            buf.set_string(desc_x, area.y, &desc_text, desc_style);
         }
     }
 

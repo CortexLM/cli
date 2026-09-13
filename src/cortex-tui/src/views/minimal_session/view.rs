@@ -782,22 +782,11 @@ impl<'a> MinimalSessionView<'a> {
                     };
                 }
                 InteractiveAction::ResumeSession => return FooterSet::Resume,
-                InteractiveAction::Custom(id) if id == PERMISSION_PROMPT_ACTION => {
-                    return FooterSet::Approval;
+                InteractiveAction::Custom(id) => {
+                    if let Some(set) = custom_interactive_footer(id) {
+                        return set;
+                    }
                 }
-                InteractiveAction::Custom(id) if id == "sandbox-deny" => {
-                    return FooterSet::SelectConfirm;
-                }
-                InteractiveAction::Custom(id) if id == "plan-confirm" => {
-                    return FooterSet::PlanKeep;
-                }
-                InteractiveAction::Custom(id) if id == "permissions-picker" => {
-                    return FooterSet::PermissionsApply;
-                }
-                InteractiveAction::Custom(id) if id == "clear-confirm" => {
-                    return FooterSet::Confirm;
-                }
-                InteractiveAction::Custom(id) if id == "plugins" => return FooterSet::Plugins,
                 _ => {}
             }
             let title = state.title.to_ascii_lowercase();
@@ -809,12 +798,6 @@ impl<'a> MinimalSessionView<'a> {
             }
             if title == "undo" || title.starts_with("undo") {
                 return FooterSet::UndoSheet;
-            }
-            if title.contains("resume") || title.contains("session") {
-                return FooterSet::Resume;
-            }
-            if title.contains("permission") || title.contains("approv") {
-                return FooterSet::Approval;
             }
         }
         if self.app_state.agent_mode_label == "Bash" {
@@ -864,6 +847,18 @@ impl<'a> MinimalSessionView<'a> {
 
 fn area_is_narrow(width: u16) -> bool {
     width < 80
+}
+
+fn custom_interactive_footer(id: &str) -> Option<FooterSet> {
+    Some(match id {
+        PERMISSION_PROMPT_ACTION => FooterSet::Approval,
+        "sandbox-deny" => FooterSet::SelectConfirm,
+        "plan-confirm" => FooterSet::PlanKeep,
+        "permissions-picker" => FooterSet::PermissionsApply,
+        "clear-confirm" => FooterSet::Confirm,
+        "plugins" => FooterSet::Plugins,
+        _ => return None,
+    })
 }
 
 /// Accent slash commands (`/undo`) and completed `@path` file chips.

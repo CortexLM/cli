@@ -14,6 +14,7 @@ pub(super) fn system_message_is_error(content: &str) -> bool {
             "Invalid",
             "You're offline",
             "Rate limited",
+            "context limit",
             "Stopped",
             "quota exhausted",
             "Sandbox denied",
@@ -176,6 +177,7 @@ mod tests {
         assert!(system_message_is_error(
             "The coding service is temporarily unavailable"
         ));
+        assert!(system_message_is_error("context limit reached"));
         assert!(!system_message_is_error(
             "Reconnect when the network is back — your work is saved in this session."
         ));

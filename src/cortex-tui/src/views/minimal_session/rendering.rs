@@ -21,16 +21,8 @@ use crate::views::tool_call::{ContentSegment, ToolCallDisplay, ToolStatus};
 
 use super::VERSION;
 use super::checklist::render_working_checklist;
+use super::rendering_user::user_turn_lines;
 use super::text_utils::wrap_text;
-
-/// Renders the "← Back to main conversation" hint when viewing a subagent.
-/// Displays in the top-left area of the screen.
-pub fn render_back_to_main_hint(area: Rect, buf: &mut Buffer, colors: &AdaptiveColors) {
-    let hint = "← Back to main (Esc)";
-    let style = Style::default().fg(colors.text_dim);
-    // Render at the start of the area with 1 character padding
-    buf.set_string(area.x + 1, area.y, hint, style);
-}
 
 /// Renders a single message to lines with optional markdown theme.
 pub fn render_message_with_theme(
@@ -173,64 +165,6 @@ pub fn render_message_with_theme(
         lines.push(Line::from(""));
     }
 
-    lines
-}
-
-/// A past user turn as full-width bar rows: `> text` on the first row, the
-/// wrapped continuation indented under the copy, every row padded to `width`
-/// so the gray bar spans the terminal. Timestamp is 12h on the first row when
-/// the viewport is wide enough.
-pub fn user_turn_lines(
-    content: &str,
-    width: u16,
-    colors: &AdaptiveColors,
-    timestamp: Option<&str>,
-    compact: bool,
-) -> Vec<Line<'static>> {
-    let bar = Style::default().fg(colors.text).bg(colors.user_bg);
-    let gutter = if compact { 0 } else { 1 };
-    let indent = if compact { 0 } else { 2 }; // spaces inside the bar before `>`
-    let width = width.max(3) as usize;
-    let ts = timestamp.filter(|_| width >= 80 && !compact).unwrap_or("");
-    let ts_w = if ts.is_empty() {
-        0
-    } else {
-        ts.chars().count() + 2
-    };
-    let text_width = width
-        .saturating_sub(gutter + 1 + indent + 2)
-        .saturating_sub(ts_w)
-        .max(8);
-    let mut lines = Vec::new();
-    let wrapped = wrap_text(content, text_width);
-    let rows: Vec<String> = if wrapped.is_empty() {
-        vec![String::new()]
-    } else {
-        wrapped
-    };
-    for (i, row) in rows.iter().enumerate() {
-        let prefix = if i == 0 { "> " } else { "  " };
-        let mut spans = Vec::new();
-        if gutter > 0 {
-            spans.push(Span::raw(" ".repeat(gutter)));
-        }
-        let mut text = format!("{}{}{row}", " ".repeat(indent), prefix);
-        let used = unicode_width::UnicodeWidthStr::width(text.as_str());
-        let pad_target = if i == 0 && !ts.is_empty() {
-            width.saturating_sub(gutter + ts.chars().count())
-        } else {
-            width.saturating_sub(gutter)
-        };
-        text.push_str(&" ".repeat(pad_target.saturating_sub(used)));
-        spans.push(Span::styled(text, bar));
-        if i == 0 && !ts.is_empty() {
-            spans.push(Span::styled(
-                ts.to_string(),
-                Style::default().fg(colors.text_dim).bg(colors.user_bg),
-            ));
-        }
-        lines.push(Line::from(spans));
-    }
     lines
 }
 
@@ -1010,58 +944,4 @@ pub fn _render_welcome_text_centered(
     paragraph.render(text_area, buf);
 }
 
-/// Renders an update notification banner above the input box.
-/// Shows different states: Available, Downloading (with progress), ReadyToRestart
-pub fn render_update_banner(
-    area: Rect,
-    buf: &mut Buffer,
-    colors: &AdaptiveColors,
-    update_status: &crate::app::UpdateStatus,
-) {
-    use crate::app::UpdateStatus;
-
-    if area.is_empty() || area.height < 1 {
-        return;
-    }
-
-    // Gray copy throughout; only the `✓` of a finished download is green.
-    let (icon, icon_style, text) = match update_status {
-        UpdateStatus::Available { version } => (
-            "↑",
-            Style::default().fg(colors.text),
-            format!(" A new version ({}) is available ", version),
-        ),
-        UpdateStatus::Downloading {
-            version: _,
-            progress,
-        } => (
-            "⟳",
-            Style::default().fg(colors.text_dim),
-            format!(" Downloading update... {}% ", progress),
-        ),
-        UpdateStatus::ReadyToRestart { version: _ } => (
-            "✓",
-            Style::default().fg(colors.success),
-            " You must restart to run the latest version ".to_string(),
-        ),
-        _ => return, // Don't render for other states
-    };
-    let text_style = Style::default().fg(colors.text);
-
-    // Calculate banner width
-    let banner_width = (icon.chars().count() + text.len() + 2) as u16; // +2 for spacing
-
-    // Position at left side of the area with some padding
-    let x = area.x + 2;
-    let y = area.y;
-
-    if x + banner_width > area.right() {
-        return;
-    }
-
-    // Render icon
-    buf.set_string(x, y, icon, icon_style);
-
-    // Render text
-    buf.set_string(x + icon.chars().count() as u16 + 1, y, &text, text_style);
-}
+pub use super::rendering_banner::{render_back_to_main_hint, render_update_banner};

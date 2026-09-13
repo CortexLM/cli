@@ -19,48 +19,7 @@ impl EventLoop {
     ) -> Result<()> {
         match action {
             MouseAction::Click { x, y, button } => {
-                if self.app_state.shortcuts_open {
-                    if self.app_state.shortcuts_close_hit(x, y) {
-                        self.app_state.close_shortcuts_sheet();
-                    } else {
-                        let _ = self.app_state.shortcuts_select_at(x, y);
-                    }
-                    self.render(terminal)?;
-                    return Ok(());
-                }
-
-                // Handle interactive mode clicks
-                if self.app_state.is_interactive_mode()
-                    && let Some((action, item_id, item_ids)) = self.handle_interactive_click(x, y)
-                {
-                    let keep_open = self
-                        .handle_interactive_selection(action, item_id, item_ids)
-                        .await;
-                    if !keep_open {
-                        self.app_state.exit_interactive_mode();
-                    }
-                    self.render(terminal)?;
-                    return Ok(());
-                }
-
-                // Handle question view clicks
-                if self.app_state.view == crate::app::AppView::Questions
-                    && self.handle_question_click(x, y)
-                {
-                    self.render(terminal)?;
-                    return Ok(());
-                }
-
-                // Find clicked zone
-                if let Some(zone_id) = self.click_zones.find(x, y) {
-                    let should_copy = self.handle_click(zone_id, button)?;
-                    if should_copy {
-                        self.copy_selection_to_clipboard(terminal)?;
-                        self.app_state.text_selection.clear();
-                    }
-                }
-
-                self.render(terminal)?;
+                self.handle_mouse_click(x, y, button, terminal).await?;
             }
 
             MouseAction::DoubleClick { x, y } => {
@@ -108,65 +67,115 @@ impl EventLoop {
             }
 
             MouseAction::Move { x, y } => {
-                if self.app_state.shortcuts_open {
-                    self.app_state.shortcuts_hover_at(x, y);
-                    self.render(terminal)?;
-                    return Ok(());
-                }
-
-                // Handle hover effects for interactive mode
-                if self.app_state.is_interactive_mode()
-                    && let Some(state) = self.app_state.get_interactive_state_mut()
-                {
-                    if let Some(idx) = state.hit_test(x, y) {
-                        if state.hovered != Some(idx) {
-                            state.hovered = Some(idx);
-                        }
-                    } else if state.hovered.is_some() {
-                        state.hovered = None;
-                    }
-                }
-
-                if self.app_state.autocomplete.visible {
-                    let (w, h) = self.app_state.terminal_size;
-                    let footer_y = h.saturating_sub(1);
-                    let composer_y = footer_y.saturating_sub(1 + 3);
-                    let palette_h = if h >= 20 { 8 } else { 3 };
-                    let palette_y = composer_y.saturating_sub(palette_h);
-                    if y >= palette_y && y < composer_y {
-                        let row =
-                            (y - palette_y) as usize + self.app_state.autocomplete.scroll_offset;
-                        self.app_state.autocomplete.hovered = Some(row);
-                    } else {
-                        self.app_state.autocomplete.hovered = None;
-                    }
-                    let _ = w;
-                }
-
-                if let Some(ref mut modal) = self.app_state.settings_modal {
-                    modal.hover_at(y);
-                }
-
-                let (_, h) = self.app_state.terminal_size;
-                let footer_y = h.saturating_sub(1);
-                let composer_y = footer_y.saturating_sub(1 + 3);
-                self.app_state.composer_hovered = y >= composer_y && y < footer_y.saturating_sub(1);
-                if y == footer_y {
-                    self.app_state.footer_hover = Some(0);
-                } else {
-                    self.app_state.footer_hover = None;
-                }
-                let _ = x;
-
-                // Handle question view hover
-                if self.app_state.view == crate::app::AppView::Questions {
-                    self.handle_question_hover(x, y);
-                }
-
-                self.render(terminal)?;
+                self.handle_mouse_move(x, y, terminal)?;
             }
         }
 
+        Ok(())
+    }
+
+    async fn handle_mouse_click(
+        &mut self,
+        x: u16,
+        y: u16,
+        button: MouseButton,
+        terminal: &mut CortexTerminal,
+    ) -> Result<()> {
+        if self.app_state.shortcuts_open {
+            if self.app_state.shortcuts_close_hit(x, y) {
+                self.app_state.close_shortcuts_sheet();
+            } else {
+                let _ = self.app_state.shortcuts_select_at(x, y);
+            }
+            self.render(terminal)?;
+            return Ok(());
+        }
+
+        if self.app_state.is_interactive_mode()
+            && let Some((action, item_id, item_ids)) = self.handle_interactive_click(x, y)
+        {
+            let keep_open = self
+                .handle_interactive_selection(action, item_id, item_ids)
+                .await;
+            if !keep_open {
+                self.app_state.exit_interactive_mode();
+            }
+            self.render(terminal)?;
+            return Ok(());
+        }
+
+        if self.app_state.view == crate::app::AppView::Questions && self.handle_question_click(x, y)
+        {
+            self.render(terminal)?;
+            return Ok(());
+        }
+
+        if let Some(zone_id) = self.click_zones.find(x, y) {
+            let should_copy = self.handle_click(zone_id, button)?;
+            if should_copy {
+                self.copy_selection_to_clipboard(terminal)?;
+                self.app_state.text_selection.clear();
+            }
+        }
+
+        self.render(terminal)?;
+        Ok(())
+    }
+
+    fn handle_mouse_move(&mut self, x: u16, y: u16, terminal: &mut CortexTerminal) -> Result<()> {
+        if self.app_state.shortcuts_open {
+            self.app_state.shortcuts_hover_at(x, y);
+            self.render(terminal)?;
+            return Ok(());
+        }
+
+        if self.app_state.is_interactive_mode()
+            && let Some(state) = self.app_state.get_interactive_state_mut()
+        {
+            if let Some(idx) = state.hit_test(x, y) {
+                if state.hovered != Some(idx) {
+                    state.hovered = Some(idx);
+                }
+            } else if state.hovered.is_some() {
+                state.hovered = None;
+            }
+        }
+
+        if self.app_state.autocomplete.visible {
+            let (w, h) = self.app_state.terminal_size;
+            let footer_y = h.saturating_sub(1);
+            let composer_y = footer_y.saturating_sub(1 + 3);
+            let palette_h = if h >= 20 { 8 } else { 3 };
+            let palette_y = composer_y.saturating_sub(palette_h);
+            if y >= palette_y && y < composer_y {
+                let row = (y - palette_y) as usize + self.app_state.autocomplete.scroll_offset;
+                self.app_state.autocomplete.hovered = Some(row);
+            } else {
+                self.app_state.autocomplete.hovered = None;
+            }
+            let _ = w;
+        }
+
+        if let Some(ref mut modal) = self.app_state.settings_modal {
+            modal.hover_at(y);
+        }
+
+        let (_, h) = self.app_state.terminal_size;
+        let footer_y = h.saturating_sub(1);
+        let composer_y = footer_y.saturating_sub(1 + 3);
+        self.app_state.composer_hovered = y >= composer_y && y < footer_y.saturating_sub(1);
+        if y == footer_y {
+            self.app_state.footer_hover = Some(0);
+        } else {
+            self.app_state.footer_hover = None;
+        }
+        let _ = x;
+
+        if self.app_state.view == crate::app::AppView::Questions {
+            self.handle_question_hover(x, y);
+        }
+
+        self.render(terminal)?;
         Ok(())
     }
 

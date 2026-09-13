@@ -33,6 +33,7 @@ mod core;
 mod handoff;
 mod input;
 mod local_workflows;
+mod mcp_panel;
 mod me;
 mod modal;
 mod modal_jobs;

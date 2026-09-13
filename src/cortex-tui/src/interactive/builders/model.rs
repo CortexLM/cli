@@ -52,7 +52,7 @@ fn format_model_row(model: &ModelInfo, is_current: bool) -> (String, String) {
         if !raw.is_empty() && !looks_foreign(raw) {
             raw.to_string()
         } else {
-            "Custom model".to_string()
+            format!("Configured as {}", label)
         }
     });
     if is_max_label(&label) && !desc.contains("MAX") {
@@ -65,13 +65,60 @@ fn format_model_row(model: &ModelInfo, is_current: bool) -> (String, String) {
 }
 
 fn cortex_safe_label(id: &str, name: &str) -> String {
-    for candidate in [name, id] {
-        let pretty = model_display_name(candidate);
-        if !looks_foreign(candidate) && !looks_foreign(&pretty) {
-            return pretty;
-        }
+    let name = name.trim();
+    if !name.is_empty()
+        && name != "Custom model"
+        && !looks_foreign(name)
+        && !looks_foreign(&model_display_name(name))
+    {
+        return model_display_name(name);
     }
-    "Custom model".to_string()
+    if !looks_foreign(id) && !looks_foreign(&model_display_name(id)) {
+        return model_display_name(id);
+    }
+    custom_distinct_label(id)
+}
+
+/// Third-party catalog rows stay distinguishable without naming other vendors.
+fn custom_distinct_label(id: &str) -> String {
+    let rest = remaining_safe_tokens(id);
+    let tag = short_tag(id);
+    if rest.is_empty() {
+        format!("Custom · {tag}")
+    } else {
+        format!("Custom · {rest} · {tag}")
+    }
+}
+
+fn remaining_safe_tokens(id: &str) -> String {
+    id.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|p| !p.is_empty())
+        .filter(|p| !looks_foreign(p) && !is_vendor_token(p))
+        .map(|p| {
+            let mut chars = p.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn is_vendor_token(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "gpt" | "claude" | "opus" | "sonnet" | "haiku" | "gemini" | "llama" | "mistral"
+    )
+}
+
+fn short_tag(id: &str) -> String {
+    let mut hash: u32 = 2166136261;
+    for byte in id.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(16777619);
+    }
+    format!("{hash:04x}")[..4].to_string()
 }
 
 fn lock_description(id: &str, label: &str) -> Option<String> {
@@ -150,10 +197,8 @@ mod tests {
         ];
         let state = build_model_selector(models, Some("cortex-1-mini"), Some("medium"));
         let labels: Vec<_> = state.items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            ["Cortex Mini 1", "Cortex 1", "Cortex Max 1", "Custom model"]
-        );
+        assert_eq!(&labels[..3], ["Cortex Mini 1", "Cortex 1", "Cortex Max 1"]);
+        assert_eq!(labels[3], "Other Router");
         assert!(
             state.items[0]
                 .description
@@ -196,22 +241,26 @@ mod tests {
     }
 
     #[test]
-    fn foreign_provider_ids_become_custom_model() {
-        let models = vec![ModelInfo::new(
-            "anthropic/claude-sonnet-4",
-            "Claude Sonnet 4",
-            "anthropic",
-        )];
+    fn foreign_provider_ids_become_distinct_custom_rows() {
+        let models = vec![
+            ModelInfo::new("anthropic/claude-sonnet-4", "Claude Sonnet 4", "anthropic"),
+            ModelInfo::new("openai/gpt-4-turbo", "GPT-4 Turbo", "openai"),
+            ModelInfo::new("vendor-a/router-west", "Custom model", "custom"),
+            ModelInfo::new("vendor-b/router-east", "Custom model", "custom"),
+        ];
         let state = build_model_selector(models, None, None);
-        assert_eq!(state.items[0].label, "Custom model");
-        let blob = format!(
-            "{} {}",
-            state.items[0].label,
-            state.items[0].description.clone().unwrap_or_default()
-        )
-        .to_ascii_lowercase();
+        let labels: Vec<_> = state.items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels.len(), 4);
+        let unique: std::collections::HashSet<_> = labels.iter().cloned().collect();
+        assert_eq!(unique.len(), 4, "{labels:?}");
+        let blob = labels.join("\n").to_ascii_lowercase();
         assert!(!blob.contains("claude"));
         assert!(!blob.contains("anthropic"));
+        assert!(!blob.contains("openai"));
+        assert!(!blob.contains("gpt-4"));
         assert!(!blob.contains("sonnet"));
+        assert!(labels.iter().any(|l| l.starts_with("Custom ·")));
+        assert!(labels.iter().any(|l| l.contains("Router West")));
+        assert!(labels.iter().any(|l| l.contains("Router East")));
     }
 }

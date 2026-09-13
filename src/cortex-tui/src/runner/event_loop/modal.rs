@@ -510,14 +510,6 @@ impl EventLoop {
         }
     }
 
-    /// Re-opens the MCP panel to show the list of servers after adding a new one.
-    pub(super) fn reopen_mcp_panel(&mut self) {
-        use crate::interactive::builders::build_mcp_selector;
-        let servers = self.app_state.mcp_servers.clone();
-        let interactive = build_mcp_selector(&servers);
-        self.app_state.enter_interactive_mode(interactive);
-    }
-
     /// Handles interactive selection.
     pub(super) async fn handle_interactive_selection(
         &mut self,
@@ -879,106 +871,6 @@ impl EventLoop {
         }
 
         self.app_state.enter_interactive_mode(interactive);
-    }
-
-    async fn handle_mcp_selector_item(&mut self, item_id: &str) -> bool {
-        if let Some(name) = item_id.strip_prefix("__reconnect__:") {
-            return self.handle_mcp_server_action(name, "restart").await;
-        }
-        match item_id {
-            "__add__" => {
-                let interactive = crate::interactive::builders::build_mcp_source_selector();
-                self.app_state.enter_interactive_mode(interactive);
-                true
-            }
-            "__tools__" => {
-                let manager = self.mcp_manager.clone();
-                let tools = manager.list_all_tools().await;
-                if tools.is_empty() {
-                    self.add_system_message("No MCP tools connected.");
-                } else {
-                    let mut lines: Vec<String> = tools.keys().cloned().collect();
-                    lines.sort();
-                    self.add_system_message(&format!(
-                        "MCP tools ({})\n{}",
-                        lines.len(),
-                        lines.join("\n")
-                    ));
-                }
-                false
-            }
-            "__reload__" => {
-                let manager = self.mcp_manager.clone();
-                tokio::spawn(async move {
-                    let names = manager.server_names().await;
-                    for name in names {
-                        let _ = manager.disconnect(&name).await;
-                        let _ = manager.connect(&name).await;
-                    }
-                });
-                self.app_state.toasts.info("Reloading MCP servers…");
-                self.reopen_mcp_panel();
-                true
-            }
-            name => {
-                if let Some(server) = self
-                    .app_state
-                    .mcp_servers
-                    .iter()
-                    .find(|s| s.name == name)
-                    .cloned()
-                {
-                    let interactive =
-                        crate::interactive::builders::build_mcp_server_actions(&server);
-                    self.app_state.enter_interactive_mode(interactive);
-                    true
-                } else {
-                    false
-                }
-            }
-        }
-    }
-
-    async fn handle_mcp_server_action(&mut self, server: &str, action: &str) -> bool {
-        let manager = self.mcp_manager.clone();
-        let name = server.to_string();
-        match action {
-            "start" | "restart" => {
-                if action == "restart" {
-                    self.mcp_stopping.insert(name.clone());
-                    let _ = manager.disconnect(&name).await;
-                }
-                if let Some(s) = self
-                    .app_state
-                    .mcp_servers
-                    .iter_mut()
-                    .find(|s| s.name == name)
-                {
-                    s.status = crate::modal::mcp_manager::McpStatus::Starting;
-                }
-                tokio::spawn(async move {
-                    let _ = manager.connect(&name).await;
-                });
-                self.reopen_mcp_panel();
-                true
-            }
-            "stop" => {
-                self.mcp_stopping.insert(name.clone());
-                tokio::spawn(async move {
-                    let _ = manager.disconnect(&name).await;
-                });
-                self.reopen_mcp_panel();
-                true
-            }
-            "remove" => {
-                self.mcp_stopping.insert(name.clone());
-                let _ = manager.remove_server(&name).await;
-                self.app_state.mcp_servers.retain(|s| s.name != name);
-                self.reopen_mcp_panel();
-                true
-            }
-            _ => false,
-        }
     }
 
     /// Apply a SPEC §3.10 permission-prompt choice.

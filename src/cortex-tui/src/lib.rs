@@ -100,12 +100,15 @@ pub mod bridge;
 pub mod runner;
 
 // Visual-lock PNG / ANSI captures
+pub mod checkpoint;
+pub mod cor35_handlers;
 pub mod lock_boards;
 pub mod lock_palette;
 pub mod lock_proof;
 pub mod lock_v2;
 mod lock_v2_boards;
 mod lock_v2_computer;
+mod lock_v2_cor35;
 mod lock_v2_designed;
 mod lock_v2_farm;
 mod lock_v2_goal;
@@ -115,8 +118,10 @@ mod lock_v2_parity;
 mod lock_v2_residual;
 mod lock_v2_scenes;
 mod lock_v2_share;
+pub mod plugin_marketplace;
 pub mod readme_hero;
 pub mod readme_hero_boards;
+pub mod sandbox_allowlist;
 pub mod splash_chrome;
 
 // Backtracking system for conversation history navigation

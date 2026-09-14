@@ -45,6 +45,23 @@ pub struct ExecCli {
     #[arg(long = "auto", value_enum)]
     pub autonomy: Option<AutonomyLevel>,
 
+    /// Review only: read the diff and report, never write.
+    ///
+    /// Pins the run to the read-only sandbox and read-only approval policy, and
+    /// refuses to start when a write-capable flag is also present. Use this in
+    /// CI or on an untrusted change set.
+    #[arg(long = "review-only", default_value_t = false)]
+    pub review_only: bool,
+
+    /// Review this pull request instead of the working tree (implies
+    /// `--review-only`).
+    #[arg(long = "review-pr", value_name = "NUMBER")]
+    pub review_pr: Option<u64>,
+
+    /// Review the current branch against this base (implies `--review-only`).
+    #[arg(long = "review-base", value_name = "BRANCH")]
+    pub review_base: Option<String>,
+
     /// Unsupported for server-owned Code execution; fails before submission.
     /// Cannot be combined with --auto.
     #[arg(long = "skip-permissions-unsafe", conflicts_with = "autonomy")]
@@ -199,4 +216,9 @@ pub struct ExecCli {
     /// or a path to a JSON schema file.
     #[arg(long = "output-schema", value_name = "SCHEMA")]
     pub output_schema: Option<String>,
+
+    /// Validate the final `-o json` result document against the shipped
+    /// `exec-result` schema before printing it.
+    #[arg(long = "json-schema", default_value_t = false)]
+    pub json_schema: bool,
 }

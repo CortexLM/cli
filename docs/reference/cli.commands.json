@@ -463,6 +463,27 @@
           "short": null
         },
         {
+          "help": "Bare headless run: no splash, banners, or progress chrome. Only the result (and errors) reach stdout",
+          "id": "bare",
+          "long": "bare",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Ephemeral run: do not persist a session rollout file. Nothing is left behind for `cortex sessions` or `--continue`",
+          "id": "ephemeral",
+          "long": "ephemeral",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Validate the final result document against the shipped JSON Schema before printing it. Requires `--format json`",
+          "id": "json_schema",
+          "long": "json-schema",
+          "required": false,
+          "short": null
+        },
+        {
           "help": "Bypass any cached responses and force a fresh request",
           "id": "no_cache",
           "long": "no-cache",
@@ -578,6 +599,27 @@
           "help": "Autonomy level for operations. - read-only: No modifications (default, safest) - low/medium: Unsupported client risk thresholds for Code - high: Server-owned agent execution, subject to service permissions",
           "id": "autonomy",
           "long": "auto",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Review only: read the diff and report, never write",
+          "id": "review_only",
+          "long": "review-only",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Review this pull request instead of the working tree (implies `--review-only`)",
+          "id": "review_pr",
+          "long": "review-pr",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Review the current branch against this base (implies `--review-only`)",
+          "id": "review_base",
+          "long": "review-base",
           "required": false,
           "short": null
         },
@@ -802,6 +844,13 @@
           "help": "JSON schema for structured output. Can be inline JSON (e.g., '{\"type\":\"object\",\"properties\":{...}}') or a path to a JSON schema file",
           "id": "output_schema",
           "long": "output-schema",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Validate the final `-o json` result document against the shipped `exec-result` schema before printing it",
+          "id": "json_schema",
+          "long": "json-schema",
           "required": false,
           "short": null
         },
@@ -4173,7 +4222,7 @@
           "short": null
         },
         {
-          "help": "Apply AI-suggested changes to working tree",
+          "help": "Apply the PR patch to the working tree without switching branches",
           "id": "apply",
           "long": "apply",
           "required": false,
@@ -7289,6 +7338,144 @@
       ]
     },
     {
+      "about": "Print the shipped JSON Schemas for headless result documents",
+      "arguments": [
+        {
+          "help": "Enable verbose output (same as --log-level debug)",
+          "id": "verbose",
+          "long": "verbose",
+          "required": false,
+          "short": "v"
+        },
+        {
+          "help": "Enable trace-level logging for debugging",
+          "id": "trace",
+          "long": "trace",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Control color output: auto (default), always, or never",
+          "id": "color",
+          "long": "color",
+          "required": false,
+          "short": null
+        },
+        {
+          "help": "Print help (see more with '--help')",
+          "id": "help",
+          "long": "help",
+          "required": false,
+          "short": "h"
+        }
+      ],
+      "name": "schema",
+      "subcommands": [
+        {
+          "about": "Print a shipped schema as JSON",
+          "arguments": [
+            {
+              "help": "Schema name to print",
+              "id": "name",
+              "long": null,
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Enable verbose output (same as --log-level debug)",
+              "id": "verbose",
+              "long": "verbose",
+              "required": false,
+              "short": "v"
+            },
+            {
+              "help": "Enable trace-level logging for debugging",
+              "id": "trace",
+              "long": "trace",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Control color output: auto (default), always, or never",
+              "id": "color",
+              "long": "color",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print help (see more with '--help')",
+              "id": "help",
+              "long": "help",
+              "required": false,
+              "short": "h"
+            }
+          ],
+          "name": "print",
+          "subcommands": []
+        },
+        {
+          "about": "List the shipped schema names",
+          "arguments": [
+            {
+              "help": "Enable verbose output (same as --log-level debug)",
+              "id": "verbose",
+              "long": "verbose",
+              "required": false,
+              "short": "v"
+            },
+            {
+              "help": "Enable trace-level logging for debugging",
+              "id": "trace",
+              "long": "trace",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Control color output: auto (default), always, or never",
+              "id": "color",
+              "long": "color",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print help (see more with '--help')",
+              "id": "help",
+              "long": "help",
+              "required": false,
+              "short": "h"
+            }
+          ],
+          "name": "list",
+          "subcommands": []
+        },
+        {
+          "about": "Print this message or the help of the given subcommand(s)",
+          "arguments": [],
+          "name": "help",
+          "subcommands": [
+            {
+              "about": "Print a shipped schema as JSON",
+              "arguments": [],
+              "name": "print",
+              "subcommands": []
+            },
+            {
+              "about": "List the shipped schema names",
+              "arguments": [],
+              "name": "list",
+              "subcommands": []
+            },
+            {
+              "about": "Print this message or the help of the given subcommand(s)",
+              "arguments": [],
+              "name": "help",
+              "subcommands": []
+            }
+          ]
+        }
+      ]
+    },
+    {
       "about": "Debug and diagnostic commands",
       "arguments": [
         {
@@ -10165,6 +10352,25 @@
               "about": "Invoke an installed plugin command or tool through the executable runtime",
               "arguments": [],
               "name": "run",
+              "subcommands": []
+            }
+          ]
+        },
+        {
+          "about": "Print the shipped JSON Schemas for headless result documents",
+          "arguments": [],
+          "name": "schema",
+          "subcommands": [
+            {
+              "about": "Print a shipped schema as JSON",
+              "arguments": [],
+              "name": "print",
+              "subcommands": []
+            },
+            {
+              "about": "List the shipped schema names",
+              "arguments": [],
+              "name": "list",
               "subcommands": []
             }
           ]

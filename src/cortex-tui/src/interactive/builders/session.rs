@@ -42,10 +42,94 @@ pub fn build_sandbox_selector(enabled: bool) -> InteractiveState {
     )
 }
 
+/// Build the sandbox network allowlist picker from the committed entries.
+///
+/// The list is what the sandbox actually consults, so an empty list is shown as
+/// blocking everything rather than as "no entries yet".
+pub fn build_sandbox_allowlist(
+    allowlist: &crate::sandbox_allowlist::SandboxAllowlist,
+    selected: usize,
+    hovered: Option<usize>,
+) -> InteractiveState {
+    let entries = allowlist.domains();
+    let mut items: Vec<InteractiveItem> = if entries.is_empty() {
+        vec![
+            InteractiveItem::new("__none__", "No domains allowed")
+                .with_description("Everything off this list is blocked")
+                .with_disabled(true),
+        ]
+    } else {
+        entries
+            .iter()
+            .map(|entry| {
+                let mut item = InteractiveItem::new(entry.host.clone(), entry.host.clone());
+                item = item.with_description(match entry.note.as_deref() {
+                    Some(note) => note.to_string(),
+                    None => "allowed".to_string(),
+                });
+                item
+            })
+            .collect()
+    };
+    items.push(
+        InteractiveItem::new("__add__", "a Add a domain")
+            .with_description("asks before it leaves the sandbox"),
+    );
+    let mut interactive = InteractiveState::new(
+        "Sandbox · network",
+        items,
+        InteractiveAction::Custom("sandbox-allowlist".to_string()),
+    );
+    interactive.selected = selected.min(interactive.items.len().saturating_sub(1));
+    interactive.hovered = hovered;
+    interactive
+}
+
 /// One skill row for `/skills`.
 pub struct SkillListItem {
     pub name: String,
     pub description: String,
+}
+
+/// Build the plugin marketplace picker: installed plugins, then the registry.
+pub fn build_plugin_marketplace(
+    installed: &[(String, String)],
+    selected: usize,
+    hovered: Option<usize>,
+) -> InteractiveState {
+    let state = crate::plugin_marketplace::PluginState {
+        plugins: installed
+            .iter()
+            .map(|(id, version)| crate::plugin_marketplace::InstalledPlugin {
+                id: id.clone(),
+                version: version.clone(),
+                enabled: true,
+            })
+            .collect(),
+    };
+    let items: Vec<InteractiveItem> = state
+        .marketplace_rows()
+        .into_iter()
+        .map(|(id, label, description)| {
+            let mut item = InteractiveItem::new(id, label).with_description(description);
+            if item.id == "__search__" {
+                item = item.with_shortcut('s');
+            }
+            item
+        })
+        .collect();
+    let mut interactive = InteractiveState::new(
+        "Plugin marketplace",
+        items,
+        InteractiveAction::Custom("plugin-marketplace".into()),
+    )
+    .with_banner(format!(
+        "{} — signed packages only.",
+        crate::plugin_marketplace::REGISTRY_ORIGIN
+    ));
+    interactive.selected = selected.min(interactive.items.len().saturating_sub(1));
+    interactive.hovered = hovered;
+    interactive
 }
 
 /// Build `/skills` picker from discovered skills.

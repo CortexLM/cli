@@ -20,6 +20,7 @@ New here? Start with **[Getting started](guides/getting-started.md)**, then keep
 | [The TUI](guides/tui.md) | The interactive UI: timeline, composer, modes, approvals |
 | [Sessions](guides/sessions.md) | Resume, list, export, import, share, protect |
 | [Headless / exec mode](guides/exec.md) | Non-interactive runs for scripts and CI |
+| [CI cookbook](guides/ci.md) | Authenticate from a secret store, run, and parse the result |
 | [Plan and Spec modes](guides/plan.md) | Get a plan approved before anything is written |
 | [Long-horizon persisted goals](guides/goal.md) | `/goal` session-backed objectives |
 | [Editor integration](guides/editor.md) | What running Cortex inside an editor terminal does and does not provide |

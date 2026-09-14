@@ -489,14 +489,19 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_get_lock_file_path_returns_valid_path() {
+        // `default_home()` reads `CORTEX_HOME`, which other tests set and clear.
+        // Hold the serial lock so this assertion cannot race one of them.
         let path = get_lock_file_path().unwrap();
 
         // Path should end with session_locks.json
         assert!(path.ends_with("session_locks.json"));
 
-        // Path should include .cortex directory
-        let path_str = path.to_string_lossy();
-        assert!(path_str.contains(".cortex"));
+        // With no override the path lives under the Cortex home directory.
+        if std::env::var_os("CORTEX_HOME").is_none() {
+            let path_str = path.to_string_lossy();
+            assert!(path_str.contains(".cortex"), "{path_str}");
+        }
     }
 }

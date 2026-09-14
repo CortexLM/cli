@@ -59,8 +59,8 @@ for spec in 40x12 120x40; do
   python3 scripts/ansi-frames-to-gif.py --frames "$frames" --png-only "$pngs"
 done
 
-unique_pngs "$output_dir/40x12" 50
-unique_pngs "$output_dir/120x40" 96
+unique_pngs "$output_dir/40x12" 57
+unique_pngs "$output_dir/120x40" 109
 
 python3 - "$output_dir" <<'PY'
 from pathlib import Path
@@ -100,7 +100,7 @@ is banner green `#1F4945`; historical violet `#A78BFA` is not the lock.
 Designer boards (pixel target) live in `docs/media/tui-lock-v2/{40x12,120x40}/`.
 These runtime frames are what Designer cli signs off against.
 
-SPEC §7: **96** boards at 120×40 and **50** at 40×12. Each filename is one
+SPEC §7 plus the COR-35 batch: **109** boards at 120×40 and **57** at 40×12. Each filename is one
 distinct live state — no two PNGs share a sha256. Includes `/goal` composer
 chips (`goal-chip-*`), distinct `offline` and `rate-limit` diagnostics,
 Computer lock boards (`computer-disconnected`, `computer-cloud-default`),

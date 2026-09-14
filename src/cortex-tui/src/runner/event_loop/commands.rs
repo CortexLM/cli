@@ -393,6 +393,21 @@ impl EventLoop {
                 let result = self.rewind_conversation(1);
                 self.report_local_result(result, "");
             }
+            "permissions:rules" => {
+                self.open_permission_rules();
+            }
+            "sandbox:network" => {
+                self.open_sandbox_allowlist();
+            }
+            cmd if cmd == "plugins" || cmd.starts_with("plugins:") => {
+                self.open_plugin_marketplace(cmd);
+            }
+            cmd if cmd == "ide" || cmd.starts_with("ide:") => {
+                self.open_ide_handshake();
+            }
+            "rewind:checkpoint" => {
+                self.open_checkpoint_rewind();
+            }
             "redo" => {
                 let result = self.redo_conversation();
                 self.report_local_result(result, "");

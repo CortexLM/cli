@@ -29,6 +29,7 @@
 mod actions;
 mod auth;
 mod commands;
+mod cor35;
 mod core;
 mod handoff;
 mod input;

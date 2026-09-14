@@ -197,6 +197,8 @@ pub mod models_cmd;
 pub mod plugin_cmd;
 pub mod pr_cmd;
 pub mod run_cmd;
+pub mod schema;
+pub mod schema_cmd;
 pub mod scrape_cmd;
 pub mod shell_cmd;
 pub mod stats_cmd;

@@ -86,7 +86,11 @@ pub struct PrCli {
     #[arg(long)]
     pub comments: bool,
 
-    /// Apply AI-suggested changes to working tree.
+    /// Apply the PR patch to the working tree without switching branches.
+    ///
+    /// The patch is fetched from the PR head and applied with `git apply`, so
+    /// the current branch keeps its history. A dirty working tree is refused
+    /// unless `--force` is given.
     #[arg(long)]
     pub apply: bool,
 
@@ -106,11 +110,9 @@ impl PrCli {
 async fn run_pr_checkout(args: PrCli) -> Result<()> {
     use cortex_engine::github::GitHubClient;
 
-    if args.apply {
-        bail!("Automatic PR suggestion application is not supported. No suggestions were applied.");
-    }
     let repo_path = args
         .path
+        .clone()
         .unwrap_or_else(|| PathBuf::from("."))
         .canonicalize()
         .context("Could not resolve repository path")?;
@@ -227,6 +229,13 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
             );
         }
         return Ok(());
+    }
+
+    // If --apply flag, apply the patch to the working tree without switching
+    // branches. The patch comes from the PR head so the current branch keeps
+    // its history.
+    if args.apply {
+        return apply_pr_patch(&args, &repo_path, pr_number, &pr_info, &repository);
     }
 
     // If --comments flag, show PR comments
@@ -367,6 +376,116 @@ async fn run_pr_checkout(args: PrCli) -> Result<()> {
         repository, pr_number
     );
 
+    Ok(())
+}
+
+/// Apply a PR patch into the working tree without switching branches.
+///
+/// The patch is generated from the PR head against its base and applied with
+/// `git apply`. The current branch and its history are untouched, and a patch
+/// that does not apply cleanly leaves the tree as it was.
+fn apply_pr_patch(
+    args: &PrCli,
+    repo_path: &Path,
+    pr_number: u64,
+    pr_info: &cortex_engine::PullRequestInfo,
+    repository: &str,
+) -> Result<()> {
+    // A dirty tree is refused unless the caller opts in: applying on top of
+    // local edits can silently mix two changes.
+    if !args.force {
+        let status = Command::new("git")
+            .current_dir(repo_path)
+            .args(["status", "--porcelain"])
+            .output()
+            .context("Failed to run git status")?;
+        if !status.status.success() {
+            bail!("Could not determine repository worktree status");
+        }
+        if !status.stdout.is_empty() {
+            bail!(
+                "Uncommitted changes detected. Commit or stash changes first, or use --force to override."
+            );
+        }
+    }
+
+    let branch_name = format!("pr-{}", pr_number);
+    let refspec = format!("pull/{}/head:{}", pr_number, branch_name);
+    validate_refspec(&refspec)?;
+
+    println!("Fetching PR #{}...", pr_number);
+    let fetch_output = Command::new("git")
+        .current_dir(repo_path)
+        .args(["fetch", "origin", &refspec])
+        .output()
+        .context("Failed to fetch PR")?;
+    if !fetch_output.status.success() {
+        bail!(
+            "Failed to fetch PR: {}",
+            String::from_utf8_lossy(&fetch_output.stderr)
+        );
+    }
+
+    // Diff the PR head against its base: that is what the PR actually changes.
+    let range = format!("{}...{}", pr_info.base_branch, branch_name);
+    let diff_output = Command::new("git")
+        .current_dir(repo_path)
+        .args(["diff", "--binary", &range])
+        .output()
+        .context("Failed to compute the PR patch")?;
+    if !diff_output.status.success() {
+        bail!(
+            "Failed to compute the PR patch: {}",
+            String::from_utf8_lossy(&diff_output.stderr)
+        );
+    }
+    if diff_output.stdout.is_empty() {
+        println!("PR #{} has no changes to apply.", pr_number);
+        return Ok(());
+    }
+
+    let patch_path = repo_path.join(format!(".cortex-pr-{}.patch", pr_number));
+    std::fs::write(&patch_path, &diff_output.stdout)
+        .with_context(|| format!("Could not write the PR patch to {}", patch_path.display()))?;
+
+    let apply = Command::new("git")
+        .current_dir(repo_path)
+        .args(["apply", "--index", patch_path.to_string_lossy().as_ref()])
+        .output()
+        .context("Failed to run git apply")?;
+
+    let _ = std::fs::remove_file(&patch_path);
+
+    if !apply.status.success() {
+        bail!(
+            "The PR patch did not apply cleanly; the working tree is unchanged: {}",
+            String::from_utf8_lossy(&apply.stderr)
+        );
+    }
+
+    let files = Command::new("git")
+        .current_dir(repo_path)
+        .args(["diff", "--cached", "--name-only"])
+        .output()
+        .context("Failed to list applied files")?;
+    let changed = String::from_utf8_lossy(&files.stdout);
+    let count = changed.lines().filter(|l| !l.trim().is_empty()).count();
+
+    println!();
+    println!(
+        "Applied PR #{} ({} → {}) to the working tree",
+        pr_number, pr_info.base_branch, pr_info.head_branch
+    );
+    println!("  • {} file(s) staged", count);
+    for file in changed.lines().filter(|l| !l.trim().is_empty()).take(20) {
+        println!("    {}", file);
+    }
+    println!();
+    println!("Review with `git diff --cached`, then commit or `git reset` to drop it.");
+    println!(
+        "  • View on web:   https://github.com/{}/pull/{}",
+        repository, pr_number
+    );
     Ok(())
 }
 
@@ -594,11 +713,35 @@ mod integration_contract_tests {
     }
 
     #[tokio::test]
-    async fn apply_is_rejected_before_repository_or_account_access() {
+    async fn apply_is_refused_before_any_repository_access() {
+        // `--apply` is a working-tree write, so it is refused as early as the
+        // other modes: an unusable path never reaches git or the network.
         let cli = PrCli::try_parse_from(["pr", "1", "--apply", "--path", "/nonexistent/fixture"])
             .unwrap();
         let error = cli.run().await.unwrap_err().to_string();
-        assert!(error.contains("not supported"));
-        assert!(error.contains("No suggestions were applied"));
+        assert!(error.contains("Could not resolve"), "{error}");
+
+        let plain = tempfile::tempdir().unwrap();
+        let cli = PrCli::try_parse_from([
+            "pr",
+            "1",
+            "--apply",
+            "--path",
+            plain.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        let error = cli.run().await.unwrap_err().to_string();
+        assert!(error.contains("Not a git repository"), "{error}");
+    }
+
+    #[test]
+    fn apply_requires_a_flag_and_stays_opt_in() {
+        // Without `--apply` the command is a checkout, never a tree write.
+        let checkout = PrCli::try_parse_from(["pr", "1"]).unwrap();
+        assert!(!checkout.apply);
+
+        let apply = PrCli::try_parse_from(["pr", "1", "--apply"]).unwrap();
+        assert!(apply.apply);
+        assert!(!apply.force);
     }
 }

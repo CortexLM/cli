@@ -230,12 +230,15 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_get_cortex_home_with_env_variable() {
         // Save original value
         let original = env::var("CORTEX_HOME").ok();
 
         // Set custom CORTEX_HOME
-        // SAFETY: This test runs in a single-threaded context and we restore the value afterwards
+        // SAFETY: This test holds the serial-test lock, so no other test reads or
+        // writes the environment while the variable is set, and the original
+        // value is restored before the lock is released.
         unsafe {
             env::set_var("CORTEX_HOME", "/tmp/custom_cortex_home");
         }
@@ -246,7 +249,7 @@ mod tests {
         assert!(!home.as_os_str().is_empty());
 
         // Restore original
-        // SAFETY: This test runs in a single-threaded context
+        // SAFETY: see above; the serial-test lock is still held.
         unsafe {
             match original {
                 Some(val) => env::set_var("CORTEX_HOME", val),

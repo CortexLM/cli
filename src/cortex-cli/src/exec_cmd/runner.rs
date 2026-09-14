@@ -29,6 +29,20 @@ struct RunOutcome {
 }
 
 impl ExecCli {
+    /// True when any text-input flag is set.
+    ///
+    /// Protocol stdin has one owner, so a stdin-driven input format must refuse
+    /// these flags rather than reading a prompt and a protocol off one pipe.
+    fn has_text_input_flags(&self) -> bool {
+        !self.prompt.is_empty()
+            || self.file.is_some()
+            || self.clipboard
+            || !self.urls.is_empty()
+            || self.git_diff
+            || !self.include_patterns.is_empty()
+            || !self.exclude_patterns.is_empty()
+    }
+
     /// Run the exec command.
     pub async fn run(self) -> Result<()> {
         self.validate_runtime_options()?;
@@ -63,31 +77,46 @@ impl ExecCli {
         };
         // Protocol stdin has one owner. Never read it as a text prompt first.
         if matches!(self.input_format, ExecInputFormat::StreamJsonrpc) {
-            if !self.prompt.is_empty()
-                || self.file.is_some()
-                || self.clipboard
-                || !self.urls.is_empty()
-                || self.git_diff
-                || !self.include_patterns.is_empty()
-                || !self.exclude_patterns.is_empty()
-            {
+            if self.has_text_input_flags() {
                 bail!(
                     "stream-jsonrpc accepts prompts through message requests, not text-input flags."
                 );
             }
             return self.run_multiturn(String::new(), autonomy).await;
         }
+        if matches!(self.input_format, ExecInputFormat::StreamJsonl) {
+            if self.has_text_input_flags() {
+                bail!("stream-jsonl accepts turns through stdin lines, not text-input flags.");
+            }
+            if matches!(self.output_format, ExecOutputFormat::Text) {
+                bail!(
+                    "stream-jsonl requires a machine-readable output format. Add -o stream-json."
+                );
+            }
+            return self.run_jsonl_stream(autonomy).await;
+        }
         if matches!(self.output_format, ExecOutputFormat::StreamJsonrpc) {
             bail!("--output-format stream-jsonrpc requires --input-format stream-jsonrpc.");
         }
-        let prompt = self.build_prompt().await?;
-        if prompt.is_empty() {
-            bail!("No prompt provided. Use positional argument, --file, or pipe via stdin.");
-        }
+        let prompt = self.effective_prompt().await?;
         if self.echo {
             eprintln!("--- Prompt ---\n{}\n--- End Prompt ---", prompt);
         }
         self.run_single(prompt, autonomy).await
+    }
+
+    /// The prompt this run submits: the built prompt, with the review
+    /// instruction prepended when the run is a review.
+    async fn effective_prompt(&self) -> Result<String> {
+        let prompt = self.build_prompt().await?;
+        match self.review_request() {
+            Some(request) if prompt.is_empty() => Ok(request.prompt()),
+            Some(request) => Ok(format!("{}\n\n{}", request.prompt(), prompt)),
+            None if prompt.is_empty() => {
+                bail!("No prompt provided. Use positional argument, --file, or pipe via stdin.")
+            }
+            None => Ok(prompt),
+        }
     }
 
     /// Build the prompt from various sources.
@@ -573,6 +602,9 @@ impl ExecCli {
                         "session_id": session_id.to_string(),
                     })
                 };
+                if self.json_schema {
+                    crate::schema::validate(crate::schema::EXEC_RESULT_SCHEMA, &result)?;
+                }
                 writeln!(output, "{}", serde_json::to_string_pretty(&result)?)?;
             }
             ExecOutputFormat::StreamJson | ExecOutputFormat::Debug => {
@@ -719,6 +751,28 @@ impl ExecCli {
             &config,
             autonomy,
             self.skip_permissions,
+            self.max_turns,
+            self.timeout,
+        )
+        .await;
+        let cleanup = cortex_engine::session::control::stop_session(&handle, session_task).await;
+        cleanup?;
+        result?;
+        Ok(())
+    }
+
+    /// Run multi-turn execution via `stream-jsonl` — one JSON object per line,
+    /// one line per turn, on a connection that outlives each turn.
+    pub(crate) async fn run_jsonl_stream(&self, autonomy: Option<AutonomyLevel>) -> Result<()> {
+        let config = self.runtime_config(autonomy).await?;
+        let (mut session, handle) = self.open_runtime_session(config.clone())?;
+        let session_task = tokio::spawn(async move { session.run().await });
+        let lines = super::stdin_stream::stdin_lines();
+        let result = super::stdin_stream::run_stream(
+            &handle,
+            lines,
+            &mut io::stdout(),
+            &config,
             self.max_turns,
             self.timeout,
         )

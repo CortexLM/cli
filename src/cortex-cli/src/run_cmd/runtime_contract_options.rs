@@ -7,6 +7,19 @@ impl RunCli {
         if self.attach.is_some() {
             bail!("--attach is not supported by this runtime. No local session was started.");
         }
+        if self.json_schema
+            && !matches!(
+                self.output.unwrap_or(self.format),
+                super::OutputFormat::Json
+            )
+        {
+            bail!("--json-schema validates the `json` result document. Add --format json.");
+        }
+        if self.ephemeral && (self.continue_session || self.session_id.is_some()) {
+            bail!(
+                "--ephemeral cannot continue a session: it writes no session file. Drop -c/--session."
+            );
+        }
         let unsupported = [
             (self.schema.is_some(), "--schema"),
             (self.temperature.is_some(), "--temperature"),

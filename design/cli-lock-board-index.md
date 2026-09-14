@@ -5,7 +5,7 @@ Generated from the id lists in the tree at `3035361` (`v0.1.10`):
 `is_lock_board()` in `src/cortex-tui/src/lock_boards.rs:44-99`,
 `LOCK_V2_WIDE_IDS` / `LOCK_V2_NARROW_IDS` in `src/cortex-tui/src/lock_v2_ids.rs`.
 
-Current Designer lock: **v2** (89 wide / 43 narrow), green focus `#1F4945`.
+Current Designer lock: **v2** (109 wide / 57 narrow), green focus `#1F4945`.
 Committed PNGs under `docs/media/tui-lock/` and `docs/media/tui-lock-v2/`
 still include historical violet `#A78BFA` pixels (see those READMEs). The
 ids and tests below are the source of truth:
@@ -249,7 +249,7 @@ Every v2 id is covered by `lock_v2_wide_frames_are_unique` (and
 | Pack | Ids | Sizes | Frames | Live / real | Painted or synthetic | PNGs in repo (all violet) |
 |---|---|---|---|---|---|---|
 | v1 | 72 | 40×12, 120×40 | 144 (+144 macOS composites) | 17 | 51 painted + 4 aliases | 65/72 files carry `#A78BFA` at each size |
-| v2 | 89 wide / 43 narrow | 120×40 / 40×12 | 132 | 72 (7 seeded) | 14 synthetic | runtime 89/89 + 43/43; designer boards 89/89 + 43/43 |
+| v2 | 109 wide / 57 narrow | 120×40 / 40×12 | 166 | 92 (7 seeded) | 14 synthetic | runtime 109/109 + 57/57; designer boards 89/89 + 43/43 |
 
 Regenerate captures: `./scripts/render-tui-lock.sh`,
 `./scripts/render-tui-lock-v2.sh`, `python3 docs/media/tui-lock-v2/tools/render_lock_v2.py --index`.

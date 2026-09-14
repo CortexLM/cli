@@ -75,7 +75,7 @@ cortex-review:
     - curl -fsSL https://software.cortex.foundation/install.sh | sh
     - cortex exec --review-only --auto read-only
         --output-format json
-        --base "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        --review-base "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
         "Report findings only."
 ```
 

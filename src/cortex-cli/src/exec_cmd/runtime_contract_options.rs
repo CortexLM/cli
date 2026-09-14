@@ -103,8 +103,28 @@ impl ExecCli {
                     "--review-only never writes, so {widening} cannot be combined with it. No turn was submitted."
                 );
             }
+            // `--prompt` accepts hyphen values, so an unknown flag would be
+            // swallowed into the prompt instead of failing. A review whose scope
+            // silently changed is worse than a refused one.
+            if let Some(flag) = self.swallowed_flag_in_prompt() {
+                bail!(
+                    "`{flag}` is not a flag this command accepts, and a review never guesses its scope. \
+Use --review-base <BRANCH> or --review-pr <NUMBER>. No turn was submitted."
+                );
+            }
         }
         Ok(())
+    }
+
+    /// The first prompt token that looks like a mistyped flag, if any.
+    ///
+    /// Only reported for review runs: elsewhere a leading dash is a legitimate
+    /// prompt (`cortex exec -- "--help explain this"`).
+    fn swallowed_flag_in_prompt(&self) -> Option<&str> {
+        self.prompt
+            .iter()
+            .find(|token| token.starts_with("--") && token.len() > 2)
+            .map(String::as_str)
     }
 
     /// True when this run is pinned to review-only.
@@ -251,6 +271,41 @@ mod tests {
                 .prompt()
                 .contains("pull request #128")
         );
+    }
+
+    #[test]
+    fn a_mistyped_flag_in_a_review_is_refused_not_swallowed() {
+        // `--base` is not a flag this command accepts. Without the guard it
+        // becomes prompt text and the review silently runs against the working
+        // tree instead of the intended base branch.
+        let error = cli(&["--review-only", "--base", "main", "review this"])
+            .validate_runtime_options()
+            .expect_err("mistyped flag");
+        let message = error.to_string();
+        assert!(message.contains("`--base`"), "{message}");
+        assert!(message.contains("--review-base"), "{message}");
+        assert!(message.contains("No turn was submitted"), "{message}");
+
+        // The correct flag is accepted and selects the branch scope.
+        cli(&["--review-only", "--review-base", "main", "review this"])
+            .validate_runtime_options()
+            .expect("declared flag");
+        assert_eq!(
+            cli(&["--review-only", "--review-base", "main"]).review_request(),
+            Some(ReviewRequest::Branch("main"))
+        );
+    }
+
+    #[test]
+    fn a_leading_dash_prompt_stays_legal_outside_review_runs() {
+        // A prompt may legitimately start with a dash; only review runs refuse
+        // it, because only there does the scope silently change.
+        cli(&["--", "--help explain this"])
+            .validate_runtime_options()
+            .expect("dash prompt outside review");
+        cli(&["explain --verbose output"])
+            .validate_runtime_options()
+            .expect("dash inside a prompt");
     }
 
     #[test]

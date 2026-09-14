@@ -444,17 +444,24 @@ fn apply_pr_patch(
         return Ok(());
     }
 
-    let patch_path = repo_path.join(format!(".cortex-pr-{}.patch", pr_number));
-    std::fs::write(&patch_path, &diff_output.stdout)
-        .with_context(|| format!("Could not write the PR patch to {}", patch_path.display()))?;
+    // The patch is written outside the repository: a file inside the working
+    // tree would show up in `git status` and survive an interrupt.
+    let patch = tempfile::Builder::new()
+        .prefix("cortex-pr-")
+        .suffix(".patch")
+        .tempfile()
+        .context("Could not create a temporary file for the PR patch")?;
+    std::fs::write(patch.path(), &diff_output.stdout)
+        .with_context(|| format!("Could not write the PR patch to {}", patch.path().display()))?;
 
     let apply = Command::new("git")
         .current_dir(repo_path)
-        .args(["apply", "--index", patch_path.to_string_lossy().as_ref()])
+        .args(["apply", "--index", patch.path().to_string_lossy().as_ref()])
         .output()
         .context("Failed to run git apply")?;
 
-    let _ = std::fs::remove_file(&patch_path);
+    // The handle removes the file even on an early return.
+    drop(patch);
 
     if !apply.status.success() {
         bail!(
@@ -848,5 +855,25 @@ mod apply_tests {
         // the guard the function relies on is actually wired in.
         validate_refspec("pull/128/head:pr-128").expect("valid refspec");
         assert!(validate_refspec("pull/128/head:pr 128").is_err());
+    }
+
+    #[test]
+    fn the_patch_is_never_written_inside_the_repository() {
+        // A patch file in the working tree would appear in `git status` and
+        // survive an interrupt, so the patch is staged outside the repo.
+        let source = include_str!("pr_cmd.rs");
+        let body = source
+            .split("fn apply_pr_patch")
+            .nth(1)
+            .expect("apply_pr_patch exists");
+        let body = body.split("\n/// Get the git remote URL").next().unwrap();
+        assert!(
+            !body.contains("repo_path.join"),
+            "the patch path must not be built from the repository root"
+        );
+        assert!(
+            body.contains("tempfile::Builder"),
+            "the patch must use a temporary file outside the repository"
+        );
     }
 }

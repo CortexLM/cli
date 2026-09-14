@@ -212,7 +212,7 @@ fn apply_json_schema(state: &mut AppState) {
             ),
             (
                 "print",
-                "cortex schema run-result",
+                "cortex schema print run-result",
                 "print the schema and exit",
             ),
         ],
@@ -234,7 +234,7 @@ fn apply_cloud_teleport(state: &mut AppState) {
         .with_thought_secs(1.2),
     );
     state.add_message(Message::system(
-        "The cloud turn edits its own worktree. `/teleport back` applies the diff here.",
+        "The cloud turn edits its own worktree. Follow it with /jobs right here.",
     ));
 }
 
@@ -599,8 +599,13 @@ mod tests {
             frame.plain
         );
         assert!(
-            frame.plain.contains("/teleport back") || frame.plain.contains("applies the diff"),
+            frame.plain.contains("/jobs") || frame.plain.contains("applies the diff"),
             "teleport must say how the work comes back:\n{}",
+            frame.plain
+        );
+        assert!(
+            !frame.plain.contains("/teleport"),
+            "teleport must not name a command that does not exist:\n{}",
             frame.plain
         );
         assert!(

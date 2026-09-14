@@ -11,6 +11,7 @@ use crate::app::AppView;
 use crate::commands::{CommandResult, FormRegistry, ModalType, ViewType};
 use crate::session::{ExportFormat, default_export_filename, export_session};
 
+use super::cor35::is_cor35_async_command;
 use super::core::EventLoop;
 
 impl EventLoop {
@@ -393,20 +394,11 @@ impl EventLoop {
                 let result = self.rewind_conversation(1);
                 self.report_local_result(result, "");
             }
-            "permissions:rules" => {
-                self.open_permission_rules();
-            }
-            "sandbox:network" => {
-                self.open_sandbox_allowlist();
-            }
-            cmd if cmd == "plugins" || cmd.starts_with("plugins:") => {
-                self.open_plugin_marketplace(cmd);
-            }
-            cmd if cmd == "ide" || cmd.starts_with("ide:") => {
-                self.open_ide_handshake();
-            }
-            "rewind:checkpoint" => {
-                self.open_checkpoint_rewind();
+            // COR-35 batch surfaces (permission rules, sandbox allowlist,
+            // plugins, editor, browser, checkpoint rewind) dispatch together so
+            // this table stays under the complexity target.
+            cmd if is_cor35_async_command(cmd) => {
+                self.handle_cor35_async_command(cmd).await;
             }
             "redo" => {
                 let result = self.redo_conversation();

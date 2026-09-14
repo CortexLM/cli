@@ -13,7 +13,42 @@ use crate::cor35_handlers::{
 use crate::interactive::builders::build_question_prompt;
 use crate::runner::event_loop::core::EventLoop;
 
+/// True when `cmd` is one of the COR-35 async command ids.
+///
+/// Kept as one predicate so the dispatch table in `commands.rs` needs a single
+/// arm for the whole batch.
+pub(super) fn is_cor35_async_command(cmd: &str) -> bool {
+    matches!(
+        cmd,
+        "permissions:rules" | "sandbox:network" | "rewind:checkpoint" | "browser" | "ide"
+    ) || cmd == "plugins"
+        || cmd.starts_with("plugins:")
+        || cmd.starts_with("browser:")
+        || cmd.starts_with("ide:")
+}
+
 impl EventLoop {
+    /// Dispatch a COR-35 async command to its surface.
+    pub(super) async fn handle_cor35_async_command(&mut self, cmd: &str) {
+        match cmd {
+            "permissions:rules" => self.open_permission_rules(),
+            "sandbox:network" => self.open_sandbox_allowlist(),
+            "rewind:checkpoint" => self.open_checkpoint_rewind(),
+            "browser" => self.open_browser_use(),
+            cmd if cmd.starts_with("browser:") => self.open_browser_use(),
+            "ide" => self.open_ide_handshake(),
+            cmd if cmd.starts_with("ide:") => self.open_ide_handshake(),
+            cmd if cmd == "plugins" || cmd.starts_with("plugins:") => {
+                self.open_plugin_marketplace(cmd);
+            }
+            other => {
+                self.add_system_message(&format!(
+                    "This selection is unsupported in the current session. No operation was performed ({other})."
+                ));
+            }
+        }
+    }
+
     /// `/permissions rules` — the committed `.cortex/permissions.toml` rules.
     pub(super) fn open_permission_rules(&mut self) {
         let Some(cwd) = self.workspace_dir() else {
@@ -51,6 +86,55 @@ impl EventLoop {
         }
         let installed = self.installed_plugins();
         apply_plugin_marketplace(&mut self.app_state, &installed);
+    }
+
+    /// `/browser` — report the real browser-automation capability.
+    ///
+    /// Cortex ships no browser tool, so this never claims one. It reports which
+    /// connected MCP servers provide browser automation and states that their
+    /// calls still pass the sandbox and approvals.
+    pub(super) fn open_browser_use(&mut self) {
+        let servers: Vec<crate::browser_use::BrowserServer> = self
+            .app_state
+            .mcp_servers
+            .iter()
+            .map(|server| crate::browser_use::BrowserServer {
+                name: server.name.clone(),
+                running: matches!(server.status, crate::modal::mcp_manager::McpStatus::Running),
+                tool_count: server.tool_count,
+            })
+            .collect();
+        let capability = crate::browser_use::resolve_capability(&servers);
+        self.add_system_message(&capability.status_line());
+        if !capability.is_available() {
+            self.add_system_message(crate::browser_use::NO_BUILTIN_TOOL_NOTE);
+        }
+        let narrow = self.app_state.terminal_size.0 <= 40;
+        let rows: Vec<(&str, &str, &str)> = if narrow {
+            vec![
+                ("connect", "1 Connect an MCP server", "browser tools"),
+                ("runtime", "2 Computer runtime", "Cloud · This PC · SSH"),
+                ("cancel", "3 Cancel", "nothing changes"),
+            ]
+        } else {
+            vec![
+                (
+                    "connect",
+                    "1 Connect a browser MCP server",
+                    "the CLI ships no browser tool",
+                ),
+                (
+                    "runtime",
+                    "2 Computer runtime",
+                    crate::browser_use::RUNTIME_NOTE,
+                ),
+                ("cancel", "3 Cancel", "no server is installed"),
+            ]
+        };
+        self.app_state
+            .enter_interactive_mode(crate::interactive::builders::build_question_prompt(
+                "Browser", &rows, 0,
+            ));
     }
 
     /// `/ide` — the ACP editor handshake.

@@ -129,6 +129,7 @@ impl CommandExecutor {
             "spec" => self.cmd_spec(cmd),
             "bg-process" => self.cmd_bg_process(cmd),
             "ide" => CommandResult::Async("ide".to_string()),
+            "browser" | "computer-use" => CommandResult::Async("browser".to_string()),
             "install-github-app" => CommandResult::Async("github:install-app".to_string()),
             "review" => self.cmd_review(cmd),
             "experimental" | "exp" | "features" => self.cmd_experimental(cmd),

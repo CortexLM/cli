@@ -25,6 +25,7 @@ pub const COR35_NARROW_IDS: &[&str] = &[
     "sandbox-allowlist",
     "pr-apply-back",
     "acp-editor",
+    "browser-use",
     "stdin-multiturn",
 ];
 
@@ -79,6 +80,7 @@ pub fn apply_cor35_scene(id: &str, state: &mut AppState, width: u16) -> bool {
         "auto-approval" => apply_auto_approval(state),
         "pr-apply-back" => apply_pr_apply_back(state, narrow),
         "acp-editor" => apply_acp_editor(state, narrow),
+        "browser-use" => apply_browser_use(state, narrow),
         "stdin-multiturn" => apply_stdin_multiturn(state, narrow),
         _ => return false,
     }
@@ -365,6 +367,39 @@ fn apply_acp_editor(state: &mut AppState, narrow: bool) {
     ));
 }
 
+fn apply_browser_use(state: &mut AppState, narrow: bool) {
+    resumed(state);
+    state.input.set_text("/browser");
+    let capability = crate::browser_use::resolve_capability(&[]);
+    state.add_message(Message::system(if narrow {
+        crate::browser_use::NO_BUILTIN_TOOL_NOTE_NARROW.to_string()
+    } else {
+        capability.status_line()
+    }));
+    let rows: &[(&str, &str, &str)] = if narrow {
+        &[
+            ("connect", "1 Connect an MCP server", "browser tools"),
+            ("runtime", "2 Computer runtime", "Cloud · This PC · SSH"),
+            ("cancel", "3 Cancel", "nothing changes"),
+        ]
+    } else {
+        &[
+            (
+                "connect",
+                "1 Connect a browser MCP server",
+                "the CLI ships no browser tool",
+            ),
+            (
+                "runtime",
+                "2 Computer runtime",
+                "where tools run — not browser automation",
+            ),
+            ("cancel", "3 Cancel", "no server is installed"),
+        ]
+    };
+    state.enter_interactive_mode(radios("Browser", rows, 0, None));
+}
+
 fn apply_stdin_multiturn(state: &mut AppState, narrow: bool) {
     resumed(state);
     state.add_message(
@@ -409,7 +444,7 @@ mod tests {
 
     #[test]
     fn cor35_ids_are_registered_at_the_right_sizes() {
-        assert_eq!(COR35_NARROW_IDS.len(), 7);
+        assert_eq!(COR35_NARROW_IDS.len(), 8);
         assert_eq!(COR35_WIDE_IDS.len(), 6);
         for id in COR35_NARROW_IDS {
             assert!(LOCK_V2_WIDE_IDS.contains(id), "{id} missing from wide list");
@@ -425,8 +460,8 @@ mod tests {
                 "{id} is wide-only and must not be in the narrow set"
             );
         }
-        assert_eq!(cor35_ids(120).len(), 13);
-        assert_eq!(cor35_ids(40).len(), 7);
+        assert_eq!(cor35_ids(120).len(), 14);
+        assert_eq!(cor35_ids(40).len(), 8);
     }
     #[test]
     fn every_cor35_board_is_named_and_cortex_only() {
@@ -698,6 +733,52 @@ mod tests {
                 !frame.plain.contains("extension"),
                 "acp-editor must not claim a packaged extension:\n{}",
                 frame.plain
+            );
+        }
+    }
+
+    #[test]
+    fn browser_use_board_claims_no_builtin_tool() {
+        for (width, height) in SIZES {
+            let frame = render_lock_v2_scene("browser-use", width, height).expect("browser");
+            assert!(
+                frame.plain.contains("browser") || frame.plain.contains("Browser"),
+                "browser-use must name the surface at {width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("MCP"),
+                "browser-use must say the capability comes from an MCP server at {width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("no browser tool") || frame.plain.contains("ships no browser"),
+                "browser-use must not imply a built-in tool at {width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                frame.plain.contains("Computer runtime") || frame.plain.contains("not browser"),
+                "browser-use must disambiguate the Computer runtime at {width}x{height}:\n{}",
+                frame.plain
+            );
+            assert!(
+                !frame.plain.contains("extension"),
+                "browser-use must not claim an extension:\n{}",
+                frame.plain
+            );
+            assert_ne!(
+                frame.ansi,
+                render_lock_v2_scene("acp-editor", width, height)
+                    .expect("acp")
+                    .ansi,
+                "browser-use must differ from acp-editor"
+            );
+            assert_ne!(
+                frame.ansi,
+                render_lock_v2_scene("computer-cloud-default", width, height)
+                    .expect("computer")
+                    .ansi,
+                "browser-use must differ from the Computer runtime board"
             );
         }
     }

@@ -100,6 +100,7 @@ pub mod bridge;
 pub mod runner;
 
 // Visual-lock PNG / ANSI captures
+pub mod browser_use;
 pub mod checkpoint;
 pub mod cor35_handlers;
 pub mod lock_boards;

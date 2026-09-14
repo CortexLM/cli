@@ -109,6 +109,20 @@ The tool set is not fixed. It narrows depending on context:
 - **The `permission` table** in `config.toml` can require approval for, or
   outright deny, individual capabilities.
 
+## Browser and desktop automation
+
+**Cortex ships no built-in browser or desktop-automation tool.** Driving a
+browser is done by connecting an MCP server that provides those tools; the
+`puppeteer` entry in the MCP catalog is the one that does browser automation.
+
+Because those tools arrive over MCP, they pass the same authority boundary as
+any other tool call: the sandbox, the approval prompt, and the `permission`
+deny list. `/browser` reports whether such a server is actually connected and
+names it — it never claims a capability the CLI does not have.
+
+`Computer` is a **different** concept: it selects *where tools run* (Cloud,
+This PC, or SSH) via `CORTEX_COMPUTER`. It is not browser or desktop control.
+
 ## See also
 
 - [Configuration files](../configuration/config.md#permissions-and-sandboxing)

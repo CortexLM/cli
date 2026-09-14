@@ -143,13 +143,24 @@ A tool from server `myserver` called `search` is presented as
 
 ## Running Cortex as an MCP-adjacent server
 
-`cortex acp` starts an Agent Client Protocol server for IDE integration:
+`cortex acp` starts an Agent Client Protocol server for IDE integration. **Only
+stdio transport is supported**, and agent selection and per-tool allow/deny
+controls are not implemented — those flags fail closed before the server starts
+rather than running with wider authority than requested:
 
 ```bash
 cortex acp --stdio
-cortex acp --port 8123 --host 127.0.0.1
-cortex acp --allow-tool Read --allow-tool Grep --deny-tool Execute
 ```
+
+The server implements four methods: `initialize`, `session/new`,
+`session/prompt`, and `session/cancel`. `session/load`, `session/list`,
+`models/list`, and `agents/list` are not implemented. Prompts are text-only, and
+approval requests are denied rather than auto-approved, because no permission
+round trip is advertised to the client.
+
+`--port`, `--host`, `--agent`, `--allow-tool`, and `--deny-tool` are parsed but
+rejected. See [Editor integration](../guides/editor.md) for the packaging
+boundary.
 
 ## See also
 

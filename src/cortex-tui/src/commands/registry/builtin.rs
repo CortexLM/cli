@@ -815,6 +815,15 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     ));
 
     registry.register(CommandDef::new(
+        "browser",
+        &["computer-use"],
+        "Browser automation — connect an MCP server (Cortex ships no browser tool)",
+        "/browser",
+        CommandCategory::General,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
         "install-github-app",
         &[],
         "Install the Cortex GitHub App",

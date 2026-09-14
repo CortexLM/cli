@@ -59,6 +59,7 @@ pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "sandbox-allowlist",
     "pr-apply-back",
     "acp-editor",
+    "browser-use",
     "stdin-multiturn",
 ];
 
@@ -172,6 +173,7 @@ pub const LOCK_V2_WIDE_IDS: &[&str] = &[
     "auto-approval",
     "pr-apply-back",
     "acp-editor",
+    "browser-use",
     "stdin-multiturn",
 ];
 
@@ -191,8 +193,8 @@ mod tests {
 
     #[test]
     fn lock_v2_id_counts_and_unique() {
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 109);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 57);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 110);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 58);
         let mut wide = HashSet::new();
         for id in LOCK_V2_WIDE_IDS {
             assert!(wide.insert(*id), "duplicate wide id {id}");

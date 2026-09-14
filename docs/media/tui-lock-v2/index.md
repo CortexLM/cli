@@ -127,7 +127,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `composer-file-chip` | Composer with attached @file chip in prompt | [120x40](120x40/composer-file-chip.png) | [40x12](40x12/composer-file-chip.png) |
 | `undo-sheet` | /undo /redo /rewind sheet | [120x40](120x40/undo-sheet.png) | [40x12](40x12/undo-sheet.png) |
 
-**109** runtime boards at 120x40 · **57** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack. `session-shared` (COR-226) is at both sizes.
+**110** runtime boards at 120x40 · **58** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack. `session-shared` (COR-226) is at both sizes.
 
 ## F. COR-35 batch (runtime only)
 
@@ -145,6 +145,7 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `auto-approval` | Auto-approval classifier — safe reads pass, the rest asks | [runtime 120x40](runtime/120x40/auto-approval.png) | — |
 | `pr-apply-back` | `cortex pr <n> --apply` — patch into the working tree | [runtime 120x40](runtime/120x40/pr-apply-back.png) | [runtime 40x12](runtime/40x12/pr-apply-back.png) |
 | `acp-editor` | `/ide` — ACP over stdio, approvals unchanged | [runtime 120x40](runtime/120x40/acp-editor.png) | [runtime 40x12](runtime/40x12/acp-editor.png) |
+| `browser-use` | `/browser` — browser automation comes from an MCP server, not the CLI | [runtime 120x40](runtime/120x40/browser-use.png) | [runtime 40x12](runtime/40x12/browser-use.png) |
 | `stdin-multiturn` | `--input-format stream-jsonl` — one line per turn | [runtime 120x40](runtime/120x40/stdin-multiturn.png) | [runtime 40x12](runtime/40x12/stdin-multiturn.png) |
 
 The COR-35 batch is runtime-only: the Designer pack from other PRs is not
@@ -153,4 +154,4 @@ surface — `/permissions rules` and `/sandbox network` render the committed
 `.cortex/permissions.toml` and `.cortex/sandbox.toml`, and `/plugins` renders
 the live plugin state file.
 
-Runtime MockTerminal pack (same ids): [`runtime/120x40`](runtime/120x40/) (109) · [`runtime/40x12`](runtime/40x12/) (57).
+Runtime MockTerminal pack (same ids): [`runtime/120x40`](runtime/120x40/) (110) · [`runtime/40x12`](runtime/40x12/) (58).

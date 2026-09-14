@@ -826,6 +826,54 @@ mod tests {
     }
 
     #[test]
+    fn every_cor35_board_stays_off_the_retired_palette() {
+        // SPEC §1 retires thinking gold, mint, cyan, and the violet wash. The
+        // shared audit covers those; the SPEC cyan is checked here as well
+        // because `count_palette` only recognises `#00FFFF` for cyan.
+        const SPEC_CYAN: ratatui::style::Color = ratatui::style::Color::Rgb(0x7D, 0xD3, 0xFC);
+        for (width, height) in SIZES {
+            for id in cor35_ids(width) {
+                let frame = render_lock_v2_scene(id, width, height).expect(id);
+                let counts = crate::lock_palette::count_palette(&frame.buffer);
+                assert!(
+                    !counts.has_banned(),
+                    "{id} at {width}x{height} paints retired chrome: violet={} wash={} gold={} mint={} cyan={}",
+                    counts.violet_px,
+                    counts.wash_px,
+                    counts.gold_px,
+                    counts.mint_px,
+                    counts.cyan_px
+                );
+                for y in 0..height {
+                    for x in 0..width {
+                        let cell = &frame.buffer[(x, y)];
+                        assert_ne!(
+                            cell.fg, SPEC_CYAN,
+                            "{id} at {width}x{height} paints retired cyan at {x},{y}"
+                        );
+                        assert_ne!(
+                            cell.bg, SPEC_CYAN,
+                            "{id} at {width}x{height} paints retired cyan at {x},{y}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_retired_palette_audit_actually_fires() {
+        // Guard the guard: a buffer with a banned colour must fail the audit,
+        // so the assertion above cannot pass by doing nothing.
+        let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 4, 2));
+        crate::lock_palette::inject_violet_cell(&mut buffer, 1, 1);
+        assert!(
+            crate::lock_palette::count_palette(&buffer).has_banned(),
+            "the palette audit must detect a banned colour"
+        );
+    }
+
+    #[test]
     fn focused_rows_paint_selection_or_accent() {
         let mut checked = 0;
         for (width, height) in SIZES {

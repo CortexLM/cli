@@ -321,4 +321,52 @@ mod tests {
         document["future_field"] = json!("added later");
         validate(RUN_RESULT_SCHEMA, &document).expect("forward compatible");
     }
+
+    #[test]
+    fn every_declared_json_type_is_checked_against_its_value() {
+        // `value_matches` covers the type names the shipped schemas use; each
+        // arm must accept a matching value and reject a mismatched one.
+        for (declared, matching, mismatched) in [
+            ("string", json!("text"), json!(1)),
+            ("boolean", json!(true), json!("true")),
+            ("integer", json!(7), json!("7")),
+            ("number", json!(1.5), json!("1.5")),
+            ("object", json!({"a": 1}), json!([1])),
+            ("array", json!([1]), json!({"a": 1})),
+            ("null", json!(null), json!(0)),
+        ] {
+            let allowed = vec![declared.to_string()];
+            assert!(
+                value_matches(&matching, &allowed),
+                "{declared} must accept {matching}"
+            );
+            assert!(
+                !value_matches(&mismatched, &allowed),
+                "{declared} must reject {mismatched}"
+            );
+        }
+        // An unknown type name is not a constraint the caller can fail.
+        assert!(value_matches(&json!(1), &["unknown".to_string()]));
+    }
+
+    #[test]
+    fn a_null_finish_reason_is_accepted_by_the_declared_union() {
+        let mut document = run_document();
+        document["finish_reason"] = json!(null);
+        validate(RUN_RESULT_SCHEMA, &document).expect("nullable field");
+    }
+
+    #[test]
+    fn the_exec_schema_carries_its_own_title_and_required_fields() {
+        let schema = schema_document(EXEC_RESULT_SCHEMA).expect("exec schema");
+        assert!(schema["title"].as_str().unwrap().contains("exec"));
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert!(required.contains(&"subtype"), "{required:?}");
+        assert!(required.contains(&"is_error"), "{required:?}");
+    }
 }

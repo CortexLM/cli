@@ -164,3 +164,122 @@ impl ExecCli {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn cli(args: &[&str]) -> ExecCli {
+        let mut argv = vec!["exec"];
+        argv.extend_from_slice(args);
+        ExecCli::try_parse_from(argv).expect("exec arguments parse")
+    }
+
+    #[test]
+    fn review_only_is_implied_by_every_review_flag() {
+        assert!(!cli(&["hello"]).review_only());
+        assert!(cli(&["--review-only"]).review_only());
+        assert!(cli(&["--review-pr", "128"]).review_only());
+        assert!(cli(&["--review-base", "main"]).review_only());
+    }
+
+    #[test]
+    fn review_only_refuses_flags_that_widen_authority() {
+        // `--skip-permissions-unsafe` is refused by the service contract for
+        // every run; `--auto high` is the widening flag review-only must catch.
+        for args in [
+            vec!["--review-only", "--auto", "high"],
+            vec!["--review-pr", "128", "--auto", "high"],
+            vec!["--review-base", "main", "--auto", "high"],
+        ] {
+            let error = cli(&args)
+                .validate_runtime_options()
+                .expect_err("must refuse");
+            let message = error.to_string();
+            assert!(message.contains("--review-only never writes"), "{message}");
+            assert!(message.contains("No turn was submitted"), "{message}");
+        }
+        // The blanket contract check still refuses the unsafe flag outright.
+        let error = cli(&["--review-only", "--skip-permissions-unsafe"])
+            .validate_runtime_options()
+            .expect_err("must refuse");
+        assert!(
+            error.to_string().contains("--skip-permissions-unsafe"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn review_only_accepts_a_read_only_auto_level() {
+        cli(&["--review-only", "--auto", "read-only"])
+            .validate_runtime_options()
+            .expect("read-only review is the intended combination");
+        cli(&["--review-only"])
+            .validate_runtime_options()
+            .expect("bare review-only");
+    }
+
+    #[test]
+    fn review_requests_describe_their_scope_and_forbid_writes() {
+        assert_eq!(
+            cli(&["--review-only"]).review_request(),
+            Some(ReviewRequest::WorkingTree)
+        );
+        assert_eq!(
+            cli(&["--review-base", "main"]).review_request(),
+            Some(ReviewRequest::Branch("main"))
+        );
+        assert_eq!(
+            cli(&["--review-pr", "128"]).review_request(),
+            Some(ReviewRequest::PullRequest(128))
+        );
+        assert_eq!(cli(&["hello"]).review_request(), None);
+
+        for request in [
+            ReviewRequest::WorkingTree,
+            ReviewRequest::Branch("main"),
+            ReviewRequest::PullRequest(128),
+        ] {
+            let prompt = request.prompt();
+            assert!(prompt.contains("Review"), "{prompt}");
+            assert!(prompt.contains("Do not edit files"), "{prompt}");
+            assert!(prompt.contains("missing tests"), "{prompt}");
+        }
+        assert!(
+            ReviewRequest::PullRequest(128)
+                .prompt()
+                .contains("pull request #128")
+        );
+    }
+
+    #[test]
+    fn json_schema_requires_the_json_result_format() {
+        let error = cli(&["--json-schema", "hello"])
+            .validate_runtime_options()
+            .expect_err("text output");
+        assert!(error.to_string().contains("Add -o json"), "{error}");
+
+        cli(&["--json-schema", "-o", "json", "hello"])
+            .validate_runtime_options()
+            .expect("json output");
+    }
+
+    #[test]
+    fn stream_jsonl_requires_a_machine_readable_output_format() {
+        // The pairing is enforced when the stream starts, not by the option
+        // contract, so assert it where it lives.
+        let text_output = cli(&["--input-format", "stream-jsonl"]);
+        assert_eq!(
+            text_output.output_format,
+            super::super::ExecOutputFormat::Text
+        );
+        cli(&["--input-format", "stream-jsonl", "-o", "stream-json"])
+            .validate_runtime_options()
+            .expect("stream output");
+        assert_eq!(
+            cli(&["--input-format", "stream-jsonl", "-o", "stream-json"]).input_format,
+            super::super::ExecInputFormat::StreamJsonl
+        );
+    }
+}

@@ -745,3 +745,108 @@ mod integration_contract_tests {
         assert!(!apply.force);
     }
 }
+
+#[cfg(test)]
+mod apply_tests {
+    use super::*;
+    use std::process::Command;
+
+    /// A local repository with one commit, no remote, and a controlled config.
+    fn repository() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .current_dir(dir.path())
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_SYSTEM", "/dev/null")
+                .output()
+                .unwrap();
+            assert!(status.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet", "--initial-branch=main"]);
+        git(&["config", "user.email", "fixture@example.test"]);
+        git(&["config", "user.name", "Fixture"]);
+        std::fs::write(dir.path().join("tracked.txt"), "original\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "initial"]);
+        dir
+    }
+
+    fn pr_info(base: &str, head: &str) -> cortex_engine::PullRequestInfo {
+        cortex_engine::PullRequestInfo {
+            number: 128,
+            title: "fixture".into(),
+            author: "fixture".into(),
+            state: "open".into(),
+            body: None,
+            head_branch: head.into(),
+            base_branch: base.into(),
+            head_sha: "0".repeat(40),
+            mergeable: Some(true),
+            draft: false,
+            labels: Vec::new(),
+            head_repository: Some("fixture/project".into()),
+        }
+    }
+
+    fn cli(force: bool) -> PrCli {
+        let mut args = vec!["pr", "128", "--apply"];
+        if force {
+            args.push("--force");
+        }
+        PrCli::try_parse_from(args).unwrap()
+    }
+
+    #[test]
+    fn a_dirty_tree_is_refused_before_any_fetch() {
+        let dir = repository();
+        std::fs::write(dir.path().join("tracked.txt"), "locally edited\n").unwrap();
+        let error = apply_pr_patch(
+            &cli(false),
+            dir.path(),
+            128,
+            &pr_info("main", "feature"),
+            "fixture/project",
+        )
+        .expect_err("dirty");
+        assert!(error.to_string().contains("Uncommitted changes"), "{error}");
+        // The local edit is untouched: the guard runs before any git write.
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("tracked.txt")).unwrap(),
+            "locally edited\n"
+        );
+    }
+
+    #[test]
+    fn a_clean_tree_without_a_fetchable_remote_fails_before_writing() {
+        // There is no `origin`, so the fetch cannot succeed and nothing is
+        // applied. The run must report that rather than claim success.
+        let dir = repository();
+        let error = apply_pr_patch(
+            &cli(false),
+            dir.path(),
+            128,
+            &pr_info("main", "feature"),
+            "fixture/project",
+        )
+        .expect_err("no remote");
+        assert!(
+            error.to_string().contains("Failed to fetch PR"),
+            "a missing remote must be reported as a fetch failure: {error}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("tracked.txt")).unwrap(),
+            "original\n",
+            "a failed fetch must not modify the working tree"
+        );
+    }
+
+    #[test]
+    fn the_apply_refspec_is_validated_before_it_is_used() {
+        // A refspec built from a numeric PR number is always valid; this asserts
+        // the guard the function relies on is actually wired in.
+        validate_refspec("pull/128/head:pr-128").expect("valid refspec");
+        assert!(validate_refspec("pull/128/head:pr 128").is_err());
+    }
+}

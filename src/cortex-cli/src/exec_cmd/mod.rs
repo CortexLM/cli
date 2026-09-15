@@ -25,3 +25,4 @@ pub use output::{ExecInputFormat, ExecOutputFormat};
 
 mod runtime_contract_options;
 mod runtime_contract_protocol;
+mod stdin_stream;

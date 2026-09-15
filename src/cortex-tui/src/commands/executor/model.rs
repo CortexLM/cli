@@ -26,6 +26,21 @@ impl CommandExecutor {
         }
     }
 
+    /// `/permissions` opens the mode picker; `/permissions rules` opens the
+    /// committed `.cortex/permissions.toml` rules.
+    pub(super) fn cmd_permissions(&self, cmd: &ParsedCommand) -> CommandResult {
+        match cmd.first_arg() {
+            Some("rules") | Some("rule") | Some("policy") => {
+                CommandResult::Async("permissions:rules".to_string())
+            }
+            None => CommandResult::OpenModal(ModalType::Permissions),
+            Some(other) => CommandResult::Error(format!(
+                "Invalid permissions target: {}. Use `/permissions` or `/permissions rules`",
+                other
+            )),
+        }
+    }
+
     pub(super) fn cmd_sandbox(&self, cmd: &ParsedCommand) -> CommandResult {
         match cmd.first_arg() {
             Some("on") | Some("true") => {
@@ -34,10 +49,13 @@ impl CommandExecutor {
             Some("off") | Some("false") => {
                 CommandResult::SetValue("sandbox".to_string(), "false".to_string())
             }
+            // `network` opens the domain allowlist the sandbox consults.
+            Some("network") | Some("net") => CommandResult::Async("sandbox:network".to_string()),
             None => CommandResult::OpenModal(ModalType::Form("sandbox".to_string())),
-            Some(other) => {
-                CommandResult::Error(format!("Invalid sandbox value: {}. Use on|off", other))
-            }
+            Some(other) => CommandResult::Error(format!(
+                "Invalid sandbox value: {}. Use on|off|network",
+                other
+            )),
         }
     }
 

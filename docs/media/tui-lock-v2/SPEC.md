@@ -10,7 +10,7 @@ runtime chrome ships in `cortex-tui` (`lock_v2_*` scenes plus production paints
 and lock flags: `computer_held`, `show_computer_default`, `offline_held`,
 `rate_limit_held`, `share_link`) so MockTerminal captures can lock the live UI.
 
-- Boards: [`index.md`](index.md) — **96** runtime boards at 120×40, 50 of them also at 40×12. Designer PNG files under `{40x12,120x40}/` from other PRs are not rewritten; new scenes are captured with `generate_tui_lock_screenshots --v2 --only`.
+- Boards: [`index.md`](index.md) — **110** runtime boards at 120×40, 58 of them also at 40×12. Designer PNG files under `{40x12,120x40}/` from other PRs are not rewritten; new scenes are captured with `generate_tui_lock_screenshots --v2 --only`.
 - Grids: `txt/<size>/<board>.txt` — the exact character grid of every board (diff a
   `MockTerminal` capture against these).
 - Renderer: `tools/render_lock_v2.py` + `tools/boards.py` (Python 3 + Pillow, IBM Plex Mono
@@ -433,6 +433,7 @@ Narrow: no bars, `used / total  pct%`.
 | compact chat (ref 5) | `compact-chat` |
 | other product surfaces (not in the brief, kept complete) | `shortcuts-overlay`, `resume-picker`, `clear-confirm`, `plan-confirm`, `queue`, `files-picker`, `jobs`, `skills`, `todos`, `question`, `sudo`, `config-tree`, `btw` |
 | local-tools consent · @file chip · undo/redo/rewind | `consent-local-tools`, `composer-file-chip`, `undo-sheet` |
+| COR-35 batch: headless CI · permission DSL · checkpoints · CI cookbook · JSON Schema · teleport · review-only · marketplace · sandbox allowlist · auto-approval · PR apply-back · ACP · browser use · stdin stream | `bare-ci`, `ci-cookbook`, `permission-rules`, `checkpoint-rewind`, `json-schema`, `cloud-teleport`, `review-only`, `plugin-marketplace`, `sandbox-allowlist`, `auto-approval`, `pr-apply-back`, `acp-editor`, `browser-use`, `stdin-multiturn` |
 
 Narrow (40×12) set: `welcome-cortex`, `welcome-agent`, `first-run-tips`, `session-empty`, `session-user-bars`,
 `session-thinking-live`, `session-assistant`, `session-optin`, `session-shared`, `composer-empty`, `composer-typing`,

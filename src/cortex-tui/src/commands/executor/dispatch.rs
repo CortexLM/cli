@@ -23,7 +23,7 @@ impl CommandExecutor {
             "commands" | "cmds" => CommandResult::Async("commands:list".to_string()),
             "agents" | "subagents" => CommandResult::OpenModal(ModalType::Agents),
             "mode" => CommandResult::OpenModal(ModalType::Mode),
-            "permissions" | "perms" => CommandResult::OpenModal(ModalType::Permissions),
+            "permissions" | "perms" => self.cmd_permissions(cmd),
             "plan" => CommandResult::OpenModal(ModalType::Plan),
             "goal" => self.cmd_goal(cmd),
             // Effort radios live on `/model` (Tab). `/effort` is an alias.
@@ -128,7 +128,8 @@ impl CommandExecutor {
             "delegates" => self.cmd_delegates(cmd),
             "spec" => self.cmd_spec(cmd),
             "bg-process" => self.cmd_bg_process(cmd),
-            "ide" => CommandResult::Async("ide:status".to_string()),
+            "ide" => CommandResult::Async("ide".to_string()),
+            "browser" | "computer-use" => CommandResult::Async("browser".to_string()),
             "install-github-app" => CommandResult::Async("github:install-app".to_string()),
             "review" => self.cmd_review(cmd),
             "experimental" | "exp" | "features" => self.cmd_experimental(cmd),

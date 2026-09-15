@@ -509,6 +509,11 @@ pub enum Commands {
     #[command(next_help_heading = categories::MAINTENANCE)]
     Plugin(PluginCli),
 
+    /// Print the shipped JSON Schemas for headless result documents
+    #[command(visible_alias = "schemas", display_order = 69)]
+    #[command(next_help_heading = categories::MAINTENANCE)]
+    Schema(crate::schema_cmd::SchemaCli),
+
     // ========================================================================
     // Hidden commands (internal/debug/advanced)
     // ========================================================================

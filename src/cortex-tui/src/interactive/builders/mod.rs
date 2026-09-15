@@ -32,8 +32,9 @@ pub use approval::{
     PERMISSION_EDIT_LABEL, PERMISSION_NO_LABEL, PERMISSION_ONCE_LABEL, PERMISSION_PROMPT_ACTION,
     PERMISSION_PROMPT_PLACEHOLDER, PERMISSION_PROMPT_TITLE, always_allow_snippet,
     build_approval_selector, build_clear_confirm, build_handoff_confirm, build_log_level_selector,
-    build_permission_prompt, build_permissions_picker, build_plan_confirm, build_question_prompt,
-    build_sandbox_deny_prompt, permission_always_label, permission_command_line,
+    build_permission_prompt, build_permission_rules, build_permissions_picker, build_plan_confirm,
+    build_question_prompt, build_sandbox_deny_prompt, permission_always_label,
+    permission_command_line,
 };
 pub use billing::{BillingFlowState, BillingStatus, build_billing_selector};
 pub use export::build_export_selector;
@@ -52,8 +53,8 @@ pub use model::build_model_selector;
 pub use resume_picker::build_resume_picker;
 pub use scroll::build_scroll_selector;
 pub use session::{
-    SkillListItem, build_effort_selector, build_mode_selector, build_sandbox_selector,
-    build_skills_selector,
+    SkillListItem, build_effort_selector, build_mode_selector, build_plugin_marketplace,
+    build_sandbox_allowlist, build_sandbox_selector, build_skills_selector,
 };
 pub use sessions::build_sessions_selector;
 pub use settings::{

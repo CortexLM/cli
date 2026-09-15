@@ -53,6 +53,14 @@ pub const LOCK_V2_NARROW_IDS: &[&str] = &[
     "consent-local-tools",
     "composer-file-chip",
     "undo-sheet",
+    "bare-ci",
+    "permission-rules",
+    "checkpoint-rewind",
+    "sandbox-allowlist",
+    "pr-apply-back",
+    "acp-editor",
+    "browser-use",
+    "stdin-multiturn",
 ];
 
 /// Wide (120×40) SPEC §7 set — 96 boards.
@@ -153,6 +161,20 @@ pub const LOCK_V2_WIDE_IDS: &[&str] = &[
     "consent-local-tools",
     "composer-file-chip",
     "undo-sheet",
+    "bare-ci",
+    "ci-cookbook",
+    "permission-rules",
+    "checkpoint-rewind",
+    "json-schema",
+    "cloud-teleport",
+    "review-only",
+    "plugin-marketplace",
+    "sandbox-allowlist",
+    "auto-approval",
+    "pr-apply-back",
+    "acp-editor",
+    "browser-use",
+    "stdin-multiturn",
 ];
 
 /// Boards captured at both sizes. Narrow (40×12) is a subset.
@@ -171,8 +193,8 @@ mod tests {
 
     #[test]
     fn lock_v2_id_counts_and_unique() {
-        assert_eq!(LOCK_V2_WIDE_IDS.len(), 96);
-        assert_eq!(LOCK_V2_NARROW_IDS.len(), 50);
+        assert_eq!(LOCK_V2_WIDE_IDS.len(), 110);
+        assert_eq!(LOCK_V2_NARROW_IDS.len(), 58);
         let mut wide = HashSet::new();
         for id in LOCK_V2_WIDE_IDS {
             assert!(wide.insert(*id), "duplicate wide id {id}");

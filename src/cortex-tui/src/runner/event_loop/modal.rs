@@ -736,6 +736,39 @@ impl EventLoop {
                 false
             }
             "sandbox-deny" | "question" => false,
+            "rewind-checkpoint" => self.restore_checkpoint_choice(&item_id),
+            "permission-rules" => {
+                // The rules are read-only from the TUI; point at the file.
+                self.add_system_message(
+                    "Rules are read from `.cortex/permissions.toml`. Edit the file, then reopen this sheet.",
+                );
+                false
+            }
+            "sandbox-allowlist" => {
+                if item_id == "__add__" {
+                    self.add_system_message(
+                        "Add the host to `.cortex/sandbox.toml` under `allow`, then reopen this sheet.",
+                    );
+                } else {
+                    self.add_system_message(&format!(
+                        "{item_id} is allowed. Remove it from `.cortex/sandbox.toml` to block it again."
+                    ));
+                }
+                false
+            }
+            "plugin-marketplace" => {
+                if item_id == "__search__" {
+                    self.add_system_message(&format!(
+                        "Search the registry with `cortex plugin search <query>` against {}.",
+                        crate::plugin_marketplace::REGISTRY_ORIGIN
+                    ));
+                } else {
+                    self.add_system_message(&format!(
+                        "{item_id} is installed. Use `cortex plugin disable {item_id}` to turn it off."
+                    ));
+                }
+                false
+            }
             "mcp-source" | "mcp-transport" => self.handle_mcp_form_custom(&custom, &item_id),
             _ => {
                 self.add_system_message("This selection is unsupported in the current session. No operation was performed.");

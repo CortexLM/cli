@@ -127,6 +127,31 @@ Regenerate: `python3 tools/render_lock_v2.py --index` (fetches IBM Plex Mono on 
 | `composer-file-chip` | Composer with attached @file chip in prompt | [120x40](120x40/composer-file-chip.png) | [40x12](40x12/composer-file-chip.png) |
 | `undo-sheet` | /undo /redo /rewind sheet | [120x40](120x40/undo-sheet.png) | [40x12](40x12/undo-sheet.png) |
 
-**96** runtime boards at 120x40 · **50** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack. `session-shared` (COR-226) is at both sizes.
+**110** runtime boards at 120x40 · **58** at 40x12. Designer PNG pack from other PRs is unchanged; new COR-18/225/227/228 scenes are runtime captures. Computer lock boards from #69 stay in the pack. `session-shared` (COR-226) is at both sizes.
 
-Runtime MockTerminal pack (same ids): [`runtime/120x40`](runtime/120x40/) (96) · [`runtime/40x12`](runtime/40x12/) (50).
+## F. COR-35 batch (runtime only)
+
+| Board | State | Wide | Narrow |
+|---|---|---|---|
+| `bare-ci` | `cortex run --bare --ephemeral` — no session file, no chrome | [runtime 120x40](runtime/120x40/bare-ci.png) | [runtime 40x12](runtime/40x12/bare-ci.png) |
+| `ci-cookbook` | `docs/guides/ci.md` — secret via env, per-platform recipes | [runtime 120x40](runtime/120x40/ci-cookbook.png) | — |
+| `permission-rules` | `/permissions rules` — committed allow / ask / deny rules | [runtime 120x40](runtime/120x40/permission-rules.png) | [runtime 40x12](runtime/40x12/permission-rules.png) |
+| `checkpoint-rewind` | `/rewind` — restore the files a turn changed | [runtime 120x40](runtime/120x40/checkpoint-rewind.png) | [runtime 40x12](runtime/40x12/checkpoint-rewind.png) |
+| `json-schema` | `--json-schema` and `cortex schema print` | [runtime 120x40](runtime/120x40/json-schema.png) | — |
+| `cloud-teleport` | `&` teleport to Cortex Cloud with `/teleport back` | [runtime 120x40](runtime/120x40/cloud-teleport.png) | — |
+| `review-only` | `cortex exec --review-only` — reads the diff, never writes | [runtime 120x40](runtime/120x40/review-only.png) | — |
+| `plugin-marketplace` | `/plugins` — installed plugins and the signed registry | [runtime 120x40](runtime/120x40/plugin-marketplace.png) | — |
+| `sandbox-allowlist` | `/sandbox network` — the domain allowlist, fail-closed | [runtime 120x40](runtime/120x40/sandbox-allowlist.png) | [runtime 40x12](runtime/40x12/sandbox-allowlist.png) |
+| `auto-approval` | Auto-approval classifier — safe reads pass, the rest asks | [runtime 120x40](runtime/120x40/auto-approval.png) | — |
+| `pr-apply-back` | `cortex pr <n> --apply` — patch into the working tree | [runtime 120x40](runtime/120x40/pr-apply-back.png) | [runtime 40x12](runtime/40x12/pr-apply-back.png) |
+| `acp-editor` | `/ide` — ACP over stdio, approvals unchanged | [runtime 120x40](runtime/120x40/acp-editor.png) | [runtime 40x12](runtime/40x12/acp-editor.png) |
+| `browser-use` | `/browser` — browser automation comes from an MCP server, not the CLI | [runtime 120x40](runtime/120x40/browser-use.png) | [runtime 40x12](runtime/40x12/browser-use.png) |
+| `stdin-multiturn` | `--input-format stream-jsonl` — one line per turn | [runtime 120x40](runtime/120x40/stdin-multiturn.png) | [runtime 40x12](runtime/40x12/stdin-multiturn.png) |
+
+The COR-35 batch is runtime-only: the Designer pack from other PRs is not
+rewritten. Every board above is produced by a real builder or a real command
+surface — `/permissions rules` and `/sandbox network` render the committed
+`.cortex/permissions.toml` and `.cortex/sandbox.toml`, and `/plugins` renders
+the live plugin state file.
+
+Runtime MockTerminal pack (same ids): [`runtime/120x40`](runtime/120x40/) (110) · [`runtime/40x12`](runtime/40x12/) (58).

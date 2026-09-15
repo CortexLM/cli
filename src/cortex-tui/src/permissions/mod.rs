@@ -7,6 +7,13 @@ use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+mod rules;
+
+pub use rules::{
+    PERMISSION_RULES_FILE, PermissionRule, PermissionRules, RuleDecision, glob_matches,
+    load_for_project, rules_path,
+};
+
 /// Permission mode that determines the level of automatic tool approval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PermissionMode {
@@ -111,6 +118,9 @@ pub struct PermissionManager {
     pub session_allowed: HashSet<String>,
     /// Tools always allowed (persisted)
     pub always_allowed: HashSet<String>,
+    /// Committed project rules from `.cortex/permissions.toml`.
+    #[serde(default)]
+    pub rules: PermissionRules,
 }
 
 impl Default for PermissionManager {
@@ -126,7 +136,26 @@ impl PermissionManager {
             mode: PermissionMode::default(),
             session_allowed: HashSet::new(),
             always_allowed: HashSet::new(),
+            rules: PermissionRules::default(),
         }
+    }
+
+    /// Load the committed project rules for `cwd` into this manager.
+    ///
+    /// A rules file that cannot be read or parsed is an error: silently
+    /// ignoring a team's `deny` list would be the worst possible outcome.
+    pub fn load_project_rules(&mut self, cwd: &std::path::Path) -> anyhow::Result<()> {
+        if let Some(rules) = load_for_project(cwd)? {
+            self.rules = rules;
+        }
+        Ok(())
+    }
+
+    /// Decide a command line against the committed project rules.
+    ///
+    /// Returns `None` when no rule matches, which leaves the mode in charge.
+    pub fn rule_decision(&self, command: &str) -> Option<RuleDecision> {
+        self.rules.decide(command)
     }
 
     /// Determines if the user should be asked for permission to execute a tool.
@@ -155,6 +184,26 @@ impl PermissionManager {
             // High mode: ask for everything except safe tools
             PermissionMode::High => tool_risk >= ToolRisk::Low,
         }
+    }
+
+    /// Whether a specific command needs approval, combining the mode with the
+    /// committed project rules.
+    ///
+    /// Rules win over the mode in both directions: a `deny` always asks (the
+    /// caller refuses), and an `allow` never asks. A `deny` cannot be overridden
+    /// by a session or always-allow grant, because those are per-tool and the
+    /// rule is per-command.
+    pub fn should_ask_for_command(&self, tool_name: &str, command: &str) -> bool {
+        match self.rule_decision(command) {
+            Some(RuleDecision::Deny) | Some(RuleDecision::Ask) => true,
+            Some(RuleDecision::Allow) => false,
+            None => self.should_ask(tool_name),
+        }
+    }
+
+    /// Whether `command` is refused outright by a committed `deny` rule.
+    pub fn is_denied(&self, command: &str) -> bool {
+        self.rule_decision(command) == Some(RuleDecision::Deny)
     }
 
     /// Allows a tool for the current session only.
@@ -299,5 +348,64 @@ mod tests {
         assert!(manager.should_ask("Edit"));
         manager.allow_always("Edit");
         assert!(!manager.should_ask("Edit"));
+    }
+
+    fn manager_with_rules() -> PermissionManager {
+        let mut manager = PermissionManager::new();
+        manager.mode = PermissionMode::High;
+        manager.rules = PermissionRules::parse(
+            r#"
+allow = ["git status*"]
+ask = ["cargo publish*"]
+deny = ["rm -rf *"]
+"#,
+        )
+        .expect("rules");
+        manager
+    }
+
+    #[test]
+    fn project_rules_decide_commands_before_the_mode() {
+        let manager = manager_with_rules();
+        // High mode asks for everything non-safe, but an allow rule wins.
+        assert!(!manager.should_ask_for_command("Execute", "git status"));
+        // A deny rule asks even in a mode that would auto-approve.
+        assert!(manager.should_ask_for_command("Execute", "rm -rf /"));
+        assert!(manager.is_denied("rm -rf /"));
+        assert!(!manager.is_denied("git status"));
+        // No matching rule falls back to the mode.
+        assert!(manager.should_ask_for_command("Execute", "cargo build"));
+    }
+
+    #[test]
+    fn a_session_grant_does_not_override_a_deny_rule() {
+        let mut manager = manager_with_rules();
+        manager.allow_for_session("Execute");
+        manager.allow_always("Execute");
+        assert!(
+            manager.should_ask_for_command("Execute", "rm -rf /"),
+            "a deny rule is per-command and must not be widened by a per-tool grant"
+        );
+        assert!(!manager.should_ask_for_command("Execute", "git status"));
+    }
+
+    #[test]
+    fn project_rules_load_from_disk_and_refuse_broken_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut manager = PermissionManager::new();
+        manager.load_project_rules(dir.path()).expect("no file");
+        assert!(manager.rules.is_empty());
+
+        let path = rules_path(dir.path());
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "deny = [\"rm -rf *\"]").expect("write");
+        manager.load_project_rules(dir.path()).expect("load");
+        assert!(manager.is_denied("rm -rf /"));
+
+        std::fs::write(&path, "deny = [").expect("write broken");
+        assert!(
+            manager.load_project_rules(dir.path()).is_err(),
+            "a broken rules file must not be ignored"
+        );
     }
 }

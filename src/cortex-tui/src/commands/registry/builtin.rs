@@ -79,7 +79,7 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
         "permissions",
         &["perms"],
         "Set the approval policy for edits and commands",
-        "/permissions",
+        "/permissions [rules]",
         CommandCategory::General,
         false,
     ));
@@ -433,8 +433,8 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     registry.register(CommandDef::new(
         "rewind",
         &["rw"],
-        "Rewind to a previous point",
-        "/rewind [steps]",
+        "Rewind the conversation, or restore file checkpoints",
+        "/rewind [steps|checkpoint]",
         CommandCategory::Session,
         true,
     ));
@@ -616,8 +616,8 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     registry.register(CommandDef::new(
         "sandbox",
         &["sb"],
-        "Toggle sandbox mode",
-        "/sandbox [on|off]",
+        "Toggle sandbox mode, or edit the network allowlist",
+        "/sandbox [on|off|network]",
         CommandCategory::Model,
         true,
     ));
@@ -808,8 +808,17 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     registry.register(CommandDef::new(
         "ide",
         &[],
-        "Manage IDE integration (VS Code, Cursor)",
+        "Connect an editor over ACP (stdio)",
         "/ide",
+        CommandCategory::General,
+        false,
+    ));
+
+    registry.register(CommandDef::new(
+        "browser",
+        &["computer-use"],
+        "Browser automation — connect an MCP server (Cortex ships no browser tool)",
+        "/browser",
         CommandCategory::General,
         false,
     ));

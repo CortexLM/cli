@@ -79,6 +79,52 @@ pub fn build_permissions_picker(current: Option<&str>) -> InteractiveState {
     .with_banner("Permissions · how Cortex asks before acting")
 }
 
+/// `/permissions rules` picker — the committed `.cortex/permissions.toml` rules.
+///
+/// Rules are listed `deny` first so the strictest entries are visible without
+/// scrolling, and an empty file says so rather than showing a blank list.
+pub fn build_permission_rules(
+    rules: &crate::permissions::PermissionRules,
+    selected: usize,
+    hovered: Option<usize>,
+) -> InteractiveState {
+    let listed = rules.rules();
+    let items: Vec<InteractiveItem> = if listed.is_empty() {
+        vec![
+            InteractiveItem::new("__none__", "No rules committed")
+                .with_description("Add .cortex/permissions.toml to pin allow / ask / deny")
+                .with_disabled(true),
+        ]
+    } else {
+        listed
+            .iter()
+            .map(|rule| {
+                let label = format!("{}  {}", rule.decision.label(), rule.pattern);
+                let mut item = InteractiveItem::new(rule.pattern.clone(), label);
+                item = item.with_description(match rule.note.as_deref() {
+                    Some(note) => note.to_string(),
+                    None => match rule.decision {
+                        crate::permissions::RuleDecision::Allow => "never asks",
+                        crate::permissions::RuleDecision::Ask => "asks first",
+                        crate::permissions::RuleDecision::Deny => "always blocked",
+                    }
+                    .to_string(),
+                });
+                item
+            })
+            .collect()
+    };
+    let mut interactive = InteractiveState::new(
+        "Permission rules",
+        items,
+        InteractiveAction::Custom("permission-rules".into()),
+    )
+    .with_banner("`.cortex/permissions.toml` — first matching rule wins; deny beats allow.");
+    interactive.selected = selected.min(interactive.items.len().saturating_sub(1));
+    interactive.hovered = hovered;
+    interactive
+}
+
 /// Command string shown on the gray `$` row and used for “always allow …”.
 pub fn permission_command_line(approval: &ApprovalState) -> String {
     if let Some(json) = &approval.tool_args_json {

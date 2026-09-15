@@ -67,23 +67,12 @@ impl RunCli {
     }
 
     /// Run locally with a new session.
-    async fn run_local(
+    /// Build the runtime config, apply the session harness, and start (or
+    /// resume) the session this run will drive.
+    async fn open_session(
         &self,
-        message: &str,
-        attachments: &[FileAttachment],
         session_mode: SessionMode,
-    ) -> Result<()> {
-        // Handle dry-run mode - show token estimates without executing
-        if self.dry_run {
-            return self.run_dry_run(message, attachments).await;
-        }
-
-        // Use --output if provided, otherwise use --format
-        let effective_format = self.output.unwrap_or(self.format);
-        let is_json = matches!(effective_format, OutputFormat::Json | OutputFormat::Jsonl);
-        let is_terminal = io::stdout().is_terminal();
-        let streaming_enabled = self.is_streaming_enabled();
-
+    ) -> Result<(Session, cortex_engine::SessionHandle, cortex_engine::Config)> {
         let mut config = cortex_engine::session::control::load_runtime_config(
             self.cwd.clone(),
             self.model
@@ -128,10 +117,33 @@ impl RunCli {
             SessionMode::Continue(id) => Some(resolve_session_id(&id, &config.cortex_home)?),
             SessionMode::New => None,
         };
-        let (mut session, handle) = match resume_id {
+        let opened = match resume_id {
             Some(id) => Session::resume(config.clone(), id)?,
             None => Session::new(config.clone())?,
         };
+        Ok((opened.0, opened.1, config))
+    }
+
+    async fn run_local(
+        &self,
+        message: &str,
+        attachments: &[FileAttachment],
+        session_mode: SessionMode,
+    ) -> Result<()> {
+        // Handle dry-run mode - show token estimates without executing
+        if self.dry_run {
+            return self.run_dry_run(message, attachments).await;
+        }
+
+        // Use --output if provided, otherwise use --format
+        let effective_format = self.output.unwrap_or(self.format);
+        let is_json = matches!(effective_format, OutputFormat::Json | OutputFormat::Jsonl);
+        let is_terminal = io::stdout().is_terminal();
+        // A bare run is CI-only chrome: no splash, no progress, no annotations.
+        let chrome = is_terminal && !self.bare;
+        let streaming_enabled = self.is_streaming_enabled();
+
+        let (mut session, handle, config) = self.open_session(session_mode).await?;
         let session_id = handle.conversation_id.to_string();
         let final_input = build_user_input(self, message, attachments, &config.cwd)?;
 
@@ -215,7 +227,7 @@ impl RunCli {
                 EventMsg::AgentMessageDelta(delta) => {
                     // Handle streaming output
                     if streaming_enabled && !is_json {
-                        if !streaming_started && is_terminal {
+                        if !streaming_started && chrome {
                             println!();
                             streaming_started = true;
                         }
@@ -236,7 +248,7 @@ impl RunCli {
                     final_message.push_str(&delta.delta);
                 }
                 EventMsg::ExecCommandBegin(cmd_begin) => {
-                    if !is_json && is_terminal && !self.quiet && !self.no_progress {
+                    if !is_json && chrome && !self.quiet && !self.no_progress {
                         let display = get_tool_display("bash");
                         let title = cmd_begin.command.join(" ");
                         println!(
@@ -253,7 +265,7 @@ impl RunCli {
                     // Output delta is base64 encoded, skip for now in verbose mode
                 }
                 EventMsg::ExecCommandEnd(cmd_end) => {
-                    if !is_json && is_terminal && self.verbose {
+                    if !is_json && chrome && self.verbose {
                         let exit_code = cmd_end.exit_code;
                         if exit_code != 0 {
                             eprintln!(
@@ -266,7 +278,7 @@ impl RunCli {
                     }
                 }
                 EventMsg::McpToolCallBegin(mcp_begin) => {
-                    if !is_json && is_terminal && !self.quiet && !self.no_progress {
+                    if !is_json && chrome && !self.quiet && !self.no_progress {
                         let display = get_tool_display(&mcp_begin.invocation.tool);
                         println!(
                             "{}|{} {:<7} {}{}",
@@ -357,11 +369,11 @@ impl RunCli {
         // empty content for certain queries. We don't treat this as an error.
         if streaming_enabled && streaming_started {
             println!();
-            if is_terminal {
+            if chrome {
                 println!();
             }
         } else if !streaming_enabled && !is_json {
-            if is_terminal {
+            if chrome {
                 println!();
             }
             if final_message.is_empty() {
@@ -373,7 +385,7 @@ impl RunCli {
             } else {
                 println!("{}", final_message);
             }
-            if is_terminal {
+            if chrome {
                 println!();
             }
         }
@@ -382,24 +394,34 @@ impl RunCli {
         // This ensures valid JSON output even when interrupted, addressing the issue
         // where partial JSON output would be left unclosed on interruption.
         if matches!(effective_format, OutputFormat::Json) {
-            let result = serde_json::json!({
-                "type": "result",
-                "session_id": session_id,
-                "message": final_message,
-                "events": event_count,
-                "success": task_completed && !error_occurred && !interrupted && !response_truncated,
-                "interrupted": interrupted,
-                "complete": task_completed,
-                "truncated": response_truncated,
-                "finish_reason": if interrupted { "timeout" } else if response_truncated { "length" } else if error_occurred { "error" } else { "stop" },
+            let result = crate::schema::run_result_document(&crate::schema::RunResultFields {
+                session_id: &session_id,
+                message: &final_message,
+                events: event_count,
+                success: task_completed && !error_occurred && !interrupted && !response_truncated,
+                interrupted,
+                complete: task_completed,
+                truncated: response_truncated,
+                finish_reason: Some(if interrupted {
+                    "timeout"
+                } else if response_truncated {
+                    "length"
+                } else if error_occurred {
+                    "error"
+                } else {
+                    "stop"
+                }),
             });
+            if self.json_schema {
+                crate::schema::validate(crate::schema::RUN_RESULT_SCHEMA, &result)?;
+            }
             writeln!(io::stdout(), "{}", serde_json::to_string_pretty(&result)?)?;
         }
 
         // Copy to clipboard if requested
         if self.copy && !final_message.is_empty() {
             if copy_to_clipboard(&final_message).is_ok() {
-                if is_terminal {
+                if chrome {
                     println!(
                         "{}~{} Response copied to clipboard",
                         TermColor::Cyan.ansi_code(),
@@ -425,7 +447,7 @@ impl RunCli {
                         parent.display()
                     )
                 })?;
-                if is_terminal {
+                if chrome {
                     eprintln!(
                         "{}~{} Created directory: {}",
                         TermColor::Cyan.ansi_code(),
@@ -439,7 +461,7 @@ impl RunCli {
                 format!("Failed to write output to '{}'", output_path.display())
             })?;
 
-            if is_terminal {
+            if chrome {
                 println!(
                     "{}~{} Response saved to: {}",
                     TermColor::Cyan.ansi_code(),
@@ -469,6 +491,13 @@ impl RunCli {
                     print_warning(&format!("Failed to share session: {}", e));
                 }
             }
+        }
+
+        // Ephemeral runs leave no rollout file behind, so the session cannot be
+        // resumed or listed afterwards. Report a failure to remove rather than
+        // claiming the run was ephemeral.
+        if self.ephemeral {
+            remove_ephemeral_session(&config.cortex_home, &session_id)?;
         }
 
         if error_occurred || interrupted || response_truncated || !task_completed {
@@ -630,4 +659,26 @@ fn build_user_input(
     } else {
         fallback
     })
+}
+
+/// Delete the rollout file for an `--ephemeral` run.
+///
+/// A session that was never written is already ephemeral, so a missing file is
+/// success. A file that exists and cannot be removed is a real failure: leaving
+/// it behind would silently break the `--ephemeral` contract.
+fn remove_ephemeral_session(cortex_home: &std::path::Path, session_id: &str) -> Result<()> {
+    let id: cortex_protocol::ConversationId = session_id
+        .parse()
+        .with_context(|| format!("Invalid session id for --ephemeral cleanup: {session_id}"))?;
+    let rollout = cortex_engine::rollout::get_rollout_path(&cortex_home.to_path_buf(), &id);
+    match std::fs::remove_file(&rollout) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| {
+            format!(
+                "--ephemeral could not remove {}. The session file is still on disk.",
+                rollout.display()
+            )
+        }),
+    }
 }

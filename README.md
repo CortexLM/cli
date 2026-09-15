@@ -140,6 +140,7 @@ Check it worked with `cortex whoami`. See
 | [The TUI](./docs/guides/tui.md) | Timeline, composer, modes, approvals |
 | [Sessions](./docs/guides/sessions.md) | Resume, export, import, share |
 | [Headless / exec mode](./docs/guides/exec.md) | Scripts and CI |
+| [CI cookbook](./docs/guides/ci.md) | Secret-via-env, exit codes, parsing the result |
 | [Plan and Spec modes](./docs/guides/plan.md) | Approve a plan before anything changes |
 | [Configuration](./docs/configuration/config.md) | Files, keys, profiles, permissions |
 | [Agents](./docs/customization/agents.md) · [Skills](./docs/customization/skills.md) · [MCP](./docs/customization/mcp.md) · [Hooks](./docs/customization/hooks.md) · [Plugins](./docs/customization/plugins.md) | Extending Cortex |

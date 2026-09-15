@@ -194,6 +194,21 @@ pub struct RunCli {
     #[arg(long = "no-progress")]
     pub no_progress: bool,
 
+    /// Bare headless run: no splash, banners, or progress chrome. Only the
+    /// result (and errors) reach stdout.
+    #[arg(long = "bare", default_value_t = false)]
+    pub bare: bool,
+
+    /// Ephemeral run: do not persist a session rollout file. Nothing is left
+    /// behind for `cortex sessions` or `--continue`.
+    #[arg(long = "ephemeral", default_value_t = false)]
+    pub ephemeral: bool,
+
+    /// Validate the final result document against the shipped JSON Schema
+    /// before printing it. Requires `--format json`.
+    #[arg(long = "json-schema", default_value_t = false)]
+    pub json_schema: bool,
+
     /// Bypass any cached responses and force a fresh request.
     #[arg(long = "no-cache")]
     pub no_cache: bool,

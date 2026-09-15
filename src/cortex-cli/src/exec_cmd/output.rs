@@ -48,6 +48,11 @@ pub enum ExecInputFormat {
 
     /// JSON-RPC streaming for multi-turn sessions.
     StreamJsonrpc,
+
+    /// One JSON object per line, one line per turn. Unlike `stream-jsonrpc` the
+    /// stream needs no envelope or ids: every non-empty line is the next turn,
+    /// and the connection stays open after a turn completes.
+    StreamJsonl,
 }
 
 #[cfg(test)]
@@ -63,5 +68,12 @@ mod tests {
             ExecOutputFormat::StreamJsonrpc.to_string(),
             "stream-jsonrpc"
         );
+    }
+
+    #[test]
+    fn stream_jsonl_is_a_distinct_input_format() {
+        assert_ne!(ExecInputFormat::StreamJsonl, ExecInputFormat::StreamJsonrpc);
+        assert_ne!(ExecInputFormat::StreamJsonl, ExecInputFormat::Text);
+        assert_eq!(ExecInputFormat::default(), ExecInputFormat::Text);
     }
 }

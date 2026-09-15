@@ -6,7 +6,7 @@ use crate::instruction_scopes::{InstructionPlan, InstructionScope};
 ///
 /// Managed policy is read from the organization policy directory. There is no
 /// local or project path that can stand in for it, so a child cannot omit it.
-fn managed_policy_sources() -> Vec<std::path::PathBuf> {
+pub(super) fn managed_policy_sources() -> Vec<std::path::PathBuf> {
     crate::org_policy::policy_dir()
         .map(|dir| vec![dir.join(crate::instruction_scopes::MANAGED_POLICY_FILE)])
         .unwrap_or_default()
@@ -15,7 +15,7 @@ fn managed_policy_sources() -> Vec<std::path::PathBuf> {
 /// Record an omission and, when the request named managed policy, the fact
 /// that it still loaded. A journal that cannot be written is reported, never
 /// silently dropped.
-fn record_instruction_audit(
+pub(super) fn record_instruction_audit(
     plan: &InstructionPlan,
     load: &crate::instruction_scopes::InstructionLoad,
 ) {

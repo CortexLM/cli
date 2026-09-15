@@ -107,6 +107,7 @@ pub mod lock_boards;
 pub mod lock_palette;
 pub mod lock_proof;
 pub mod lock_v2;
+pub mod lock_v2_batch56;
 mod lock_v2_boards;
 mod lock_v2_computer;
 mod lock_v2_cor35;

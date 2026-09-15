@@ -12,6 +12,7 @@ use crate::interactive::builders::{
     build_permissions_picker, build_plan_confirm, build_question_prompt, build_sandbox_deny_prompt,
 };
 use crate::lock_v2::PRODUCT_ERROR;
+use crate::lock_v2_batch56::apply_batch56_scene;
 use crate::lock_v2_computer::apply_computer_scene;
 use crate::lock_v2_cor35::apply_cor35_scene;
 use crate::lock_v2_designed::apply_designed_scene;
@@ -993,6 +994,7 @@ Tell me what you'd like to do.",
         id if apply_goal_chip_scene(id, &mut state) => {}
         id if apply_computer_scene(id, &mut state, width) => {}
         id if apply_cor35_scene(id, &mut state, width) => {}
+        id if apply_batch56_scene(id, &mut state, width) => {}
         other => panic!("unknown lock v2 scene {other}"),
     }
     state

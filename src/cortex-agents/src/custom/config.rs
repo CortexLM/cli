@@ -118,6 +118,19 @@ impl OmitScope {
     }
 }
 
+impl CustomAgentConfig {
+    /// Stable scope names for the engine `SubagentConfig`.
+    ///
+    /// Task-level `omit_instructions` takes precedence when non-empty; otherwise
+    /// these frontmatter scopes are applied at execution.
+    pub fn engine_omit_scopes(&self) -> Vec<String> {
+        self.omit_instructions
+            .iter()
+            .map(|s| s.as_str().to_string())
+            .collect()
+    }
+}
+
 fn default_model() -> String {
     "inherit".to_string()
 }
@@ -570,6 +583,18 @@ tools: read-only
             )
             .is_err(),
             "an unknown scope name must not parse"
+        );
+    }
+
+    #[test]
+    fn engine_omit_scopes_matches_frontmatter() {
+        let parsed: CustomAgentConfig = serde_yaml::from_str(
+            "name: quiet\nomit_instructions: [user, project]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.engine_omit_scopes(),
+            vec!["user".to_string(), "project".to_string()]
         );
     }
 

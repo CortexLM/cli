@@ -103,6 +103,8 @@ impl EventLoop {
             return;
         }
         self.app_state.fast_mode = requested;
+        // Subsequent turns read `app_state.fast_mode` in
+        // `handle_submit_with_provider` and pass it through `CodeTurnContext`.
         for toast in outcome.toasts() {
             self.app_state.toasts.info(toast);
         }

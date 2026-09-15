@@ -20,40 +20,59 @@ pub const HASH_MISMATCH: &str =
 pub const HASH_INVALID: &str =
     "Accept-command hash must be a 64-character SHA-256 value from --json.";
 
+/// Length-prefix a free-text field so unrestricted values cannot collide
+/// across `|` (or other) separators in the review digest.
+fn field(label: &str, value: &str) -> String {
+    format!("{label}:{}\n{value}\n", value.len())
+}
+
 /// Canonical, stable description of the commands a manifest declares.
 ///
-/// One line per command, in declaration order, with every user-visible field
-/// that a review would show.
+/// One entry per command, in declaration order, with every user-visible field
+/// that a review would show. Free text is length-prefixed so distinct metadata
+/// cannot hash-collide. Hooks include type, priority, pattern, and function.
 pub fn command_review(manifest: &PluginManifest) -> String {
     let mut out = format!(
         "plugin {} {}\n",
         manifest.plugin.id, manifest.plugin.version
     );
     for command in &manifest.commands {
-        out.push_str(&format!(
-            "command {}|{}|{}|hidden={}\n",
-            command.name,
-            command.description,
-            command.usage.clone().unwrap_or_default(),
-            command.hidden
+        out.push_str("command\n");
+        out.push_str(&field("name", &command.name));
+        out.push_str(&field("description", &command.description));
+        out.push_str(&field(
+            "usage",
+            command.usage.as_deref().unwrap_or(""),
         ));
+        out.push_str(&format!("hidden={}\n", command.hidden));
         for alias in &command.aliases {
-            out.push_str(&format!("  alias {alias}\n"));
+            out.push_str(&field("alias", alias));
         }
         for arg in &command.args {
-            out.push_str(&format!(
-                "  arg {}|required={}|default={}\n",
-                arg.name,
-                arg.required,
-                arg.default.clone().unwrap_or_default()
+            out.push_str("arg\n");
+            out.push_str(&field("name", &arg.name));
+            out.push_str(&format!("required={}\n", arg.required));
+            out.push_str(&field(
+                "default",
+                arg.default.as_deref().unwrap_or(""),
             ));
         }
     }
     for hook in &manifest.hooks {
-        out.push_str(&format!("hook {}\n", hook.hook_type));
+        out.push_str("hook\n");
+        out.push_str(&field("type", &hook.hook_type.to_string()));
+        out.push_str(&format!("priority={}\n", hook.priority));
+        out.push_str(&field(
+            "pattern",
+            hook.pattern.as_deref().unwrap_or(""),
+        ));
+        out.push_str(&field(
+            "function",
+            hook.function.as_deref().unwrap_or(""),
+        ));
     }
     for tool in &manifest.tools {
-        out.push_str(&format!("tool {}\n", tool.name));
+        out.push_str(&field("tool", &tool.name));
     }
     out
 }
@@ -205,8 +224,83 @@ required = false
     fn the_review_names_every_declared_surface() {
         let review = command_review(&with_command_fields(""));
         assert!(review.contains("plugin review 1.2.0"), "{review}");
-        assert!(review.contains("command review"), "{review}");
+        assert!(review.contains("name:6\nreview\n"), "{review}");
         assert!(review.contains("/review [path]"), "{review}");
-        assert!(review.contains("arg path"), "{review}");
+        assert!(review.contains("name:4\npath\n"), "{review}");
+    }
+
+    #[test]
+    fn free_text_cannot_collide_across_fields() {
+        // Distinct description/usage pairs that would collide under raw `|`
+        // joins must produce different hashes with length-prefixed fields.
+        let a = manifest(
+            r#"
+[plugin]
+id = "review"
+name = "Review"
+version = "1.0.0"
+
+[runtime]
+kind = "node"
+entrypoint = "plugin.mjs"
+
+[[commands]]
+name = "x"
+description = "ab|c"
+usage = "d"
+"#,
+        );
+        let b = manifest(
+            r#"
+[plugin]
+id = "review"
+name = "Review"
+version = "1.0.0"
+
+[runtime]
+kind = "node"
+entrypoint = "plugin.mjs"
+
+[[commands]]
+name = "x"
+description = "ab"
+usage = "c|d"
+"#,
+        );
+        assert_ne!(command_hash(&a), command_hash(&b));
+        assert_ne!(command_review(&a), command_review(&b));
+    }
+
+    #[test]
+    fn hook_executable_fields_move_the_hash() {
+        let base_body = r#"
+[plugin]
+id = "review"
+name = "Review"
+version = "1.0.0"
+
+[runtime]
+kind = "node"
+entrypoint = "plugin.mjs"
+
+[[hooks]]
+hook_type = "session_start"
+priority = 10
+pattern = "*.rs"
+function = "on_start"
+"#;
+        let base = command_hash(&manifest(base_body));
+        let changed_fn = command_hash(&manifest(
+            &base_body.replace("function = \"on_start\"", "function = \"other\""),
+        ));
+        assert_ne!(base, changed_fn, "hook function must be pinned");
+        let changed_pri = command_hash(&manifest(
+            &base_body.replace("priority = 10", "priority = 99"),
+        ));
+        assert_ne!(base, changed_pri, "hook priority must be pinned");
+        let changed_pat = command_hash(&manifest(
+            &base_body.replace("pattern = \"*.rs\"", "pattern = \"*.toml\""),
+        ));
+        assert_ne!(base, changed_pat, "hook pattern must be pinned");
     }
 }

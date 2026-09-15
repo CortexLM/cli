@@ -96,7 +96,7 @@ pub(super) fn classify_stream_error(error: &str) -> StreamErrorKind {
 }
 
 /// Shared TUI + exec product rule: Cloud unless This PC/SSH is explicit.
-fn tui_code_turn_context(plan_or_spec: bool) -> CodeTurnContext {
+fn tui_code_turn_context(plan_or_spec: bool, fast_mode: bool) -> CodeTurnContext {
     CodeTurnContext {
         workspace: std::env::current_dir()
             .ok()
@@ -115,6 +115,7 @@ fn tui_code_turn_context(plan_or_spec: bool) -> CodeTurnContext {
                     .ok()
                     .filter(|s| !s.is_empty())
             }),
+        fast_mode,
     }
 }
 
@@ -254,7 +255,7 @@ impl EventLoop {
             if plan_or_spec {
                 cortex_engine::harness::enter_spec_mode();
             }
-            c.configure_code_turn(tui_code_turn_context(plan_or_spec));
+            c.configure_code_turn(tui_code_turn_context(plan_or_spec, self.app_state.fast_mode.is_on()));
         }
 
         // Create channel for streaming events
@@ -761,7 +762,7 @@ impl EventLoop {
 
         if let Some(ref c) = client {
             let plan_or_spec = self.app_state.is_plan_mode() || self.app_state.is_spec_mode();
-            c.configure_code_turn(tui_code_turn_context(plan_or_spec));
+            c.configure_code_turn(tui_code_turn_context(plan_or_spec, self.app_state.fast_mode.is_on()));
         }
 
         // Create channel for streaming events

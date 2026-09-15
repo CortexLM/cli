@@ -84,8 +84,7 @@ fn enforce_command_pin_with(
     match accept_command {
         Some(accepted) => {
             runtime::command_pin::verify_command_hash(manifest, accepted)?;
-            audit_command_pin(manifest, accepted, action, policy.as_str());
-            Ok(())
+            audit_command_pin(manifest, accepted, action, policy.as_str())
         }
         None if policy.requires_pin() => bail!(
             "This organization requires --accept-command for plugin installs. Run `cortex plugin {action} {} --json` to review the commands, then pass --accept-command <sha256>.",
@@ -95,17 +94,17 @@ fn enforce_command_pin_with(
     }
 }
 
-/// Record an accepted command pin. A failed write is reported: the pin is the
-/// evidence that a human reviewed this manifest.
+/// Record an accepted command pin. Fail closed: a journal write failure
+/// aborts the install so an accepted-command decision is never untracked.
 fn audit_command_pin(
     manifest: &runtime::PluginManifest,
     accepted: &str,
     action: &str,
     policy: &str,
-) {
+) -> Result<()> {
     let home = cortex_engine::config::find_cortex_home()
         .unwrap_or_else(|_| std::path::PathBuf::from(".cortex"));
-    let record = cortex_engine::audit::record(
+    cortex_engine::audit::record(
         &home,
         cortex_engine::audit::AuditKind::PluginCommandAccepted,
         serde_json::json!({
@@ -116,11 +115,13 @@ fn audit_command_pin(
             "action": action,
             "policy": policy,
         }),
-    );
-    if let Err(error) = record {
-        // Never fail the install for a journal problem, but never hide it.
-        eprintln!("Could not record the accepted command hash in the audit journal: {error}");
-    }
+    )
+    .map_err(|error| {
+        anyhow::anyhow!(
+            "Could not record the accepted command hash in the audit journal: {error}. Install aborted."
+        )
+    })?;
+    Ok(())
 }
 
 pub(super) async fn install(args: PluginInstallArgs) -> Result<()> {

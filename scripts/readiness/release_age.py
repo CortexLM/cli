@@ -22,7 +22,7 @@ ADVISORY_EXCEPTIONS = {
     ("rustls", "0.23.45"): {
         "advisory": "RUSTSEC-2026-0285",
         "alias": "GHSA-2mjx-qc3c-rqvc",
-        "expires": "2026-09-21",
+        "expires": "2026-09-21T15:11:18+00:00",
     },
 }
 
@@ -47,7 +47,14 @@ def advisory_exception(name, version, now):
     entry = ADVISORY_EXCEPTIONS.get((name, version))
     if entry is None:
         return None
-    expires = datetime.fromisoformat(entry["expires"]).replace(tzinfo=timezone.utc)
+    raw = entry["expires"]
+    # Date-only values mean start-of-day UTC; full timestamps keep their offset.
+    if "T" in raw:
+        expires = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+    else:
+        expires = datetime.fromisoformat(raw).replace(tzinfo=timezone.utc)
     return entry if now < expires else None
 
 def run(base):

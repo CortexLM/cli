@@ -262,10 +262,15 @@ impl SubagentExecutor {
     /// omitted run is reviewable after the fact.
     fn apply_instruction_plan(&self, config: &SubagentConfig, base: String) -> String {
         let plan = config.instruction_plan();
-        let sources = crate::instruction_scopes::InstructionSources {
-            managed: managed_policy_sources(),
-            ..Default::default()
-        };
+        let cortex_home = crate::config::find_cortex_home()
+            .unwrap_or_else(|_| std::path::PathBuf::from(".cortex"));
+        let mut sources =
+            crate::instruction_scopes::InstructionSources::discover(&config.working_dir, &cortex_home);
+        // Always prefer the explicit managed-policy source when configured.
+        let managed = managed_policy_sources();
+        if !managed.is_empty() {
+            sources.managed = managed;
+        }
         let load = crate::instruction_scopes::load(&sources, &plan);
         if plan.omits_anything() || plan.requested_managed() {
             record_instruction_audit(&plan, &load);
@@ -280,7 +285,7 @@ impl SubagentExecutor {
     async fn run_subagent(
         &self,
         mut session: SubagentSession,
-        config: SubagentConfig,
+        mut config: SubagentConfig,
         progress_tx: mpsc::UnboundedSender<ProgressEvent>,
     ) -> Result<SubagentResult> {
         let _start_time = Instant::now();
@@ -328,6 +333,16 @@ impl SubagentExecutor {
 
         // Instruction documents for the child: user, project, and local
         // documents can be omitted; organization-managed policy always loads.
+        // Custom-agent frontmatter omissions apply when the Task did not set any;
+        // a non-empty Task-level list always wins.
+        if config.omit_instructions.is_empty() {
+            if let Some(ref agent) = custom_agent {
+                if !agent.metadata.omit_instructions.is_empty() {
+                    config = config
+                        .with_omit_instructions(agent.metadata.omit_instructions.clone());
+                }
+            }
+        }
         let system_prompt = self.apply_instruction_plan(&config, system_prompt);
 
         // Build user message containing the task

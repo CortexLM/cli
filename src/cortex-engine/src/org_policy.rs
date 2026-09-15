@@ -142,24 +142,37 @@ pub fn policy_path(dir: &Path) -> PathBuf {
     dir.join(POLICY_FILE)
 }
 
+/// Restrictive fallback used when a configured policy path is broken.
+const fn restrictive() -> OrgPolicy {
+    OrgPolicy {
+        fast_mode: FastModePolicy::Disabled,
+        plugin_install: PluginInstallPolicy::RequireAcceptCommand,
+    }
+}
+
 /// Resolve the policy document from an explicit directory.
 ///
-/// An absent directory or document yields [`OrgPolicy::default`]. A present
-/// document that cannot be read or parsed yields the restrictive policy for
-/// every key it could have carried.
+/// An absent directory or document yields [`OrgPolicy::default`]. A path that
+/// exists as a dangling symlink, cannot be read, or cannot be parsed yields
+/// the restrictive policy for every key — never host defaults.
 pub fn resolve(dir: Option<&Path>) -> OrgPolicy {
     let Some(dir) = dir else {
         return OrgPolicy::default();
     };
     let path = policy_path(dir);
-    if !path.exists() {
-        return OrgPolicy::default();
+    // Distinguish a truly absent path from a dangling symlink / metadata error.
+    // `Path::exists` follows links and treats a dangling symlink as absent,
+    // which would fail open; `symlink_metadata` sees the link itself.
+    match std::fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return OrgPolicy::default();
+        }
+        Err(_) => return restrictive(),
+        Ok(_) => {}
     }
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return OrgPolicy {
-            fast_mode: FastModePolicy::Disabled,
-            plugin_install: PluginInstallPolicy::RequireAcceptCommand,
-        };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(_) => return restrictive(),
     };
     match serde_json::from_str::<PolicyDocument>(&text) {
         Ok(document) => OrgPolicy {
@@ -176,10 +189,7 @@ pub fn resolve(dir: Option<&Path>) -> OrgPolicy {
                 None => PluginInstallPolicy::HostDefault,
             },
         },
-        Err(_) => OrgPolicy {
-            fast_mode: FastModePolicy::Disabled,
-            plugin_install: PluginInstallPolicy::RequireAcceptCommand,
-        },
+        Err(_) => restrictive(),
     }
 }
 
@@ -283,6 +293,25 @@ mod tests {
         let policy = resolve(Some(temp.path()));
         assert_eq!(policy, OrgPolicy::default());
         assert!(!policy.is_managed());
+    }
+
+    #[test]
+    fn a_dangling_policy_symlink_fails_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing-target.json");
+        let link = policy_path(temp.path());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&missing, &link).unwrap();
+            assert!(!link.exists(), "dangling symlink must not exist() as a file");
+            let policy = resolve(Some(temp.path()));
+            assert_eq!(policy.fast_mode, FastModePolicy::Disabled);
+            assert!(policy.plugin_install.requires_pin());
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (missing, link);
+        }
     }
 
     #[test]

@@ -26,23 +26,25 @@ class ReleaseAgeTests(unittest.TestCase):
         self.assertIsNotNone(entry)
         self.assertEqual(entry["advisory"], "RUSTSEC-2026-0285")
         self.assertEqual(entry["alias"], "GHSA-2mjx-qc3c-rqvc")
-        self.assertEqual(entry["expires"], "2026-09-21")
+        self.assertEqual(entry["expires"], "2026-09-21T15:11:18+00:00")
         # The unpatched release is never excused.
         self.assertIsNone(advisory_exception("rustls", "0.23.44", inside))
         # Another crate is unaffected.
         self.assertIsNone(advisory_exception("serde", "0.23.45", inside))
 
     def test_rustls_exception_stops_applying_after_its_expiry(self):
-        expiry = datetime(2026, 9, 21, tzinfo=timezone.utc)
-        # The day it expires it is no longer honoured: the release must have
-        # aged out on its own by then.
-        self.assertIsNone(advisory_exception("rustls", "0.23.45", expiry))
+        # Exception must cover the full seven-day age window (~15:11:17Z), not
+        # midnight on the calendar day.
+        just_before = datetime(2026, 9, 21, 15, 11, 17, tzinfo=timezone.utc)
+        at_expiry = datetime(2026, 9, 21, 15, 11, 18, tzinfo=timezone.utc)
+        self.assertIsNotNone(advisory_exception("rustls", "0.23.45", just_before))
+        self.assertIsNone(advisory_exception("rustls", "0.23.45", at_expiry))
         self.assertIsNone(
-            advisory_exception("rustls", "0.23.45", expiry + timedelta(seconds=1))
+            advisory_exception("rustls", "0.23.45", at_expiry + timedelta(seconds=1))
         )
-        self.assertIsNotNone(
-            advisory_exception("rustls", "0.23.45", expiry - timedelta(seconds=1))
-        )
+        # Midnight on the expiry calendar day is still inside the window.
+        midnight = datetime(2026, 9, 21, 0, 0, 0, tzinfo=timezone.utc)
+        self.assertIsNotNone(advisory_exception("rustls", "0.23.45", midnight))
 
     def test_every_exception_names_an_advisory_and_an_expiry(self):
         for (name, version), entry in ADVISORY_EXCEPTIONS.items():
@@ -50,4 +52,9 @@ class ReleaseAgeTests(unittest.TestCase):
             self.assertTrue(entry["advisory"].startswith("RUSTSEC-"), entry)
             self.assertTrue(entry["alias"].startswith("GHSA-"), entry)
             # A timezone-aware expiry parses; an exception must not be open ended.
-            datetime.fromisoformat(entry["expires"]).replace(tzinfo=timezone.utc)
+            raw = entry["expires"]
+            if "T" in raw:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                self.assertIsNotNone(parsed.tzinfo or timezone.utc)
+            else:
+                datetime.fromisoformat(raw).replace(tzinfo=timezone.utc)

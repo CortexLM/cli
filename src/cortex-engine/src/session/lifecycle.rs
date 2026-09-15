@@ -70,6 +70,7 @@ impl Session {
                 },
             ),
             ssh_target: None,
+            fast_mode: false,
         });
 
         let mut tool_router = ToolRouter::new();
@@ -201,6 +202,7 @@ impl Session {
                 },
             ),
             ssh_target: None,
+            fast_mode: false,
         });
 
         let mut tool_router = ToolRouter::new();
@@ -341,6 +343,7 @@ impl Session {
                 },
             ),
             ssh_target: None,
+            fast_mode: false,
         });
 
         let mut tool_router = ToolRouter::new();

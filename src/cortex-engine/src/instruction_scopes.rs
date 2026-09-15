@@ -202,6 +202,48 @@ impl InstructionSources {
             InstructionScope::Managed => &self.managed,
         }
     }
+
+    /// Discover user/project/local/managed paths for a working directory.
+    ///
+    /// Project is the repository-root `AGENTS.md`. Local is every `AGENTS.md`
+    /// between the repository root (exclusive) and `cwd` (inclusive). Managed
+    /// policy comes from the organization policy directory when configured.
+    pub fn discover(cwd: &std::path::Path, cortex_home: &std::path::Path) -> Self {
+        let user = vec![cortex_home.join("AGENTS.md")];
+        let repo_root = find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+        let project = vec![repo_root.join("AGENTS.md")];
+        let mut local = Vec::new();
+        if let Ok(relative) = cwd.strip_prefix(&repo_root) {
+            let mut path = repo_root.clone();
+            for component in relative.components() {
+                path = path.join(component);
+                if path != repo_root {
+                    local.push(path.join("AGENTS.md"));
+                }
+            }
+        }
+        let managed = crate::org_policy::policy_dir()
+            .map(|dir| vec![dir.join(MANAGED_POLICY_FILE)])
+            .unwrap_or_default();
+        Self {
+            user,
+            project,
+            local,
+            managed,
+        }
+    }
+}
+
+fn find_git_root(start: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut current = start.to_path_buf();
+    loop {
+        if current.join(".git").exists() {
+            return Some(current);
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
 }
 
 /// Which documents a run actually read.

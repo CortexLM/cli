@@ -4,6 +4,7 @@
 //! that can execute complex, multi-step tasks autonomously.
 
 mod executor;
+mod instruction_audit;
 mod progress;
 mod result;
 mod types;

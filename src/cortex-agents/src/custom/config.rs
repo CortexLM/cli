@@ -588,10 +588,8 @@ tools: read-only
 
     #[test]
     fn engine_omit_scopes_matches_frontmatter() {
-        let parsed: CustomAgentConfig = serde_yaml::from_str(
-            "name: quiet\nomit_instructions: [user, project]\n",
-        )
-        .unwrap();
+        let parsed: CustomAgentConfig =
+            serde_yaml::from_str("name: quiet\nomit_instructions: [user, project]\n").unwrap();
         assert_eq!(
             parsed.engine_omit_scopes(),
             vec!["user".to_string(), "project".to_string()]

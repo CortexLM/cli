@@ -255,6 +255,23 @@ impl SubagentExecutor {
         result
     }
 
+    /// Task-level omit list wins; otherwise take custom-agent frontmatter scopes.
+    fn with_frontmatter_omissions(
+        config: SubagentConfig,
+        custom_agent: Option<&Agent>,
+    ) -> SubagentConfig {
+        if !config.omit_instructions.is_empty() {
+            return config;
+        }
+        let Some(agent) = custom_agent else {
+            return config;
+        };
+        if agent.metadata.omit_instructions.is_empty() {
+            return config;
+        }
+        config.with_omit_instructions(agent.metadata.omit_instructions.clone())
+    }
+
     /// Append the child's instruction documents to its system prompt.
     ///
     /// Organization-managed policy always loads. A request that named it is
@@ -264,8 +281,10 @@ impl SubagentExecutor {
         let plan = config.instruction_plan();
         let cortex_home = crate::config::find_cortex_home()
             .unwrap_or_else(|_| std::path::PathBuf::from(".cortex"));
-        let mut sources =
-            crate::instruction_scopes::InstructionSources::discover(&config.working_dir, &cortex_home);
+        let mut sources = crate::instruction_scopes::InstructionSources::discover(
+            &config.working_dir,
+            &cortex_home,
+        );
         // Always prefer the explicit managed-policy source when configured.
         let managed = managed_policy_sources();
         if !managed.is_empty() {
@@ -285,7 +304,7 @@ impl SubagentExecutor {
     async fn run_subagent(
         &self,
         mut session: SubagentSession,
-        mut config: SubagentConfig,
+        config: SubagentConfig,
         progress_tx: mpsc::UnboundedSender<ProgressEvent>,
     ) -> Result<SubagentResult> {
         let _start_time = Instant::now();
@@ -335,14 +354,7 @@ impl SubagentExecutor {
         // documents can be omitted; organization-managed policy always loads.
         // Custom-agent frontmatter omissions apply when the Task did not set any;
         // a non-empty Task-level list always wins.
-        if config.omit_instructions.is_empty() {
-            if let Some(ref agent) = custom_agent {
-                if !agent.metadata.omit_instructions.is_empty() {
-                    config = config
-                        .with_omit_instructions(agent.metadata.omit_instructions.clone());
-                }
-            }
-        }
+        let config = Self::with_frontmatter_omissions(config, custom_agent.as_ref());
         let system_prompt = self.apply_instruction_plan(&config, system_prompt);
 
         // Build user message containing the task

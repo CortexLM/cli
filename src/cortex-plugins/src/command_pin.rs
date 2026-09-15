@@ -40,10 +40,7 @@ pub fn command_review(manifest: &PluginManifest) -> String {
         out.push_str("command\n");
         out.push_str(&field("name", &command.name));
         out.push_str(&field("description", &command.description));
-        out.push_str(&field(
-            "usage",
-            command.usage.as_deref().unwrap_or(""),
-        ));
+        out.push_str(&field("usage", command.usage.as_deref().unwrap_or("")));
         out.push_str(&format!("hidden={}\n", command.hidden));
         for alias in &command.aliases {
             out.push_str(&field("alias", alias));
@@ -52,24 +49,15 @@ pub fn command_review(manifest: &PluginManifest) -> String {
             out.push_str("arg\n");
             out.push_str(&field("name", &arg.name));
             out.push_str(&format!("required={}\n", arg.required));
-            out.push_str(&field(
-                "default",
-                arg.default.as_deref().unwrap_or(""),
-            ));
+            out.push_str(&field("default", arg.default.as_deref().unwrap_or("")));
         }
     }
     for hook in &manifest.hooks {
         out.push_str("hook\n");
         out.push_str(&field("type", &hook.hook_type.to_string()));
         out.push_str(&format!("priority={}\n", hook.priority));
-        out.push_str(&field(
-            "pattern",
-            hook.pattern.as_deref().unwrap_or(""),
-        ));
-        out.push_str(&field(
-            "function",
-            hook.function.as_deref().unwrap_or(""),
-        ));
+        out.push_str(&field("pattern", hook.pattern.as_deref().unwrap_or("")));
+        out.push_str(&field("function", hook.function.as_deref().unwrap_or("")));
     }
     for tool in &manifest.tools {
         out.push_str(&field("tool", &tool.name));

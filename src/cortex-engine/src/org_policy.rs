@@ -303,7 +303,10 @@ mod tests {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&missing, &link).unwrap();
-            assert!(!link.exists(), "dangling symlink must not exist() as a file");
+            assert!(
+                !link.exists(),
+                "dangling symlink must not exist() as a file"
+            );
             let policy = resolve(Some(temp.path()));
             assert_eq!(policy.fast_mode, FastModePolicy::Disabled);
             assert!(policy.plugin_install.requires_pin());

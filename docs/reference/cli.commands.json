@@ -6425,6 +6425,20 @@
               "short": null
             },
             {
+              "help": "Accept the exact command hash a prior `--json` review printed (sha256)",
+              "id": "accept_command",
+              "long": "accept-command",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print the command review and hash without installing",
+              "id": "json",
+              "long": "json",
+              "required": false,
+              "short": null
+            },
+            {
               "help": "Local package path or registry plugin ID",
               "id": "name",
               "long": null,
@@ -7058,6 +7072,20 @@
               "help": "Local replacement package; otherwise use the registry",
               "id": "source",
               "long": "source",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Accept the exact command hash a prior `--json` review printed (sha256)",
+              "id": "accept_command",
+              "long": "accept-command",
+              "required": false,
+              "short": null
+            },
+            {
+              "help": "Print the command review and hash without updating",
+              "id": "json",
+              "long": "json",
               "required": false,
               "short": null
             },

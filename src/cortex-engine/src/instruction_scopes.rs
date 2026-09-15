@@ -260,8 +260,13 @@ pub struct InstructionLoad {
 /// Load instruction documents under a plan.
 ///
 /// A skipped scope's files are never opened, so an omitted document cannot
-/// reach the prompt by any path. Managed policy is read whenever it exists.
-pub fn load(sources: &InstructionSources, plan: &InstructionPlan) -> InstructionLoad {
+/// reach the prompt by any path. Managed policy is read whenever it exists;
+/// a configured managed path that cannot be read fails closed rather than
+/// silently omitting organization directives.
+pub fn load(
+    sources: &InstructionSources,
+    plan: &InstructionPlan,
+) -> Result<InstructionLoad, String> {
     let mut result = InstructionLoad::default();
     let mut blocks: Vec<String> = Vec::new();
     for scope in InstructionScope::ALL {
@@ -272,9 +277,35 @@ pub fn load(sources: &InstructionSources, plan: &InstructionPlan) -> Instruction
         }
         let mut read_any = false;
         for path in paths {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                blocks.push(content);
-                read_any = true;
+            match std::fs::read_to_string(path) {
+                Ok(content) => {
+                    blocks.push(content);
+                    read_any = true;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    // Truly absent is fine. A dangling symlink also reports
+                    // NotFound via read_to_string; for managed policy that
+                    // must fail closed when the configured path is present
+                    // as a link or other metadata entry.
+                    if scope.is_managed() {
+                        match std::fs::symlink_metadata(path) {
+                            Err(meta_err) if meta_err.kind() == std::io::ErrorKind::NotFound => {}
+                            _ => {
+                                return Err(format!(
+                                    "Could not read organization-managed instructions at {}: {error}",
+                                    path.display()
+                                ));
+                            }
+                        }
+                    }
+                }
+                Err(error) if scope.is_managed() => {
+                    return Err(format!(
+                        "Could not read organization-managed instructions at {}: {error}",
+                        path.display()
+                    ));
+                }
+                Err(_) => {}
             }
         }
         if read_any {
@@ -282,7 +313,7 @@ pub fn load(sources: &InstructionSources, plan: &InstructionPlan) -> Instruction
         }
     }
     result.text = blocks.join("\n\n---\n\n");
-    result
+    Ok(result)
 }
 
 /// The `omit_instructions` JSON value accepted by `--agents` and subagent
@@ -418,7 +449,7 @@ mod tests {
             InstructionScope::Local,
             InstructionScope::Managed,
         ]);
-        let load = load(&sources, &plan);
+        let load = load(&sources, &plan).expect("load");
         assert_eq!(load.loaded, vec![InstructionScope::Managed]);
         assert_eq!(
             load.skipped,
@@ -454,7 +485,7 @@ mod tests {
             InstructionScope::Managed,
         ]);
         assert!(plan.loads(InstructionScope::Managed));
-        let load = load(&sources, &plan);
+        let load = load(&sources, &plan).expect("load");
         assert_eq!(load.text, "MANAGED POLICY");
         assert!(load.loaded.contains(&InstructionScope::Managed));
     }
@@ -472,7 +503,7 @@ mod tests {
         write(&sources.project[0], "PROJECT DOC");
         write(&sources.local[0], "LOCAL DOC");
         write(&sources.managed[0], "MANAGED POLICY");
-        let load = load(&sources, &InstructionPlan::load_all());
+        let load = load(&sources, &InstructionPlan::load_all()).expect("load");
         assert_eq!(load.loaded, InstructionScope::ALL.to_vec());
         assert!(load.skipped.is_empty());
         for text in ["USER DOC", "PROJECT DOC", "LOCAL DOC", "MANAGED POLICY"] {
@@ -481,6 +512,38 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn an_unreadable_managed_path_fails_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let managed = temp.path().join("org/AGENTS.md");
+        std::fs::create_dir_all(managed.parent().unwrap()).unwrap();
+        // Directory where a file is expected — read_to_string fails with IsADirectory
+        // (or equivalent), which must not silently drop managed instructions.
+        std::fs::create_dir(&managed).unwrap();
+        let sources = InstructionSources {
+            managed: vec![managed],
+            ..Default::default()
+        };
+        let err = load(&sources, &InstructionPlan::load_all()).expect_err("managed read");
+        assert!(err.contains("organization-managed"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_managed_symlink_fails_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing-target.md");
+        let managed = temp.path().join("org/AGENTS.md");
+        std::fs::create_dir_all(managed.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&missing, &managed).unwrap();
+        let sources = InstructionSources {
+            managed: vec![managed],
+            ..Default::default()
+        };
+        let err = load(&sources, &InstructionPlan::load_all()).expect_err("dangling");
+        assert!(err.contains("organization-managed"), "{err}");
+    }
+
     fn only_omitting_user_keeps_the_project_documents() {
         let temp = tempfile::tempdir().unwrap();
         let sources = InstructionSources {
@@ -493,7 +556,7 @@ mod tests {
         write(&sources.project[0], "PROJECT DOC");
         write(&sources.managed[0], "MANAGED POLICY");
         let plan = InstructionPlan::new(&[InstructionScope::User]);
-        let load = load(&sources, &plan);
+        let load = load(&sources, &plan).expect("load");
         assert!(!load.text.contains("USER DOC"));
         assert!(load.text.contains("PROJECT DOC"));
         assert!(load.text.contains("MANAGED POLICY"));

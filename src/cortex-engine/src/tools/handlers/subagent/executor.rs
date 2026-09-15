@@ -229,7 +229,7 @@ impl SubagentExecutor {
     /// Organization-managed policy always loads. A request that named it is
     /// recorded in the audit journal alongside the omission itself, so an
     /// omitted run is reviewable after the fact.
-    fn apply_instruction_plan(&self, config: &SubagentConfig, base: String) -> String {
+    fn apply_instruction_plan(&self, config: &SubagentConfig, base: String) -> Result<String> {
         let plan = config.instruction_plan();
         let cortex_home = crate::config::find_cortex_home()
             .unwrap_or_else(|_| std::path::PathBuf::from(".cortex"));
@@ -242,14 +242,22 @@ impl SubagentExecutor {
         if !managed.is_empty() {
             sources.managed = managed;
         }
-        let load = crate::instruction_scopes::load(&sources, &plan);
+        let load = crate::instruction_scopes::load(&sources, &plan)
+            .map_err(|error| CortexError::Other(anyhow::anyhow!("{error}")))?;
         if plan.omits_anything() || plan.requested_managed() {
             record_instruction_audit(&plan, &load);
         }
         if load.text.is_empty() {
-            return base;
+            return Ok(base);
         }
-        format!("{base}\n\n## Project Instructions\n{}\n", load.text)
+        Ok(format!(
+            "{base}
+
+## Project Instructions
+{}
+",
+            load.text
+        ))
     }
 
     /// Run a subagent.
@@ -307,7 +315,7 @@ impl SubagentExecutor {
         // Custom-agent frontmatter omissions apply when the Task did not set any;
         // a non-empty Task-level list always wins.
         let config = Self::with_frontmatter_omissions(config, custom_agent.as_ref());
-        let system_prompt = self.apply_instruction_plan(&config, system_prompt);
+        let system_prompt = self.apply_instruction_plan(&config, system_prompt)?;
 
         // Build user message containing the task
         // Tasks are conversational - sent as user messages rather than system config

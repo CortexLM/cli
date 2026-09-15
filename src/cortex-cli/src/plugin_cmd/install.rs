@@ -44,7 +44,12 @@ fn command_review(manifest: &runtime::PluginManifest) -> serde_json::Value {
             })).collect::<Vec<_>>(),
             "hidden": command.hidden,
         })).collect::<Vec<_>>(),
-        "hooks": manifest.hooks.iter().map(|hook| hook.hook_type.to_string()).collect::<Vec<_>>(),
+        "hooks": manifest.hooks.iter().map(|hook| serde_json::json!({
+            "type": hook.hook_type.to_string(),
+            "priority": hook.priority,
+            "pattern": hook.pattern,
+            "function": hook.function,
+        })).collect::<Vec<_>>(),
         "tools": manifest.tools.iter().map(|tool| tool.name.clone()).collect::<Vec<_>>(),
         "command_hash": runtime::command_pin::command_hash(manifest),
     })

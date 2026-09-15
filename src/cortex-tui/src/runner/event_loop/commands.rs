@@ -86,30 +86,6 @@ impl EventLoop {
         Ok(())
     }
 
-    /// Apply a fast-mode request against organization policy.
-    ///
-    /// Fail-closed: when the organization disabled fast mode the session stays
-    /// on Standard, both product toasts are shown, and nothing is re-sent.
-    fn apply_fast_mode(&mut self, requested: cortex_engine::fast_mode::FastMode) {
-        let policy = cortex_engine::fast_mode::current_policy();
-        self.app_state.fast_mode_policy = policy;
-        let outcome = cortex_engine::fast_mode::apply_fast_mode(requested, policy);
-        if outcome.refused() {
-            // Fail-closed: the session stays on Standard and nothing is re-sent.
-            self.app_state.fast_mode = cortex_engine::fast_mode::FastMode::Standard;
-            for toast in outcome.toasts() {
-                self.app_state.toasts.warning(toast);
-            }
-            return;
-        }
-        self.app_state.fast_mode = requested;
-        // Subsequent turns read `app_state.fast_mode` in
-        // `handle_submit_with_provider` and pass it through `CodeTurnContext`.
-        for toast in outcome.toasts() {
-            self.app_state.toasts.info(toast);
-        }
-    }
-
     /// Handle toggle commands
     fn handle_toggle(&mut self, feature: &str) {
         match feature {
@@ -170,12 +146,7 @@ impl EventLoop {
                 self.app_state.toggle_shortcuts_sheet();
             }
             "fast" => {
-                let requested = if self.app_state.fast_mode.is_on() {
-                    cortex_engine::fast_mode::FastMode::Standard
-                } else {
-                    cortex_engine::fast_mode::FastMode::Fast
-                };
-                self.apply_fast_mode(requested);
+                self.toggle_fast_mode();
             }
             "auto" => {
                 let is_yolo = matches!(
@@ -773,12 +744,7 @@ impl EventLoop {
                     .toasts
                     .info(format!("Permissions: {}", value));
             }
-            "fast" => match cortex_engine::fast_mode::FastMode::parse(value) {
-                Ok(mode) => self.apply_fast_mode(mode),
-                Err(error) => {
-                    self.app_state.toasts.error(error.to_string());
-                }
-            },
+            "fast" => self.set_fast_mode(value),
             _ => {
                 self.add_system_message(&format!(
                     "Setting '{key}' is unsupported in this session. No setting was changed."

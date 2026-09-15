@@ -512,7 +512,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn an_unreadable_managed_path_fails_closed() {
         let temp = tempfile::tempdir().unwrap();
         let managed = temp.path().join("org/AGENTS.md");
@@ -544,6 +543,7 @@ mod tests {
         assert!(err.contains("organization-managed"), "{err}");
     }
 
+    #[test]
     fn only_omitting_user_keeps_the_project_documents() {
         let temp = tempfile::tempdir().unwrap();
         let sources = InstructionSources {

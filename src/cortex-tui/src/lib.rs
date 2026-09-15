@@ -119,6 +119,7 @@ mod lock_v2_network;
 mod lock_v2_parity;
 mod lock_v2_residual;
 mod lock_v2_scenes;
+mod lock_v2_settings;
 mod lock_v2_share;
 pub mod plugin_marketplace;
 pub mod readme_hero;

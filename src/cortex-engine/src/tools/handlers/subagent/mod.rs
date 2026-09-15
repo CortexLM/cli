@@ -7,6 +7,7 @@ mod executor;
 mod instruction_audit;
 mod progress;
 mod result;
+mod run_helpers;
 mod types;
 
 pub use executor::SubagentExecutor;

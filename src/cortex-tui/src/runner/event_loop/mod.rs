@@ -31,6 +31,7 @@ mod auth;
 mod commands;
 mod cor35;
 mod core;
+mod fast_mode;
 mod handoff;
 mod input;
 mod local_workflows;

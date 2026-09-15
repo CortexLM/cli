@@ -198,6 +198,13 @@ impl EventLoop {
         let (width, height) = app_state.terminal_size;
         let tui_capture = TuiCapture::new(width, height);
 
+        let mut app_state = app_state;
+        // Remote Code runtimes (cloud, self-hosted SSH) carry the Remote status
+        // line and the Fast chip. Organization policy decides whether fast mode
+        // may be turned on; a disabled organization starts on Standard.
+        app_state.remote_session = cortex_engine::client::ComputerKind::detect().is_remote();
+        app_state.fast_mode_policy = cortex_engine::fast_mode::current_policy();
+
         Self {
             app_state,
             session_bridge: None,

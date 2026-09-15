@@ -27,22 +27,136 @@ impl Drop for InstallLock {
     }
 }
 
+/// Command review a `--json` dry run prints and `--accept-command` pins.
+fn command_review(manifest: &runtime::PluginManifest) -> serde_json::Value {
+    serde_json::json!({
+        "id": manifest.plugin.id,
+        "version": manifest.plugin.version,
+        "commands": manifest.commands.iter().map(|command| serde_json::json!({
+            "name": command.name,
+            "aliases": command.aliases,
+            "description": command.description,
+            "usage": command.usage,
+            "args": command.args.iter().map(|arg| serde_json::json!({
+                "name": arg.name,
+                "required": arg.required,
+                "default": arg.default,
+            })).collect::<Vec<_>>(),
+            "hidden": command.hidden,
+        })).collect::<Vec<_>>(),
+        "hooks": manifest.hooks.iter().map(|hook| hook.hook_type.to_string()).collect::<Vec<_>>(),
+        "tools": manifest.tools.iter().map(|tool| tool.name.clone()).collect::<Vec<_>>(),
+        "command_hash": runtime::command_pin::command_hash(manifest),
+    })
+}
+
+/// Print the review for a package without installing it.
+fn review_only(manifest: &runtime::PluginManifest) -> Result<()> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&command_review(manifest))?
+    );
+    Ok(())
+}
+
+/// Enforce the reviewed hash and record an accepted pin.
+///
+/// Fails closed: a mismatch or a malformed hash stops the install before the
+/// package reaches the plugin root, and organization policy that requires a
+/// pin refuses an install that carries none.
+fn enforce_command_pin(
+    manifest: &runtime::PluginManifest,
+    accept_command: Option<&str>,
+    action: &str,
+) -> Result<()> {
+    let policy = cortex_engine::org_policy::current().plugin_install;
+    enforce_command_pin_with(manifest, accept_command, action, policy)
+}
+
+/// Policy-explicit form of [`enforce_command_pin`], so the decision can be
+/// exercised without a process-global policy directory.
+fn enforce_command_pin_with(
+    manifest: &runtime::PluginManifest,
+    accept_command: Option<&str>,
+    action: &str,
+    policy: cortex_engine::org_policy::PluginInstallPolicy,
+) -> Result<()> {
+    match accept_command {
+        Some(accepted) => {
+            runtime::command_pin::verify_command_hash(manifest, accepted)?;
+            audit_command_pin(manifest, accepted, action, policy.as_str());
+            Ok(())
+        }
+        None if policy.requires_pin() => bail!(
+            "This organization requires --accept-command for plugin installs. Run `cortex plugin {action} {} --json` to review the commands, then pass --accept-command <sha256>.",
+            manifest.plugin.id
+        ),
+        None => Ok(()),
+    }
+}
+
+/// Record an accepted command pin. A failed write is reported: the pin is the
+/// evidence that a human reviewed this manifest.
+fn audit_command_pin(
+    manifest: &runtime::PluginManifest,
+    accepted: &str,
+    action: &str,
+    policy: &str,
+) {
+    let home = cortex_engine::config::find_cortex_home()
+        .unwrap_or_else(|_| std::path::PathBuf::from(".cortex"));
+    let record = cortex_engine::audit::record(
+        &home,
+        cortex_engine::audit::AuditKind::PluginCommandAccepted,
+        serde_json::json!({
+            "plugin": manifest.plugin.id,
+            "version": manifest.plugin.version,
+            "accepted_hash": accepted.to_ascii_lowercase(),
+            "actual_hash": runtime::command_pin::command_hash(manifest),
+            "action": action,
+            "policy": policy,
+        }),
+    );
+    if let Err(error) = record {
+        // Never fail the install for a journal problem, but never hide it.
+        eprintln!("Could not record the accepted command hash in the audit journal: {error}");
+    }
+}
+
 pub(super) async fn install(args: PluginInstallArgs) -> Result<()> {
     let root = plugins_dir()?;
     let local = Path::new(&args.name);
     let id = if local.exists() {
-        install_local(&root, local, args.force, args.version.as_deref(), None)?
+        if args.json {
+            let manifest = inspect_local(local)?;
+            return review_only(&manifest);
+        }
+        install_local(
+            &root,
+            local,
+            args.force,
+            args.version.as_deref(),
+            None,
+            args.accept_command.as_deref(),
+            "install",
+        )?
     } else {
         runtime::contract::validate_id(&args.name)?;
         let (entry, bytes) = download(&args.name, args.version.as_deref()).await?;
         let source = tempfile::NamedTempFile::new()?;
         std::fs::write(source.path(), bytes)?;
+        if args.json {
+            let manifest = inspect_archive(source.path())?;
+            return review_only(&manifest);
+        }
         install_local(
             &root,
             source.path(),
             args.force,
             Some(&entry.version),
             Some(&entry.id),
+            args.accept_command.as_deref(),
+            "install",
         )?
     };
     if args.trust_code {
@@ -55,12 +169,35 @@ pub(super) async fn install(args: PluginInstallArgs) -> Result<()> {
     Ok(())
 }
 
+/// Read a package manifest without touching the plugin root.
+fn inspect_local(source: &Path) -> Result<runtime::PluginManifest> {
+    let stage = tempfile::tempdir()?;
+    let package = stage.path().join("package");
+    std::fs::create_dir(&package)?;
+    if source.is_dir() {
+        copy_package(source, &package)?;
+        Ok(runtime::package::validate_package(&package)?)
+    } else {
+        extract(source, &package)?;
+        Ok(runtime::package::validate_package(&package_root(
+            &package,
+        )?)?)
+    }
+}
+
+/// Read a downloaded archive manifest without touching the plugin root.
+fn inspect_archive(source: &Path) -> Result<runtime::PluginManifest> {
+    inspect_local(source)
+}
+
 pub(super) fn install_local(
     root: &Path,
     source: &Path,
     force: bool,
     version: Option<&str>,
     expected_id: Option<&str>,
+    accept_command: Option<&str>,
+    action: &str,
 ) -> Result<String> {
     let _lock = InstallLock::acquire(root)?;
     let root = root.canonicalize()?;
@@ -82,6 +219,9 @@ pub(super) fn install_local(
     {
         bail!("Package identity or version does not match the requested plugin");
     }
+    // The reviewed hash is checked after the package is validated but before
+    // anything is placed in the plugin root.
+    enforce_command_pin(&manifest, accept_command, action)?;
     let destination = runtime::package::destination(&root, &manifest.plugin.id)?;
     if destination.exists() && !force {
         bail!("Plugin already installed; use --force");
@@ -339,17 +479,33 @@ pub(super) async fn update(args: PluginUpdateArgs) -> Result<()> {
         bail!("Plugin is not installed");
     }
     if let Some(source) = args.source {
-        install_local(&root, &source, true, None, Some(&args.name))?;
+        if args.json {
+            return review_only(&inspect_local(&source)?);
+        }
+        install_local(
+            &root,
+            &source,
+            true,
+            None,
+            Some(&args.name),
+            args.accept_command.as_deref(),
+            "update",
+        )?;
     } else {
         let (entry, bytes) = download(&args.name, None).await?;
         let source = tempfile::NamedTempFile::new()?;
         std::fs::write(source.path(), bytes)?;
+        if args.json {
+            return review_only(&inspect_archive(source.path())?);
+        }
         install_local(
             &root,
             source.path(),
             true,
             Some(&entry.version),
             Some(&args.name),
+            args.accept_command.as_deref(),
+            "update",
         )?;
     }
     println!(
@@ -496,10 +652,21 @@ mod tests {
         let source = temp.path().join("source");
         let installs = temp.path().join("installed");
         fixture(&source, "safe");
-        install_local(&installs, &source, false, None, None).unwrap();
+        install_local(&installs, &source, false, None, None, None, "install").unwrap();
         let previous = runtime::package::fingerprint(&installs.join("safe")).unwrap();
         std::fs::write(source.join("plugin.mjs"), "invalid javascript !").unwrap();
-        assert!(install_local(&installs, &source, true, None, Some("safe")).is_err());
+        assert!(
+            install_local(
+                &installs,
+                &source,
+                true,
+                None,
+                Some("safe"),
+                None,
+                "install"
+            )
+            .is_err()
+        );
         assert_eq!(
             previous,
             runtime::package::fingerprint(&installs.join("safe")).unwrap()
@@ -671,27 +838,55 @@ mod tests {
         fixture(&source, "safe");
 
         assert!(
-            install_local(&installs, &source, false, Some("9.9.9"), None)
-                .unwrap_err()
-                .to_string()
-                .contains("identity or version")
+            install_local(
+                &installs,
+                &source,
+                false,
+                Some("9.9.9"),
+                None,
+                None,
+                "install"
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("identity or version")
         );
-        assert!(install_local(&installs, &source, false, None, Some("other")).is_err());
+        assert!(
+            install_local(
+                &installs,
+                &source,
+                false,
+                None,
+                Some("other"),
+                None,
+                "install"
+            )
+            .is_err()
+        );
         assert!(!installs.join("safe").exists());
 
         // Nested package files must be recreated under the staged package.
         std::fs::create_dir(source.join("lib")).unwrap();
         std::fs::write(source.join("lib/helper.mjs"), "export const x = 1;").unwrap();
-        install_local(&installs, &source, false, Some("0.1.0"), Some("safe")).unwrap();
+        install_local(
+            &installs,
+            &source,
+            false,
+            Some("0.1.0"),
+            Some("safe"),
+            None,
+            "install",
+        )
+        .unwrap();
         assert!(installs.join("safe/lib/helper.mjs").is_file());
 
         assert!(
-            install_local(&installs, &source, false, None, None)
+            install_local(&installs, &source, false, None, None, None, "install")
                 .unwrap_err()
                 .to_string()
                 .contains("--force")
         );
-        install_local(&installs, &source, true, None, None).unwrap();
+        install_local(&installs, &source, true, None, None, None, "install").unwrap();
 
         // Staging directories must never be left behind in the plugin root.
         let leftovers: Vec<_> = std::fs::read_dir(&installs)
@@ -709,13 +904,13 @@ mod tests {
         let broken = temp.path().join("broken");
         std::fs::create_dir_all(&broken).unwrap();
         std::fs::write(broken.join("plugin.toml"), "this is not toml [[[").unwrap();
-        assert!(install_local(&installs, &broken, false, None, None).is_err());
+        assert!(install_local(&installs, &broken, false, None, None, None, "install").is_err());
 
         let empty = temp.path().join("empty-artifact");
         fixture(&empty, "safe");
         std::fs::write(empty.join("plugin.mjs"), "").unwrap();
         assert!(
-            install_local(&installs, &empty, false, None, None)
+            install_local(&installs, &empty, false, None, None, None, "install")
                 .unwrap_err()
                 .to_string()
                 .contains("Artifact")
@@ -858,7 +1053,16 @@ mod tests {
 
         let installs = temp.path().join("installed");
         assert_eq!(
-            install_local(&installs, &output, false, Some("0.1.0"), Some("safe")).unwrap(),
+            install_local(
+                &installs,
+                &output,
+                false,
+                Some("0.1.0"),
+                Some("safe"),
+                None,
+                "install"
+            )
+            .unwrap(),
             "safe"
         );
         assert!(installs.join("safe/plugin.mjs").is_file());
@@ -881,5 +1085,206 @@ mod tests {
             );
         }
         assert!(bounded_get("not a url").await.is_err());
+    }
+
+    /// Manifest for the accepted-hash fixtures, read through the shipped
+    /// package validator so the hash covers what an install would register.
+    fn manifest_of(source: &Path) -> runtime::PluginManifest {
+        runtime::package::validate_package(source).unwrap()
+    }
+
+    #[test]
+    fn an_accepted_hash_installs_and_a_changed_manifest_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let installs = temp.path().join("installed");
+        fixture(&source, "safe");
+        let accepted = runtime::command_pin::command_hash(&manifest_of(&source));
+
+        // The reviewed hash installs.
+        assert_eq!(
+            install_local(
+                &installs,
+                &source,
+                false,
+                None,
+                None,
+                Some(&accepted),
+                "install"
+            )
+            .unwrap(),
+            "safe"
+        );
+
+        // A manifest that changed after the review must not install, and the
+        // previous package must survive untouched.
+        let previous = runtime::package::fingerprint(&installs.join("safe")).unwrap();
+        let changed = temp.path().join("changed");
+        fixture(&changed, "safe");
+        std::fs::write(
+            changed.join("plugin.toml"),
+            "[plugin]\nid=\"safe\"\nname=\"safe\"\nversion=\"0.1.0\"\n[runtime]\nkind=\"node\"\nentrypoint=\"plugin.mjs\"\n[[commands]]\nname=\"sneak\"\ndescription=\"added after review\"\n",
+        )
+        .unwrap();
+        let error = install_local(
+            &installs,
+            &changed,
+            true,
+            None,
+            Some("safe"),
+            Some(&accepted),
+            "install",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("Command hash mismatch. Manifest may have changed."),
+            "{error}"
+        );
+        assert!(error.contains("Re-run with --json"), "{error}");
+        assert_eq!(
+            previous,
+            runtime::package::fingerprint(&installs.join("safe")).unwrap(),
+            "a refused install must leave the installed package alone"
+        );
+    }
+
+    #[test]
+    fn a_malformed_accepted_hash_fails_before_anything_is_staged() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let installs = temp.path().join("installed");
+        fixture(&source, "safe");
+        for bad in ["", "abc", &"z".repeat(64)] {
+            let error = install_local(&installs, &source, false, None, None, Some(bad), "install")
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("SHA-256"), "{bad:?}: {error}");
+        }
+        assert!(!installs.join("safe").exists());
+    }
+
+    #[test]
+    fn the_review_document_matches_the_pinned_hash() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fixture(&source, "safe");
+        let manifest = manifest_of(&source);
+        let review = command_review(&manifest);
+        assert_eq!(
+            review["command_hash"],
+            runtime::command_pin::command_hash(&manifest)
+        );
+        assert_eq!(review["id"], "safe");
+        assert_eq!(review["version"], "0.1.0");
+        assert!(review["commands"].is_array());
+        // A `--json` review followed by the printed hash installs.
+        let accepted = review["command_hash"].as_str().unwrap().to_string();
+        let installs = temp.path().join("installed");
+        install_local(
+            &installs,
+            &source,
+            false,
+            None,
+            None,
+            Some(&accepted),
+            "install",
+        )
+        .unwrap();
+    }
+
+    /// Organization policy that requires a pin refuses an unpinned install.
+    #[test]
+    fn organization_policy_requires_the_pin() {
+        use cortex_engine::org_policy::PluginInstallPolicy;
+
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fixture(&source, "safe");
+        let manifest = manifest_of(&source);
+
+        let required = PluginInstallPolicy::RequireAcceptCommand;
+        assert!(required.requires_pin());
+        let unpinned = enforce_command_pin_with(&manifest, None, "install", required)
+            .unwrap_err()
+            .to_string();
+        assert!(unpinned.contains("requires --accept-command"), "{unpinned}");
+        assert!(unpinned.contains("--json"), "{unpinned}");
+
+        // The reviewed hash is accepted under the same policy.
+        let accepted = runtime::command_pin::command_hash(&manifest);
+        assert!(enforce_command_pin_with(&manifest, Some(&accepted), "install", required).is_ok());
+        // A changed manifest is still refused even with a pin present.
+        let changed = temp.path().join("changed");
+        fixture(&changed, "safe");
+        std::fs::write(
+            changed.join("plugin.toml"),
+            "[plugin]\nid=\"safe\"\nname=\"safe\"\nversion=\"0.2.0\"\n[runtime]\nkind=\"node\"\nentrypoint=\"plugin.mjs\"\n",
+        )
+        .unwrap();
+        assert!(
+            enforce_command_pin_with(&manifest_of(&changed), Some(&accepted), "install", required)
+                .unwrap_err()
+                .to_string()
+                .contains("Command hash mismatch")
+        );
+
+        // Without the requirement an unpinned install is unchanged.
+        let optional = PluginInstallPolicy::HostDefault;
+        assert!(!optional.requires_pin());
+        assert!(enforce_command_pin_with(&manifest, None, "install", optional).is_ok());
+    }
+
+    /// A refused install leaves nothing behind in the plugin root.
+    #[test]
+    fn an_org_required_pin_never_reaches_the_plugin_root() {
+        use cortex_engine::org_policy::PluginInstallPolicy;
+
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let installs = temp.path().join("installed");
+        fixture(&source, "safe");
+        let manifest = manifest_of(&source);
+        // Exercise the shipped decision path with the requirement in place.
+        let error = enforce_command_pin_with(
+            &manifest,
+            None,
+            "install",
+            PluginInstallPolicy::RequireAcceptCommand,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("requires --accept-command"), "{error}");
+        assert!(!installs.join("safe").exists());
+    }
+
+    /// An accepted pin is written to the audit journal as one JSON line.
+    #[test]
+    fn an_accepted_pin_is_audited() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fixture(&source, "safe");
+        let manifest = manifest_of(&source);
+        let accepted = runtime::command_pin::command_hash(&manifest);
+
+        let home = temp.path().join("home");
+        let journal = cortex_engine::audit::record(
+            &home,
+            cortex_engine::audit::AuditKind::PluginCommandAccepted,
+            serde_json::json!({
+                "plugin": manifest.plugin.id,
+                "version": manifest.plugin.version,
+                "accepted_hash": accepted,
+                "actual_hash": runtime::command_pin::command_hash(&manifest),
+                "action": "install",
+                "policy": "host_default",
+            }),
+        )
+        .unwrap();
+        let body = std::fs::read_to_string(&journal).unwrap();
+        assert!(body.contains("plugin_command_accepted"), "{body}");
+        assert!(body.contains(&accepted), "{body}");
+        assert!(body.contains("\"action\":\"install\""), "{body}");
+        assert_eq!(body.lines().count(), 1);
     }
 }

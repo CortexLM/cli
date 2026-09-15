@@ -212,6 +212,12 @@ pub struct AppState {
     pub show_computer_default: bool,
     /// Live read-only share link minted by `/share`; `None` once `/unshare` clears it.
     pub share_link: Option<String>,
+    /// Remote (cloud / self-hosted) Code session — shows the Remote status line.
+    pub remote_session: bool,
+    /// Fast mode is on for this session, as resolved against organization policy.
+    pub fast_mode: cortex_engine::fast_mode::FastMode,
+    /// Organization policy resolved for this session.
+    pub fast_mode_policy: cortex_engine::fast_mode::FastModePolicy,
     /// Launched via the `agent` binary / alias.
     pub agent_entrypoint: bool,
     /// Token counter used / window.
@@ -365,6 +371,9 @@ impl AppState {
             computer_held: false,
             show_computer_default: false,
             share_link: None,
+            remote_session: false,
+            fast_mode: cortex_engine::fast_mode::FastMode::Standard,
+            fast_mode_policy: cortex_engine::fast_mode::FastModePolicy::HostDefault,
             agent_entrypoint: false,
             tokens_used: 0,
             context_window: 500_000,

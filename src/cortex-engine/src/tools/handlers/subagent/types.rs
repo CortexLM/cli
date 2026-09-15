@@ -309,6 +309,20 @@ pub struct SubagentConfig {
     /// Optional session ID (if not provided, a new one will be generated).
     /// Use this to coordinate session_id between UI and executor.
     pub session_id: Option<String>,
+    /// Instruction documents this subagent skips. Organization-managed policy
+    /// is never omitted, whatever this list says.
+    #[serde(default)]
+    pub omit_instructions: Vec<crate::instruction_scopes::InstructionScope>,
+}
+
+impl SubagentConfig {
+    /// Resolved instruction plan for this subagent.
+    ///
+    /// Managed policy always loads; a request that named it is reported so the
+    /// caller can audit it.
+    pub fn instruction_plan(&self) -> crate::instruction_scopes::InstructionPlan {
+        crate::instruction_scopes::InstructionPlan::new(&self.omit_instructions)
+    }
 }
 
 impl SubagentConfig {
@@ -334,7 +348,19 @@ impl SubagentConfig {
             context: None,
             custom_agent_name: None,
             session_id: None,
+            omit_instructions: Vec::new(),
         }
+    }
+
+    /// Omit the named instruction scopes for this subagent.
+    ///
+    /// `Managed` is accepted and ignored: organization policy always loads.
+    pub fn with_omit_instructions(
+        mut self,
+        scopes: impl IntoIterator<Item = crate::instruction_scopes::InstructionScope>,
+    ) -> Self {
+        self.omit_instructions = scopes.into_iter().collect();
+        self
     }
 
     /// Set the model.
@@ -622,5 +648,79 @@ mod tests {
         session.record_turn(3, 1000);
         assert_eq!(session.turns_completed, 1);
         assert_eq!(session.tool_calls_made, 3);
+    }
+
+    /// COR-449: omission is opt-in and managed policy always loads.
+    #[test]
+    fn subagent_instruction_plan_defaults_to_loading_everything() {
+        let config = SubagentConfig::new(
+            SubagentType::Code,
+            "review",
+            "review src/auth",
+            PathBuf::from("/project"),
+        );
+        assert!(config.omit_instructions.is_empty());
+        let plan = config.instruction_plan();
+        assert!(!plan.omits_anything());
+        assert!(plan.summary("subagent").is_none());
+        for scope in crate::instruction_scopes::InstructionScope::ALL {
+            assert!(plan.loads(scope), "{scope}");
+        }
+    }
+
+    #[test]
+    fn subagent_omission_never_drops_managed_policy() {
+        use crate::instruction_scopes::InstructionScope;
+        let config = SubagentConfig::new(
+            SubagentType::Code,
+            "review",
+            "review src/auth",
+            PathBuf::from("/project"),
+        )
+        .with_omit_instructions([
+            InstructionScope::User,
+            InstructionScope::Project,
+            InstructionScope::Local,
+            InstructionScope::Managed,
+        ]);
+        let plan = config.instruction_plan();
+        assert!(plan.loads(InstructionScope::Managed));
+        assert!(plan.managed_forced());
+        assert!(plan.requested_managed());
+        assert!(!plan.loads(InstructionScope::User));
+        assert!(!plan.loads(InstructionScope::Project));
+        assert!(!plan.loads(InstructionScope::Local));
+        assert_eq!(
+            plan.skipped(),
+            vec![
+                InstructionScope::User,
+                InstructionScope::Project,
+                InstructionScope::Local
+            ]
+        );
+        let summary = plan.summary("subagent").expect("summary");
+        assert!(summary.contains("managed policy still loaded"), "{summary}");
+    }
+
+    #[test]
+    fn subagent_config_round_trips_the_omit_list() {
+        use crate::instruction_scopes::InstructionScope;
+        let config = SubagentConfig::new(
+            SubagentType::Code,
+            "review",
+            "review src/auth",
+            PathBuf::from("/project"),
+        )
+        .with_omit_instructions([InstructionScope::User, InstructionScope::Project]);
+        let encoded = serde_json::to_value(&config).unwrap();
+        assert_eq!(encoded["omit_instructions"][0], "user");
+        assert_eq!(encoded["omit_instructions"][1], "project");
+        let decoded: SubagentConfig = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded.omit_instructions, config.omit_instructions);
+        // A config without the field still deserializes.
+        let mut bare = serde_json::to_value(&config).unwrap();
+        bare.as_object_mut().unwrap().remove("omit_instructions");
+        let decoded: SubagentConfig = serde_json::from_value(bare).unwrap();
+        assert!(decoded.omit_instructions.is_empty());
     }
 }

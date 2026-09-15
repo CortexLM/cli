@@ -49,6 +49,7 @@
 mod abi;
 pub mod activation;
 pub mod api;
+pub mod command_pin;
 pub mod commands;
 pub mod config;
 pub mod contract;

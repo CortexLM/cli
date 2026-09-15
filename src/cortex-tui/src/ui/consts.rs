@@ -72,6 +72,12 @@ pub const SHARE_MARKER: &str = "Shared · read-only";
 /// Narrow (40-column) form of the share marker. Keeps the word `Shared`.
 pub const SHARE_MARKER_NARROW: &str = "Shared";
 
+/// Fast-mode chip painted next to the model chip while a remote session runs
+/// on the low-latency path.
+pub const FAST_CHIP: &str = "Fast";
+/// Fast-mode chip text appended to the composer model chip.
+pub const FAST_CHIP_SUFFIX: &str = " · Fast";
+
 /// Sandbox deny title painted in error red.
 pub const SANDBOX_DENIED_TITLE: &str = "Sandbox denied";
 

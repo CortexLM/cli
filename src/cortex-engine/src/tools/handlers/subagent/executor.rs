@@ -21,6 +21,55 @@ use super::result::{
     FileChange, FileChangeType, SubagentResult, SubagentResultBuilder, TokenUsageBreakdown,
 };
 use super::types::{SubagentConfig, SubagentSession, SubagentStatus};
+use crate::instruction_scopes::{InstructionPlan, InstructionScope};
+
+/// Organization-managed instruction documents for this host.
+///
+/// Managed policy is read from the organization policy directory. There is no
+/// local or project path that can stand in for it, so a child cannot omit it.
+fn managed_policy_sources() -> Vec<std::path::PathBuf> {
+    crate::org_policy::policy_dir()
+        .map(|dir| vec![dir.join(crate::instruction_scopes::MANAGED_POLICY_FILE)])
+        .unwrap_or_default()
+}
+
+/// Record an omission and, when the request named managed policy, the fact
+/// that it still loaded. A journal that cannot be written is reported, never
+/// silently dropped.
+fn record_instruction_audit(
+    plan: &InstructionPlan,
+    load: &crate::instruction_scopes::InstructionLoad,
+) {
+    let Ok(home) = crate::config::find_cortex_home() else {
+        return;
+    };
+    let skipped: Vec<&str> = plan.skipped().iter().map(|s| s.as_str()).collect();
+    let loaded: Vec<&str> = load.loaded.iter().map(|s| s.as_str()).collect();
+    if let Err(error) = crate::audit::record(
+        &home,
+        crate::audit::AuditKind::InstructionsOmitted,
+        serde_json::json!({
+            "source": "subagent",
+            "skipped": skipped,
+            "loaded": loaded,
+        }),
+    ) {
+        tracing::warn!(%error, "Could not record instruction omission in the audit journal");
+    }
+    if plan.requested_managed() {
+        if let Err(error) = crate::audit::record(
+            &home,
+            crate::audit::AuditKind::ManagedPolicyNeverOmitted,
+            serde_json::json!({
+                "source": "subagent",
+                "requested": [InstructionScope::Managed.as_str()],
+                "loaded": load.loaded.contains(&InstructionScope::Managed),
+            }),
+        ) {
+            tracing::warn!(%error, "Could not record managed-policy retention in the audit journal");
+        }
+    }
+}
 
 /// Executor for running subagents in isolated sessions.
 pub struct SubagentExecutor {
@@ -206,6 +255,27 @@ impl SubagentExecutor {
         result
     }
 
+    /// Append the child's instruction documents to its system prompt.
+    ///
+    /// Organization-managed policy always loads. A request that named it is
+    /// recorded in the audit journal alongside the omission itself, so an
+    /// omitted run is reviewable after the fact.
+    fn apply_instruction_plan(&self, config: &SubagentConfig, base: String) -> String {
+        let plan = config.instruction_plan();
+        let sources = crate::instruction_scopes::InstructionSources {
+            managed: managed_policy_sources(),
+            ..Default::default()
+        };
+        let load = crate::instruction_scopes::load(&sources, &plan);
+        if plan.omits_anything() || plan.requested_managed() {
+            record_instruction_audit(&plan, &load);
+        }
+        if load.text.is_empty() {
+            return base;
+        }
+        format!("{base}\n\n## Project Instructions\n{}\n", load.text)
+    }
+
     /// Run a subagent.
     async fn run_subagent(
         &self,
@@ -255,6 +325,10 @@ impl SubagentExecutor {
         } else {
             config.build_base_system_prompt()
         };
+
+        // Instruction documents for the child: user, project, and local
+        // documents can be omitted; organization-managed policy always loads.
+        let system_prompt = self.apply_instruction_plan(&config, system_prompt);
 
         // Build user message containing the task
         // Tasks are conversational - sent as user messages rather than system config

@@ -96,6 +96,12 @@ pub struct PluginInstallArgs {
     /// Trust this exact package to execute native Node code (NOT a sandbox)
     #[arg(long)]
     pub trust_code: bool,
+    /// Accept the exact command hash a prior `--json` review printed (sha256)
+    #[arg(long, value_name = "SHA256")]
+    pub accept_command: Option<String>,
+    /// Print the command review and hash without installing
+    #[arg(long)]
+    pub json: bool,
     /// Local package path or registry plugin ID
     pub name: String,
 
@@ -263,6 +269,12 @@ pub struct PluginUpdateArgs {
     /// Local replacement package; otherwise use the registry
     #[arg(long)]
     pub source: Option<PathBuf>,
+    /// Accept the exact command hash a prior `--json` review printed (sha256)
+    #[arg(long, value_name = "SHA256")]
+    pub accept_command: Option<String>,
+    /// Print the command review and hash without updating
+    #[arg(long)]
+    pub json: bool,
     /// Plugin name to update
     pub name: String,
 }
@@ -298,6 +310,8 @@ impl PluginCli {
             PluginSubcommand::Search(args) => args.json,
             PluginSubcommand::Browse(args) => args.json,
             PluginSubcommand::Run(args) => args.json,
+            PluginSubcommand::Install(args) => args.json,
+            PluginSubcommand::Update(args) => args.json,
             _ => false,
         };
         if json {

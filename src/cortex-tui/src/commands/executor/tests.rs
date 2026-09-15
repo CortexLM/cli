@@ -602,3 +602,28 @@ fn plugins_command_is_registered() {
         "got {result:?}"
     );
 }
+
+#[test]
+fn fast_command_toggles_and_parses_on_off() {
+    let executor = CommandExecutor::new();
+    // Bare `/fast` toggles; the policy check happens in the session.
+    assert!(
+        matches!(
+            executor.execute_str("/fast"),
+            CommandResult::Toggle(ref feature) if feature == "fast"
+        ),
+        "bare /fast must toggle"
+    );
+    for (token, expected) in [("on", "on"), ("ON", "on"), ("off", "off"), ("false", "off")] {
+        let result = executor.execute_str(&format!("/fast {token}"));
+        assert!(
+            matches!(result, CommandResult::SetValue(ref key, ref value)
+                if key == "fast" && value == expected),
+            "/fast {token} → {result:?}"
+        );
+    }
+    // An unknown token is an error, never a silent toggle.
+    let invalid = executor.execute_str("/fast maybe");
+    assert!(invalid.is_error(), "{invalid:?}");
+    assert!(format!("{invalid:?}").contains("on|off"), "{invalid:?}");
+}

@@ -115,6 +115,11 @@ Children cannot spawn nested Task tools and cannot use AskUser, Questions, or se
                     "type": "boolean",
                     "description": "Wait for the child (true) or return after task_started (false).",
                     "default": true
+                },
+                "omit_instructions": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["user", "project", "local", "managed"]},
+                    "description": "Instruction documents this child skips. Organization-managed policy is never omitted."
                 }
             },
             "required": [],
@@ -159,6 +164,30 @@ Children cannot spawn nested Task tools and cannot use AskUser, Questions, or se
             .and_then(|a| a.as_bool())
             .unwrap_or(true);
 
+        // Instruction omission is opt-in and validated: an unknown scope name
+        // is an error, and `managed` is accepted but never skipped.
+        let omit_instructions = match arguments.get("omit_instructions") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(values)) => {
+                let names: Vec<&str> = values
+                    .iter()
+                    .map(|value| {
+                        value.as_str().ok_or_else(|| {
+                            CortexError::InvalidInput(
+                                "omit_instructions entries must be scope names".into(),
+                            )
+                        })
+                    })
+                    .collect::<Result<_>>()?;
+                crate::instruction_scopes::parse_scopes(names).map_err(CortexError::InvalidInput)?
+            }
+            Some(_) => {
+                return Err(CortexError::InvalidInput(
+                    "omit_instructions must be an array of scope names".into(),
+                ));
+            }
+        };
+
         Ok(TaskParams {
             agent,
             task,
@@ -166,6 +195,7 @@ Children cannot spawn nested Task tools and cannot use AskUser, Questions, or se
             await_result,
             mode,
             description,
+            omit_instructions,
         })
     }
 
@@ -187,6 +217,7 @@ Children cannot spawn nested Task tools and cannot use AskUser, Questions, or se
             config.env.insert("CORTEX_SPEC_MODE".into(), "1".into());
         }
         config.prompt = format!("{}\n\n{}", params.mode.system_prompt(), config.prompt);
+        config = config.with_omit_instructions(params.omit_instructions);
         config
     }
 }
@@ -321,6 +352,8 @@ struct TaskParams {
     await_result: bool,
     mode: crate::harness::TaskRole,
     description: String,
+    /// Instruction scopes this child skips. Managed policy always loads.
+    omit_instructions: Vec<crate::instruction_scopes::InstructionScope>,
 }
 
 /// Create a standalone task handler with minimal dependencies (for registry integration).
@@ -566,6 +599,76 @@ mod tests {
         assert_eq!(params.agent, "code-reviewer");
         assert_eq!(params.task, "Review the authentication module");
         assert!(params.await_result);
+    }
+
+    /// COR-449: `omit_instructions` is validated and never omits managed policy.
+    #[test]
+    fn test_task_params_omit_instructions() {
+        use crate::instruction_scopes::InstructionScope;
+
+        let handler = TaskHandler::with_executor(
+            Arc::new(SubagentExecutor::new(
+                Arc::new(MockClient::new()),
+                Arc::new(ToolRegistry::new()),
+                Arc::new(AgentRegistry::new(&PathBuf::from("/tmp"), None)),
+                "gpt-4o",
+            )),
+            PathBuf::from("/project"),
+        );
+
+        // Absent and explicit-null both mean "load everything".
+        for args in [
+            json!({"prompt": "review src/auth"}),
+            json!({"prompt": "review src/auth", "omit_instructions": null}),
+        ] {
+            let params = handler.parse_params(args).unwrap();
+            assert!(params.omit_instructions.is_empty());
+        }
+
+        // Named scopes are parsed, and managed is kept in the list only to be
+        // ignored by the plan.
+        let params = handler
+            .parse_params(json!({
+                "prompt": "review src/auth",
+                "omit_instructions": ["user", "project", "managed"],
+            }))
+            .unwrap();
+        assert_eq!(
+            params.omit_instructions,
+            vec![
+                InstructionScope::User,
+                InstructionScope::Project,
+                InstructionScope::Managed
+            ]
+        );
+        let plan = handler.build_config(params).instruction_plan();
+        assert!(!plan.loads(InstructionScope::User));
+        assert!(!plan.loads(InstructionScope::Project));
+        assert!(plan.loads(InstructionScope::Local));
+        assert!(plan.loads(InstructionScope::Managed));
+        assert!(plan.managed_forced());
+
+        // An unknown scope is an error, never a silent no-op.
+        let error = handler
+            .parse_params(json!({
+                "prompt": "review src/auth",
+                "omit_instructions": ["projekt"],
+            }))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("projekt"), "{error}");
+
+        // Wrong shape is an error too.
+        assert!(
+            handler
+                .parse_params(json!({"prompt": "x", "omit_instructions": "user"}))
+                .is_err()
+        );
+        assert!(
+            handler
+                .parse_params(json!({"prompt": "x", "omit_instructions": [1]}))
+                .is_err()
+        );
     }
 
     #[test]

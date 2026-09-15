@@ -112,6 +112,15 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
     ));
 
     registry.register(CommandDef::new(
+        "fast",
+        &[],
+        "Toggle fast mode for remote sessions",
+        "/fast [on|off]",
+        CommandCategory::Model,
+        true,
+    ));
+
+    registry.register(CommandDef::new(
         "btw",
         &[],
         "Side note for the current turn",

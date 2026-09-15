@@ -458,6 +458,95 @@ mod harness_snapshots {
         );
         assert!(!text.to_lowercase().contains("grok"));
     }
+
+    /// COR-447: a remote session on fast mode carries both the status line and
+    /// the Fast chip in the composer border.
+    #[test]
+    fn snapshot_remote_fast_chip_and_status_line() {
+        let mut state = AppState::default();
+        state.remote_session = true;
+        state.fast_mode = cortex_engine::fast_mode::FastMode::Fast;
+        state.fast_mode_policy = cortex_engine::fast_mode::FastModePolicy::Allowed;
+
+        let wide = render(&state, 120, 40);
+        dump_snapshot("remote-fast-wide", &wide);
+        assert!(
+            wide.contains(cortex_engine::fast_mode::REMOTE_FAST_STATUS),
+            "wide status line missing:\n{wide}"
+        );
+        assert!(
+            wide.contains(crate::ui::consts::FAST_CHIP),
+            "wide Fast chip missing:\n{wide}"
+        );
+
+        let narrow = render(&state, 40, 12);
+        dump_snapshot("remote-fast-narrow", &narrow);
+        assert!(
+            narrow.contains(cortex_engine::fast_mode::REMOTE_FAST_STATUS_NARROW),
+            "narrow status line missing:\n{narrow}"
+        );
+        assert!(narrow.contains("Remote"), "narrow:\n{narrow}");
+    }
+
+    /// COR-447: fast mode off — or a local session — never paints the chip.
+    #[test]
+    fn snapshot_fast_chip_is_absent_off_and_locally() {
+        let mut standard = AppState::default();
+        standard.remote_session = true;
+        standard.fast_mode = cortex_engine::fast_mode::FastMode::Standard;
+        let text = render(&standard, 120, 40);
+        assert!(
+            text.contains(cortex_engine::fast_mode::REMOTE_STATUS),
+            "a remote session on Standard still shows Remote:\n{text}"
+        );
+        assert!(
+            !text.contains(crate::ui::consts::FAST_CHIP_SUFFIX),
+            "Standard must not paint the Fast chip:\n{text}"
+        );
+
+        let mut local = AppState::default();
+        local.fast_mode = cortex_engine::fast_mode::FastMode::Fast;
+        let text = render(&local, 120, 40);
+        assert!(
+            !text.contains("Remote"),
+            "a local session must not show a Remote status line:\n{text}"
+        );
+        assert!(
+            !text.contains(crate::ui::consts::FAST_CHIP_SUFFIX),
+            "a local session must not paint the Fast chip:\n{text}"
+        );
+    }
+
+    /// COR-447: the organization-disabled refusal uses the exact product copy
+    /// and leaves the session on Standard.
+    #[test]
+    fn snapshot_org_disabled_fast_mode_copy() {
+        let mut state = AppState::default();
+        state.remote_session = true;
+        state.fast_mode_policy = cortex_engine::fast_mode::FastModePolicy::Disabled;
+        state.add_message(cortex_core::widgets::Message::user("/fast on"));
+        state.add_message(cortex_core::widgets::Message::system(
+            cortex_engine::fast_mode::ORG_DISABLED_TOAST,
+        ));
+        state.add_message(cortex_core::widgets::Message::system(
+            cortex_engine::fast_mode::ORG_DISABLED_STAYING,
+        ));
+        let text = render(&state, 120, 40);
+        dump_snapshot("fast-org-disabled", &text);
+        assert!(
+            text.contains(cortex_engine::fast_mode::ORG_DISABLED_TOAST)
+                || text.contains("disabled for your organization"),
+            "refusal copy missing:\n{text}"
+        );
+        assert!(
+            text.contains("Staying on Standard"),
+            "the session must stay on Standard:\n{text}"
+        );
+        assert!(
+            !text.contains(crate::ui::consts::FAST_CHIP_SUFFIX),
+            "a refused session must not paint the Fast chip:\n{text}"
+        );
+    }
 }
 
 #[cfg(test)]

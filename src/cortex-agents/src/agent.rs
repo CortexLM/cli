@@ -56,6 +56,9 @@ pub struct AgentInfo {
     /// Whether this agent should use a small/lightweight model.
     #[serde(default)]
     pub use_small_model: bool,
+    /// Instruction scopes to omit when this agent runs. Managed is never omitted.
+    #[serde(default)]
+    pub omit_instructions: Vec<String>,
 }
 
 impl AgentInfo {
@@ -78,6 +81,7 @@ impl AgentInfo {
             max_steps: None,
             max_tokens: None,
             use_small_model: false,
+            omit_instructions: Vec::new(),
         }
     }
 
@@ -207,6 +211,7 @@ pub fn create_general_agent() -> AgentInfo {
         max_steps: Some(20), // Max 20 steps
         max_tokens: None,
         use_small_model: false,
+        omit_instructions: Vec::new(),
     }
 }
 
@@ -312,6 +317,7 @@ pub fn create_explore_agent() -> AgentInfo {
         max_steps: Some(15),
         max_tokens: None,
         use_small_model: false,
+        omit_instructions: Vec::new(),
     }
 }
 
@@ -415,6 +421,7 @@ pub fn create_research_agent() -> AgentInfo {
         max_steps: Some(15),
         max_tokens: None,
         use_small_model: false,
+        omit_instructions: Vec::new(),
     }
 }
 

@@ -12,6 +12,7 @@ use crate::interactive::builders::{
     build_permissions_picker, build_plan_confirm, build_question_prompt, build_sandbox_deny_prompt,
 };
 use crate::lock_v2::PRODUCT_ERROR;
+use crate::lock_v2_batch56::apply_batch56_scene;
 use crate::lock_v2_computer::apply_computer_scene;
 use crate::lock_v2_cor35::apply_cor35_scene;
 use crate::lock_v2_designed::apply_designed_scene;
@@ -19,12 +20,12 @@ use crate::lock_v2_goal::{apply_goal_chip_scene, show_goal_in_narrow_palette};
 use crate::lock_v2_network::apply_offline_rate_limit_scene;
 use crate::lock_v2_parity::apply_parity_scene;
 use crate::lock_v2_scenes::*;
+use crate::lock_v2_settings::apply_settings_scene;
 use crate::lock_v2_share::apply_share_scene;
 use crate::modal::mcp_manager::{McpServerInfo, McpStatus};
 use crate::session::SessionSummary;
 use crate::ui::consts::SERVICE_UNAVAILABLE_NEXT_STEP;
 use crate::views::tool_call::ToolStatus;
-use crate::widgets::settings_modal::SettingsRowKind;
 
 pub(crate) fn scene_state(id: &str, width: u16, height: u16) -> AppState {
     let mut state = lock_app();
@@ -266,47 +267,6 @@ Tell me what you'd like to do.",
         "model-effort-hover" => {
             effort_picker(&mut state, crate::interactive::EffortLevel::Medium, true)
         }
-        "settings-appearance" => open_settings(&mut state, |_| {}),
-        "settings-mouse" => open_settings(&mut state, |modal| {
-            if let Some(i) = modal
-                .visible_rows()
-                .iter()
-                .position(|r| r.id == "mouse_capture")
-            {
-                modal.selected = i;
-                modal.scroll = modal
-                    .visible_rows()
-                    .iter()
-                    .position(|r| r.id == "mouse" || r.label == "Mouse")
-                    .unwrap_or(i.saturating_sub(1));
-            }
-        }),
-        "settings-row-hover" => open_settings(&mut state, |modal| {
-            modal.selected = 1; // Compact mode
-            if let Some(i) = modal
-                .visible_rows()
-                .iter()
-                .position(|r| r.id == "timestamps")
-            {
-                modal.hovered = Some(i);
-            }
-        }),
-        "settings-search" => open_settings(&mut state, |modal| {
-            modal.search = "scro".into();
-            modal.search_focused = true;
-            modal.selected = 0;
-            if let Some(i) = modal
-                .visible_rows()
-                .iter()
-                .position(|r| r.kind != SettingsRowKind::Category)
-            {
-                modal.selected = i;
-            }
-        }),
-        "settings-theme-submenu" => open_settings(&mut state, |modal| {
-            modal.theme_open = true;
-            modal.theme_selected = 0;
-        }),
         "mode-agent" => {
             resumed(&mut state);
             state.agent_mode_label = "Agent".into();
@@ -985,6 +945,7 @@ Tell me what you'd like to do.",
                 None,
             ));
         }
+        id if apply_settings_scene(id, &mut state) => {}
         id if apply_btw_scene(id, &mut state) => {}
         id if apply_offline_rate_limit_scene(id, &mut state) => {}
         id if apply_parity_scene(id, &mut state, width) => {}
@@ -993,6 +954,7 @@ Tell me what you'd like to do.",
         id if apply_goal_chip_scene(id, &mut state) => {}
         id if apply_computer_scene(id, &mut state, width) => {}
         id if apply_cor35_scene(id, &mut state, width) => {}
+        id if apply_batch56_scene(id, &mut state, width) => {}
         other => panic!("unknown lock v2 scene {other}"),
     }
     state

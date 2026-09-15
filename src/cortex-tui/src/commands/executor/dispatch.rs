@@ -94,6 +94,7 @@ impl CommandExecutor {
             // ============ MODEL ============
             "model" | "models" | "m" | "lm" | "list-models" => self.cmd_models(cmd),
             "approval" | "approve" => self.cmd_approval(cmd),
+            "fast" => self.cmd_fast(cmd),
             "sandbox" | "sb" => self.cmd_sandbox(cmd),
             "auto" | "autopilot" => self.cmd_auto(cmd),
             "provider" | "prov" => self.cmd_provider(cmd),

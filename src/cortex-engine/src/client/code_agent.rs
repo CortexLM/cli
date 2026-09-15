@@ -65,6 +65,8 @@ pub struct CodeTurnContext {
     pub computer: ComputerKind,
     pub turn_mode: Option<CodeTurnMode>,
     pub ssh_target: Option<String>,
+    /// When true, the turn uses the low-latency Fast path (org policy allowing).
+    pub fast_mode: bool,
 }
 
 /// Fields accepted by `POST /v1/code/sessions`.
@@ -301,6 +303,7 @@ impl CodeAgentClient {
                     .ok()
                     .map(|p| p.display().to_string()),
                 turn_mode: None,
+                fast_mode: false,
             })),
         }
     }
@@ -625,12 +628,15 @@ impl CodeAgentClient {
         })?;
         let session_id = self.ensure_session().await?;
         let url = format!("{}/v1/code/sessions/{session_id}/turns", self.base_url);
+        let fast_mode = self.turn_context().fast_mode;
         let body = serde_json::json!({
             "message": message,
             "mode": mode.as_str(),
             // An existing Code conversation keeps its mode. Interaction is the
             // supported per-turn read-only/planning control in the backend.
             "interaction": if mode == CodeTurnMode::Chat { "plan" } else { "agent" },
+            // Propagate the session Fast setting so remote turns are not UI-only.
+            "fast_mode": fast_mode,
         });
 
         let mut req = self

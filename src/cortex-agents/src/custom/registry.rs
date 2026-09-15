@@ -160,6 +160,13 @@ fn custom_agent_to_agent_info(agent: &CustomAgentConfig) -> AgentInfo {
         .unwrap_or_else(|| agent.reasoning_effort.suggested_max_steps());
     info = info.with_max_steps(max_steps);
 
+    // Instruction omissions — transferred so the engine SubagentConfig can apply them.
+    info.omit_instructions = agent
+        .omit_instructions
+        .iter()
+        .map(|s| s.as_str().to_string())
+        .collect();
+
     // Color
     if let Some(ref color) = agent.color {
         info = info.with_color(color);

@@ -203,6 +203,7 @@ async fn live_guest_code_turn_streams_tokens() {
         computer: ComputerKind::Cloud,
         turn_mode: Some(CodeTurnMode::Chat),
         ssh_target: None,
+        fast_mode: false,
     });
 
     let mut stream = client

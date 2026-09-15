@@ -41,6 +41,21 @@ impl CommandExecutor {
         }
     }
 
+    /// `/fast [on|off]` — the organization-policy check happens where the
+    /// session state lives, so this only parses and rejects unknown tokens.
+    pub(super) fn cmd_fast(&self, cmd: &ParsedCommand) -> CommandResult {
+        match cmd.first_arg() {
+            Some(value) => match cortex_engine::fast_mode::FastMode::parse(value) {
+                Ok(mode) => CommandResult::SetValue(
+                    "fast".to_string(),
+                    if mode.is_on() { "on" } else { "off" }.to_string(),
+                ),
+                Err(error) => CommandResult::Error(error.to_string()),
+            },
+            None => CommandResult::Toggle("fast".to_string()),
+        }
+    }
+
     pub(super) fn cmd_sandbox(&self, cmd: &ParsedCommand) -> CommandResult {
         match cmd.first_arg() {
             Some("on") | Some("true") => {

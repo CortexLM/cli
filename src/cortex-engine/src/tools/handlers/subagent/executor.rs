@@ -8,17 +8,18 @@ use tokio::sync::{RwLock, mpsc};
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use crate::agent::{
-    AgentConfig, AgentEvent, Orchestrator, OrchestratorTurnResult, SandboxPolicy, TurnStatus,
-};
+use crate::agent::{AgentConfig, Orchestrator, SandboxPolicy};
 use crate::agents::{Agent, AgentRegistry};
 use crate::client::ModelClient;
 use crate::error::{CortexError, Result};
 use crate::tools::registry::ToolRegistry;
 
+use super::instruction_audit::{managed_policy_sources, record_instruction_audit};
 use super::progress::{ProgressEvent, SubagentProgress};
-use super::result::{
-    FileChange, FileChangeType, SubagentResult, SubagentResultBuilder, TokenUsageBreakdown,
+use super::result::SubagentResult;
+use super::run_helpers::{
+    TurnOutcome, apply_summary_turn, build_result, effective_max_iterations, effective_model,
+    needs_summary_turn, spawn_event_forwarder,
 };
 use super::types::{SubagentConfig, SubagentSession, SubagentStatus};
 
@@ -206,6 +207,80 @@ impl SubagentExecutor {
         result
     }
 
+    /// Look up the custom agent for this run, if the type names one.
+    ///
+    /// A named agent that is missing from the registry is an error, not a
+    /// silent fallback: the run would otherwise use the wrong prompt.
+    async fn resolve_custom_agent(&self, config: &SubagentConfig) -> Result<Option<Agent>> {
+        let Some(agent_name) = config.agent_type.custom_name() else {
+            return Ok(None);
+        };
+        match self.agent_registry.get(agent_name).await {
+            Some(agent) => {
+                tracing::info!(agent_name = agent_name, "Using custom agent from registry");
+                Ok(Some(agent))
+            }
+            None => Err(CortexError::NotFound(format!(
+                "Custom agent '{}' not found in registry. Available agents: {:?}",
+                agent_name,
+                self.agent_registry.list_names().await
+            ))),
+        }
+    }
+
+    /// Task-level omit list wins; otherwise take custom-agent frontmatter scopes.
+    fn with_frontmatter_omissions(
+        config: SubagentConfig,
+        custom_agent: Option<&Agent>,
+    ) -> SubagentConfig {
+        if !config.omit_instructions.is_empty() {
+            return config;
+        }
+        let Some(agent) = custom_agent else {
+            return config;
+        };
+        if agent.metadata.omit_instructions.is_empty() {
+            return config;
+        }
+        config.with_omit_instructions(agent.metadata.omit_instructions.clone())
+    }
+
+    /// Append the child's instruction documents to its system prompt.
+    ///
+    /// Organization-managed policy always loads. A request that named it is
+    /// recorded in the audit journal alongside the omission itself, so an
+    /// omitted run is reviewable after the fact.
+    fn apply_instruction_plan(&self, config: &SubagentConfig, base: String) -> Result<String> {
+        let plan = config.instruction_plan();
+        let cortex_home = crate::config::find_cortex_home()
+            .unwrap_or_else(|_| std::path::PathBuf::from(".cortex"));
+        let mut sources = crate::instruction_scopes::InstructionSources::discover(
+            &config.working_dir,
+            &cortex_home,
+        );
+        // Always prefer the explicit managed-policy source when configured.
+        let managed = managed_policy_sources();
+        if !managed.is_empty() {
+            sources.managed = managed;
+        }
+        let load = crate::instruction_scopes::load(&sources, &plan)
+            .map_err(|error| CortexError::Other(anyhow::anyhow!("{error}")))?;
+        if plan.omits_anything() || plan.requested_managed() {
+            record_instruction_audit(&plan, &load);
+        }
+        if load.text.is_empty() {
+            return Ok(base);
+        }
+        Ok(format!(
+            "{base}
+
+## Project Instructions
+{}
+",
+            load.text
+        ))
+    }
+
     /// Run a subagent.
     async fn run_subagent(
         &self,
@@ -228,24 +303,7 @@ impl SubagentExecutor {
         session.set_status(SubagentStatus::Running);
 
         // Look up custom agent from registry if this is a Custom type
-        let custom_agent = if let Some(agent_name) = config.agent_type.custom_name() {
-            match self.agent_registry.get(agent_name).await {
-                Some(agent) => {
-                    tracing::info!(agent_name = agent_name, "Using custom agent from registry");
-                    Some(agent)
-                }
-                None => {
-                    // Agent not found in registry - fail with helpful error
-                    return Err(CortexError::NotFound(format!(
-                        "Custom agent '{}' not found in registry. Available agents: {:?}",
-                        agent_name,
-                        self.agent_registry.list_names().await
-                    )));
-                }
-            }
-        } else {
-            None
-        };
+        let custom_agent = self.resolve_custom_agent(&config).await?;
 
         // Build system prompt - use base prompt WITHOUT task details
         // Task details will be sent as user message
@@ -256,47 +314,21 @@ impl SubagentExecutor {
             config.build_base_system_prompt()
         };
 
+        // Instruction documents for the child: user, project, and local
+        // documents can be omitted; organization-managed policy always loads.
+        // Custom-agent frontmatter omissions apply when the Task did not set any;
+        // a non-empty Task-level list always wins.
+        let config = Self::with_frontmatter_omissions(config, custom_agent.as_ref());
+        let system_prompt = self.apply_instruction_plan(&config, system_prompt)?;
+
         // Build user message containing the task
         // Tasks are conversational - sent as user messages rather than system config
-        let user_task_message = if let Some(ref _agent) = custom_agent {
-            // For custom agents, format task with context
-            let mut message = format!(
-                "## Task\n{}\n\n## Instructions\n{}",
-                config.description, config.prompt
-            );
-            if let Some(ref context) = config.context {
-                message.push_str("\n\n## Additional Context\n");
-                message.push_str(context);
-            }
-            message.push_str("\n\nPlease complete this task and provide a clear summary of your findings or actions when done.");
-            message
-        } else {
-            config.build_user_message()
-        };
+        let user_task_message = config.build_user_message();
 
-        // Determine model - custom agent can override
-        let model = if let Some(ref agent) = custom_agent {
-            agent.effective_model(&self.default_model)
-        } else {
-            config
-                .model
-                .clone()
-                .unwrap_or_else(|| self.default_model.clone())
-        };
-
-        // Determine max iterations - custom agent can override
-        let max_iterations = if let Some(ref agent) = custom_agent {
-            agent
-                .metadata
-                .max_turns
-                .unwrap_or(config.effective_max_iterations())
-        } else {
-            config.effective_max_iterations()
-        };
-
+        // Determine model and max iterations - custom agent can override
         let agent_config = AgentConfig {
-            model,
-            max_tool_iterations: max_iterations,
+            model: effective_model(custom_agent.as_ref(), &config, &self.default_model),
+            max_tool_iterations: effective_max_iterations(custom_agent.as_ref(), &config),
             max_output_tokens: 16384,
             tool_timeout: Duration::from_secs(120),
             sandbox_policy: self.default_sandbox_policy,
@@ -311,7 +343,7 @@ impl SubagentExecutor {
         // This would require modifying the tool registry or orchestrator to filter tools
 
         // Create orchestrator for the subagent
-        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
         let orchestrator = Orchestrator::new(
             self.client.clone(),
             self.tools.clone(),
@@ -323,97 +355,8 @@ impl SubagentExecutor {
         orchestrator.initialize(Some(&system_prompt)).await;
 
         // Set up event forwarding
-        let progress_tx_clone = progress_tx.clone();
-        let session_id_clone = session_id.clone();
-        let event_handler = tokio::spawn(async move {
-            let mut files_modified = Vec::new();
-            let mut turn_number: u32 = 0; // Track actual turn number
-            while let Some(event) = event_rx.recv().await {
-                match &event {
-                    AgentEvent::Thinking => {
-                        // Increment turn number each time model is called
-                        turn_number += 1;
-                        let _ = progress_tx_clone.send(ProgressEvent::Thinking {
-                            session_id: session_id_clone.clone(),
-                            turn_number,
-                        });
-                    }
-                    AgentEvent::TextDelta { content } => {
-                        let _ = progress_tx_clone.send(ProgressEvent::TextOutput {
-                            session_id: session_id_clone.clone(),
-                            content: content.clone(),
-                            is_partial: true,
-                        });
-                    }
-                    AgentEvent::ToolCallStarted {
-                        id,
-                        name,
-                        arguments,
-                    } => {
-                        let _ = progress_tx_clone.send(ProgressEvent::ToolCallStarted {
-                            session_id: session_id_clone.clone(),
-                            tool_name: name.clone(),
-                            tool_id: id.clone(),
-                            arguments_preview: arguments.chars().take(200).collect(),
-                        });
-                    }
-                    AgentEvent::ToolCallCompleted { id, name, result } => {
-                        // Track file modifications
-                        if matches!(
-                            name.as_str(),
-                            "Create" | "Edit" | "ApplyPatch" | "MultiEdit"
-                        ) {
-                            // Extract file path from result if possible
-                            if let Some(path) = extract_file_path(&result.output) {
-                                files_modified.push(path);
-                            }
-                        }
-
-                        let _ = progress_tx_clone.send(ProgressEvent::ToolCallCompleted {
-                            session_id: session_id_clone.clone(),
-                            tool_name: name.clone(),
-                            tool_id: id.clone(),
-                            success: result.success,
-                            output_preview: result.output.chars().take(200).collect(),
-                            duration_ms: 0, // Not tracked at event level
-                        });
-                    }
-                    AgentEvent::ToolCallPending {
-                        id,
-                        name,
-                        arguments,
-                        risk_level,
-                    } => {
-                        let _ = progress_tx_clone.send(ProgressEvent::ToolCallPending {
-                            session_id: session_id_clone.clone(),
-                            tool_name: name.clone(),
-                            tool_id: id.clone(),
-                            arguments: arguments.clone(),
-                            risk_level: format!("{:?}", risk_level),
-                        });
-                    }
-                    AgentEvent::Error {
-                        message,
-                        recoverable,
-                    } => {
-                        if *recoverable {
-                            let _ = progress_tx_clone.send(ProgressEvent::Warning {
-                                session_id: session_id_clone.clone(),
-                                message: message.clone(),
-                            });
-                        } else {
-                            let _ = progress_tx_clone.send(ProgressEvent::Failed {
-                                session_id: session_id_clone.clone(),
-                                error: message.clone(),
-                                recoverable: false,
-                            });
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            files_modified
-        });
+        let event_handler =
+            spawn_event_forwarder(progress_tx.clone(), session_id.clone(), event_rx);
 
         // Create turn context with the full user task message
         // This sends the task as a user message, not embedded in system prompt
@@ -443,61 +386,20 @@ impl SubagentExecutor {
 
         // MANDATORY: Request explicit summary if the response doesn't contain one
         // This ensures subagents always provide structured output for the orchestrator
-        if let Ok(ref result) = turn_result {
-            if result.status == TurnStatus::Completed && !has_summary_output(&result.response) {
-                tracing::info!(
-                    session_id = %session_id,
-                    "Subagent output missing summary, requesting explicit summary turn"
-                );
-
-                // Request a summary turn
-                let summary_prompt = SUMMARY_REQUEST_PROMPT.to_string();
-
-                let summary_turn_id = session.turns_completed as u64 + 2;
-                let mut summary_turn_ctx = crate::agent::TurnContext::new(
-                    summary_turn_id,
-                    session_id.clone(),
-                    summary_prompt,
-                    config.working_dir.clone(),
-                );
-
-                // Execute summary turn with a reasonable timeout
-                let summary_result = timeout(
-                    Duration::from_secs(60),
-                    orchestrator.process_turn(&mut summary_turn_ctx),
-                )
-                .await;
-
-                // Update turn_result with the summary if successful
-                if let Ok(Ok(summary_response)) = summary_result {
-                    if summary_response.status == TurnStatus::Completed
-                        && !summary_response.response.is_empty()
-                    {
-                        tracing::info!(
-                            session_id = %session_id,
-                            "Received explicit summary from subagent"
-                        );
-                        // Combine original response with summary
-                        turn_result = Ok(OrchestratorTurnResult {
-                            turn_id: result.turn_id,
-                            status: TurnStatus::Completed,
-                            response: format!(
-                                "{}\n\n{}",
-                                result.response, summary_response.response
-                            ),
-                            tool_calls: result.tool_calls.clone(),
-                            token_usage: result.token_usage.clone(),
-                            duration: result.duration,
-                        });
-                        // Update token counts
-                        turn_ctx.tokens.input_tokens += summary_turn_ctx.tokens.input_tokens;
-                        turn_ctx.tokens.output_tokens += summary_turn_ctx.tokens.output_tokens;
-                        turn_ctx.tokens.cached_tokens += summary_turn_ctx.tokens.cached_tokens;
-                        turn_ctx.tokens.reasoning_tokens +=
-                            summary_turn_ctx.tokens.reasoning_tokens;
-                    }
-                }
-            }
+        if needs_summary_turn(&turn_result) {
+            tracing::info!(
+                session_id = %session_id,
+                "Subagent output missing summary, requesting explicit summary turn"
+            );
+            apply_summary_turn(
+                &orchestrator,
+                &session,
+                &session_id,
+                &config,
+                &mut turn_ctx,
+                &mut turn_result,
+            )
+            .await;
         }
 
         // CRITICAL: Drop orchestrator to close the event channel
@@ -514,18 +416,7 @@ impl SubagentExecutor {
 
         // Process result
         // Extract status for better error messages when success=false but no error
-        let (success, output, error, status_info) = match &turn_result {
-            Ok(result) => {
-                let success = result.status == TurnStatus::Completed;
-                let status_info = if !success {
-                    Some(format!("{:?}", result.status))
-                } else {
-                    None
-                };
-                (success, result.response.clone(), None, status_info)
-            }
-            Err(e) => (false, String::new(), Some(e.to_string()), None),
-        };
+        let outcome = TurnOutcome::from_result(&turn_result);
 
         // Update session
         session.record_turn(
@@ -535,7 +426,7 @@ impl SubagentExecutor {
         for path in &files_modified {
             session.record_file_modified(path);
         }
-        session.set_status(if success {
+        session.set_status(if outcome.success {
             SubagentStatus::Completed
         } else {
             // Any non-success state should be marked as Failed
@@ -548,60 +439,22 @@ impl SubagentExecutor {
             sessions.insert(session_id.clone(), session.clone());
         }
 
-        // Build token usage breakdown
-        let mut token_usage = TokenUsageBreakdown::default();
-        token_usage.add_turn(
-            turn_ctx.tokens.input_tokens as u64,
-            turn_ctx.tokens.output_tokens as u64,
-            turn_ctx.tokens.cached_tokens as u64,
-            turn_ctx.tokens.reasoning_tokens as u64,
-        );
-
-        // Build file changes
-        let file_changes: Vec<FileChange> = files_modified
-            .into_iter()
-            .map(|path| FileChange::new(path, FileChangeType::Modified))
-            .collect();
-
         // Record completion or failure
-        if success {
-            progress.complete(&output);
-        } else if let Some(ref err) = error {
+        if outcome.success {
+            progress.complete(&outcome.output);
+        } else if let Some(ref err) = outcome.error {
             progress.fail(err, false);
         } else {
-            // Handle non-success without explicit error (interrupted, cancelled, etc.)
-            // This can happen when turn_result is Ok but status != Completed
-            let error_msg = if let Some(ref status) = status_info {
-                format!("Task ended with status: {}", status)
-            } else {
-                "Task did not complete successfully".to_string()
-            };
-            progress.fail(&error_msg, true);
+            progress.fail(&outcome.failure_message(), true);
         }
 
-        // Build result
-        let mut builder = SubagentResultBuilder::new(session)
-            .success(success)
-            .output(&output)
-            .tokens(token_usage);
-
-        // Add error to result - either from explicit error or from status_info
-        if let Some(err) = error {
-            builder = builder.error(err);
-        } else if let Some(ref status) = status_info {
-            builder = builder.error(format!("Task ended with status: {}", status));
-        }
-
-        for change in file_changes {
-            builder = builder.file_changed(change);
-        }
-
-        // Allow continuation if partially complete
-        if success || turn_ctx.tool_iterations < config.effective_max_iterations() {
-            builder = builder.continuable();
-        }
-
-        Ok(builder.build())
+        Ok(build_result(
+            session,
+            outcome,
+            &files_modified,
+            &turn_ctx,
+            &config,
+        ))
     }
 
     /// Get a session by ID.
@@ -706,150 +559,9 @@ pub struct SubagentTypeInfo {
     pub denied_tools: Vec<String>,
 }
 
-/// Extract file path from tool output.
-/// Prompt used to request an explicit summary from a subagent when none was provided.
-/// Ensures structured output from agents for orchestrator consumption.
-const SUMMARY_REQUEST_PROMPT: &str = r#"You have completed your work but did not provide a summary. Please provide a final summary NOW using EXACTLY this format:
-
-## Summary for Orchestrator
-
-### Tasks Completed
-- [List each task you completed with brief outcome]
-
-### Key Findings/Changes
-- [Main discoveries or modifications made]
-
-### Files Modified (if any)
-- [List of files with type of change]
-
-### Recommendations (if applicable)
-- [Any follow-up actions or suggestions]
-
-### Status: COMPLETED
-
-DO NOT use any tools. Just provide the summary based on the work you have already done."#;
-
-/// Check if the response contains a proper summary for the orchestrator.
-/// Returns true if summary markers are present, false otherwise.
-fn has_summary_output(response: &str) -> bool {
-    // Empty responses definitely don't have a summary
-    if response.trim().is_empty() {
-        return false;
-    }
-
-    // Check for key summary markers that indicate structured output
-    let summary_markers = [
-        "## Summary for Orchestrator",
-        "### Tasks Completed",
-        "### Key Findings",
-        "### Status: COMPLETED",
-        "Status: COMPLETED",
-        // Also accept some variations
-        "## Summary",
-        "### Summary",
-        "## Final Summary",
-        "### Final Summary",
-    ];
-
-    let response_lower = response.to_lowercase();
-    summary_markers
-        .iter()
-        .any(|marker| response_lower.contains(&marker.to_lowercase()))
-}
-
-fn extract_file_path(output: &str) -> Option<String> {
-    // Try to extract path from common patterns
-    // "Created file: path/to/file"
-    // "Edited path/to/file"
-    // "Wrote N bytes to path/to/file"
-
-    let patterns = [
-        "Created file: ",
-        "Created: ",
-        "Edited ",
-        "Modified ",
-        "Wrote ",
-        "to ",
-    ];
-
-    for pattern in patterns {
-        if let Some(idx) = output.find(pattern) {
-            let rest = &output[idx + pattern.len()..];
-            // Extract until whitespace or end
-            let path: String = rest.chars().take_while(|c| !c.is_whitespace()).collect();
-            if !path.is_empty() && (path.contains('/') || path.contains('\\') || path.contains('.'))
-            {
-                return Some(path);
-            }
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_extract_file_path() {
-        assert_eq!(
-            extract_file_path("Created file: src/main.rs"),
-            Some("src/main.rs".to_string())
-        );
-        assert_eq!(
-            extract_file_path("Wrote 100 bytes to config.json"),
-            Some("config.json".to_string())
-        );
-        assert_eq!(
-            extract_file_path("Successfully edited src/lib.rs"),
-            None // "edited" doesn't match "Edited "
-        );
-        assert_eq!(extract_file_path("No path here"), None);
-    }
-
-    #[test]
-    fn test_has_summary_output_with_proper_summary() {
-        let response_with_summary = r#"
-## Summary for Orchestrator
-
-### Tasks Completed
-- Analyzed the codebase structure
-
-### Key Findings
-- Found 10 modules
-
-### Status: COMPLETED
-"#;
-        assert!(has_summary_output(response_with_summary));
-    }
-
-    #[test]
-    fn test_has_summary_output_with_variation() {
-        // Test case-insensitive matching
-        let response = "## summary\nSome content here";
-        assert!(has_summary_output(response));
-
-        // Test "Status: COMPLETED" alone
-        let response2 = "Work done.\n\nStatus: COMPLETED";
-        assert!(has_summary_output(response2));
-    }
-
-    #[test]
-    fn test_has_summary_output_empty() {
-        assert!(!has_summary_output(""));
-        assert!(!has_summary_output("   "));
-        assert!(!has_summary_output("\n\n"));
-    }
-
-    #[test]
-    fn test_has_summary_output_no_markers() {
-        let response_without_summary = "I analyzed the code and found some issues.";
-        assert!(!has_summary_output(response_without_summary));
-
-        let response_partial = "Here are some findings:\n- Item 1\n- Item 2";
-        assert!(!has_summary_output(response_partial));
-    }
 
     #[test]
     fn test_subagent_type_info() {

@@ -107,6 +107,9 @@ pub struct AgentMetadata {
     /// Agents with enabled=false are not registered with the Task tool.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// Instruction documents this agent skips. Managed is never omitted.
+    #[serde(default, alias = "omit-instructions")]
+    pub omit_instructions: Vec<crate::instruction_scopes::InstructionScope>,
 }
 
 fn default_can_delegate() -> bool {
@@ -134,6 +137,7 @@ impl AgentMetadata {
             can_delegate: true,
             max_turns: None,
             enabled: true,
+            omit_instructions: Vec::new(),
         }
     }
 
@@ -363,6 +367,7 @@ impl AgentRegistry {
                     can_delegate: false,
                     max_turns: Some(10),
                     enabled: true,
+                    omit_instructions: Vec::new(),
                 },
                 system_prompt: CODE_EXPLORER_PROMPT.to_string(),
                 path: PathBuf::new(),
@@ -387,6 +392,7 @@ impl AgentRegistry {
                     can_delegate: false,
                     max_turns: Some(5),
                     enabled: true,
+                    omit_instructions: Vec::new(),
                 },
                 system_prompt: CODE_REVIEWER_PROMPT.to_string(),
                 path: PathBuf::new(),
@@ -412,6 +418,7 @@ impl AgentRegistry {
                     can_delegate: true,
                     max_turns: Some(15),
                     enabled: true,
+                    omit_instructions: Vec::new(),
                 },
                 system_prompt: ARCHITECT_PROMPT.to_string(),
                 path: PathBuf::new(),
@@ -837,6 +844,7 @@ mod tests {
                 can_delegate: true,
                 max_turns: None,
                 enabled: true,
+                omit_instructions: Vec::new(),
             },
             system_prompt: String::new(),
             path: PathBuf::new(),

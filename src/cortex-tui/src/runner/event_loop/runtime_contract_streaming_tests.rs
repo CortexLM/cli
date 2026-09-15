@@ -208,7 +208,7 @@ async fn runtime_contract_forwarder_cancels_silent_initial_request() {
 
 #[test]
 fn first_submit_uses_cloud_as_the_shipped_tui_default() {
-    let ctx = tui_code_turn_context(false);
+    let ctx = tui_code_turn_context(false, false);
     assert_eq!(ctx.computer, ComputerKind::detect());
     assert_eq!(ctx.turn_mode, Some(CodeTurnMode::Code));
     assert_eq!(
@@ -221,7 +221,7 @@ fn first_submit_uses_cloud_as_the_shipped_tui_default() {
         ComputerKind::ThisPc
     );
     assert_eq!(
-        tui_code_turn_context(true).turn_mode,
+        tui_code_turn_context(true, false).turn_mode,
         Some(CodeTurnMode::Chat)
     );
 }

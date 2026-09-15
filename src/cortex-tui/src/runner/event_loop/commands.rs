@@ -145,6 +145,9 @@ impl EventLoop {
             "shortcuts" => {
                 self.app_state.toggle_shortcuts_sheet();
             }
+            "fast" => {
+                self.toggle_fast_mode();
+            }
             "auto" => {
                 let is_yolo = matches!(
                     self.app_state.permission_mode,
@@ -741,6 +744,7 @@ impl EventLoop {
                     .toasts
                     .info(format!("Permissions: {}", value));
             }
+            "fast" => self.set_fast_mode(value),
             _ => {
                 self.add_system_message(&format!(
                     "Setting '{key}' is unsupported in this session. No setting was changed."

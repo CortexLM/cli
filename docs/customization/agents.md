@@ -74,6 +74,7 @@ edit anything.
 | `max_steps` | integer | Cap on tool-calling steps |
 | `color` | string | Colour used in the TUI |
 | `hidden` | bool | Hide from the default listing |
+| `omit_instructions` | list | Instruction documents this agent skips. See below. |
 
 ### Tool access
 
@@ -99,6 +100,46 @@ tools:
 ```
 
 Tool names are the ones in the [tools reference](../reference/tools.md).
+
+### Omitting instruction documents
+
+Cortex merges instruction Markdown from several places. A subagent can be told
+to skip some of them, which keeps a narrow task from pulling in unrelated
+context.
+
+| Scope | Documents |
+|---|---|
+| `user` | `{cortex_home}/AGENTS.md` |
+| `project` | the repository-root `AGENTS.md` |
+| `local` | `AGENTS.md` between the repository root and the working directory |
+| `managed` | organization policy. **Never omitted.** |
+
+```yaml
+---
+name: reviewer
+description: Reviews a diff without project-wide context
+omit_instructions: [user, project]
+---
+```
+
+Omission is opt-in and applies to that run only. A skipped document is never
+opened, so it cannot reach the prompt by another path.
+
+**Organization-managed policy always loads.** A request that names `managed` is
+accepted, recorded, and ignored: the managed document still loads. The same is
+true when the main agent passes `omit_instructions` to the `Task` tool.
+
+```json
+{"mode": "worker", "prompt": "review src/auth", "omit_instructions": ["user", "project"]}
+```
+
+An unknown scope name is an error rather than a silent no-op, so a typo cannot
+omit the wrong documents.
+
+Each omission is appended to `{cortex_home}/audit/events.jsonl` as
+`instructions_omitted`, and a request that named managed policy is recorded as
+`managed_policy_never_omitted`. See
+[Organization policy](../configuration/policy.md#audit-journal).
 
 ## Where agent files are found
 

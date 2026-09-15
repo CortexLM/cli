@@ -160,6 +160,18 @@ impl<'a> MinimalSessionView<'a> {
         }
     }
 
+    /// Status line for a remote Code session, or `None` for a local session.
+    ///
+    /// The Fast chip appears only while fast mode is actually on: an
+    /// organization-disabled session stays on `Remote · Standard`.
+    fn remote_status_line(&self) -> Option<&'static str> {
+        cortex_engine::fast_mode::remote_status_line(
+            self.app_state.remote_session,
+            self.app_state.fast_mode.is_on(),
+            area_is_narrow(self.app_state.terminal_size.0),
+        )
+    }
+
     /// All scrollable content (welcome header + messages) as unified lines.
     fn content_lines(&self, width: u16, height: u16) -> Vec<Line<'static>> {
         let mut all_lines: Vec<Line<'static>> = Vec::new();
@@ -275,6 +287,12 @@ impl<'a> MinimalSessionView<'a> {
             .as_deref()
             .unwrap_or("medium");
         let chip = model_chip(&self.app_state.model, Some(effort));
+        // Fast chip: remote sessions only, and only while fast mode is on.
+        let chip = if self.app_state.remote_session && self.app_state.fast_mode.is_on() {
+            format!("{chip}{}", crate::ui::consts::FAST_CHIP_SUFFIX)
+        } else {
+            chip
+        };
         let goal_chip = self.app_state.goal.as_ref().map(|g| g.chip());
         paint_composer_box(
             area,
@@ -621,6 +639,12 @@ impl<'a> Widget for MinimalSessionView<'a> {
                     .chars()
                     .count() as u16;
             paint_status_marker(area, area.y, buf, label, counter_cols);
+        } else if let Some(status) = self.remote_status_line() {
+            let counter_cols =
+                format_token_counter(self.app_state.tokens_used, self.app_state.context_window)
+                    .chars()
+                    .count() as u16;
+            paint_status_marker(area, area.y, buf, status, counter_cols);
         }
 
         let autocomplete_visible = self.app_state.autocomplete.visible;
@@ -953,27 +977,5 @@ fn composer_display_text(state: &AppState) -> String {
 }
 
 #[cfg(test)]
-mod file_chip_footer_tests {
-    use super::*;
-
-    #[test]
-    fn completed_at_path_is_a_file_chip() {
-        assert!(composer_has_completed_file_chip(
-            "explain @src/cortex-tui/src/composer.rs "
-        ));
-        assert!(composer_has_completed_file_chip(
-            "explain @src/composer.rs "
-        ));
-        assert!(composer_has_completed_file_chip("@src/foo.rs"));
-    }
-
-    #[test]
-    fn email_and_bare_at_are_not_file_chips() {
-        assert!(!composer_has_completed_file_chip("contact me@example.com"));
-        assert!(!composer_has_completed_file_chip("ada@example.com"));
-        assert!(!composer_has_completed_file_chip("please inspect @"));
-        assert!(!composer_has_completed_file_chip("please inspect @src/"));
-        assert!(!composer_has_completed_file_chip("@"));
-        assert!(!composer_has_completed_file_chip("hello world"));
-    }
-}
+#[path = "view_tests.rs"]
+mod file_chip_footer_tests;

@@ -69,6 +69,66 @@ pub struct CustomAgentConfig {
     /// Whether this agent is hidden from listings.
     #[serde(default)]
     pub hidden: bool,
+
+    /// Instruction documents this agent skips.
+    ///
+    /// Opt-in. Organization-managed policy is never omitted, even when
+    /// `managed` is named here.
+    #[serde(default, alias = "omit-instructions")]
+    pub omit_instructions: Vec<OmitScope>,
+}
+
+/// One instruction scope named in agent frontmatter.
+///
+/// Unknown names are rejected at parse time so a typo cannot silently omit the
+/// wrong documents. The engine applies the same names through
+/// `cortex_engine::instruction_scopes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OmitScope {
+    /// Personal documents under the Cortex home.
+    User,
+    /// The repository-root document.
+    Project,
+    /// Documents between the repository root and the working directory.
+    Local,
+    /// Organization-managed policy. Accepted, never omitted.
+    Managed,
+}
+
+impl OmitScope {
+    /// Stable scope name, matching the engine and the audit journal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Project => "project",
+            Self::Local => "local",
+            Self::Managed => "managed",
+        }
+    }
+
+    /// True for the scope that is never omitted.
+    pub const fn is_managed(self) -> bool {
+        matches!(self, Self::Managed)
+    }
+
+    /// Scope names that will actually be skipped.
+    pub fn skippable(scopes: &[Self]) -> Vec<Self> {
+        scopes.iter().copied().filter(|s| !s.is_managed()).collect()
+    }
+}
+
+impl CustomAgentConfig {
+    /// Stable scope names for the engine `SubagentConfig`.
+    ///
+    /// Task-level `omit_instructions` takes precedence when non-empty; otherwise
+    /// these frontmatter scopes are applied at execution.
+    pub fn engine_omit_scopes(&self) -> Vec<String> {
+        self.omit_instructions
+            .iter()
+            .map(|s| s.as_str().to_string())
+            .collect()
+    }
 }
 
 fn default_model() -> String {
@@ -88,6 +148,7 @@ impl Default for CustomAgentConfig {
             max_steps: None,
             color: None,
             hidden: false,
+            omit_instructions: Vec::new(),
         }
     }
 }
@@ -487,5 +548,69 @@ tools: read-only
             ReasoningEffort::Low.suggested_max_steps()
                 < ReasoningEffort::High.suggested_max_steps()
         );
+    }
+
+    #[test]
+    fn omit_instructions_defaults_to_loading_everything() {
+        let config = CustomAgentConfig::default();
+        assert!(config.omit_instructions.is_empty());
+        let parsed: CustomAgentConfig = serde_yaml::from_str("name: quiet\n").unwrap();
+        assert!(parsed.omit_instructions.is_empty());
+    }
+
+    #[test]
+    fn omit_instructions_parses_scope_names_and_rejects_typos() {
+        let parsed: CustomAgentConfig = serde_yaml::from_str(
+            "name: quiet\nomit_instructions: [user, project, local, managed]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.omit_instructions,
+            vec![
+                OmitScope::User,
+                OmitScope::Project,
+                OmitScope::Local,
+                OmitScope::Managed
+            ]
+        );
+        // The kebab-case alias is accepted too.
+        let aliased: CustomAgentConfig =
+            serde_yaml::from_str("name: quiet\nomit-instructions: [user]\n").unwrap();
+        assert_eq!(aliased.omit_instructions, vec![OmitScope::User]);
+        assert!(
+            serde_yaml::from_str::<CustomAgentConfig>(
+                "name: quiet\nomit_instructions: [projekt]\n"
+            )
+            .is_err(),
+            "an unknown scope name must not parse"
+        );
+    }
+
+    #[test]
+    fn engine_omit_scopes_matches_frontmatter() {
+        let parsed: CustomAgentConfig =
+            serde_yaml::from_str("name: quiet\nomit_instructions: [user, project]\n").unwrap();
+        assert_eq!(
+            parsed.engine_omit_scopes(),
+            vec!["user".to_string(), "project".to_string()]
+        );
+    }
+
+    #[test]
+    fn managed_is_never_skippable() {
+        let scopes = [
+            OmitScope::User,
+            OmitScope::Managed,
+            OmitScope::Project,
+            OmitScope::Local,
+        ];
+        assert_eq!(
+            OmitScope::skippable(&scopes),
+            vec![OmitScope::User, OmitScope::Project, OmitScope::Local]
+        );
+        assert!(OmitScope::Managed.is_managed());
+        assert_eq!(OmitScope::skippable(&[OmitScope::Managed]), Vec::new());
+        assert_eq!(OmitScope::User.as_str(), "user");
+        assert_eq!(OmitScope::Managed.as_str(), "managed");
     }
 }

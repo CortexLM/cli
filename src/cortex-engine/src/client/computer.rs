@@ -62,6 +62,12 @@ impl ComputerKind {
         }
     }
 
+    /// True for the Code Remote runtimes — cloud and self-hosted SSH. These
+    /// carry the `Remote` status line and the Fast chip.
+    pub const fn is_remote(self) -> bool {
+        matches!(self, Self::Cloud | Self::Ssh)
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ThisPc => "this_pc",
@@ -92,6 +98,13 @@ mod tests {
         assert_eq!(ComputerKind::ThisPc.as_str(), "this_pc");
         assert_eq!(ComputerKind::default(), ComputerKind::Cloud);
         assert_eq!(CodeTurnContext::default().computer, ComputerKind::Cloud);
+    }
+
+    #[test]
+    fn remote_runtimes_are_cloud_and_ssh() {
+        assert!(ComputerKind::Cloud.is_remote());
+        assert!(ComputerKind::Ssh.is_remote());
+        assert!(!ComputerKind::ThisPc.is_remote());
     }
 
     #[test]

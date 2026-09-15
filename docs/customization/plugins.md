@@ -10,6 +10,7 @@ Welcome to the Cortex Plugin System! This guide provides comprehensive documenta
 ## Table of Contents
 
 - [Managing plugins](#managing-plugins)
+- [Pinned command installs](#pinned-command-installs)
 - [Introduction](#introduction)
 - [Plugin Architecture](#plugin-architecture)
 - [Plugin Manifest](#plugin-manifest-plugintoml)
@@ -42,6 +43,38 @@ cortex plugin publish --dry-run
 ```
 
 In the TUI, `/plugins` manages them without leaving the session.
+
+### Pinned command installs
+
+`plugin install` and `plugin update` can print exactly what a package would
+register, then install only that reviewed set.
+
+```bash
+cortex plugin install cortex-review --json          # prints the review + command_hash
+cortex plugin install cortex-review \
+  --accept-command 8f4c2a71e0b6d3a5c19f7b204e8a1d6f30c5b9a7e2d4816f0a3c7b5d9e1f2a46
+```
+
+`--json` prints the plugin id and version, every command with its aliases and
+arguments, any hooks and tools, and a `command_hash`. The hash covers all of
+them, so a manifest that changed in any way a user could notice produces a
+different value.
+
+When the hash does not match the package under install, the install stops:
+
+```
+Command hash mismatch. Manifest may have changed.
+Re-run with --json and accept the new hash.
+```
+
+The mismatch is fail-closed. Nothing is written to the plugin root, the
+previously installed package is left untouched, no trust is renewed, and there
+is no `-y` shortcut that accepts a changed manifest. An organization can also
+require the pin for every member; see
+[Organization policy](../configuration/policy.md).
+
+Every accepted hash is appended to `{cortex_home}/audit/events.jsonl` so a
+review can be traced afterwards.
 
 ## Introduction
 

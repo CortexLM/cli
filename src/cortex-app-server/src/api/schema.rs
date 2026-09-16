@@ -9,12 +9,19 @@ fn add<T: JsonSchema>(schemas: &mut Map<String, Value>, name: &str) {
     let schema = schemars::schema_for!(T);
     let encoded = serde_json::to_string(&schema)
         .expect("Serializable schema")
+        .replace("#/$defs/", "#/components/schemas/")
         .replace("#/definitions/", "#/components/schemas/");
     let mut value: Value = serde_json::from_str(&encoded).expect("Generated schema JSON");
     let object = value.as_object_mut().expect("Schema object");
     object.remove("$schema");
-    if let Some(Value::Object(definitions)) = object.remove("definitions") {
-        schemas.extend(definitions);
+    // schemars 1.x emits nested schemas under `$defs` (JSON Schema 2020-12,
+    // the dialect OpenAPI 3.1 uses); 0.8 emitted `definitions` (draft 7).
+    // Both are unwrapped into the document's `components.schemas` map, which
+    // the `$ref` rewrite above points at.
+    for key in ["$defs", "definitions"] {
+        if let Some(Value::Object(nested)) = object.remove(key) {
+            schemas.extend(nested);
+        }
     }
     schemas.insert(name.to_string(), value);
 }

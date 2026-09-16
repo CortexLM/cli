@@ -30,7 +30,7 @@ the exact trusted browser origins in configuration.
 ## Contract
 
 [OpenAPI 3.1 JSON](app-server.openapi.json) is generated from the handler models
-with schemars 0.8.22 and served at authenticated `GET /api/v1/openapi.json`.
+with schemars 1.2 and served at authenticated `GET /api/v1/openapi.json`.
 The supported contract covers:
 
 | Method | Path (under `/api/v1`) | Meaning |

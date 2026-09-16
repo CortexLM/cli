@@ -323,7 +323,7 @@ chardetng = "0.1"
 sha1 = "0.10"
 
 # CLI - mDNS / Service Discovery
-mdns-sd = "0.11"
+mdns-sd = "0.21"
 hostname = "0.4"
 
 # CLI - PTY

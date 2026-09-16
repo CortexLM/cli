@@ -1,11 +1,10 @@
 //! Conversation identifier type.
 
+use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
 
-use schemars::JsonSchema;
-use schemars::r#gen::SchemaGenerator;
-use schemars::schema::{InstanceType, Schema, SchemaObject};
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -15,15 +14,14 @@ use uuid::Uuid;
 pub struct ConversationId(Uuid);
 
 impl JsonSchema for ConversationId {
-    fn schema_name() -> String {
-        "ConversationId".to_string()
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("ConversationId")
     }
 
     fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
-        Schema::Object(SchemaObject {
-            instance_type: Some(InstanceType::String.into()),
-            format: Some("uuid".to_string()),
-            ..Default::default()
+        json_schema!({
+            "type": "string",
+            "format": "uuid",
         })
     }
 }

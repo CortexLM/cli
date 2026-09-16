@@ -19,7 +19,7 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
 chrono = { workspace = true }
-strum_macros = "0.27"
+strum_macros = "0.28"
 base64 = { workspace = true }
 
 [features]

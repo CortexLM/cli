@@ -370,7 +370,7 @@ num_cpus = "1.16"
 notify = "6.1"
 serde_yaml = "0.9"
 hmac = "0.12"
-zip = { version = "2.2", features = ["deflate"] }
+zip = { version = "9.0", features = ["deflate"] }
 sysinfo = "0.32"
 hex = "0.4"
 urlencoding = "2.1"
